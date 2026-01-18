@@ -100,6 +100,18 @@ docker-compose up validator
 +----------------------+  +-------------------------+  +--------------------------+
 ```
 
+## 目錄結構說明 (Project Structure)
+
+本專案目前已實作數據擷取與清洗流程（ETL），各目錄職責如下：
+
+- **`scraper/` (Data Scraper)**: **資料擷取模組 (Extract)**。負責從證交所、櫃買中心、公開資訊觀測站抓取原始 CSV 資料。支援自動交易日判斷。
+- **`processor/` (Data Processor)**: **資料處理模組 (Transform & Load)**。負責清洗 CSV 資料（去除逗號、型別轉換、標頭重命名），並轉換為高效的 **Parquet** 格式。內建資料驗證器 (`validator.py`)。
+- **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定（如中英文類別映射表 `CATEGORY_MAP`）。
+- **`data/` (Data Lake)**: **資料儲存中心**（已忽略不提交至 Git）。
+    - `raw/`: 原始 CSV 資料，結構為 `{category}/date={date}/{market}.csv`。
+    - `processed/`: 清洗後的 Parquet 資料，結構為 `{category}/date={date}/{market}.parquet`。
+- **`docker-compose.yml`**: 服務編排設定，支援一鍵啟動爬取、清洗與驗證服務。
+
 ## 各模組詳細說明
 
 ### 1. 資料爬蟲 (Data Scraper)
@@ -142,7 +154,7 @@ docker-compose up validator
 *   **職責:** 對從資料庫中獲取的歷史數據進行深入分析，包括特徵工程、模型選擇、訓練、驗證和調優，以建立能夠預測股票價格、趨勢或市場情緒的機器學習模型。
 *   **技術建議:**
     *   **Python 生態系統:**
-        *   **Pandas:** 用於高效的數據處理和分析。
+        *   **Pandas:** 用於高效的數據處理 and 分析。
         *   **NumPy:** 提供強大的數值運算能力。
         *   **Scikit-learn:** 廣泛用於傳統機器學習模型 (如迴歸、分類、聚類)。
         *   **PyTorch / TensorFlow / Keras:** 用於建立和訓練深度學習模型，特別適用於複雜的時序預測任務。
