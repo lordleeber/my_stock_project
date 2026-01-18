@@ -64,16 +64,19 @@ def process_file(file_path, market, category):
         if len(date_str) != 8 or not date_str.isdigit():
             return
 
-        df = df.with_columns(
-            pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date")
-        )
+        # 加入日期與市場欄位 (核心變更)
+        df = df.with_columns([
+            pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+            pl.lit(market).alias("market")
+        ])
         
-        # 儲存 (現在 category 已經是英文，直接使用)
-        output_path = f"{PROCESSED_DIR}/{category}/market={market}/date={date_str}"
-        os.makedirs(output_path, exist_ok=True)
+        # 儲存結構: processed/{category}/date={YYYYMMDD}/{market}.parquet
+        output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+        os.makedirs(output_dir, exist_ok=True)
         
-        df.write_parquet(f"{output_path}/data.parquet")
-        # print(f"Processed {market}/{category} {date_str}: {len(df)} rows")
+        output_file = f"{output_dir}/{market}.parquet"
+        df.write_parquet(output_file)
+        # print(f"Processed {category} | {market} | {date_str}: {len(df)} rows")
 
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
