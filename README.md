@@ -1,5 +1,32 @@
 # 股票分析與預測專案
 
+## 數據對照表 (Data Mapping)
+
+### 資料類別 (Tables)
+| 中文名稱 | 英文名稱 (Directory) | 說明 |
+| :--- | :--- | :--- |
+| 每日收盤行情 | `daily_quotes` | 每日 OHLC、成交量、漲跌價差 |
+| 三大法人買賣超日報 | `institutional_investors` | 外資、投信、自營商買賣金額與股數 |
+| 外資及陸資投資持股統計 | `foreign_holding` | 全體外資持股數、持股比率、尚可投資比率 |
+| 融資融券 | `margin_trading` | 融資買進賣出、融券買進賣出、餘額統計 |
+| 融券借券 | `margin_sbl` | 借券賣出、還券統計 |
+| 本益比殖利率淨值 | `pe_ratio` | 個股本益比 (PE)、殖利率、股價淨值比 (PB) |
+
+### 核心欄位 (Core Columns)
+| 中文名稱 | 英文名稱 | 類型 | 說明 |
+| :--- | :--- | :--- | :--- |
+| 證券代號 / 代號 | `symbol` | String | 例如: 2330 |
+| 證券名稱 / 名稱 | `name` | String | 例如: 台積電 |
+| 日期 | `date` | Date | YYYY-MM-DD |
+| 收盤價 / 收盤 | `close` | Float | |
+| 成交股數 | `volume` | Float | |
+| 外資買賣超 | `foreign_net` | Float | |
+| 投信買賣超 | `trust_net` | Float | |
+| 融資今日餘額 | `margin_long_balance` | Float | |
+| 融券今日餘額 | `margin_short_balance` | Float | |
+
+---
+
 ## 專案概述
 本專案旨在建立一個全面的股票分析與預測系統，涵蓋數據爬取、資料儲存、模型訓練、交易策略回測、後端 API 服務以及直觀的前端使用者介面。目標是提供一個強大的工具，協助使用者進行股票市場分析與決策。
 
