@@ -5,8 +5,10 @@ COLUMN_MAP = {
     # --- 共同欄位 ---
     "證券代號": "symbol",
     "代號": "symbol",
+    "股票代號": "symbol", # 新增
     "證券名稱": "name",
     "名稱": "name",
+    "公司名稱": "name", # 新增
     
     # --- 每日收盤行情 (Daily Quotes) ---
     "成交股數": "volume",
