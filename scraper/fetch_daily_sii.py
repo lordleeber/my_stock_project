@@ -38,13 +38,13 @@ HEADERS = {
 def fetch_data(date_string, category, output_dir):
     url = CATEGORY_DIC[category].format(date=date_string)
     
-    # 使用英文目錄名稱
     eng_category = CATEGORY_MAP.get(category, category)
-    # 結構變更: raw/{category}/sii/
-    dst_folder = os.path.join(output_dir, "raw", eng_category, "sii")
+    # 結構變更: raw/{category}/date={date}/
+    dst_folder = os.path.join(output_dir, "raw", eng_category, f"date={date_string}")
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     
-    dst_file_path = os.path.join(dst_folder, f"{date_string}.csv")
+    # 檔名變更: sii.csv
+    dst_file_path = os.path.join(dst_folder, "sii.csv")
     
     if os.path.exists(dst_file_path):
         print(f"[{date_string}] SII {eng_category} already exists, skip.")
@@ -57,22 +57,16 @@ def fetch_data(date_string, category, output_dir):
             if len(response.content) <= EMPTY_SIZE_DIC.get(category, 0):
                 print(f"[{date_string}] SII {eng_category} is empty or no data.")
             else:
-                # 清理邏輯：去除欄位空白並加上引號
                 content = response.content.decode('big5', errors='ignore')
                 f_in = StringIO(content)
                 reader = csv.reader(f_in)
-                
                 f_out = StringIO()
                 writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
-                
                 for row in reader:
-                    # 去除每個單元格的首尾空白
                     clean_row = [cell.strip() for cell in row]
                     writer.writerow(clean_row)
-                
                 with open(dst_file_path, 'w', encoding='utf-8-sig') as f:
                     f.write(f_out.getvalue())
-                    
                 print(f"[{date_string}] SII {eng_category} saved and cleaned to {dst_file_path}")
         else:
             print(f"[{date_string}] Failed to fetch {eng_category}. Status code: {response.status_code}")
@@ -83,14 +77,12 @@ def run_scraper(date_list, output_dir, delay=3.0):
     for date_str in date_list:
         if datetime.datetime.strptime(date_str, "%Y%m%d") > datetime.datetime.today():
             continue
-            
         for category in CATEGORY_DIC:
             fetch_data(date_str, category, output_dir)
             time.sleep(delay)
 
 if __name__ == "__main__":
     output_dir = os.getenv("OUTPUT_DIR", "data")
-    
     start_date_env = os.getenv("START_DATE")
     end_date_env = os.getenv("END_DATE")
     if start_date_env and end_date_env:
@@ -100,6 +92,5 @@ if __name__ == "__main__":
          date_list = [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
     else:
         date_list = [datetime.datetime.today().strftime("%Y%m%d")]
-
     delay = float(os.getenv("FETCH_DELAY", "3.0"))
     run_scraper(date_list, output_dir, delay)
