@@ -146,3 +146,43 @@ NUMERIC_COLS = [
     "issued_shares", "foreign_investable_shares", "foreign_held_shares",
     "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio"
 ]
+
+# 標準化 Schema 定義 (確保 SII 與 OTC 欄位一致)
+SCHEMA_COLS = {
+    "daily_quotes": [
+        "date", "market", "symbol", "name", 
+        "open", "high", "low", "close", "volume", "value", 
+        "transactions", "change", "direction", "bid", "ask", "pe_ratio"
+    ],
+    "institutional_investors": [
+        "date", "market", "symbol", "name",
+        "foreign_buy", "foreign_sell", "foreign_net",
+        "foreign_dealer_buy", "foreign_dealer_sell", "foreign_dealer_net",
+        "trust_buy", "trust_sell", "trust_net",
+        "dealer_self_buy", "dealer_self_sell", "dealer_self_net",
+        "dealer_hedge_buy", "dealer_hedge_sell", "dealer_hedge_net",
+        "dealer_net", "total_net"
+    ],
+    "foreign_holding": [
+        "date", "market", "symbol", "name",
+        "issued_shares", "foreign_investable_shares", "foreign_held_shares",
+        "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio"
+    ],
+    "margin_trading": [
+        "date", "market", "symbol", "name",
+        "margin_long_buy", "margin_long_sell", "margin_long_cash_repay",
+        "margin_long_prev_balance", "margin_long_balance", "margin_long_limit",
+        "margin_short_buy", "margin_short_sell", "margin_short_cash_repay",
+        "margin_short_prev_balance", "margin_short_balance", "margin_short_limit",
+        "offset_balance"
+    ],
+    "margin_sbl": [
+        "date", "market", "symbol", "name",
+        "margin_short_prev_balance", "margin_short_balance",
+        "margin_short_buy", "margin_short_sell", "margin_short_cash_repay"
+    ],
+    "pe_ratio": [
+        "date", "market", "symbol", "name",
+        "pe_ratio" # 其他如殖利率、PB 尚未加入映射，暫時只取這個
+    ]
+}

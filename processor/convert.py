@@ -1,7 +1,7 @@
 import os
 import glob
 import polars as pl
-from schemas import COLUMN_MAP, NUMERIC_COLS
+from schemas import COLUMN_MAP, NUMERIC_COLS, SCHEMA_COLS
 
 RAW_DIR = "/app/data/raw"
 PROCESSED_DIR = "/app/data/processed"
@@ -24,7 +24,7 @@ def clean_dataframe(df):
     df = df.select(valid_cols)
     df = df.rename({c: COLUMN_MAP[c] for c in valid_cols})
     
-    # 2. 清洗 Symbol (針對 SII 三大法人的 Excel 公式 ="0050")
+    # 2. 清洗 Symbol
     if "symbol" in df.columns:
         df = df.with_columns(
             pl.col("symbol")
@@ -43,6 +43,25 @@ def clean_dataframe(df):
                 .cast(pl.Float64, strict=False)
             )
             
+    return df
+
+def enforce_schema(df, category):
+    """強制對齊 Schema (補齊缺失欄位，排序，移除多餘欄位)"""
+    if category not in SCHEMA_COLS:
+        return df
+        
+    required_cols = SCHEMA_COLS[category]
+    
+    # 補齊缺失欄位
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        # 使用 with_columns 一次補齊，效能較佳
+        df = df.with_columns([
+            pl.lit(None).alias(col) for col in missing_cols
+        ])
+            
+    # 選取並排序欄位 (這會自動丟棄多餘欄位)
+    df = df.select(required_cols)
     return df
 
 def process_file(file_path, market, category):
@@ -64,19 +83,21 @@ def process_file(file_path, market, category):
         if len(date_str) != 8 or not date_str.isdigit():
             return
 
-        # 加入日期與市場欄位 (核心變更)
+        # 加入日期與市場欄位
         df = df.with_columns([
             pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
             pl.lit(market).alias("market")
         ])
         
-        # 儲存結構: processed/{category}/date={YYYYMMDD}/{market}.parquet
+        # 強制對齊 Schema (這一步至關重要)
+        df = enforce_schema(df, category)
+        
+        # 儲存
         output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
         os.makedirs(output_dir, exist_ok=True)
         
         output_file = f"{output_dir}/{market}.parquet"
         df.write_parquet(output_file)
-        # print(f"Processed {category} | {market} | {date_str}: {len(df)} rows")
 
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
@@ -84,15 +105,11 @@ def process_file(file_path, market, category):
 def main():
     print("Starting ETL Pipeline...")
     
-    # 動態掃描 raw 目錄下的所有類別與市場
-    # 新結構: data/raw/{category}/{market}/*.csv
-    
-    # 1. 取得所有 Category
+    # 動態掃描 raw 目錄
     categories = [d for d in os.listdir(RAW_DIR) if os.path.isdir(os.path.join(RAW_DIR, d))]
     
     for category in categories:
         cat_path = os.path.join(RAW_DIR, category)
-        # 2. 取得該 Category 下的所有 Market
         markets = [d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))]
         
         for market in markets:
