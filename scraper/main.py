@@ -1,6 +1,7 @@
 import os
 import datetime
 import sys
+import pandas_market_calendars as mcal
 import fetch_daily_sii
 import fetch_daily_otc
 
@@ -8,25 +9,32 @@ def get_date_list():
     start_date_env = os.getenv("START_DATE")
     end_date_env = os.getenv("END_DATE")
     
-    if start_date_env and end_date_env:
-        try:
-            start = datetime.datetime.strptime(start_date_env, "%Y%m%d")
-            end = datetime.datetime.strptime(end_date_env, "%Y%m%d")
-            delta = end - start
-            return [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
-        except ValueError:
-            print("Error: Invalid date format. Please use YYYYMMDD.")
-            sys.exit(1)
-    
-    # 如果沒有環境變數，嘗試讀取檔案或預設今天
-    open_date_file = os.getenv("OPEN_DATE_FILE", "date_info/open_date_2023.txt")
-    if os.path.exists(open_date_file):
-        print(f"Reading dates from {open_date_file}")
-        with open(open_date_file, 'r') as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
+    # 若未指定日期，預設為今天
+    if not start_date_env:
+        start_date_env = datetime.datetime.today().strftime("%Y%m%d")
+    if not end_date_env:
+        end_date_env = datetime.datetime.today().strftime("%Y%m%d")
 
-    print("No date range specified. Defaulting to today.")
-    return [datetime.datetime.today().strftime("%Y%m%d")]
+    try:
+        # 轉換格式檢查
+        start = datetime.datetime.strptime(start_date_env, "%Y%m%d")
+        end = datetime.datetime.strptime(end_date_env, "%Y%m%d")
+        
+        print(f"Checking trading days between {start_date_env} and {end_date_env}...")
+        
+        # 使用 pandas_market_calendars 獲取台股交易日 (XTAI)
+        twse = mcal.get_calendar('XTAI')
+        schedule = twse.schedule(start_date=start, end_date=end)
+        
+        valid_dates = schedule.index.strftime('%Y%m%d').tolist()
+        return valid_dates
+
+    except ValueError:
+        print("Error: Invalid date format. Please use YYYYMMDD.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error getting calendar: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     # 設定參數
@@ -35,7 +43,12 @@ if __name__ == "__main__":
     delay = float(os.getenv("FETCH_DELAY", "3.0"))
     
     date_list = get_date_list()
-    print(f"Target Dates: {len(date_list)} days from {date_list[0]} to {date_list[-1]}")
+    
+    if not date_list:
+        print("No valid trading days found in the specified range.")
+        sys.exit(0)
+
+    print(f"Target Dates ({len(date_list)} days): {date_list}")
     print(f"Market Type: {market_type}")
     print(f"Output Directory: {output_dir}")
 
