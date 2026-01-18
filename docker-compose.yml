@@ -1,0 +1,22 @@
+services:
+  scraper_q1:
+    build: ./scraper
+    volumes:
+      - ./data:/app/data
+      - ./date_info:/app/date_info
+    environment:
+      - START_DATE=20230101
+      - END_DATE=20230331
+      - FETCH_DELAY=3.0
+
+  scraper_q2:
+    build: ./scraper
+    volumes:
+      - ./data:/app/data
+      - ./date_info:/app/date_info
+    environment:
+      - START_DATE=20230401
+      - END_DATE=20230630
+      - FETCH_DELAY=3.0
+
+  # 您可以依此類推增加更多服務...
