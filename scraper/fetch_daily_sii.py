@@ -40,7 +40,8 @@ def fetch_data(date_string, category, output_dir):
     
     # 使用英文目錄名稱
     eng_category = CATEGORY_MAP.get(category, category)
-    dst_folder = os.path.join(output_dir, "raw", "sii", eng_category)
+    # 結構變更: raw/{category}/sii/
+    dst_folder = os.path.join(output_dir, "raw", eng_category, "sii")
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     
     dst_file_path = os.path.join(dst_folder, f"{date_string}.csv")

@@ -81,20 +81,23 @@ def process_file(file_path, market, category):
 def main():
     print("Starting ETL Pipeline...")
     
-    # 動態掃描 raw 目錄下的所有市場與類別
-    # 結構: data/raw/{market}/{category}/*.csv
-    markets = [d for d in os.listdir(RAW_DIR) if os.path.isdir(os.path.join(RAW_DIR, d))]
+    # 動態掃描 raw 目錄下的所有類別與市場
+    # 新結構: data/raw/{category}/{market}/*.csv
     
-    for market in markets:
-        market_path = os.path.join(RAW_DIR, market)
-        categories = [d for d in os.listdir(market_path) if os.path.isdir(os.path.join(market_path, d))]
+    # 1. 取得所有 Category
+    categories = [d for d in os.listdir(RAW_DIR) if os.path.isdir(os.path.join(RAW_DIR, d))]
+    
+    for category in categories:
+        cat_path = os.path.join(RAW_DIR, category)
+        # 2. 取得該 Category 下的所有 Market
+        markets = [d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))]
         
-        for category in categories:
-            files = glob.glob(f"{RAW_DIR}/{market}/{category}/*.csv")
+        for market in markets:
+            files = glob.glob(f"{RAW_DIR}/{category}/{market}/*.csv")
             if not files:
                 continue
                 
-            print(f"Processing {market}/{category} ({len(files)} files)...")
+            print(f"Processing {category}/{market} ({len(files)} files)...")
             for f in files:
                 process_file(f, market, category)
 
