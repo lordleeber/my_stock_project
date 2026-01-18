@@ -1,22 +1,36 @@
 services:
-  scraper_q1:
-    build: ./scraper
+  # Stock Scraper (資料爬取)
+  scraper:
+    image: stock-scraper
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
-      - ./date_info:/app/date_info
     environment:
-      - START_DATE=20230101
-      - END_DATE=20230331
-      - FETCH_DELAY=3.0
+      # 若未設定，預設抓取今天 (或 T-1)
+      - START_DATE=${START_DATE:-}
+      - END_DATE=${END_DATE:-}
+      - MARKET_TYPE=${MARKET_TYPE:-ALL}
+      - FETCH_DELAY=${FETCH_DELAY:-3.0}
 
-  scraper_q2:
-    build: ./scraper
+  # Stock Processor (資料清洗 ETL)
+  processor:
+    image: stock-processor
+    build:
+      context: . # 注意：為了讀取 requirements.txt，這裡 context 設為根目錄
+      dockerfile: processor/Dockerfile
     volumes:
       - ./data:/app/data
-      - ./date_info:/app/date_info
     environment:
-      - START_DATE=20230401
-      - END_DATE=20230630
-      - FETCH_DELAY=3.0
+      - TZ=Asia/Taipei
 
-  # 您可以依此類推增加更多服務...
+  # 驗證器 (Validator) - 方便單獨執行驗證
+  validator:
+    image: stock-processor # 重用 processor image
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+    volumes:
+      - ./data:/app/data
+    command: ["python", "validator.py"]
