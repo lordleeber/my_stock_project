@@ -28,7 +28,29 @@
 ---
 
 ## 專案概述
-本專案旨在建立一個全面的股票分析與預測系統，涵蓋數據爬取、資料儲存、模型訓練、交易策略回測、後端 API 服務以及直觀的前端使用者介面。目標是提供一個強大的工具，協助使用者進行股票市場分析與決策。
+本專案旨在建立一個全面的股票分析與預測系統，涵蓋數據爬取、資料儲存、模型訓練、交易策略回測、後端 API 服務以及直觀的前端使用者介面。
+
+## 快速上手 (Docker Compose)
+
+### 1. 抓取資料 (Scraper)
+抓取指定日期的上市、上櫃全市場資料：
+```bash
+START_DATE=20230303 END_DATE=20230303 docker-compose up --build scraper
+```
+
+### 2. 清洗資料 (Processor)
+將原始 CSV 轉換為高效的 Parquet 格式：
+```bash
+docker-compose up --build processor
+```
+
+### 3. 驗證資料 (Validator)
+確保 Raw 與 Processed 資料的一致性：
+```bash
+docker-compose up validator
+```
+
+---
 
 ## 專案架構圖
 
