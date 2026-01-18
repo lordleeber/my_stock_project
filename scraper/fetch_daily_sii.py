@@ -7,6 +7,7 @@ import datetime
 import pandas as pd
 import csv
 from io import StringIO, BytesIO
+from common.constants import CATEGORY_MAP
 
 # 證交所 API 網址設定
 CATEGORY_DIC = {
@@ -36,22 +37,24 @@ HEADERS = {
 
 def fetch_data(date_string, category, output_dir):
     url = CATEGORY_DIC[category].format(date=date_string)
-    # 將資料存放在 raw/sii 子目錄下
-    dst_folder = os.path.join(output_dir, "raw", "sii", category)
+    
+    # 使用英文目錄名稱
+    eng_category = CATEGORY_MAP.get(category, category)
+    dst_folder = os.path.join(output_dir, "raw", "sii", eng_category)
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     
     dst_file_path = os.path.join(dst_folder, f"{date_string}.csv")
     
     if os.path.exists(dst_file_path):
-        print(f"[{date_string}] {category} already exists, skip.")
+        print(f"[{date_string}] SII {eng_category} already exists, skip.")
         return
 
     try:
-        print(f"Fetching {category} for {date_string}...")
+        print(f"Fetching SII {eng_category} for {date_string}...")
         response = requests.get(url, headers=HEADERS, timeout=30)
         if response.status_code == 200:
             if len(response.content) <= EMPTY_SIZE_DIC.get(category, 0):
-                print(f"[{date_string}] {category} is empty or no data.")
+                print(f"[{date_string}] SII {eng_category} is empty or no data.")
             else:
                 # 清理邏輯：去除欄位空白並加上引號
                 content = response.content.decode('big5', errors='ignore')
@@ -69,49 +72,33 @@ def fetch_data(date_string, category, output_dir):
                 with open(dst_file_path, 'w', encoding='utf-8-sig') as f:
                     f.write(f_out.getvalue())
                     
-                print(f"[{date_string}] {category} saved and cleaned to {dst_file_path}")
+                print(f"[{date_string}] SII {eng_category} saved and cleaned to {dst_file_path}")
         else:
-            print(f"[{date_string}] Failed to fetch {category}. Status code: {response.status_code}")
+            print(f"[{date_string}] Failed to fetch {eng_category}. Status code: {response.status_code}")
     except Exception as e:
-        print(f"[{date_string}] Error fetching {category}: {e}")
-
-def get_date_list():
-    # 優先從環境變數獲取日期範圍
-    start_date_env = os.getenv("START_DATE")
-    end_date_env = os.getenv("END_DATE")
-    
-    if start_date_env and end_date_env:
-        print(f"Using date range from env: {start_date_env} to {end_date_env}")
-        start = datetime.datetime.strptime(start_date_env, "%Y%m%d")
-        end = datetime.datetime.strptime(end_date_env, "%Y%m%d")
-        delta = end - start
-        return [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
-    
-    # 次之讀取本地檔案
-    open_date_file = os.getenv("OPEN_DATE_FILE", "date_info/open_date_2023.txt")
-    if os.path.exists(open_date_file):
-        print(f"Reading dates from {open_date_file}")
-        with open(open_date_file, 'r') as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
-    
-    print("No date source found. Defaulting to today.")
-    return [datetime.datetime.today().strftime("%Y%m%d")]
+        print(f"[{date_string}] Error fetching {eng_category}: {e}")
 
 def run_scraper(date_list, output_dir, delay=3.0):
     for date_str in date_list:
-        # 簡單過濾：不抓未來的日期
         if datetime.datetime.strptime(date_str, "%Y%m%d") > datetime.datetime.today():
             continue
             
         for category in CATEGORY_DIC:
             fetch_data(date_str, category, output_dir)
-            time.sleep(delay) # 避免過快請求被封鎖
+            time.sleep(delay)
 
 if __name__ == "__main__":
     output_dir = os.getenv("OUTPUT_DIR", "data")
-    date_list = get_date_list()
     
-    # 增加延遲時間以規避 Rate Limit (可透過環境變數調整)
-    delay = float(os.getenv("FETCH_DELAY", "3.0"))
+    start_date_env = os.getenv("START_DATE")
+    end_date_env = os.getenv("END_DATE")
+    if start_date_env and end_date_env:
+         start = datetime.datetime.strptime(start_date_env, "%Y%m%d")
+         end = datetime.datetime.strptime(end_date_env, "%Y%m%d")
+         delta = end - start
+         date_list = [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
+    else:
+        date_list = [datetime.datetime.today().strftime("%Y%m%d")]
 
+    delay = float(os.getenv("FETCH_DELAY", "3.0"))
     run_scraper(date_list, output_dir, delay)

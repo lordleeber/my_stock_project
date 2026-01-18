@@ -8,6 +8,7 @@ import pandas as pd
 import csv
 from io import StringIO, BytesIO
 from bs4 import BeautifulSoup
+from common.constants import CATEGORY_MAP
 
 # 櫃買中心 (TPEx) API 網址設定
 CATEGORY_DIC = {
@@ -75,19 +76,13 @@ def fetch_mops_foreign_hold(date_string, dst_file_path):
         print(f"Fetching MOPS foreign hold for {date_string}...")
         res = requests.post(url, data=payload, headers=headers)
         
-        # 使用 BeautifulSoup 解析 (容錯率比 pandas.read_html 高)
         soup = BeautifulSoup(res.content, 'html.parser', from_encoding='big5')
-        
         rows = soup.find_all('tr')
         data = []
         
-        # 提取資料
         for row in rows:
             cols = row.find_all(['td', 'th'])
-            # 取得文字並去除空白
             cols_text = [ele.get_text(strip=True) for ele in cols]
-            
-            # 簡單過濾：如果欄位夠多，就當作是資料列
             if len(cols_text) > 5:
                 data.append(cols_text)
         
@@ -95,10 +90,7 @@ def fetch_mops_foreign_hold(date_string, dst_file_path):
             print(f"[{date_string}] MOPS data not found (no rows parsed).")
             return
 
-        # 轉成 DataFrame
         df = pd.DataFrame(data)
-        
-        # 尋找 Header：通常包含 "證券代號"
         found_header = False
         for i in range(len(df)):
             row_values = df.iloc[i].astype(str).values
@@ -108,23 +100,10 @@ def fetch_mops_foreign_hold(date_string, dst_file_path):
                 found_header = True
                 break
         
-        # 如果沒找到 header 但有資料，且第一列看起來像 header
-        if not found_header and len(df) > 0:
-            # 嘗試檢查第一列是否包含中文標題
-            pass
-
-        # 清理無效列
         if "證券代號" in df.columns:
-            # 移除包含標題文字的列 (避免重複 header)
             df = df[~df['證券代號'].astype(str).str.contains('證券代號', na=False)]
-            # 移除說明文字 (通常在底部)
             df = df[~df['證券代號'].astype(str).str.contains('說明|註|因素', na=False)]
         
-        # 檢查資料量
-        if len(df) < 100:
-             print(f"[{date_string}] Warning: Parsed rows ({len(df)}) seems too low for OTC.")
-
-        # 儲存
         df.to_csv(dst_file_path, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_ALL)
         print(f"[{date_string}] OTC Foreign Hold saved to {dst_file_path} ({len(df)} rows)")
 
@@ -134,68 +113,60 @@ def fetch_mops_foreign_hold(date_string, dst_file_path):
 def fetch_data(date_string, category, output_dir):
     date_tw = to_tw_date(date_string)
     
-    # 建立目錄結構 raw/otc/category
-    dst_folder = os.path.join(output_dir, "raw", "otc", category)
+    # 使用英文目錄名稱
+    eng_category = CATEGORY_MAP.get(category, category)
+    dst_folder = os.path.join(output_dir, "raw", "otc", eng_category)
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     
     dst_file_path = os.path.join(dst_folder, f"{date_string}.csv")
     
     if os.path.exists(dst_file_path):
-        print(f"[{date_string}] OTC {category} already exists, skip.")
+        print(f"[{date_string}] OTC {eng_category} already exists, skip.")
         return
 
-    # 特殊處理：外資及陸資投資持股統計
     if category == "外資及陸資投資持股統計":
         fetch_mops_foreign_hold(date_string, dst_file_path)
         return
 
-    # 一般處理：TPEx CSV 下載
     url = CATEGORY_DIC[category].format(date_tw=date_tw)
     headers = COMMON_HEADERS.copy()
     headers['Referer'] = REFERER_DIC.get(category, "https://www.tpex.org.tw/")
 
     try:
-        print(f"Fetching OTC {category} for {date_string}...")
+        print(f"Fetching OTC {eng_category} for {date_string}...")
         response = requests.get(url, headers=headers, timeout=30)
         
         if response.status_code == 200 and "404 - 證券櫃檯買賣中心" not in response.text:
             if len(response.content) <= EMPTY_SIZE_DIC.get(category, 0):
-                print(f"[{date_string}] OTC {category} is empty or no data.")
+                print(f"[{date_string}] OTC {eng_category} is empty or no data.")
             else:
-                # 清理邏輯：去除欄位空白並加上引號
                 content = response.content.decode('big5', errors='ignore')
                 f_in = StringIO(content)
                 reader = csv.reader(f_in)
-                
                 f_out = StringIO()
                 writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
-                
                 for row in reader:
                     clean_row = [cell.strip() for cell in row]
                     writer.writerow(clean_row)
-                
                 with open(dst_file_path, 'w', encoding='utf-8-sig') as f:
                     f.write(f_out.getvalue())
-                    
-                print(f"[{date_string}] OTC {category} saved and cleaned to {dst_file_path}")
+                print(f"[{date_string}] OTC {eng_category} saved and cleaned to {dst_file_path}")
         else:
-            print(f"[{date_string}] OTC {category} data not available (404 or missing).")
+            print(f"[{date_string}] OTC {eng_category} data not available (404 or missing).")
             
     except Exception as e:
-        print(f"[{date_string}] Error fetching OTC {category}: {e}")
+        print(f"[{date_string}] Error fetching OTC {eng_category}: {e}")
 
 def run_scraper(date_list, output_dir, delay=3.0):
     for date_str in date_list:
         if datetime.datetime.strptime(date_str, "%Y%m%d") > datetime.datetime.today():
             continue
-            
         for category in CATEGORY_DIC:
             fetch_data(date_str, category, output_dir)
             time.sleep(delay)
 
 if __name__ == "__main__":
     output_dir = os.getenv("OUTPUT_DIR", "data")
-    
     start_date_env = os.getenv("START_DATE")
     end_date_env = os.getenv("END_DATE")
     if start_date_env and end_date_env:
@@ -205,6 +176,5 @@ if __name__ == "__main__":
          date_list = [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
     else:
         date_list = [datetime.datetime.today().strftime("%Y%m%d")]
-
     delay = float(os.getenv("FETCH_DELAY", "3.0"))
     run_scraper(date_list, output_dir, delay)
