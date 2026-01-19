@@ -1,29 +1,77 @@
 services:
-  # Stock Scraper (資料爬取)
   scraper:
-    image: stock-scraper
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
     environment:
-      # 若未設定，預設抓取今天 (或 T-1)
-      - START_DATE=${START_DATE:-}
-      - END_DATE=${END_DATE:-}
+      - OUTPUT_DIR=/app/data
       - MARKET_TYPE=${MARKET_TYPE:-ALL}
+      - START_DATE=${START_DATE}
+      - END_DATE=${END_DATE}
       - FETCH_DELAY=${FETCH_DELAY:-3.0}
 
-  # Stock Processor (資料清洗 ETL)
   processor:
-    image: stock-processor
-    build:
-      context: . # 注意：為了讀取 requirements.txt，這裡 context 設為根目錄
-      dockerfile: processor/Dockerfile
+    build: 
+      context: ./processor
     volumes:
       - ./data:/app/data
     environment:
-      - TZ=Asia/Taipei
+      - START_DATE=${START_DATE}
+      - END_DATE=${END_DATE}
+
+  importer:
+    build:
+      context: ./importer
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
+      - START_DATE=${START_DATE}
+      - END_DATE=${END_DATE}
+
+  backend:
+    build:
+      context: ./backend
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: stock_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d stock_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 
   # 驗證器 (Validator) - 方便單獨執行驗證
   validator:

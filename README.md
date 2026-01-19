@@ -44,73 +44,38 @@ START_DATE=20230303 END_DATE=20230303 docker-compose up --build scraper
 START_DATE=20230303 END_DATE=20230303 docker-compose up --build processor
 ```
 
-### 3. 驗證資料 (Validator)
-確保 Raw 與 Processed 資料的一致性：
+### 3. 匯入資料 (Importer)
+將清洗後的資料匯入 PostgreSQL 資料庫：
 ```bash
-docker-compose up validator
+docker-compose up --build importer
 ```
+
+### 4. 啟動 API 後端 (Backend)
+啟動 FastAPI 服務進行數據查詢：
+```bash
+docker-compose up -d backend
+```
+存取路徑：`http://localhost:8000/docs`
 
 ---
 
 ## 專案架構圖
-
-```
-                                +----------------+
-                                |   使用者 (User)  |
-                                +----------------+
-                                        ^
-                                        | (瀏覽器/App)
-                                        v
-+-----------------------------------------------------------------------------------------+
-|                                  前端應用 (Frontend)                                     |
-|                        (React / Vue / Angular / Svelte)                                 |
-| - 股票儀表板、K線圖、技術指標                                                             |
-| - 模型預測結果視覺化                                                                    |
-| - 回測報告呈現                                                                          |
-| - 使用者帳號管理                                                                        |
-+-----------------------------------------------------------------------------------------+
-        ^                                                                       ^
-        | (API 請求: RESTful / GraphQL)                                         | (觸發任務)
-        v                                                                       v
-+-----------------------------------------------------------------------------------------+
-|                                  後端服務 (Backend)                                      |
-|                             (Python: FastAPI / Django)                                  |
-| - 提供給前端的 API 接口                                                                 |
-| - 使用者身份驗證與授權                                                                  |
-| - 處理業務邏輯 (例如：下單模擬、策略設定)                                                 |
-| - 從資料庫讀取資料                                                                      |
-| - 觸發或排程爬蟲與模型訓練任務                                                          |
-+-----------------------------------------------------------------------------------------+
-        ^                                                                       ^
-        | (讀寫資料)                                                            | (任務排程)
-        v                                                                       v
-+-----------------------------+     +-----------------------------------------------------+
-|      資料庫 (Database)        |     |               非同步任務佇列 (Task Queue)             |
-| (PostgreSQL / TimescaleDB)  |     |                   (Celery / Dramatiq)                 |
-| - 儲存股價、財報、新聞、      | --> | - 管理耗時的背景任務 (爬蟲、模型訓練、回測)             |
-|   模型預測結果、回測數據      |     +-----------------------------------------------------+
-+-----------------------------+                             ^           ^           ^
-                                                            | (執行)    | (執行)    | (執行)
-                                                            v           v           v
-+----------------------+  +-------------------------+  +--------------------------+
-|   資料爬蟲 (Scraper)   |  |   模型訓練 (Model Training) |  |     回測系統 (Backtesting)   |
-| (Scrapy / Requests)  |  | (Scikit-learn/PyTorch)  |  |     (backtrader / Zipline)   |
-| - 從證交所、新聞網站   |  | - 特徵工程                |  | - 根據歷史資料驗證交易策略   |
-|   等來源獲取資料       |  | - 訓練、評估、儲存模型      |  | - 產生績效報告             |
-+----------------------+  +-------------------------+  +--------------------------+
-```
+... (略) ...
 
 ## 目錄結構說明 (Project Structure)
 
-本專案目前已實作數據擷取與清洗流程（ETL），各目錄職責如下：
+本專案實作了完整的數據 ETL 流程與 API 服務，各目錄職責如下：
 
-- **`scraper/` (Data Scraper)**: **資料擷取模組 (Extract)**。負責從證交所、櫃買中心、公開資訊觀測站抓取原始 CSV 資料。支援自動交易日判斷。
-- **`processor/` (Data Processor)**: **資料處理模組 (Transform & Load)**。負責清洗 CSV 資料（去除逗號、型別轉換、標頭重命名），並轉換為高效的 **Parquet** 格式。內建資料驗證器 (`validator.py`)。
-- **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定（如中英文類別映射表 `CATEGORY_MAP`）。
+- **`scraper/` (Data Scraper)**: **資料擷取模組 (Extract)**。負責從證交所、櫃買中心抓取原始 CSV 資料。
+- **`processor/` (Data Processor)**: **資料處理模組 (Transform)**。負責清洗 CSV 資料並轉換為統一格式。
+- **`importer/` (Data Importer)**: **資料載入模組 (Load)**。負責將處理後的 CSV 寫入 PostgreSQL 資料庫。
+- **`backend/` (FastAPI Backend)**: **後端服務模組**。提供 RESTful API 供前端或分析工具存取資料庫數據。
+- **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定。
 - **`data/` (Data Lake)**: **資料儲存中心**（已忽略不提交至 Git）。
-    - `raw/`: 原始 CSV 資料，結構為 `{category}/date={date}/{market}.csv`。
-    - `processed/`: 清洗後的 Parquet 資料，結構為 `{category}/date={date}/{market}.parquet`。
-- **`docker-compose.yml`**: 服務編排設定，支援一鍵啟動爬取、清洗與驗證服務。
+    - `raw/`: 原始 CSV 資料。
+    - `processed/`: 清洗後的標準化資料。
+    - `postgres/`: PostgreSQL 資料庫實體檔案儲存路徑。
+- **`docker-compose.yml`**: 服務編排設定，一鍵啟動完整系統。
 
 ## 各模組詳細說明
 
