@@ -1,40 +1,60 @@
 import polars as pl
+from io import BytesIO
 from schemas import COLUMN_MAP, NUMERIC_COLS
-
-def find_header_line(file_path, encoding='utf-8-sig'):
-    """尋找包含 '證券代號' 或 '代號' 的行數"""
-    try:
-        with open(file_path, 'r', encoding=encoding) as f:
-            for i, line in enumerate(f):
-                # 寬鬆檢查
-                if ("證券代號" in line or "代號" in line) and "," in line:
-                    return i
-    except Exception as e:
-        print(f"Error reading {file_path}: {e}")
-    return -1
 
 def clean_dataframe(df):
     """通用清洗邏輯: 欄位重命名、Symbol 清洗、數值轉型"""
-    # 1. 欄位重命名
-    valid_cols = [c for c in df.columns if c in COLUMN_MAP]
-    df = df.select(valid_cols)
-    df = df.rename({c: COLUMN_MAP[c] for c in valid_cols})
     
-    # 2. 清洗 Symbol
+    # 1. 取得目前的欄位名稱，並建立一個「乾淨名稱」到「原始名稱」的映射
+    # 目的：處理 CSV 中帶有空格、引號或 BOM 的欄位名
+    raw_to_clean = {c: c.strip().replace('"', '').replace('\ufeff', '') for c in df.columns}
+    
+    # 2. 建立「英文欄位名」到「原始欄位名」的映射
+    # 我們遍歷 COLUMN_MAP，看看有沒有哪個乾淨名稱匹配得上
+    rename_map = {}
+    for raw_col, clean_col in raw_to_clean.items():
+        if clean_col in COLUMN_MAP:
+            eng_name = COLUMN_MAP[clean_col]
+            rename_map[raw_col] = eng_name
+            
+    # 3. 特別處理 Symbol 和 Name (如果沒對上的話)
+    if "symbol" not in rename_map.values():
+        for raw_col, clean_col in raw_to_clean.items():
+            if "證券代號" in clean_col or clean_col == "代號":
+                rename_map[raw_col] = "symbol"
+                break
+    
+    if "name" not in rename_map.values():
+        for raw_col, clean_col in raw_to_clean.items():
+            if "證券名稱" in clean_col or clean_col == "名稱":
+                rename_map[raw_col] = "name"
+                break
+
+    if "symbol" not in rename_map.values():
+        print(f"DEBUG: Failed to find symbol. Available cols: {df.columns}")
+
+    if not rename_map:
+        return None
+
+    # 4. 執行 Select 與 Rename
+    df = df.select(list(rename_map.keys()))
+    df = df.rename(rename_map)
+    
+    # 5. 清洗 Symbol (移除 = " 等雜質)
     if "symbol" in df.columns:
         df = df.with_columns(
-            pl.col("symbol")
+            pl.col("symbol").cast(pl.Utf8) # 強制轉字串
             .str.replace_all('=|"', '')
             .str.strip_chars()
         )
 
-    # 3. 清洗數值
+    # 6. 數值清洗
     for col in df.columns:
         if col in NUMERIC_COLS:
             df = df.with_columns(
-                pl.col(col)
+                pl.col(col).cast(pl.Utf8) # 先轉字串再處理
                 .str.replace_all(",", "")
-                .str.replace_all("--", "") # 處理空值
+                .str.replace_all("--", "")
                 .str.strip_chars()
                 .cast(pl.Float64, strict=False)
             )
@@ -42,16 +62,29 @@ def clean_dataframe(df):
     return df
 
 def read_raw_csv(file_path):
-    """標準化的 Raw CSV 讀取函式，回傳初步清洗後的 DataFrame"""
-    skip_rows = find_header_line(file_path)
-    if skip_rows == -1:
-        return None
-
+    """標準化的 Raw CSV 讀取函式"""
     try:
-        df = pl.read_csv(file_path, skip_rows=skip_rows, infer_schema_length=0, 
+        # 1. 讀取檔案內容
+        with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+            lines = f.readlines()
+        
+        # 2. 尋找正確的標頭行 (必須包含 證券代號/代號，且欄位數足夠多)
+        header_idx = -1
+        for i, line in enumerate(lines):
+            if ("證券代號" in line or "代號" in line) and line.count(",") > 5:
+                header_idx = i
+                break
+        
+        if header_idx == -1:
+            return None
+
+        # 3. 讀取標頭及其後內容
+        # 這裡我們不使用 BytesIO + content，直接用 lines
+        content = "".join(lines[header_idx:])
+        df = pl.read_csv(BytesIO(content.encode('utf-8')), infer_schema_length=0, 
                          ignore_errors=True, truncate_ragged_lines=True)
         
-        # 執行基礎清洗，讓回傳的 DF 結構與 Processed Parquet 接近，方便比對
+        # 4. 執行清洗
         df = clean_dataframe(df)
         return df
     except Exception as e:
