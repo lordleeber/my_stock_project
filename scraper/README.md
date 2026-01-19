@@ -7,7 +7,10 @@
 - **日期優先結構**: 輸出目錄為 `raw/category/date=YYYYMMDD/market.csv`，方便資料對齊。
 - **輕量化**: 採用 `requests` + `BeautifulSoup`，免 Selenium。
 - **MOPS 整合**: 實作公開資訊觀測站 (MOPS) 外資持股解析。
-- **格式統一**: CSV 強制雙引號包裹、UTF-8-SIG 編碼、自動去除空白。
+- **格式統一**: 
+    - CSV 強制雙引號包裹、UTF-8-SIG 編碼。
+    - **自動清洗 Excel 格式**: 自動移除股票代號的 `="0050"` 包裝，還原為純文字 `0050`。
+    - **雜訊過濾**: 自動移除檔案中的單欄位雜訊（如標題、檔尾說明文字）。
 
 ## 環境變數 (Environment Variables)
 | 變數名稱 | 說明 | 預設值 | 範例 |

@@ -39,9 +39,9 @@ START_DATE=20230303 END_DATE=20230303 docker-compose up --build scraper
 ```
 
 ### 2. 清洗資料 (Processor)
-將原始 CSV 轉換為高效的 Parquet 格式：
+將原始 CSV 轉換為標準化的 CSV 格式（支援增量處理）：
 ```bash
-docker-compose up --build processor
+START_DATE=20230303 END_DATE=20230303 docker-compose up --build processor
 ```
 
 ### 3. 驗證資料 (Validator)
