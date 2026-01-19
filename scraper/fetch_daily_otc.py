@@ -118,8 +118,17 @@ def fetch_data(date_string, category, output_dir):
                 f_in = StringIO(content); reader = csv.reader(f_in)
                 f_out = StringIO(); writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
                 for row in reader:
-                    clean_row = [cell.strip() for cell in row]
-                    writer.writerow(clean_row)
+                    clean_row = []
+                    for cell in row:
+                        cell = cell.strip()
+                        # Remove Excel anti-formatting wrapper ="..."
+                        if cell.startswith('="') and cell.endswith('"'):
+                            cell = cell[2:-1]
+                        clean_row.append(cell)
+                    
+                    # 只有欄位數大於 1 的行才寫入
+                    if len(clean_row) > 1:
+                        writer.writerow(clean_row)
                 with open(dst_file_path, 'w', encoding='utf-8-sig') as f:
                     f.write(f_out.getvalue())
                 print(f"[{date_string}] OTC {eng_category} saved and cleaned to {dst_file_path}")

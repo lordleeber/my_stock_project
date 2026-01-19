@@ -9,6 +9,12 @@
 - **資料分區**: 採用日期優先的 Hive 分區結構 (`category/date=YYYYMMDD/market.parquet`)。
 - **資料驗證**: 內建驗證機制，確保轉換前後筆數與關鍵數值 (如 Close) 的一致性。
 
+## 環境變數 (Environment Variables)
+| 變數名稱 | 說明 | 預設值 | 範例 |
+| :--- | :--- | :--- | :--- |
+| `START_DATE` | 起始日期 (YYYYMMDD) | 無 (處理所有日期) | `20230301` |
+| `END_DATE` | 結束日期 (YYYYMMDD) | 無 (處理所有日期) | `20230301` |
+
 ## 模組說明
 - `convert.py`: ETL 核心邏輯，負責遍歷 Raw 資料並執行轉換。
 - `validator.py`: 資料驗證器，比對 Raw 與 Processed 數據的完整性。

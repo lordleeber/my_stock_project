@@ -35,6 +35,7 @@ def verify_file(category, date_str, market):
         # 過濾掉 symbol 為空的行 (這是最基本的有效資料判斷)
         if "symbol" in df_raw.columns:
             df_raw = df_raw.filter(pl.col("symbol").is_not_null())
+            df_raw = df_raw.filter(pl.col("symbol").str.len_chars() > 1)
         if "symbol" in df_proc.columns:
             df_proc = df_proc.filter(pl.col("symbol").is_not_null())
 
@@ -42,12 +43,8 @@ def verify_file(category, date_str, market):
         count_proc = len(df_proc)
         
         if count_raw != count_proc:
-            # 容許 1-2 行誤差 (Header/Footer 殘留)
-            diff = abs(count_raw - count_proc)
-            if diff > 5: 
-                print(f"❌ {category}/{date_str}/{market}: Count Mismatch (Raw={count_raw}, Proc={count_proc})")
-            else:
-                pass # 視為 Pass
+            # 嚴格比對: 筆數必須完全一致
+            print(f"❌ {category}/{date_str}/{market}: Count Mismatch (Raw={count_raw}, Proc={count_proc})")
         
         # 4. 比對數值 (Close Price)
         if "close" in df_proc.columns and "close" in df_raw.columns:
@@ -55,10 +52,9 @@ def verify_file(category, date_str, market):
             sum_proc = df_proc["close"].fill_null(0).sum()
             
             diff = abs(sum_raw - sum_proc)
-            if diff > 1.0:
-                print(f"❌ {category}/{date_str}/{market}: Value Mismatch (Diff={diff:.2f})")
+            if diff > 1e-6:
+                print(f"❌ {category}/{date_str}/{market}: Value Mismatch (Diff={diff:.6f})")
             else:
-                # print(f"✅ {category}/{date_str}/{market}: OK")
                 pass
 
     except Exception as e:
