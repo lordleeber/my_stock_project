@@ -18,47 +18,55 @@ def enforce_schema(df, category):
 
 def process_file(file_path, market, category, date_str):
     try:
-                # 儲存路徑檢查
-                output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
-                output_file = f"{output_dir}/{market}.csv"
-                
-                if os.path.exists(output_file):
-                    print(f"Skipping {category}/{date_str}/{market} (already exists)")
-                    return
+        # 儲存路徑檢查
+        output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+        output_file = f"{output_dir}/{market}.csv"
         
-                # 使用共用的讀取邏輯
-                df = read_raw_csv(file_path)
-                if df is None:
-                    return
+        if os.path.exists(output_file):
+            print(f"Skipping {category}/{date_str}/{market} (already exists)")
+            return
+
+        # 使用共用的讀取邏輯
+        df = read_raw_csv(file_path)
+        if df is None:
+            return
+
+        # 檢查是否成功匹配到 Symbol (代表正確抓取到個股行情而非大盤統計)
+        if "symbol" not in df.columns:
+            print(f"Warning: No 'symbol' column found in {file_path}. Skipping.")
+            return
+
+        # 取得日期
+        if len(date_str) != 8 or not date_str.isdigit():
+            return
+
+        # 加入日期與市場欄位
+        df = df.with_columns([
+            pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+            pl.lit(market).alias("market")
+        ])
         
-                # 檢查是否成功匹配到 Symbol (代表正確抓取到個股行情而非大盤統計)
-                if "symbol" not in df.columns:
-                    print(f"Warning: No 'symbol' column found in {file_path}. Skipping.")
-                    return
+        # 過濾無效資料 (Symbol 為空或名稱為空)
+        df = df.filter(pl.col("symbol").is_not_null())
+        df = df.filter(pl.col("symbol") != "")
         
-                # 取得日期
-                if len(date_str) != 8 or not date_str.isdigit():
-                    return
+        # 股票代號通常不會超過 10 碼 (排除檔尾長篇說明)
+        df = df.filter(pl.col("symbol").str.len_chars() <= 10)
+        df = df.filter(pl.col("symbol").str.len_chars() > 1)
+
+        # 有效資料必須有名稱
+        if "name" in df.columns:
+            df = df.filter(pl.col("name").is_not_null())
+            df = df.filter(pl.col("name") != "")
         
-                # 加入日期與市場欄位
-                df = df.with_columns([
-                    pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
-                    pl.lit(market).alias("market")
-                ])
-                
-                # 過濾無效資料 (Symbol 為空)
-                df = df.filter(pl.col("symbol").is_not_null())
-                df = df.filter(pl.col("symbol") != "")
-                # Filter out noise (single characters like "M", "、")
-                df = df.filter(pl.col("symbol").str.len_chars() > 1)
-                
-                # 強制對齊 Schema
-                df = enforce_schema(df, category)
-                
-                # 儲存
-                os.makedirs(output_dir, exist_ok=True)
-                df.write_csv(output_file)
-                print(f"Processed {category}/{date_str}/{market}")
+        # 強制對齊 Schema
+        df = enforce_schema(df, category)
+        
+        # 儲存
+        os.makedirs(output_dir, exist_ok=True)
+        df.write_csv(output_file)
+        print(f"Processed {category}/{date_str}/{market}")
+
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
 

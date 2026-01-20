@@ -33,8 +33,8 @@ docker build -f scraper/Dockerfile -t stock-scraper .
 ```bash
 docker run --rm \
   -v $(pwd)/data:/app/data \
-  -e START_DATE=20230301 \
-  -e END_DATE=20230301 \
+  -e START_DATE=20250102 \
+  -e END_DATE=20251231 \
   -e MARKET_TYPE=ALL \
   stock-scraper
 ```

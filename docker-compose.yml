@@ -38,6 +38,19 @@ services:
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
 
+  frontend:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # 避免本地 node_modules 覆蓋容器內的
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
   backend:
     build:
       context: ./backend
@@ -71,6 +84,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
 
 
   # 驗證器 (Validator) - 方便單獨執行驗證
