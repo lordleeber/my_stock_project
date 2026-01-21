@@ -9,9 +9,6 @@ interface StockData {
   close: number;
   volume: number;
   change?: number | null;
-  k?: number;
-  d?: number;
-  rsi?: number;
   ma5?: number;
   ma10?: number;
   ma20?: number;
@@ -26,7 +23,7 @@ interface StockData {
   vma240?: number;
 }
 
-type Category = "volume" | "kd" | "rsi" | "ma" | "vma";
+type Category = "volume" | "ma" | "vma";
 type SortOrder = "asc" | "desc";
 
 export default function Home() {
@@ -43,8 +40,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (category === "volume" || category === "vma" || category === "ma") setSortOrder("desc");
-    else setSortOrder("asc");
+    // 預設都為遞減 (排行榜)
+    setSortOrder("desc");
   }, [category]);
 
   const fetchData = async () => {
@@ -61,10 +58,6 @@ export default function Home() {
       const dateParam = selectedDate.replace(/-/g, "");
       if (category === "volume") {
         endpoint = `/quotes/top-volume?date=${dateParam}&limit=10&sort=${sortOrder}`;
-      } else if (category === "kd") {
-        endpoint = `/analysis/kd-rank?date=${dateParam}&limit=10&sort=${sortOrder}`;
-      } else if (category === "rsi") {
-        endpoint = `/analysis/rsi-rank?date=${dateParam}&limit=10&sort=${sortOrder}`;
       } else if (category === "ma") {
         endpoint = `/analysis/ma?date=${dateParam}&limit=10&sort=${sortOrder}`;
       } else if (category === "vma") {
@@ -100,8 +93,6 @@ export default function Home() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">分析指標</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value as Category)} className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                   <option value="volume">成交量排行榜</option>
-                  <option value="kd">KD 指標 (Stochastic)</option>
-                  <option value="rsi">RSI 指標 (Strength)</option>
                   <option value="ma">價格均線 (MA)</option>
                   <option value="vma">成交量均線 (VMA)</option>
                 </select>
@@ -131,8 +122,6 @@ export default function Home() {
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">收盤價</th>
                   
                   {category === "volume" && <><th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">成交量 (張)</th><th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">漲跌</th></>}
-                  {category === "kd" && <><th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">K 值</th><th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">D 值</th></>}
-                  {category === "rsi" && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">RSI(14)</th>}
                   {category === "ma" && <><th className="px-4 py-3 text-right text-xs font-medium text-blue-600">MA5</th><th className="px-4 py-3 text-right text-xs font-medium text-orange-600">MA20</th><th className="px-4 py-3 text-right text-xs font-medium text-purple-600">MA60</th></>}
                   {category === "vma" && <><th className="px-4 py-3 text-right text-xs font-medium text-blue-600">VMA5 (張)</th><th className="px-4 py-3 text-right text-xs font-medium text-orange-600">VMA20 (張)</th><th className="px-4 py-3 text-right text-xs font-medium text-purple-600">VMA60 (張)</th></>}
                 </tr>
@@ -151,8 +140,6 @@ export default function Home() {
                           {stock.change && stock.change > 0 ? `▲ ${stock.change}` : stock.change && stock.change < 0 ? `▼ ${Math.abs(stock.change)}` : "-"}
                         </td></>
                     )}
-                    {category === "kd" && <><td className="px-4 py-4 text-right font-bold text-blue-700">{stock.k?.toFixed(2)}</td><td className="px-4 py-4 text-right text-orange-600">{stock.d?.toFixed(2)}</td></>}
-                    {category === "rsi" && <td className="px-4 py-4 text-right font-bold text-purple-700">{stock.rsi?.toFixed(2)}</td>}
                     {category === "ma" && <><td className="px-4 py-4 text-right text-blue-600">{stock.ma5?.toFixed(2)}</td><td className="px-4 py-4 text-right text-orange-600">{stock.ma20?.toFixed(2)}</td><td className="px-4 py-4 text-right text-purple-600">{stock.ma60?.toFixed(2)}</td></>}
                     {category === "vma" && (
                       <><td className="px-4 py-4 text-right text-blue-600">{((stock.vma5 || 0) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
@@ -161,6 +148,13 @@ export default function Home() {
                     )}
                   </tr>
                 ))}
+                {!loading && stocks.length === 0 && !error && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400 italic">
+                      請設定上方條件並點擊「開始分析」
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

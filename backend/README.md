@@ -4,9 +4,8 @@
 
 ## 主要 API 端點
 - `GET /quotes/top-volume`: 查詢成交量排行榜。
-- `GET /analysis/kd-rank`: 查詢 KD 指標排行 (超賣/超買區)。
-- `GET /analysis/rsi-rank`: 查詢 RSI 指標排行。
 - `GET /analysis/ma`: 查詢股票的移動平均線狀態。
+- `GET /analysis/vma`: 查詢股票的成交量均線狀態。
 - `GET /health`: 資料庫連線健康檢查。
 
 ## 參數支援

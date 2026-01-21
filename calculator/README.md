@@ -3,8 +3,6 @@
 本模組負責從資料庫讀取歷史收盤價，並預先計算多種常用的技術指標，存回 `technical_indicators` 表格中，以提升 API 查詢效率。
 
 ## 實作指標
-- **KD (9, 3, 3)**: 使用 Wilder's Smoothing 平滑運算。
-- **RSI (14)**: 相對強弱指標。
 - **Moving Average (MA)**: 包含 5, 10, 20, 60, 120, 240 日價格均線。
 - **Volume Moving Average (VMA)**: 包含 5, 10, 20, 60, 120, 240 日成交量均線。
 
