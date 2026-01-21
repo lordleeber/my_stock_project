@@ -80,6 +80,19 @@ class MAQuote(BaseModel):
     ma120: Optional[float] = None
     ma240: Optional[float] = None
 
+class VMAQuote(BaseModel):
+    date: datetime.date
+    symbol: str
+    name: str
+    close: float
+    volume: float
+    vma5: Optional[float] = None
+    vma10: Optional[float] = None
+    vma20: Optional[float] = None
+    vma60: Optional[float] = None
+    vma120: Optional[float] = None
+    vma240: Optional[float] = None
+
 @app.get("/quotes/top-volume", response_model=List[StockQuote])
 def get_top_volume(
     date: str = Query(..., description="Date in YYYY-MM-DD or YYYYMMDD format"), 
@@ -280,6 +293,60 @@ def get_ma_data(
                 ma60=float(row.ma60) if row.ma60 is not None else None,
                 ma120=float(row.ma120) if row.ma120 is not None else None,
                 ma240=float(row.ma240) if row.ma240 is not None else None
+            ) for row in result
+        ]
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/analysis/vma", response_model=List[VMAQuote])
+def get_vma_data(
+    date: str = Query(..., description="Date in YYYY-MM-DD"), 
+    limit: int = 10,
+    sort: str = Query("desc", description="Sort by volume: asc or desc")
+):
+    """
+    取得指定日期各成交量均線數值 (以成交量排序)
+    """
+    if len(date) == 8 and date.isdigit():
+        date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    else:
+        date_str = date
+
+    sort_order = "ASC" if sort.lower() == "asc" else "DESC"
+
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        sql = text(f"""
+            SELECT t.date, t.symbol, d.name, d.close, d.volume, 
+                   t.vma5, t.vma10, t.vma20, t.vma60, t.vma120, t.vma240
+            FROM technical_indicators t
+            JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
+            WHERE t.date = :date 
+              AND d.volume > 0
+            ORDER BY d.volume {sort_order}
+            LIMIT :limit
+        """)
+        
+        with engine.connect() as conn:
+            result = conn.execute(sql, {"date": date_str, "limit": limit}).fetchall()
+            
+        return [
+            VMAQuote(
+                date=row.date,
+                symbol=row.symbol,
+                name=row.name,
+                close=float(row.close),
+                volume=float(row.volume),
+                vma5=float(row.vma5) if row.vma5 is not None else None,
+                vma10=float(row.vma10) if row.vma10 is not None else None,
+                vma20=float(row.vma20) if row.vma20 is not None else None,
+                vma60=float(row.vma60) if row.vma60 is not None else None,
+                vma120=float(row.vma120) if row.vma120 is not None else None,
+                vma240=float(row.vma240) if row.vma240 is not None else None
             ) for row in result
         ]
 

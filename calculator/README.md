@@ -5,7 +5,8 @@
 ## 實作指標
 - **KD (9, 3, 3)**: 使用 Wilder's Smoothing 平滑運算。
 - **RSI (14)**: 相對強弱指標。
-- **Moving Average (MA)**: 包含 5, 10, 20, 60, 120, 240 日均線。
+- **Moving Average (MA)**: 包含 5, 10, 20, 60, 120, 240 日價格均線。
+- **Volume Moving Average (VMA)**: 包含 5, 10, 20, 60, 120, 240 日成交量均線。
 
 ## 核心邏輯
 - 採用 **Pandas 向量化運算 (Vectorized Operations)**，效率極高。

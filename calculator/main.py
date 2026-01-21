@@ -48,8 +48,18 @@ def calculate_indicators(df_group):
     df_group['ma60'] = close.rolling(window=60).mean()
     df_group['ma120'] = close.rolling(window=120).mean()
     df_group['ma240'] = close.rolling(window=240).mean()
+
+    # --- 4. 計算 VMA (5, 10, 20, 60, 120, 240) ---
+    df_group['vma5'] = df_group['volume'].rolling(window=5).mean()
+    df_group['vma10'] = df_group['volume'].rolling(window=10).mean()
+    df_group['vma20'] = df_group['volume'].rolling(window=20).mean()
+    df_group['vma60'] = df_group['volume'].rolling(window=60).mean()
+    df_group['vma120'] = df_group['volume'].rolling(window=120).mean()
+    df_group['vma240'] = df_group['volume'].rolling(window=240).mean()
     
-    return df_group[['date', 'symbol', 'k', 'd', 'rsi', 'ma5', 'ma10', 'ma20', 'ma60', 'ma120', 'ma240']]
+    return df_group[['date', 'symbol', 'k', 'd', 'rsi', 
+                     'ma5', 'ma10', 'ma20', 'ma60', 'ma120', 'ma240',
+                     'vma5', 'vma10', 'vma20', 'vma60', 'vma120', 'vma240']]
 
 def main():
     print("Starting Calculator...")
