@@ -2,10 +2,12 @@ import os
 import time
 import glob
 import traceback
+import datetime
 import polars as pl
 from sqlalchemy import create_engine, text
 
 def get_db_url():
+    # ... (原有代碼) ...
     user = os.getenv("DB_USER", "user")
     password = os.getenv("DB_PASSWORD", "password")
     host = os.getenv("DB_HOST", "db")
@@ -14,6 +16,7 @@ def get_db_url():
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
 def wait_for_db(engine):
+    # ... (原有代碼) ...
     retries = 30
     while retries > 0:
         try:
@@ -27,22 +30,41 @@ def wait_for_db(engine):
             retries -= 1
     raise Exception("Database connection failed")
 
+def get_filter_dates():
+    start_env = os.getenv("START_DATE")
+    end_env = os.getenv("END_DATE")
+    start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if start_env else None
+    end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if end_env else None
+    return start_date, end_date
+
 def import_data(engine):
     data_dir = "/app/data/processed"
+    start_date, end_date = get_filter_dates()
     
-    # 遍歷類別目錄 (如 daily_quotes, institutional_investors)
+    if start_date: print(f"Filter Start Date: {start_date.strftime('%Y-%m-%d')}")
+    if end_date: print(f"Filter End Date: {end_date.strftime('%Y-%m-%d')}")
+
+    # 遍歷類別目錄
     categories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
     
     for category in categories:
         cat_path = os.path.join(data_dir, category)
-        # 遍歷日期目錄
         date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
         
         for date_dir in sorted(date_dirs):
             date_str = date_dir.split("=")[1]
             
-            # 遍歷 CSV 檔案 (sii.csv, otc.csv)
+            # 日期篩選邏輯
+            try:
+                current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
+                if start_date and current_date < start_date: continue
+                if end_date and current_date > end_date: continue
+            except ValueError:
+                continue
+
+            # 遍歷 CSV 檔案
             csv_files = glob.glob(os.path.join(date_dir, "*.csv"))
+            # ... (其餘匯入邏輯保持不變) ...
             
             for csv_file in csv_files:
                 market = os.path.basename(csv_file).split(".")[0] # sii or otc

@@ -26,7 +26,7 @@ type Category = "volume" | "ma" | "vma";
 type SortOrder = "asc" | "desc";
 
 export default function Home() {
-  const [selectedDate, setSelectedDate] = useState("2026-01-19");
+  const [selectedDate, setSelectedDate] = useState("");
   const [category, setCategory] = useState<Category>("volume");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [stocks, setStocks] = useState<StockData[]>([]);
@@ -34,8 +34,12 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSortOrder("desc");
-  }, [category]);
+    // 取得當地時間 (解決 UTC 問題)
+    const now = new Date();
+    const offset = now.getTimezoneOffset(); 
+    const localDate = new Date(now.getTime() - (offset*60*1000));
+    setSelectedDate(localDate.toISOString().split("T")[0]);
+  }, []);
 
   const fetchData = async () => {
     if (!selectedDate) return;
