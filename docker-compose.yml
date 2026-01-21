@@ -51,6 +51,19 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
 
+  calculator:
+    build:
+      context: ./calculator
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
+
   backend:
     build:
       context: ./backend

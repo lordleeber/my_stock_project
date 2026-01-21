@@ -1,143 +1,49 @@
-# 股票分析與預測專案
+# 台股分析與預測專案 (Stock Analysis Project)
 
-## 數據對照表 (Data Mapping)
+本專案是一個全方位的股票分析系統，涵蓋從數據抓取、指標運算、資料庫儲存到前端視覺化儀表板的完整 ETL 與 API 流程。
 
-### 資料類別 (Tables)
-| 中文名稱 | 英文名稱 (Directory) | 說明 |
-| :--- | :--- | :--- |
-| 每日收盤行情 | `daily_quotes` | 每日 OHLC、成交量、漲跌價差 |
-| 三大法人買賣超日報 | `institutional_investors` | 外資、投信、自營商買賣金額與股數 |
-| 外資及陸資投資持股統計 | `foreign_holding` | 全體外資持股數、持股比率、尚可投資比率 |
-| 融資融券 | `margin_trading` | 融資買進賣出、融券買進賣出、餘額統計 |
-| 融券借券 | `margin_sbl` | 借券賣出、還券統計 |
-| 本益比殖利率淨值 | `pe_ratio` | 個股本益比 (PE)、殖利率、股價淨值比 (PB) |
-
-### 核心欄位 (Core Columns)
-| 中文名稱 | 英文名稱 | 類型 | 說明 |
-| :--- | :--- | :--- | :--- |
-| 證券代號 / 代號 | `symbol` | String | 例如: 2330 |
-| 證券名稱 / 名稱 | `name` | String | 例如: 台積電 |
-| 日期 | `date` | Date | YYYY-MM-DD |
-| 收盤價 / 收盤 | `close` | Float | |
-| 成交股數 | `volume` | Float | |
-| 外資買賣超 | `foreign_net` | Float | |
-| 投信買賣超 | `trust_net` | Float | |
-| 融資今日餘額 | `margin_long_balance` | Float | |
-| 融券今日餘額 | `margin_short_balance` | Float | |
-
----
-
-## 專案概述
-本專案旨在建立一個全面的股票分析與預測系統，涵蓋數據爬取、資料儲存、模型訓練、交易策略回測、後端 API 服務以及直觀的前端使用者介面。
+## 核心功能
+- **自動化爬蟲**: 抓取上市 (SII) 與上櫃 (OTC) 的每日行情、三大法人、融資融券等原始資料。
+- **強健 ETL 流程**: 清洗原始 CSV 雜訊、自動對齊標頭、處理編碼問題並標準化。
+- **預先指標運算**: 自動計算 KD (9, 3, 3)、RSI (14) 以及多條移動平均線 (MA5~MA240)。
+- **高效 API 服務**: 透過 FastAPI 提供高效能的數據查詢接口，支援排序與過濾。
+- **視覺化儀表板**: 使用 Next.js + Tailwind 打造，支援日期選擇、多指標切換與排行榜呈現。
 
 ## 快速上手 (Docker Compose)
 
-### 1. 抓取資料 (Scraper)
-抓取指定日期的上市、上櫃全市場資料：
+### 1. 抓取原始資料 (Scraper)
 ```bash
-START_DATE=20230303 END_DATE=20230303 docker-compose up --build scraper
+START_DATE=20250102 END_DATE=20260119 docker-compose up --build scraper
 ```
 
-### 2. 清洗資料 (Processor)
-將原始 CSV 轉換為標準化的 CSV 格式（支援增量處理）：
+### 2. 清洗與標準化 (Processor)
 ```bash
-START_DATE=20230303 END_DATE=20230303 docker-compose up --build processor
+docker-compose up --build processor
 ```
 
-### 3. 匯入資料 (Importer)
-將清洗後的資料匯入 PostgreSQL 資料庫：
+### 3. 匯入資料庫 (Importer)
 ```bash
 docker-compose up --build importer
 ```
 
-### 4. 啟動 API 後端 (Backend)
-啟動 FastAPI 服務進行數據查詢：
+### 4. 計算技術指標 (Calculator)
 ```bash
-docker-compose up -d backend
+docker-compose up --build calculator
 ```
-存取路徑：`http://localhost:8000/docs`
 
----
+### 5. 啟動常駐服務 (Backend / Frontend / pgAdmin)
+```bash
+docker-compose up -d backend frontend pgadmin
+```
+- **前端頁面**: `http://localhost:3000`
+- **API 文檔**: `http://localhost:8000/docs`
+- **資料庫管理**: `http://localhost:5050`
 
-## 專案架構圖
-... (略) ...
-
-## 目錄結構說明 (Project Structure)
-
-本專案實作了完整的數據 ETL 流程與 API 服務，各目錄職責如下：
-
-- **`scraper/` (Data Scraper)**: **資料擷取模組 (Extract)**。負責從證交所、櫃買中心抓取原始 CSV 資料。
-- **`processor/` (Data Processor)**: **資料處理模組 (Transform)**。負責清洗 CSV 資料並轉換為統一格式。
-- **`importer/` (Data Importer)**: **資料載入模組 (Load)**。負責將處理後的 CSV 寫入 PostgreSQL 資料庫。
-- **`backend/` (FastAPI Backend)**: **後端服務模組**。提供 RESTful API 供前端或分析工具存取資料庫數據。
-- **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定。
-- **`data/` (Data Lake)**: **資料儲存中心**（已忽略不提交至 Git）。
-    - `raw/`: 原始 CSV 資料。
-    - `processed/`: 清洗後的標準化資料。
-    - `postgres/`: PostgreSQL 資料庫實體檔案儲存路徑。
-- **`docker-compose.yml`**: 服務編排設定，一鍵啟動完整系統。
-
-## 各模組詳細說明
-
-### 1. 資料爬蟲 (Data Scraper)
-*   **職責:** 定期從各大證券交易所、財經新聞網站、公開資訊觀測站等來源，自動抓取原始的股票相關數據（例如：股價歷史資料、公司基本面數據、新聞公告、財報等）。
-*   **技術建議:**
-    *   **Python Scrapy:** 適合需要複雜爬取邏輯、廣泛網站覆蓋和高效處理大量數據的專案。
-    *   **Python Requests + BeautifulSoup / lxml:** 適用於較簡單的單一網站或少量數據爬取任務。
-*   **執行方式:** 可透過後端服務排程，將爬取任務發送至非同步任務佇列執行。
-
-### 2. 資料庫 (Database)
-*   **職責:** 作為整個專案的核心資料儲存中心，負責儲存所有收集到的原始數據、經過清洗和處理後的結構化數據、機器學習模型的預測結果，以及各種回測報告和策略配置。
-*   **技術建議:**
-    *   **PostgreSQL:** 一個功能強大、穩定且可擴展的開源關聯式資料庫系統。它支援豐富的資料類型，並提供高階功能如事務處理、索引和視圖。
-    *   **TimescaleDB (PostgreSQL 擴充套件):** 專為時間序列數據 (time-series data) 設計，如股票的開盤價、最高價、最低價、收盤價 (OHLC) 和成交量等。它在 PostgreSQL 基礎上提供了極致的查詢效能和資料壓縮能力，對於金融時間序列數據分析至關重要。
-
-### 3. 後端服務 (Backend)
-*   **職責:** 扮演整個系統的「大腦」，負責處理來自前端的所有請求，實施業務邏輯，並協調與資料庫、模型訓練、回測系統以及爬蟲任務之間的互動。
-*   **技術建議:**
-    *   **Python FastAPI:** 一個現代化、高效能的 Web 框架，用於建立 API。它基於 Starlette 和 Pydantic，支援型別提示，並自動生成 API 文件 (OpenAPI/Swagger UI)。
-    *   **Python Django:** 一個「包含電池」的 Web 框架，提供完整的生態系統，包括 ORM、管理界面和身份驗證系統，適合快速開發功能豐富的應用程式。
-*   **核心功能:**
-    *   提供 RESTful API 或 GraphQL 端點供前端呼叫。
-    *   處理使用者身份驗證 (Authentication) 與授權 (Authorization)。
-    *   執行股票數據查詢、分析邏輯。
-    *   接收前端的指令，觸發模型訓練、回測或爬蟲更新任務。
-
-### 4. 前端應用 (Frontend)
-*   **職責:** 提供使用者一個直觀、互動式的介面，以視覺化的方式展示股票數據、分析結果、模型預測和回測報告。
-*   **技術建議:**
-    *   **React / Vue / Angular / Svelte:** 任何一個現代 JavaScript 前端框架都可以用來建立響應式的使用者介面。
-    *   **圖表庫:** 使用 `ECharts`, `Plotly`, `D3.js` 等庫來繪製專業的 K 線圖、技術指標圖、熱力圖等。
-*   **核心功能:**
-    *   股票儀表板，即時顯示市場概況。
-    *   互動式 K 線圖與多種技術指標疊加。
-    *   模型預測結果的視覺化展示。
-    *   交易策略回測結果的詳細報告與圖表。
-    *   使用者可自定義觀察清單、警報設置等。
-
-### 5. 模型訓練 (Model Training)
-*   **職責:** 對從資料庫中獲取的歷史數據進行深入分析，包括特徵工程、模型選擇、訓練、驗證和調優，以建立能夠預測股票價格、趨勢或市場情緒的機器學習模型。
-*   **技術建議:**
-    *   **Python 生態系統:**
-        *   **Pandas:** 用於高效的數據處理 and 分析。
-        *   **NumPy:** 提供強大的數值運算能力。
-        *   **Scikit-learn:** 廣泛用於傳統機器學習模型 (如迴歸、分類、聚類)。
-        *   **PyTorch / TensorFlow / Keras:** 用於建立和訓練深度學習模型，特別適用於複雜的時序預測任務。
-*   **執行方式:** 作為一個獨立的服務或模組，由後端服務觸發，並將訓練好的模型存儲起來以供推論 (inference) 或回測系統使用。
-
-### 6. 回測系統 (Backtesting)
-*   **職責:** 根據歷史股票數據，嚴格測試和評估交易策略的效能。這包括模擬買賣操作、計算策略的收益、風險指標（如最大回撤、夏普比率）等，以驗證策略的穩健性。
-*   **技術建議:**
-    *   **Python backtrader:** 一個功能豐富且靈活的 Python 框架，專為回測和交易而設計。
-    *   **Python Zipline:** 一個基於 Python 的量化回測框架，由 Quantopian 開發並開源。
-*   **核心功能:**
-    *   模擬多種交易策略在不同市場條件下的表現。
-    *   生成詳細的策略績效報告和視覺化圖表。
-    *   支援多種交易成本、滑點、佣金模型。
-
-### 7. 非同步任務佇列 (Task Queue)
-*   **職責:** 處理所有耗時且不需即時回應的背景任務。例如，當使用者觸發一次全量的數據爬取或模型重新訓練時，這些任務會被加入佇列，由後台的工作者 (Worker) 執行，避免阻塞後端服務的主線程。
-*   **技術建議:**
-    *   **Celery:** Python 中最流行和功能強大的分散式任務佇列。通常搭配 Redis 或 RabbitMQ 作為訊息代理 (Message Broker)。
-    *   **Dramatiq:** 一個更輕量級的 Python 任務佇列，也支援 Redis 或 RabbitMQ。
-*   **好處:** 提高系統響應速度，增強可擴展性和穩定性。
+## 目錄結構
+- `scraper/`: 資料抓取模組 (Extract)
+- `processor/`: 資料清洗模組 (Transform)
+- `importer/`: 資料載入模組 (Load)
+- `calculator/`: 指標運算模組 (Analysis)
+- `backend/`: FastAPI 後端服務
+- `frontend/`: Next.js 前端視覺化
+- `data/`: 資料湖儲存中心 (Raw, Processed, Postgres)
