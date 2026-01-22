@@ -40,6 +40,7 @@ export default function Home() {
   const [btMode, setBtMode] = useState<"shares" | "amount">("shares");
   const [btCapital, setBtCapital] = useState(100000);
   const [btHoldDays, setBtHoldDays] = useState(3);
+  const [btPyramiding, setBtPyramiding] = useState(true);
   const [btResult, setBtResult] = useState<any>(null);
   const [btLoading, setBtLoading] = useState(false);
 
@@ -99,7 +100,8 @@ export default function Home() {
           end_date: btEndDate,
           strategy_mode: btMode,
           capital: btCapital,
-          hold_days: btHoldDays
+          hold_days: btHoldDays,
+          allow_pyramiding: btPyramiding
         })
       });
       if (!res.ok) throw new Error("回測執行失敗");
@@ -281,7 +283,17 @@ export default function Home() {
                   <input type="number" value={btCapital} onChange={(e)=>setBtCapital(Number(e.target.value))} className="w-full border p-2 rounded"/>
                 </div>
               )}
-              <div className="flex items-end">
+              <div className="flex items-center">
+                <input 
+                  id="pyramiding" 
+                  type="checkbox" 
+                  checked={btPyramiding} 
+                  onChange={(e)=>setBtPyramiding(e.target.checked)} 
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="pyramiding" className="ml-2 block text-sm font-bold text-gray-900">允許重複加碼 (Pyramiding)</label>
+              </div>
+              <div className="flex items-end md:col-span-3">
                 <button onClick={runBacktest} disabled={btLoading} className="w-full bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400">
                   {btLoading ? "回測中..." : "開始回測"}
                 </button>

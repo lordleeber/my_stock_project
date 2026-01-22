@@ -78,6 +78,7 @@ class BacktestRequest(BaseModel):
     strategy_mode: str = "shares" # shares or amount
     capital: float = 100000
     hold_days: int = 3
+    allow_pyramiding: bool = True
 
 class TradeRecord(BaseModel):
     symbol: str
@@ -102,59 +103,9 @@ class BacktestResult(BaseModel):
     summary: BacktestSummary
     trades: List[TradeRecord]
 
-@app.get("/")
-def read_root():
-    return {"Hello": "Stock Analysis API"}
+# ... (get_db_url, read_root, health_check) ...
 
-@app.get("/analysis/volume-breakout", response_model=List[VolumeBreakoutQuote])
-def get_volume_breakout(
-    date: str = Query(..., description="Date in YYYY-MM-DD"), 
-    multiplier: float = Query(5.0, description="Volume multiplier threshold (default 5x)"),
-    limit: int = 20
-):
-    """
-    取得成交量爆發股 (Volume > Multiplier * VMA10)
-    """
-    if len(date) == 8 and date.isdigit():
-        date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-    else:
-        date_str = date
-
-    try:
-        db_url = get_db_url()
-        engine = create_engine(db_url)
-        
-        # 篩選 Volume > N * VMA10，並依照爆發倍數排序
-        sql = text(f"""
-            SELECT t.date, t.symbol, d.name, d.close, d.volume, t.vma10,
-                   (d.volume / NULLIF(t.vma10, 0)) as ratio
-            FROM technical_indicators t
-            JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
-            WHERE t.date = :date 
-              AND t.vma10 > 0
-              AND d.volume > (t.vma10 * :multiplier)
-            ORDER BY ratio DESC
-            LIMIT :limit
-        """)
-        
-        with engine.connect() as conn:
-            result = conn.execute(sql, {"date": date_str, "multiplier": multiplier, "limit": limit}).fetchall()
-            
-        return [
-            VolumeBreakoutQuote(
-                date=row.date,
-                symbol=row.symbol,
-                name=row.name,
-                close=float(row.close),
-                volume=float(row.volume),
-                vma10=float(row.vma10),
-                ratio=float(row.ratio)
-            ) for row in result
-        ]
-
-    except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
 
 @app.post("/backtest/run", response_model=BacktestResult)
 def run_backtest_api(request: BacktestRequest):
@@ -200,17 +151,42 @@ def run_backtest_api(request: BacktestRequest):
         start_ts = pd.Timestamp(request.start_date)
         end_ts = pd.Timestamp(request.end_date)
         mask_range = (df['date'] >= start_ts) & (df['date'] <= end_ts)
+        
+        # 這裡必須排序，確保我們是按照時間順序處理訊號，這樣 pyramiding 邏輯才正確
+        # 雖然 SQL 已經 ORDER BY symbol, date，但我們 filter 後還是再 sort 一次保險，或者依賴原順序
+        # 我們希望跨股票的時間順序其實沒差，因為鎖定是針對 symbol 的
+        # 重點是同一個 symbol 的訊號必須按時間排
         signals = df[mask_range & df['is_signal']].copy()
         
         print(f"Found {len(signals)} signals.")
         
         trades = []
+        locked_until = {} # key: symbol, value: sell_date (datetime.date)
         
         # 3. 執行策略模擬
         for idx, row in signals.iterrows():
             symbol = row['symbol']
             signal_date = row['date']
             
+            # 檢查 Pyramiding 限制
+            # 如果不允許加碼，且當前日期還在該股票的「持倉期」內，則跳過
+            if not request.allow_pyramiding:
+                if symbol in locked_until:
+                    # 如果訊號日還沒超過上次的賣出日，表示還持有中
+                    # (假設 T+1 買，T+1+Hold 賣，那必須等賣出後才能再看訊號)
+                    # 嚴格來說，如果今天賣出，明天買進是可以的。
+                    # 所以如果 signal_date < last_sell_date，表示還在持有期
+                    # 因為買進是在 signal_date + 1，所以如果 signal_date 發生在賣出日當天或之前，
+                    # 它的買進日會是賣出日+1 (或更晚)，這樣就不會重疊部位。
+                    # 等等，如果我在 5/5 賣出，5/5 當天出現訊號，那會在 5/6 買進。這是合理的（接棒）。
+                    # 但如果我在 5/4 出現訊號，5/5 買進，那就會重疊。
+                    # 所以規則應該是：新的 buy_date 必須 > 舊的 sell_date 才能避免部位重疊。
+                    # 但我們這裡只知道 signal_date。
+                    # buy_date = signal_date + 1 (交易日)
+                    # 簡單判斷：如果 signal_date < last_sell_date，那就跳過
+                    if signal_date.date() < locked_until[symbol]:
+                        continue
+
             # 取得該股票的局部資料
             stock_data = df[df['symbol'] == symbol].reset_index(drop=True)
             
@@ -237,6 +213,16 @@ def run_backtest_api(request: BacktestRequest):
             if pd.isna(buy_price) or pd.isna(sell_price) or buy_price <= 0:
                 continue
 
+            buy_date_dt = buy_row['date'].date()
+            sell_date_dt = sell_row['date'].date()
+
+            # 再一次檢查 Pyramiding (用準確的 buy_date)
+            if not request.allow_pyramiding:
+                if symbol in locked_until:
+                    # 如果新的買入日期 <= 上次的賣出日期，表示資金還沒釋放
+                    if buy_date_dt <= locked_until[symbol]:
+                        continue
+
             # 決定股數
             shares = 0
             if request.strategy_mode == 'shares':
@@ -254,14 +240,17 @@ def run_backtest_api(request: BacktestRequest):
             trades.append(TradeRecord(
                 symbol=symbol,
                 name=row['name'],
-                buy_date=buy_row['date'].date(),
-                sell_date=sell_row['date'].date(),
+                buy_date=buy_date_dt,
+                sell_date=sell_date_dt,
                 buy_price=buy_price,
                 sell_price=sell_price,
                 shares=shares,
                 profit=profit,
                 return_rate=ret * 100
             ))
+            
+            # 更新鎖定日期
+            locked_until[symbol] = sell_date_dt
             
         # 4. 統計結果
         if not trades:
