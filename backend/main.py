@@ -79,6 +79,7 @@ class BacktestRequest(BaseModel):
     capital: float = 100000
     hold_days: int = 3
     allow_pyramiding: bool = True
+    only_red_candle: bool = False
 
 class TradeRecord(BaseModel):
     symbol: str
@@ -147,6 +148,10 @@ def run_backtest_api(request: BacktestRequest):
         df['vma10'] = df['vma10'].fillna(0)
         df['is_signal'] = df['volume'] > (df['vma10'] * 5)
         
+        # 紅K濾網 (訊號日當天 Close > Open)
+        if request.only_red_candle:
+            df['is_signal'] = df['is_signal'] & (df['close'] > df['open'])
+
         # 篩選在使用者的查詢區間內的訊號
         start_ts = pd.Timestamp(request.start_date)
         end_ts = pd.Timestamp(request.end_date)

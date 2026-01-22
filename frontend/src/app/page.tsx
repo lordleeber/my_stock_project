@@ -41,6 +41,7 @@ export default function Home() {
   const [btCapital, setBtCapital] = useState(100000);
   const [btHoldDays, setBtHoldDays] = useState(3);
   const [btPyramiding, setBtPyramiding] = useState(true);
+  const [btOnlyRedCandle, setBtOnlyRedCandle] = useState(false);
   const [btResult, setBtResult] = useState<any>(null);
   const [btLoading, setBtLoading] = useState(false);
 
@@ -101,7 +102,8 @@ export default function Home() {
           strategy_mode: btMode,
           capital: btCapital,
           hold_days: btHoldDays,
-          allow_pyramiding: btPyramiding
+          allow_pyramiding: btPyramiding,
+          only_red_candle: btOnlyRedCandle
         })
       });
       if (!res.ok) throw new Error("回測執行失敗");
@@ -283,17 +285,29 @@ export default function Home() {
                   <input type="number" value={btCapital} onChange={(e)=>setBtCapital(Number(e.target.value))} className="w-full border p-2 rounded"/>
                 </div>
               )}
-              <div className="flex items-center">
-                <input 
-                  id="pyramiding" 
-                  type="checkbox" 
-                  checked={btPyramiding} 
-                  onChange={(e)=>setBtPyramiding(e.target.checked)} 
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="pyramiding" className="ml-2 block text-sm font-bold text-gray-900">允許重複加碼 (Pyramiding)</label>
+              <div className="flex items-center space-x-4 md:col-span-3">
+                <div className="flex items-center">
+                  <input 
+                    id="pyramiding" 
+                    type="checkbox" 
+                    checked={btPyramiding} 
+                    onChange={(e)=>setBtPyramiding(e.target.checked)} 
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="pyramiding" className="ml-2 block text-sm font-bold text-gray-900">允許重複加碼 (Pyramiding)</label>
+                </div>
+                <div className="flex items-center">
+                  <input 
+                    id="onlyRedCandle" 
+                    type="checkbox" 
+                    checked={btOnlyRedCandle} 
+                    onChange={(e)=>setBtOnlyRedCandle(e.target.checked)} 
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="onlyRedCandle" className="ml-2 block text-sm font-bold text-red-600">只買紅K (Close &gt; Open)</label>
+                </div>
               </div>
-              <div className="flex items-end md:col-span-3">
+              <div className="flex items-end md:col-span-3 mt-4">
                 <button onClick={runBacktest} disabled={btLoading} className="w-full bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400">
                   {btLoading ? "回測中..." : "開始回測"}
                 </button>
