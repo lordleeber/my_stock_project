@@ -31,8 +31,3 @@ docker run --rm \
   stock-backtester
 ```
 *(註：若在 Docker Compose 網路內，DB_HOST 通常設為 `db`)*
-
-## 待實作功能 (Future Work)
-- [ ] **停損停利機制**: 設定固定百分比的停損 (Stop Loss) 與停利 (Take Profit)。
-- [ ] **手續費與證交稅**: 加入交易成本計算 (目前回測未扣除成本)。
-- [ ] **參數最佳化**: 自動尋找最佳的倍數 (如 3倍、5倍) 與持有天數。
