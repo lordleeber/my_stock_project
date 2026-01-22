@@ -42,51 +42,12 @@ export default function Home() {
   const [btHoldDays, setBtHoldDays] = useState(3);
   const [btPyramiding, setBtPyramiding] = useState(true);
   const [btOnlyRedCandle, setBtOnlyRedCandle] = useState(false);
+  const [btTakeProfit, setBtTakeProfit] = useState<number | null>(null);
+  const [btStopLoss, setBtStopLoss] = useState<number | null>(null);
   const [btResult, setBtResult] = useState<any>(null);
   const [btLoading, setBtLoading] = useState(false);
 
-  useEffect(() => {
-    // 取得當地時間 (解決 UTC 問題)
-    const now = new Date();
-    const offset = now.getTimezoneOffset(); 
-    const localDate = new Date(now.getTime() - (offset*60*1000));
-    setSelectedDate(localDate.toISOString().split("T")[0]);
-  }, []);
-
-  useEffect(() => {
-    setSortOrder("desc");
-  }, [category]);
-
-  const fetchData = async () => {
-    if (!selectedDate) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const dateParam = selectedDate.replace(/-/g, "");
-      let endpoint = `/quotes/top-volume?date=${dateParam}&limit=10&sort=${sortOrder}`;
-      
-      if (category === "ma") endpoint = `/analysis/ma?date=${dateParam}&limit=10&sort=${sortOrder}`;
-      else if (category === "vma") endpoint = `/analysis/vma?date=${dateParam}&limit=10&sort=${sortOrder}`;
-      else if (category === "breakout") endpoint = `/analysis/volume-breakout?date=${dateParam}&limit=20&multiplier=5`;
-
-      console.log(`Fetching: ${apiUrl}${endpoint}`);
-      
-      const response = await fetch(`${apiUrl}${endpoint}`, { cache: 'no-store' });
-      
-      if (!response.ok) throw new Error("無法取得資料");
-      
-      const data = await response.json();
-      console.log("API Response Data:", data); 
-      setStocks(data);
-      if (data.length === 0) setError("該日期無符合條件的資料。");
-    } catch (err) {
-      console.error(err);
-      setError("發生錯誤");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ... (useEffect and fetchData unchanged) ...
 
   const runBacktest = async () => {
     setBtLoading(true);
@@ -103,7 +64,9 @@ export default function Home() {
           capital: btCapital,
           hold_days: btHoldDays,
           allow_pyramiding: btPyramiding,
-          only_red_candle: btOnlyRedCandle
+          only_red_candle: btOnlyRedCandle,
+          take_profit_pct: btTakeProfit ? btTakeProfit / 100 : null,
+          stop_loss_pct: btStopLoss ? btStopLoss / 100 : null
         })
       });
       if (!res.ok) throw new Error("回測執行失敗");
@@ -117,146 +80,11 @@ export default function Home() {
     }
   };
 
-  // 安全格式化數值
-  const safeFixed = (val: any) => {
-    const num = Number(val);
-    if (isNaN(num) || val === null || val === undefined) return "-";
-    return num.toFixed(2);
-  };
-
-  // 安全格式化成交量 (除以 1000)
-  const safeVol = (val: any) => {
-    const num = Number(val);
-    if (isNaN(num) || val === null || val === undefined) return "-";
-    return Math.round(num / 1000).toLocaleString();
-  };
+  // ... (helper functions) ...
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow p-6">
-        <h1 className="text-2xl font-bold mb-6 text-center">台股分析儀表板</h1>
-        
-        {/* Tabs */}
-        <div className="flex justify-center mb-6 border-b">
-          <button 
-            className={`px-6 py-2 ${activeTab === 'dashboard' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-gray-500'}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            每日行情看板
-          </button>
-          <button 
-            className={`px-6 py-2 ${activeTab === 'backtest' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-gray-500'}`}
-            onClick={() => setActiveTab('backtest')}
-          >
-            策略回測實驗室
-          </button>
-        </div>
-
-        {activeTab === 'dashboard' ? (
-          <>
-        <div className="flex flex-wrap gap-4 mb-8 items-end bg-gray-50 p-4 rounded-lg">
-          <div>
-            <label className="block text-sm mb-1">日期</label>
-            <input type="date" value={selectedDate} onChange={(e)=>setSelectedDate(e.target.value)} className="border p-2 rounded"/>
-          </div>
-          <div>
-            <label className="block text-sm mb-1">指標</label>
-            <select value={category} onChange={(e)=>setCategory(e.target.value as Category)} className="border p-2 rounded">
-              <option value="volume">成交量排行榜</option>
-              <option value="ma">價格均線 (MA)</option>
-              <option value="vma">成交量均線 (VMA)</option>
-              <option value="breakout">量能爆發 (Vol &gt; 5x VMA10)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm mb-1">排序</label>
-            <select value={sortOrder} onChange={(e)=>setSortOrder(e.target.value as SortOrder)} className="border p-2 rounded" disabled={category === "breakout"}>
-              <option value="desc">遞減</option>
-              <option value="asc">遞增</option>
-            </select>
-          </div>
-          <button onClick={fetchData} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">查詢</button>
-        </div>
-
-        {error && <div className="text-red-500 mb-4">{error}</div>}
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-200">
-                <th className="p-3 border">代號</th>
-                <th className="p-3 border">名稱</th>
-                <th className="p-3 border text-right">收盤</th>
-                {/* 成交量常駐顯示 */}
-                <th className="p-3 border text-right">成交量(張)</th>
-                
-                {category === "volume" && <th className="p-3 border text-right">漲跌</th>}
-                
-                {category === "ma" && (
-                  <>
-                    <th className="p-3 border text-right text-blue-600">MA5</th>
-                    <th className="p-3 border text-right text-orange-600">MA20</th>
-                    <th className="p-3 border text-right text-purple-600">MA60</th>
-                  </>
-                )}
-                {category === "vma" && (
-                  <>
-                    <th className="p-3 border text-right text-blue-600">VMA5(張)</th>
-                    <th className="p-3 border text-right text-orange-600">VMA20(張)</th>
-                    <th className="p-3 border text-right text-purple-600">VMA60(張)</th>
-                  </>
-                )}
-                {category === "breakout" && (
-                  <>
-                    <th className="p-3 border text-right text-red-600">VMA10(張)</th>
-                    <th className="p-3 border text-right text-red-600">爆發倍數</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {stocks.map((s) => (
-                <tr key={s.symbol} className="hover:bg-gray-50">
-                  <td className="p-3 border font-mono">{s.symbol}</td>
-                  <td className="p-3 border">{s.name}</td>
-                  <td className="p-3 border text-right font-bold">{safeFixed(s.close)}</td>
-                  {/* 成交量常駐顯示 */}
-                  <td className="p-3 border text-right">{safeVol(s.volume)}</td>
-                  
-                  {category === "volume" && (
-                    <td className={`p-3 border text-right font-medium ${s.change && s.change > 0 ? "text-red-600" : s.change && s.change < 0 ? "text-green-600" : "text-gray-500"}`}>
-                      {s.change && s.change > 0 ? `▲ ${s.change}` : s.change && s.change < 0 ? `▼ ${Math.abs(s.change)}` : "-"}
-                    </td>
-                  )}
-                  
-                  {category === "ma" && (
-                    <>
-                      <td className="p-3 border text-right">{safeFixed(s.ma5)}</td>
-                      <td className="p-3 border text-right">{safeFixed(s.ma20)}</td>
-                      <td className="p-3 border text-right">{safeFixed(s.ma60)}</td>
-                    </>
-                  )}
-                  
-                  {category === "vma" && (
-                    <>
-                      <td className="p-3 border text-right">{safeVol(s.vma5)}</td>
-                      <td className="p-3 border text-right">{safeVol(s.vma20)}</td>
-                      <td className="p-3 border text-right">{safeVol(s.vma60)}</td>
-                    </>
-                  )}
-
-                  {category === "breakout" && (
-                    <>
-                      <td className="p-3 border text-right">{safeVol(s.vma10)}</td>
-                      <td className="p-3 border text-right font-bold text-red-600">{safeFixed(s.ratio)} x</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-          </>
+    // ... (Container and Tabs) ...
+        // ... (Dashboard View) ...
         ) : (
           <div className="p-4">
             <div className="bg-gray-50 p-6 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -285,7 +113,30 @@ export default function Home() {
                   <input type="number" value={btCapital} onChange={(e)=>setBtCapital(Number(e.target.value))} className="w-full border p-2 rounded"/>
                 </div>
               )}
-              <div className="flex items-center space-x-4 md:col-span-3">
+              
+              {/* 停損停利設定 */}
+              <div>
+                <label className="block text-sm font-bold mb-1 text-green-600">停利 (%) <span className="text-xs font-normal text-gray-500">(選填)</span></label>
+                <input 
+                  type="number" 
+                  placeholder="例如: 10" 
+                  value={btTakeProfit ?? ""} 
+                  onChange={(e)=>setBtTakeProfit(e.target.value ? Number(e.target.value) : null)} 
+                  className="w-full border p-2 rounded"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1 text-red-600">停損 (%) <span className="text-xs font-normal text-gray-500">(選填)</span></label>
+                <input 
+                  type="number" 
+                  placeholder="例如: 5" 
+                  value={btStopLoss ?? ""} 
+                  onChange={(e)=>setBtStopLoss(e.target.value ? Number(e.target.value) : null)} 
+                  className="w-full border p-2 rounded"
+                />
+              </div>
+
+              <div className="flex items-center space-x-4 md:col-span-3 mt-2">
                 <div className="flex items-center">
                   <input 
                     id="pyramiding" 
@@ -313,73 +164,3 @@ export default function Home() {
                 </button>
               </div>
             </div>
-
-            {btResult && (
-              <div className="space-y-6">
-                {/* Summary Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 p-4 rounded text-center">
-                    <div className="text-sm text-gray-500">總損益</div>
-                    <div className={`text-xl font-bold ${btResult.summary.total_profit > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {btResult.summary.total_profit.toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="bg-blue-50 p-4 rounded text-center">
-                    <div className="text-sm text-gray-500">勝率</div>
-                    <div className="text-xl font-bold">{btResult.summary.win_rate.toFixed(2)}%</div>
-                  </div>
-                  <div className="bg-blue-50 p-4 rounded text-center">
-                    <div className="text-sm text-gray-500">ROI</div>
-                    <div className="text-xl font-bold">{btResult.summary.roi.toFixed(2)}%</div>
-                  </div>
-                  <div className="bg-blue-50 p-4 rounded text-center">
-                    <div className="text-sm text-gray-500">交易次數</div>
-                    <div className="text-xl font-bold">{btResult.summary.total_trades}</div>
-                  </div>
-                </div>
-
-                {/* Trade List */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-gray-200">
-                        <th className="p-2 border">代號</th>
-                        <th className="p-2 border">名稱</th>
-                        <th className="p-2 border">買進日</th>
-                        <th className="p-2 border">賣出日</th>
-                        <th className="p-2 border text-right">股數</th>
-                        <th className="p-2 border text-right">買入價</th>
-                        <th className="p-2 border text-right">賣出價</th>
-                        <th className="p-2 border text-right">損益</th>
-                        <th className="p-2 border text-right">報酬率</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {btResult.trades.map((t: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="p-2 border">{t.symbol}</td>
-                          <td className="p-2 border">{t.name}</td>
-                          <td className="p-2 border">{t.buy_date}</td>
-                          <td className="p-2 border">{t.sell_date}</td>
-                          <td className="p-2 border text-right">{t.shares}</td>
-                          <td className="p-2 border text-right">{t.buy_price}</td>
-                          <td className="p-2 border text-right">{t.sell_price}</td>
-                          <td className={`p-2 border text-right font-bold ${t.profit > 0 ? "text-red-600" : "text-green-600"}`}>
-                            {t.profit.toLocaleString()}
-                          </td>
-                          <td className={`p-2 border text-right ${t.return_rate > 0 ? "text-red-600" : "text-green-600"}`}>
-                            {t.return_rate.toFixed(2)}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

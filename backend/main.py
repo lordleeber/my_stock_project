@@ -80,6 +80,8 @@ class BacktestRequest(BaseModel):
     hold_days: int = 3
     allow_pyramiding: bool = True
     only_red_candle: bool = False
+    take_profit_pct: Optional[float] = None
+    stop_loss_pct: Optional[float] = None
 
 class TradeRecord(BaseModel):
     symbol: str
@@ -156,7 +158,9 @@ def run_backtest_api(request: BacktestRequest):
             capital=request.capital,
             hold_days=request.hold_days,
             allow_pyramiding=request.allow_pyramiding,
-            only_red_candle=request.only_red_candle
+            only_red_candle=request.only_red_candle,
+            take_profit_pct=request.take_profit_pct,
+            stop_loss_pct=request.stop_loss_pct
         )
         
         # 3. 呼叫核心策略
