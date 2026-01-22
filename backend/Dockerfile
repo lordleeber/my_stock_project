@@ -2,11 +2,18 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# 相對路徑: backend/requirements.txt (需從根目錄 build)
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# 複製 Strategy 模組
+COPY strategy /app/strategy
 
-# 啟動 FastAPI，host 設為 0.0.0.0 才能被容器外部存取
-# --reload 讓您修改程式碼後自動重啟 server (開發模式)
+# 複製 Backend 程式碼
+COPY backend/ .
+
+# 設定 PYTHONPATH
+ENV PYTHONPATH="${PYTHONPATH}:/app"
+
+# 啟動 FastAPI
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

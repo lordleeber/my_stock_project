@@ -108,18 +108,25 @@ class BacktestResult(BaseModel):
 
 # ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
 
+# ... (保留前面的 import)
+import sys
+# 確保能 import strategy
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from strategy.core import run_backtest, StrategyConfig
+
+# ... (保留前面定義的模型與函式，直到 run_backtest_api)
+
 @app.post("/backtest/run", response_model=BacktestResult)
 def run_backtest_api(request: BacktestRequest):
     """
-    執行回測策略: Volume > 5 * VMA10
+    執行回測策略 (使用共用 Strategy 模組)
     """
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
         
-        # 1. 抓取資料 (範圍稍微大一點以確保有足夠的出場日)
-        # 這裡簡單抓取 end_date + 45 天
-        query_end_dt = datetime.datetime.strptime(request.end_date, "%Y-%m-%d") + datetime.timedelta(days=45)
+        # 1. 抓取資料
+        query_end_dt = datetime.datetime.strptime(request.end_date, "%Y-%m-%d") + datetime.timedelta(days=60)
         query_end = query_end_dt.strftime("%Y-%m-%d")
 
         print(f"Fetching backtest data: {request.start_date} ~ {query_end}...")
@@ -132,7 +139,6 @@ def run_backtest_api(request: BacktestRequest):
             ORDER BY t.symbol, t.date
         """)
         
-        # 使用 pandas 讀取
         with engine.connect() as conn:
             df = pd.read_sql(query, conn, params={"start": request.start_date, "end": query_end})
         
@@ -144,146 +150,33 @@ def run_backtest_api(request: BacktestRequest):
 
         df['date'] = pd.to_datetime(df['date'])
         
-        # 2. 產生訊號
-        df['vma10'] = df['vma10'].fillna(0)
-        df['is_signal'] = df['volume'] > (df['vma10'] * 5)
+        # 2. 設定策略參數
+        config = StrategyConfig(
+            strategy_mode=request.strategy_mode,
+            capital=request.capital,
+            hold_days=request.hold_days,
+            allow_pyramiding=request.allow_pyramiding,
+            only_red_candle=request.only_red_candle
+        )
         
-        # 紅K濾網 (訊號日當天 Close > Open)
-        if request.only_red_candle:
-            df['is_signal'] = df['is_signal'] & (df['close'] > df['open'])
-
-        # 篩選在使用者的查詢區間內的訊號
-        start_ts = pd.Timestamp(request.start_date)
-        end_ts = pd.Timestamp(request.end_date)
-        mask_range = (df['date'] >= start_ts) & (df['date'] <= end_ts)
+        # 3. 呼叫核心策略
+        result = run_backtest(df, config)
+        summary = result['summary']
+        trades = result['trades']
         
-        # 這裡必須排序，確保我們是按照時間順序處理訊號，這樣 pyramiding 邏輯才正確
-        # 雖然 SQL 已經 ORDER BY symbol, date，但我們 filter 後還是再 sort 一次保險，或者依賴原順序
-        # 我們希望跨股票的時間順序其實沒差，因為鎖定是針對 symbol 的
-        # 重點是同一個 symbol 的訊號必須按時間排
-        signals = df[mask_range & df['is_signal']].copy()
-        
-        print(f"Found {len(signals)} signals.")
-        
-        trades = []
-        locked_until = {} # key: symbol, value: sell_date (datetime.date)
-        
-        # 3. 執行策略模擬
-        for idx, row in signals.iterrows():
-            symbol = row['symbol']
-            signal_date = row['date']
-            
-            # 檢查 Pyramiding 限制
-            # 如果不允許加碼，且當前日期還在該股票的「持倉期」內，則跳過
-            if not request.allow_pyramiding:
-                if symbol in locked_until:
-                    # 如果訊號日還沒超過上次的賣出日，表示還持有中
-                    # (假設 T+1 買，T+1+Hold 賣，那必須等賣出後才能再看訊號)
-                    # 嚴格來說，如果今天賣出，明天買進是可以的。
-                    # 所以如果 signal_date < last_sell_date，表示還在持有期
-                    # 因為買進是在 signal_date + 1，所以如果 signal_date 發生在賣出日當天或之前，
-                    # 它的買進日會是賣出日+1 (或更晚)，這樣就不會重疊部位。
-                    # 等等，如果我在 5/5 賣出，5/5 當天出現訊號，那會在 5/6 買進。這是合理的（接棒）。
-                    # 但如果我在 5/4 出現訊號，5/5 買進，那就會重疊。
-                    # 所以規則應該是：新的 buy_date 必須 > 舊的 sell_date 才能避免部位重疊。
-                    # 但我們這裡只知道 signal_date。
-                    # buy_date = signal_date + 1 (交易日)
-                    # 簡單判斷：如果 signal_date < last_sell_date，那就跳過
-                    if signal_date.date() < locked_until[symbol]:
-                        continue
-
-            # 取得該股票的局部資料
-            stock_data = df[df['symbol'] == symbol].reset_index(drop=True)
-            
-            # 找到訊號日的 index
-            sig_idx_list = stock_data.index[stock_data['date'] == signal_date].tolist()
-            if not sig_idx_list: continue
-            sig_idx = sig_idx_list[0]
-            
-            # T+1 買進
-            buy_idx = sig_idx + 1
-            # T+N 賣出
-            sell_idx = sig_idx + 1 + request.hold_days
-            
-            if buy_idx >= len(stock_data) or sell_idx >= len(stock_data):
-                continue
-                
-            buy_row = stock_data.iloc[buy_idx]
-            sell_row = stock_data.iloc[sell_idx]
-            
-            buy_price = float(buy_row['open'])
-            sell_price = float(sell_row['close'])
-            
-            # 檢查價格是否有效 (非 NaN 且大於 0)
-            if pd.isna(buy_price) or pd.isna(sell_price) or buy_price <= 0:
-                continue
-
-            buy_date_dt = buy_row['date'].date()
-            sell_date_dt = sell_row['date'].date()
-
-            # 再一次檢查 Pyramiding (用準確的 buy_date)
-            if not request.allow_pyramiding:
-                if symbol in locked_until:
-                    # 如果新的買入日期 <= 上次的賣出日期，表示資金還沒釋放
-                    if buy_date_dt <= locked_until[symbol]:
-                        continue
-
-            # 決定股數
-            shares = 0
-            if request.strategy_mode == 'shares':
-                shares = 1000 # 預設一張
-            elif request.strategy_mode == 'amount':
-                shares = int(request.capital // buy_price)
-            
-            if shares <= 0: continue
-
-            cost = buy_price * shares
-            revenue = sell_price * shares
-            profit = revenue - cost
-            ret = (sell_price - buy_price) / buy_price
-
-            trades.append(TradeRecord(
-                symbol=symbol,
-                name=row['name'],
-                buy_date=buy_date_dt,
-                sell_date=sell_date_dt,
-                buy_price=buy_price,
-                sell_price=sell_price,
-                shares=shares,
-                profit=profit,
-                return_rate=ret * 100
-            ))
-            
-            # 更新鎖定日期
-            locked_until[symbol] = sell_date_dt
-            
-        # 4. 統計結果
-        if not trades:
-            return BacktestResult(
-                summary=BacktestSummary(total_trades=0, total_profit=0, total_cost=0, roi=0, win_rate=0, avg_return=0),
-                trades=[]
-            )
-            
-        df_trades = pd.DataFrame([t.dict() for t in trades])
-        total_profit = df_trades['profit'].sum()
-        # 這裡 total_cost 我們計算所有交易的買入成本總和
-        trade_costs = df_trades['buy_price'] * df_trades['shares']
-        total_cost = trade_costs.sum()
-        
-        avg_return = df_trades['return_rate'].mean()
-        win_rate = (df_trades['profit'] > 0).mean() * 100
-        roi = (total_profit / total_cost * 100) if total_cost > 0 else 0
-        
+        # 4. 轉換格式回傳
+        # TradeRecord dataclass -> Pydantic model
+        # 注意: dataclass 的屬性與 Pydantic 定義需一致
         return BacktestResult(
             summary=BacktestSummary(
-                total_trades=len(trades),
-                total_profit=total_profit,
-                total_cost=total_cost,
-                roi=roi,
-                win_rate=win_rate,
-                avg_return=avg_return
+                total_trades=summary.total_trades,
+                total_profit=summary.total_profit,
+                total_cost=summary.total_cost,
+                roi=summary.roi,
+                win_rate=summary.win_rate,
+                avg_return=summary.avg_return
             ),
-            trades=trades
+            trades=[t.__dict__ for t in trades]
         )
 
     except Exception as e:

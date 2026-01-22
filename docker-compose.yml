@@ -14,7 +14,8 @@ services:
 
   processor:
     build: 
-      context: ./processor
+      context: . # 修正為根目錄，以便讀取 requirements.txt (如果 processor 有用到 common 則必需)
+      dockerfile: processor/Dockerfile
     volumes:
       - ./data:/app/data
     environment:
@@ -53,21 +54,33 @@ services:
         condition: service_healthy
 
   backtester:
-    build: ./backtester
+    build: 
+      context: .
+      dockerfile: backtester/Dockerfile
     container_name: ${PROJECT_NAME}-backtester
     environment:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - DB_HOST=db
+      - START_DATE=${START_DATE}
+      - END_DATE=${END_DATE}
+      - HOLD_DAYS=${HOLD_DAYS}
+      - ALLOW_PYRAMIDING=${ALLOW_PYRAMIDING}
+      - ONLY_RED_CANDLE=${ONLY_RED_CANDLE}
+    # 移除 volumes: - ./backtester:/app，因為這會覆蓋掉 COPY 進去的 strategy
+    # 如果要開發模式，需掛載兩個 volume
     volumes:
-      - ./backtester:/app
+      - ./backtester:/app/backtester
+      - ./strategy:/app/strategy
     depends_on:
       db:
         condition: service_healthy
 
   backend:
-    build: ./backend
+    build: 
+      context: .
+      dockerfile: backend/Dockerfile
     restart: always
     ports:
       - "8000:8000"
@@ -79,6 +92,10 @@ services:
       - DB_PASSWORD=password
       - DB_NAME=stock_db
       - DB_HOST=db
+    # 同樣修正 volume 掛載
+    volumes:
+      - ./backend:/app/backend
+      - ./strategy:/app/strategy
 
   frontend:
     build:
