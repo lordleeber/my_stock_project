@@ -2,6 +2,10 @@
 
 基於 FastAPI 構建的 RESTful API，直接串接 PostgreSQL 資料庫，提供結構化的股票與指標數據。
 
+> **⚠️ 架構重要說明**:
+> 本模組的**回測邏輯 (`/backtest/run`)** 並非直接實作於此，而是呼叫共用的 `strategy` 模組。
+> 任何關於交易策略的修改（如進出場規則、訊號定義），請務必修改 `strategy/core.py`，以確保 Web API 與 CLI 工具的行為一致。
+
 ## 主要 API 端點
 - `GET /quotes/top-volume`: 查詢成交量排行榜。
 - `GET /analysis/ma`: 查詢股票的移動平均線狀態。
