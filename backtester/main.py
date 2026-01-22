@@ -31,9 +31,10 @@ def fetch_data(engine):
 
 def generate_signals(df):
     # 標記訊號 (Signal)
-    # 規則：Volume > 5 * VMA10
+    # 規則：Volume > 5 * VMA10 且當天為紅 K (Close > Open)
     df['vma10'] = df['vma10'].fillna(0)
-    df['is_signal'] = df['volume'] > (df['vma10'] * 5)
+    df['is_red_candle'] = df['close'] > df['open']
+    df['is_signal'] = (df['volume'] > (df['vma10'] * 5)) & df['is_red_candle']
     
     # 只保留 5月份產生的訊號
     mask_may = (df['date'] >= '2025-05-01') & (df['date'] <= '2025-05-31')
