@@ -41,6 +41,10 @@ export default function Home() {
     setSelectedDate(localDate.toISOString().split("T")[0]);
   }, []);
 
+  useEffect(() => {
+    setSortOrder("desc");
+  }, [category]);
+
   const fetchData = async () => {
     if (!selectedDate) return;
     setLoading(true);
@@ -55,7 +59,6 @@ export default function Home() {
 
       console.log(`Fetching: ${apiUrl}${endpoint}`);
       
-      // 加入 { cache: 'no-store' } 防止 Next.js 快取舊資料
       const response = await fetch(`${apiUrl}${endpoint}`, { cache: 'no-store' });
       
       if (!response.ok) throw new Error("無法取得資料");
@@ -99,7 +102,7 @@ export default function Home() {
           <div>
             <label className="block text-sm mb-1">指標</label>
             <select value={category} onChange={(e)=>setCategory(e.target.value as Category)} className="border p-2 rounded">
-              <option value="volume">成交量</option>
+              <option value="volume">成交量排行榜</option>
               <option value="ma">價格均線 (MA)</option>
               <option value="vma">成交量均線 (VMA)</option>
             </select>
@@ -123,7 +126,11 @@ export default function Home() {
                 <th className="p-3 border">代號</th>
                 <th className="p-3 border">名稱</th>
                 <th className="p-3 border text-right">收盤</th>
-                {category === "volume" && <th className="p-3 border text-right">成交量(張)</th>}
+                {/* 成交量常駐顯示 */}
+                <th className="p-3 border text-right">成交量(張)</th>
+                
+                {category === "volume" && <th className="p-3 border text-right">漲跌</th>}
+                
                 {category === "ma" && (
                   <>
                     <th className="p-3 border text-right text-blue-600">MA5</th>
@@ -146,8 +153,14 @@ export default function Home() {
                   <td className="p-3 border font-mono">{s.symbol}</td>
                   <td className="p-3 border">{s.name}</td>
                   <td className="p-3 border text-right font-bold">{safeFixed(s.close)}</td>
+                  {/* 成交量常駐顯示 */}
+                  <td className="p-3 border text-right">{safeVol(s.volume)}</td>
                   
-                  {category === "volume" && <td className="p-3 border text-right">{safeVol(s.volume)}</td>}
+                  {category === "volume" && (
+                    <td className={`p-3 border text-right font-medium ${s.change && s.change > 0 ? "text-red-600" : s.change && s.change < 0 ? "text-green-600" : "text-gray-500"}`}>
+                      {s.change && s.change > 0 ? `▲ ${s.change}` : s.change && s.change < 0 ? `▼ ${Math.abs(s.change)}` : "-"}
+                    </td>
+                  )}
                   
                   {category === "ma" && (
                     <>
