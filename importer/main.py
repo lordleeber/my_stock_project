@@ -7,7 +7,6 @@ import polars as pl
 from sqlalchemy import create_engine, text
 
 def get_db_url():
-    # ... (原有代碼) ...
     user = os.getenv("DB_USER", "user")
     password = os.getenv("DB_PASSWORD", "password")
     host = os.getenv("DB_HOST", "db")
@@ -16,7 +15,6 @@ def get_db_url():
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
 def wait_for_db(engine):
-    # ... (原有代碼) ...
     retries = 30
     while retries > 0:
         try:
@@ -33,8 +31,12 @@ def wait_for_db(engine):
 def get_filter_dates():
     start_env = os.getenv("START_DATE")
     end_env = os.getenv("END_DATE")
-    start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if start_env else None
-    end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if end_env else None
+    # 這裡的 DEBUG 訊息非常重要
+    print(f"DEBUG: START_DATE from env: {start_env}")
+    print(f"DEBUG: END_DATE from env: {end_env}")
+    
+    start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if (start_env and start_env.strip()) else None
+    end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if (end_env and end_env.strip()) else None
     return start_date, end_date
 
 def import_data(engine):
@@ -57,15 +59,15 @@ def import_data(engine):
             # 日期篩選邏輯
             try:
                 current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
-                if start_date and current_date < start_date: continue
-                if end_date and current_date > end_date: continue
+                if start_date and current_date < start_date:
+                    continue
+                if end_date and current_date > end_date:
+                    continue
             except ValueError:
                 continue
 
             # 遍歷 CSV 檔案
             csv_files = glob.glob(os.path.join(date_dir, "*.csv"))
-            # ... (其餘匯入邏輯保持不變) ...
-            
             for csv_file in csv_files:
                 market = os.path.basename(csv_file).split(".")[0] # sii or otc
                 table_name = category # 資料表名稱 = 類別名稱
@@ -73,16 +75,11 @@ def import_data(engine):
                 try:
                     print(f"Processing {table_name} - {date_str} - {market}...")
                     
-                    # 1. 讀取 CSV
-                    # 指定 infer_schema_length=0 避免型別誤判，統一先讀成字串再讓 pandas/sqlalchemy 處理？
-                    # 不，這裡我們信任 CSV 已經被處理過，但為了安全，我們可以讓 Polars 自動推斷
                     df = pl.read_csv(csv_file)
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
 
-                    # 2. 寫入資料庫
-                    
                     # 為了避免重複資料，先刪除該日期與市場的舊資料
                     with engine.begin() as conn:
                         table_exists = conn.execute(text(
@@ -93,8 +90,6 @@ def import_data(engine):
                             delete_query = text(f"DELETE FROM {table_name} WHERE date = :date AND market = :market")
                             conn.execute(delete_query, {"date": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}", "market": market})
 
-                    # 3. 使用 Pandas 寫入 (更穩定的錯誤訊息)
-                    # chunksize 避免封包過大
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,

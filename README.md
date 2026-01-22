@@ -9,26 +9,54 @@
 - **高效 API 服務**: 透過 FastAPI 提供高效能的數據查詢接口，支援排序與過濾。
 - **視覺化儀表板**: 使用 Next.js + Tailwind 打造，支援日期選擇、多指標切換 (成交量、MA、VMA) 與排行榜呈現。
 
-## 快速上手 (Docker Compose)
+## 🚀 每日自動更新 (Daily Automation)
+
+專案內建一個高度自動化的 Shell 腳本，可一次完成 `Scraper` -> `Processor` -> `Importer` -> `Calculator` 的所有流程。
+
+### 使用方式
+1. **更新今天 (預設)**:
+   ```bash
+   ./scripts/daily_update.sh
+   ```
+   *這將會自動抓取今天的資料，並進行增量匯入與重算指標。*
+
+2. **更新特定日期**:
+   ```bash
+   ./scripts/daily_update.sh 20260121
+   ```
+
+### 自動化特色
+- **自動重新建置**: 腳本會先確保 Docker 容器是最新版本 (`docker-compose build`)。
+- **增量處理**: Importer 會智慧識別日期，只處理該日期的資料，大幅節省時間。
+- **錯誤中斷**: 若任何一個步驟失敗，腳本會立即停止並回報錯誤。
+
+---
+
+## 快速上手 (手動 Docker Compose)
+
+如果您想手動執行個別服務，請參考以下指令：
 
 ### 1. 抓取原始資料 (Scraper)
 ```bash
-START_DATE=20250102 END_DATE=20260119 docker-compose up --build scraper
+START_DATE=20250102 END_DATE=20260119 docker-compose run --rm scraper
 ```
 
 ### 2. 清洗與標準化 (Processor)
+支援指定日期過濾，只處理當天資料：
 ```bash
-docker-compose up --build processor
+START_DATE=20260121 END_DATE=20260121 docker-compose run --rm processor
 ```
 
 ### 3. 匯入資料庫 (Importer)
+支援指定日期過濾，只匯入當天資料 (推薦用於每日更新)：
 ```bash
-docker-compose up --build importer
+START_DATE=20260121 END_DATE=20260121 docker-compose run --rm importer
 ```
 
 ### 4. 計算技術指標 (Calculator)
+因為移動平均線需要歷史數據，Calculator 總是會進行全量運算：
 ```bash
-docker-compose up --build calculator
+docker-compose run --rm calculator
 ```
 
 ### 5. 啟動常駐服務 (Backend / Frontend / pgAdmin)
@@ -40,6 +68,7 @@ docker-compose up -d backend frontend pgadmin
 - **資料庫管理**: `http://localhost:5050`
 
 ## 目錄結構
+- `scripts/`: 自動化維護腳本
 - `scraper/`: 資料抓取模組 (Extract)
 - `processor/`: 資料清洗模組 (Transform)
 - `importer/`: 資料載入模組 (Load)
