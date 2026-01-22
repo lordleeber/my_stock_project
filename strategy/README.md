@@ -47,3 +47,6 @@
 ## 如何新增策略
 1.  在 `core.py` 中修改 `generate_signals` 邏輯或新增新的策略函式。
 2.  更新 `StrategyConfig` 及其後的 API/CLI 參數傳遞。
+
+## 待實作功能 (Future Work)
+- [ ] **參數最佳化**: 自動尋找最佳的倍數 (如 3倍、5倍) 與持有天數。
