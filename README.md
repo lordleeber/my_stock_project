@@ -52,8 +52,20 @@
 如果您想手動執行個別服務，請參考以下指令：
 
 ### 1. 抓取原始資料 (Scraper)
+
+#### 每日行情資料
 ```bash
 START_DATE=20250102 END_DATE=20260119 docker-compose run --rm scraper
+```
+
+#### 月營收資料 (Monthly Revenue)
+抓取上市櫃公司每月營收統計表：
+```bash
+# 抓取指定年月 (例如 2023年 3月)
+docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2023 --month 3
+
+# 預設抓取「上個月」資料
+docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py
 ```
 
 ### 2. 清洗與標準化 (Processor)

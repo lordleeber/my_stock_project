@@ -42,9 +42,34 @@ docker run --rm \
 ## 資料目錄結構
 ```
 data/raw/
-└── daily_quotes/
+├── daily_quotes/
+│   └── date=20230301/
+│       ├── sii.csv
+│       └── otc.csv
+└── monthly_revenue/
     └── date=20230301/
-        ├── sii.csv
-        └── otc.csv
+        └── market.csv
+```
+
+## 3. 月營收 (Monthly Revenue)
+
+抓取上市櫃公司每月營收報告。資料來源為公開資訊觀測站 (MOPS) 的靜態彙總報表 (`mopsov.twse.com.tw`)，該路徑無須 Selenium 且回應速度快。
+
+### Usage
+
+```bash
+# 抓取指定年月的營收 (例如 2023年 3月)
+docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2023 --month 3
+
+# 若不指定，預設抓取「上個月」的資料
+docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py
+```
+
+### Output
+資料儲存於：`data/raw/monthly_revenue/date=YYYYMM01/market.csv`
+
+---
+
+## 開發筆記 (Development Notes)
 ```
 每個 CSV 檔案皆已清理，所有欄位被雙引號 `"` 包裹且編碼為 UTF-8-SIG。
