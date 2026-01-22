@@ -12,6 +12,19 @@
     *   `StrategyConfig`: 定義回測參數。
     *   `run_backtest(df, config)`: 執行回測的主函式。
 
+## 可設定參數 (Strategy Parameters)
+
+不論透過 Web 或 CLI 執行回測，皆可調整以下參數：
+
+| 參數名稱 | 代碼 (`StrategyConfig`) | 說明 | 預設值 |
+| :--- | :--- | :--- | :--- |
+| **策略模式** | `strategy_mode` | `shares` (固定股數) 或 `amount` (固定金額) | `shares` |
+| **每筆資金** | `capital` | 當模式為 `amount` 時，每筆交易投入的資金 | `100,000` |
+| **固定股數** | `fixed_shares` | 當模式為 `shares` 時，每筆交易買進的股數 | `1,000` |
+| **持有天數** | `hold_days` | 買進後持有的交易日數量 | `3` |
+| **重複加碼** | `allow_pyramiding` | 是否允許在已有持倉時再次買入同一檔股票 | `True` |
+| **紅 K 濾網** | `only_red_candle` | 是否限定爆量當天必須收紅 K 才進場 | `False` |
+
 ## 內建策略：量能爆發 (Volume Breakout)
 
 此策略假設「成交量異常放大」代表有主力或法人進場，後續股價容易有波段行情。
