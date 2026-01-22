@@ -1,6 +1,7 @@
 import os
 import datetime
-from typing import List, Optional
+import pandas as pd
+from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
@@ -70,6 +71,37 @@ class VolumeBreakoutQuote(BaseModel):
     vma10: float
     ratio: float
 
+# --- Backtest Models ---
+class BacktestRequest(BaseModel):
+    start_date: str
+    end_date: str
+    strategy_mode: str = "shares" # shares or amount
+    capital: float = 100000
+    hold_days: int = 3
+
+class TradeRecord(BaseModel):
+    symbol: str
+    name: str
+    buy_date: datetime.date
+    sell_date: datetime.date
+    buy_price: float
+    sell_price: float
+    shares: int
+    profit: float
+    return_rate: float
+
+class BacktestSummary(BaseModel):
+    total_trades: int
+    total_profit: float
+    total_cost: float
+    roi: float
+    win_rate: float
+    avg_return: float
+
+class BacktestResult(BaseModel):
+    summary: BacktestSummary
+    trades: List[TradeRecord]
+
 @app.get("/")
 def read_root():
     return {"Hello": "Stock Analysis API"}
@@ -122,6 +154,148 @@ def get_volume_breakout(
 
     except Exception as e:
         print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/backtest/run", response_model=BacktestResult)
+def run_backtest_api(request: BacktestRequest):
+    """
+    執行回測策略: Volume > 5 * VMA10
+    """
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        # 1. 抓取資料 (範圍稍微大一點以確保有足夠的出場日)
+        # 這裡簡單抓取 end_date + 45 天
+        query_end_dt = datetime.datetime.strptime(request.end_date, "%Y-%m-%d") + datetime.timedelta(days=45)
+        query_end = query_end_dt.strftime("%Y-%m-%d")
+
+        print(f"Fetching backtest data: {request.start_date} ~ {query_end}...")
+        
+        query = text("""
+            SELECT t.date, t.symbol, d.name, d.open, d.close, d.volume, t.vma10
+            FROM technical_indicators t
+            JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
+            WHERE t.date >= :start AND t.date <= :end
+            ORDER BY t.symbol, t.date
+        """)
+        
+        # 使用 pandas 讀取
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn, params={"start": request.start_date, "end": query_end})
+        
+        if df.empty:
+            return BacktestResult(
+                summary=BacktestSummary(total_trades=0, total_profit=0, total_cost=0, roi=0, win_rate=0, avg_return=0),
+                trades=[]
+            )
+
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # 2. 產生訊號
+        df['vma10'] = df['vma10'].fillna(0)
+        df['is_signal'] = df['volume'] > (df['vma10'] * 5)
+        
+        # 篩選在使用者的查詢區間內的訊號
+        start_ts = pd.Timestamp(request.start_date)
+        end_ts = pd.Timestamp(request.end_date)
+        mask_range = (df['date'] >= start_ts) & (df['date'] <= end_ts)
+        signals = df[mask_range & df['is_signal']].copy()
+        
+        print(f"Found {len(signals)} signals.")
+        
+        trades = []
+        
+        # 3. 執行策略模擬
+        for idx, row in signals.iterrows():
+            symbol = row['symbol']
+            signal_date = row['date']
+            
+            # 取得該股票的局部資料
+            stock_data = df[df['symbol'] == symbol].reset_index(drop=True)
+            
+            # 找到訊號日的 index
+            sig_idx_list = stock_data.index[stock_data['date'] == signal_date].tolist()
+            if not sig_idx_list: continue
+            sig_idx = sig_idx_list[0]
+            
+            # T+1 買進
+            buy_idx = sig_idx + 1
+            # T+N 賣出
+            sell_idx = sig_idx + 1 + request.hold_days
+            
+            if buy_idx >= len(stock_data) or sell_idx >= len(stock_data):
+                continue
+                
+            buy_row = stock_data.iloc[buy_idx]
+            sell_row = stock_data.iloc[sell_idx]
+            
+            buy_price = float(buy_row['open'])
+            sell_price = float(sell_row['close'])
+            
+            # 檢查價格是否有效 (非 NaN 且大於 0)
+            if pd.isna(buy_price) or pd.isna(sell_price) or buy_price <= 0:
+                continue
+
+            # 決定股數
+            shares = 0
+            if request.strategy_mode == 'shares':
+                shares = 1000 # 預設一張
+            elif request.strategy_mode == 'amount':
+                shares = int(request.capital // buy_price)
+            
+            if shares <= 0: continue
+
+            cost = buy_price * shares
+            revenue = sell_price * shares
+            profit = revenue - cost
+            ret = (sell_price - buy_price) / buy_price
+
+            trades.append(TradeRecord(
+                symbol=symbol,
+                name=row['name'],
+                buy_date=buy_row['date'].date(),
+                sell_date=sell_row['date'].date(),
+                buy_price=buy_price,
+                sell_price=sell_price,
+                shares=shares,
+                profit=profit,
+                return_rate=ret * 100
+            ))
+            
+        # 4. 統計結果
+        if not trades:
+            return BacktestResult(
+                summary=BacktestSummary(total_trades=0, total_profit=0, total_cost=0, roi=0, win_rate=0, avg_return=0),
+                trades=[]
+            )
+            
+        df_trades = pd.DataFrame([t.dict() for t in trades])
+        total_profit = df_trades['profit'].sum()
+        # 這裡 total_cost 我們計算所有交易的買入成本總和
+        trade_costs = df_trades['buy_price'] * df_trades['shares']
+        total_cost = trade_costs.sum()
+        
+        avg_return = df_trades['return_rate'].mean()
+        win_rate = (df_trades['profit'] > 0).mean() * 100
+        roi = (total_profit / total_cost * 100) if total_cost > 0 else 0
+        
+        return BacktestResult(
+            summary=BacktestSummary(
+                total_trades=len(trades),
+                total_profit=total_profit,
+                total_cost=total_cost,
+                roi=roi,
+                win_rate=win_rate,
+                avg_return=avg_return
+            ),
+            trades=trades
+        )
+
+    except Exception as e:
+        print(f"Backtest Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

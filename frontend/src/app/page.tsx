@@ -33,6 +33,16 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Backtest State
+  const [activeTab, setActiveTab] = useState<"dashboard" | "backtest">("dashboard");
+  const [btStartDate, setBtStartDate] = useState("2025-05-01");
+  const [btEndDate, setBtEndDate] = useState("2025-05-31");
+  const [btMode, setBtMode] = useState<"shares" | "amount">("shares");
+  const [btCapital, setBtCapital] = useState(100000);
+  const [btHoldDays, setBtHoldDays] = useState(3);
+  const [btResult, setBtResult] = useState<any>(null);
+  const [btLoading, setBtLoading] = useState(false);
+
   useEffect(() => {
     // 取得當地時間 (解決 UTC 問題)
     const now = new Date();
@@ -76,6 +86,33 @@ export default function Home() {
     }
   };
 
+  const runBacktest = async () => {
+    setBtLoading(true);
+    setBtResult(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${apiUrl}/backtest/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: btStartDate,
+          end_date: btEndDate,
+          strategy_mode: btMode,
+          capital: btCapital,
+          hold_days: btHoldDays
+        })
+      });
+      if (!res.ok) throw new Error("回測執行失敗");
+      const data = await res.json();
+      setBtResult(data);
+    } catch (err) {
+      console.error(err);
+      alert("回測執行失敗，請檢查後端日誌");
+    } finally {
+      setBtLoading(false);
+    }
+  };
+
   // 安全格式化數值
   const safeFixed = (val: any) => {
     const num = Number(val);
@@ -95,6 +132,24 @@ export default function Home() {
       <div className="max-w-6xl mx-auto bg-white rounded-xl shadow p-6">
         <h1 className="text-2xl font-bold mb-6 text-center">台股分析儀表板</h1>
         
+        {/* Tabs */}
+        <div className="flex justify-center mb-6 border-b">
+          <button 
+            className={`px-6 py-2 ${activeTab === 'dashboard' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-gray-500'}`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            每日行情看板
+          </button>
+          <button 
+            className={`px-6 py-2 ${activeTab === 'backtest' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-gray-500'}`}
+            onClick={() => setActiveTab('backtest')}
+          >
+            策略回測實驗室
+          </button>
+        </div>
+
+        {activeTab === 'dashboard' ? (
+          <>
         <div className="flex flex-wrap gap-4 mb-8 items-end bg-gray-50 p-4 rounded-lg">
           <div>
             <label className="block text-sm mb-1">日期</label>
@@ -197,6 +252,107 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+          </>
+        ) : (
+          <div className="p-4">
+            <div className="bg-gray-50 p-6 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-bold mb-1">開始日期</label>
+                <input type="date" value={btStartDate} onChange={(e)=>setBtStartDate(e.target.value)} className="w-full border p-2 rounded"/>
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">結束日期</label>
+                <input type="date" value={btEndDate} onChange={(e)=>setBtEndDate(e.target.value)} className="w-full border p-2 rounded"/>
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">持有天數</label>
+                <input type="number" value={btHoldDays} onChange={(e)=>setBtHoldDays(Number(e.target.value))} className="w-full border p-2 rounded"/>
+              </div>
+              <div>
+                <label className="block text-sm font-bold mb-1">策略模式</label>
+                <select value={btMode} onChange={(e)=>setBtMode(e.target.value as any)} className="w-full border p-2 rounded">
+                  <option value="shares">固定張數 (1張)</option>
+                  <option value="amount">固定金額 (預設10萬)</option>
+                </select>
+              </div>
+              {btMode === 'amount' && (
+                <div>
+                  <label className="block text-sm font-bold mb-1">初始資金</label>
+                  <input type="number" value={btCapital} onChange={(e)=>setBtCapital(Number(e.target.value))} className="w-full border p-2 rounded"/>
+                </div>
+              )}
+              <div className="flex items-end">
+                <button onClick={runBacktest} disabled={btLoading} className="w-full bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400">
+                  {btLoading ? "回測中..." : "開始回測"}
+                </button>
+              </div>
+            </div>
+
+            {btResult && (
+              <div className="space-y-6">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-blue-50 p-4 rounded text-center">
+                    <div className="text-sm text-gray-500">總損益</div>
+                    <div className={`text-xl font-bold ${btResult.summary.total_profit > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {btResult.summary.total_profit.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded text-center">
+                    <div className="text-sm text-gray-500">勝率</div>
+                    <div className="text-xl font-bold">{btResult.summary.win_rate.toFixed(2)}%</div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded text-center">
+                    <div className="text-sm text-gray-500">ROI</div>
+                    <div className="text-xl font-bold">{btResult.summary.roi.toFixed(2)}%</div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded text-center">
+                    <div className="text-sm text-gray-500">交易次數</div>
+                    <div className="text-xl font-bold">{btResult.summary.total_trades}</div>
+                  </div>
+                </div>
+
+                {/* Trade List */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="p-2 border">代號</th>
+                        <th className="p-2 border">名稱</th>
+                        <th className="p-2 border">買進日</th>
+                        <th className="p-2 border">賣出日</th>
+                        <th className="p-2 border text-right">股數</th>
+                        <th className="p-2 border text-right">買入價</th>
+                        <th className="p-2 border text-right">賣出價</th>
+                        <th className="p-2 border text-right">損益</th>
+                        <th className="p-2 border text-right">報酬率</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {btResult.trades.map((t: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="p-2 border">{t.symbol}</td>
+                          <td className="p-2 border">{t.name}</td>
+                          <td className="p-2 border">{t.buy_date}</td>
+                          <td className="p-2 border">{t.sell_date}</td>
+                          <td className="p-2 border text-right">{t.shares}</td>
+                          <td className="p-2 border text-right">{t.buy_price}</td>
+                          <td className="p-2 border text-right">{t.sell_price}</td>
+                          <td className={`p-2 border text-right font-bold ${t.profit > 0 ? "text-red-600" : "text-green-600"}`}>
+                            {t.profit.toLocaleString()}
+                          </td>
+                          <td className={`p-2 border text-right ${t.return_rate > 0 ? "text-red-600" : "text-green-600"}`}>
+                            {t.return_rate.toFixed(2)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
