@@ -11,6 +11,9 @@ class StrategyConfig:
     hold_days: int = 3
     allow_pyramiding: bool = True
     only_red_candle: bool = False
+    # 交易成本設定 (台股預設值)
+    commission_rate: float = 0.001425 # 手續費 0.1425%
+    tax_rate: float = 0.003           # 證交稅 0.3%
 
 @dataclass
 class TradeRecord:
@@ -24,6 +27,8 @@ class TradeRecord:
     profit: float
     return_rate: float
     cost: float
+    commission: float # 新增: 手續費總額 (買+賣)
+    tax: float        # 新增: 證交稅
 
 @dataclass
 class BacktestSummary:
@@ -124,10 +129,21 @@ def run_backtest(df: pd.DataFrame, config: StrategyConfig) -> Dict[str, Any]:
         
         if shares <= 0: continue
 
-        cost = buy_price * shares
-        revenue = sell_price * shares
-        profit = revenue - cost
-        ret = (sell_price - buy_price) / buy_price
+        # 成本計算 (含買入手續費)
+        # 買入總成本 = 股價成本 + 手續費
+        buy_commission = buy_price * shares * config.commission_rate
+        total_buy_cost = (buy_price * shares) + buy_commission
+
+        # 收入計算 (扣除賣出手續費與證交稅)
+        # 賣出淨收入 = 賣出總值 - 手續費 - 證交稅
+        sell_commission = sell_price * shares * config.commission_rate
+        sell_tax = sell_price * shares * config.tax_rate
+        net_sell_revenue = (sell_price * shares) - sell_commission - sell_tax
+
+        profit = net_sell_revenue - total_buy_cost
+        
+        # 報酬率 = 淨利 / 總投入成本
+        ret = profit / total_buy_cost
 
         trades.append(TradeRecord(
             symbol=symbol,
@@ -139,7 +155,9 @@ def run_backtest(df: pd.DataFrame, config: StrategyConfig) -> Dict[str, Any]:
             shares=shares,
             profit=profit,
             return_rate=ret * 100,
-            cost=cost
+            cost=total_buy_cost,
+            commission=buy_commission + sell_commission,
+            tax=sell_tax
         ))
         
         # 更新鎖定狀態
