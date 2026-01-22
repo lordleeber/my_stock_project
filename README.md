@@ -86,8 +86,25 @@ docker-compose up -d backend frontend pgadmin
 - `scripts/`: 自動化維護腳本
 - `scraper/`: 資料抓取模組 (Extract)
 - **`processor/` (Data Processor)**: **資料處理模組 (Transform & Load)**。負責清洗 CSV 資料（去除逗號、型別轉換、標頭重命名），並轉換為高效的 **Parquet** 格式。內建資料驗證器 (`validator.py`)。
+- **`strategy/` (Core Strategy)**: **核心策略模組**。封裝交易邏輯 (如量能爆發、停損停利)，作為 Backend 與 Backtester 的共用核心 (Single Source of Truth)。
 - **`backtester/` (Backtest Engine)**: **策略回測模組**。負責讀取歷史資料進行交易策略模擬，並產出績效報告。
 - **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定（如中英文類別映射表 `CATEGORY_MAP`）。
+
+# ... (跳到 各模組詳細說明)
+
+### 5. 模型訓練 (Model Training)
+*   **職責:** 對從資料庫中獲取的歷史數據進行深入分析... (略)
+
+### 6. 核心策略模組 (Core Strategy)
+*   **職責:** 專案的「策略大腦」，定義所有交易訊號產生邏輯、進出場規則與資金管理模型。
+*   **設計:** 獨立於 UI 與執行環境的純 Python 模組，確保 Web API 與 CLI 回測工具的行為完全一致。
+*   **目前策略:** 量能爆發 (Volume Breakout)、紅 K 濾網、停損停利機制。
+
+### 7. 回測系統 (Backtesting)
+*   **職責:** 根據歷史股票數據，嚴格測試和評估交易策略的效能... (略)
+
+### 8. 非同步任務佇列 (Task Queue)
+*   **職責:** 處理所有耗時且不需即時回應的背景任務... (略)
 - `importer/`: 資料載入模組 (Load)
 - `calculator/`: 指標運算模組 (Analysis)
 - `backend/`: FastAPI 後端服務
