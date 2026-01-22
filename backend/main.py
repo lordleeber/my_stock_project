@@ -80,8 +80,8 @@ class BacktestRequest(BaseModel):
     hold_days: int = 3
     allow_pyramiding: bool = True
     only_red_candle: bool = False
-    take_profit_pct: Optional[float] = None
-    stop_loss_pct: Optional[float] = None
+    take_profit_pct: float = 0.0
+    stop_loss_pct: float = 0.0
 
 class TradeRecord(BaseModel):
     symbol: str

@@ -24,6 +24,8 @@
 | **持有天數** | `hold_days` | 買進後持有的交易日數量 | `3` |
 | **重複加碼** | `allow_pyramiding` | 是否允許在已有持倉時再次買入同一檔股票 | `True` |
 | **紅 K 濾網** | `only_red_candle` | 是否限定爆量當天必須收紅 K 才進場 | `False` |
+| **停利百分比** | `take_profit_pct` | 0 表示不啟用 | `0` |
+| **停損百分比** | `stop_loss_pct` | 0 表示不啟用 | `0` |
 
 ## 內建策略：量能爆發 (Volume Breakout)
 

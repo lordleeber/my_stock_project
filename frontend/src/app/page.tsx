@@ -42,8 +42,8 @@ export default function Home() {
   const [btHoldDays, setBtHoldDays] = useState(3);
   const [btPyramiding, setBtPyramiding] = useState(true);
   const [btOnlyRedCandle, setBtOnlyRedCandle] = useState(false);
-  const [btTakeProfit, setBtTakeProfit] = useState<number | null>(null);
-  const [btStopLoss, setBtStopLoss] = useState<number | null>(null);
+  const [btTakeProfit, setBtTakeProfit] = useState<number>(0);
+  const [btStopLoss, setBtStopLoss] = useState<number>(0);
   const [btResult, setBtResult] = useState<any>(null);
   const [btLoading, setBtLoading] = useState(false);
 

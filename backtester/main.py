@@ -49,6 +49,13 @@ def main():
     allow_pyramiding = os.getenv("ALLOW_PYRAMIDING", "true").lower() == "true"
     only_red_candle = os.getenv("ONLY_RED_CANDLE", "false").lower() == "true"
     
+    # 停損停利 (預設 0.0 表示不啟用)
+    take_profit_env = os.getenv("TAKE_PROFIT_PCT", "0.0")
+    stop_loss_env = os.getenv("STOP_LOSS_PCT", "0.0")
+    
+    take_profit_pct = float(take_profit_env)
+    stop_loss_pct = float(stop_loss_env)
+    
     df = fetch_data(engine, start_date, end_date)
     if df is None: return
     
@@ -58,7 +65,9 @@ def main():
         fixed_shares=1000,
         hold_days=hold_days,
         allow_pyramiding=allow_pyramiding,
-        only_red_candle=only_red_candle
+        only_red_candle=only_red_candle,
+        take_profit_pct=take_profit_pct,
+        stop_loss_pct=stop_loss_pct
     )
     
     print(f"Config: {config}")
