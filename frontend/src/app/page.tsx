@@ -22,7 +22,7 @@ interface StockData {
   [key: string]: any; // 允許動態存取以進行除錯
 }
 
-type Category = "volume" | "ma" | "vma";
+type Category = "volume" | "ma" | "vma" | "breakout";
 type SortOrder = "asc" | "desc";
 
 export default function Home() {
@@ -56,6 +56,7 @@ export default function Home() {
       
       if (category === "ma") endpoint = `/analysis/ma?date=${dateParam}&limit=10&sort=${sortOrder}`;
       else if (category === "vma") endpoint = `/analysis/vma?date=${dateParam}&limit=10&sort=${sortOrder}`;
+      else if (category === "breakout") endpoint = `/analysis/volume-breakout?date=${dateParam}&limit=20&multiplier=5`;
 
       console.log(`Fetching: ${apiUrl}${endpoint}`);
       
@@ -66,7 +67,7 @@ export default function Home() {
       const data = await response.json();
       console.log("API Response Data:", data); 
       setStocks(data);
-      if (data.length === 0) setError("該日期無成交資料。");
+      if (data.length === 0) setError("該日期無符合條件的資料。");
     } catch (err) {
       console.error(err);
       setError("發生錯誤");
@@ -105,11 +106,12 @@ export default function Home() {
               <option value="volume">成交量排行榜</option>
               <option value="ma">價格均線 (MA)</option>
               <option value="vma">成交量均線 (VMA)</option>
+              <option value="breakout">量能爆發 (Vol &gt; 5x VMA10)</option>
             </select>
           </div>
           <div>
             <label className="block text-sm mb-1">排序</label>
-            <select value={sortOrder} onChange={(e)=>setSortOrder(e.target.value as SortOrder)} className="border p-2 rounded">
+            <select value={sortOrder} onChange={(e)=>setSortOrder(e.target.value as SortOrder)} className="border p-2 rounded" disabled={category === "breakout"}>
               <option value="desc">遞減</option>
               <option value="asc">遞增</option>
             </select>
@@ -145,6 +147,12 @@ export default function Home() {
                     <th className="p-3 border text-right text-purple-600">VMA60(張)</th>
                   </>
                 )}
+                {category === "breakout" && (
+                  <>
+                    <th className="p-3 border text-right text-red-600">VMA10(張)</th>
+                    <th className="p-3 border text-right text-red-600">爆發倍數</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -175,6 +183,13 @@ export default function Home() {
                       <td className="p-3 border text-right">{safeVol(s.vma5)}</td>
                       <td className="p-3 border text-right">{safeVol(s.vma20)}</td>
                       <td className="p-3 border text-right">{safeVol(s.vma60)}</td>
+                    </>
+                  )}
+
+                  {category === "breakout" && (
+                    <>
+                      <td className="p-3 border text-right">{safeVol(s.vma10)}</td>
+                      <td className="p-3 border text-right font-bold text-red-600">{safeFixed(s.ratio)} x</td>
                     </>
                   )}
                 </tr>

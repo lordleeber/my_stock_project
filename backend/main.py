@@ -61,9 +61,68 @@ class VMAQuote(BaseModel):
     vma120: Optional[float] = None
     vma240: Optional[float] = None
 
+class VolumeBreakoutQuote(BaseModel):
+    date: datetime.date
+    symbol: str
+    name: str
+    close: float
+    volume: float
+    vma10: float
+    ratio: float
+
 @app.get("/")
 def read_root():
     return {"Hello": "Stock Analysis API"}
+
+@app.get("/analysis/volume-breakout", response_model=List[VolumeBreakoutQuote])
+def get_volume_breakout(
+    date: str = Query(..., description="Date in YYYY-MM-DD"), 
+    multiplier: float = Query(5.0, description="Volume multiplier threshold (default 5x)"),
+    limit: int = 20
+):
+    """
+    取得成交量爆發股 (Volume > Multiplier * VMA10)
+    """
+    if len(date) == 8 and date.isdigit():
+        date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    else:
+        date_str = date
+
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        # 篩選 Volume > N * VMA10，並依照爆發倍數排序
+        sql = text(f"""
+            SELECT t.date, t.symbol, d.name, d.close, d.volume, t.vma10,
+                   (d.volume / NULLIF(t.vma10, 0)) as ratio
+            FROM technical_indicators t
+            JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
+            WHERE t.date = :date 
+              AND t.vma10 > 0
+              AND d.volume > (t.vma10 * :multiplier)
+            ORDER BY ratio DESC
+            LIMIT :limit
+        """)
+        
+        with engine.connect() as conn:
+            result = conn.execute(sql, {"date": date_str, "multiplier": multiplier, "limit": limit}).fetchall()
+            
+        return [
+            VolumeBreakoutQuote(
+                date=row.date,
+                symbol=row.symbol,
+                name=row.name,
+                close=float(row.close),
+                volume=float(row.volume),
+                vma10=float(row.vma10),
+                ratio=float(row.ratio)
+            ) for row in result
+        ]
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health_check():
