@@ -10,13 +10,19 @@
 - `GET /quotes/top-volume`: 查詢成交量排行榜。
 - `GET /analysis/ma`: 查詢股票的移動平均線狀態。
 - `GET /analysis/vma`: 查詢股票的成交量均線狀態。
+- `POST /backtest/run`: 執行量化策略回測 (調用 `strategy` 模組)。
 - `GET /health`: 資料庫連線健康檢查。
 
 ## 參數支援
-所有排行 API 皆支援：
+
+### 查詢排行 API (GET)
+支援日期過濾與排序：
 - `date`: 日期 (YYYYMMDD 或 YYYY-MM-DD)。
 - `limit`: 回傳筆數。
 - `sort`: 排序方向 (`asc` 或 `desc`)。
+
+### 回測 API (POST)
+接收 JSON Payload，詳細參數定義請參考 `strategy/README.md` 中的「可設定參數」。
 
 ## 開發者文檔
 啟動服務後訪問 `http://localhost:8000/docs` 查看 Swagger 互動式文件。
