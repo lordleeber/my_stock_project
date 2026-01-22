@@ -38,48 +38,60 @@ services:
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
 
-  frontend:
-    build:
-      context: ./frontend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules # 避免本地 node_modules 覆蓋容器內的
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-
   calculator:
-    build:
-      context: ./calculator
+    build: ./calculator
+    container_name: ${PROJECT_NAME}-calculator
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=db
+    volumes:
+      - ./calculator:/app
     depends_on:
       db:
         condition: service_healthy
+
+  backtester:
+    build: ./backtester
+    container_name: ${PROJECT_NAME}-backtester
     environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
       - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=user
-      - DB_PASSWORD=password
-      - DB_NAME=stock_db
+    volumes:
+      - ./backtester:/app
+    depends_on:
+      db:
+        condition: service_healthy
 
   backend:
-    build:
-      context: ./backend
-    volumes:
-      - ./backend:/app
+    build: ./backend
+    restart: always
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
       - DB_USER=user
       - DB_PASSWORD=password
       - DB_NAME=stock_db
+      - DB_HOST=db
+
+  frontend:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
 
   db:
     image: postgres:15
@@ -108,10 +120,8 @@ services:
     depends_on:
       - db
 
-
-  # 驗證器 (Validator) - 方便單獨執行驗證
   validator:
-    image: stock-processor # 重用 processor image
+    image: stock-processor
     build:
       context: .
       dockerfile: processor/Dockerfile
