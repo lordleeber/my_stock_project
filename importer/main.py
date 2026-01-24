@@ -51,6 +51,68 @@ def import_data(engine):
     
     for category in categories:
         cat_path = os.path.join(data_dir, category)
+        
+        # --- 特別處理 revenue (月營收) ---
+        if category == "revenue":
+            # 目錄結構: revenue/YYYY-MM/revenue_YYYYMM.csv
+            subdirs = sorted([d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))])
+            
+            for subdir in subdirs: # subdir is YYYY-MM
+                if len(subdir) != 7: continue
+                
+                # 日期篩選 (以月份的第一天為準)
+                try:
+                    month_date = datetime.datetime.strptime(f"{subdir}-01", "%Y-%m-%d")
+                    # 如果有設定 start_date，且該月份 < start_date 的月份 (忽略日)，則跳過
+                    # 比較邏輯：
+                    # start_date: 20250515 -> start_month: 20250501
+                    if start_date:
+                        start_month = start_date.replace(day=1)
+                        if month_date < start_month: continue
+                    if end_date:
+                        end_month = end_date.replace(day=1)
+                        if month_date > end_month: continue
+                except ValueError:
+                    continue
+                
+                csv_files = glob.glob(os.path.join(cat_path, subdir, "*.csv"))
+                for csv_file in csv_files:
+                    table_name = "monthly_revenue"
+                    try:
+                        print(f"Processing {table_name} - {subdir}...")
+                        df = pl.read_csv(csv_file)
+                        if df.height == 0:
+                            print("  -> Empty file, skipping.")
+                            continue
+
+                        # Delete-before-Insert
+                        with engine.begin() as conn:
+                            # 檢查 table 是否存在
+                            table_exists = conn.execute(text(
+                                f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')"
+                            )).scalar()
+
+                            if table_exists:
+                                # 刪除該月份的所有資料 (因為 CSV 包含 sii + otc)
+                                # CSV 內的 date 欄位格式為 YYYY-MM-01
+                                target_date = f"{subdir}-01"
+                                conn.execute(text(f"DELETE FROM {table_name} WHERE date = :date"), {"date": target_date})
+                        
+                        df.to_pandas().to_sql(
+                            name=table_name,
+                            con=engine,
+                            if_exists="append", # Table 不存在時會自動建立
+                            index=False,
+                            chunksize=2000
+                        )
+                        print(f"  -> Imported {df.height} rows to {table_name}.")
+                        
+                    except Exception as e:
+                        print(f"Failed to import {csv_file}")
+                        print(traceback.format_exc())
+            continue
+        
+        # --- 一般處理 (daily_quotes, etc.) ---
         date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
         
         for date_dir in sorted(date_dirs):
