@@ -46,6 +46,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - DB_HOST=db
+      - START_DATE=${START_DATE}
+      - END_DATE=${END_DATE}
     volumes:
       - ./calculator:/app
     depends_on:
