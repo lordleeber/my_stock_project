@@ -1,35 +1,26 @@
 # Stock Scraper (股票資料爬取模組)
 
-本模組負責從台灣證券交易所 (TWSE/SII) 與證券櫃檯買賣中心 (TPEx/OTC) 抓取每日行情、法人買賣超、融資融券及外資持股統計等資料。
+本模組負責從台灣證券交易所 (TWSE/SII) 與證券櫃檯買賣中心 (TPEx/OTC) 及集保結算所 (TDCC) 抓取各類股票市場資料。
 
 ## 核心功能
 - **全市場支援**: 同時支援上市 (SII) 與上櫃 (OTC)。
 - **日期優先結構**: 輸出目錄為 `raw/category/date=YYYYMMDD/market.csv`，方便資料對齊。
-- **輕量化**: 採用 `requests` + `BeautifulSoup`，免 Selenium。
-- **MOPS 整合**: 實作公開資訊觀測站 (MOPS) 外資持股解析。
-- **格式統一**: 
-    - CSV 強制雙引號包裹、UTF-8-SIG 編碼。
-    - **自動清洗 Excel 格式**: 自動移除股票代號的 `="0050"` 包裝，還原為純文字 `0050`。
-    - **雜訊過濾**: 自動移除檔案中的單欄位雜訊（如標題、檔尾說明文字）。
+- **輕量化**: 採用 `requests` + `BeautifulSoup`，免 Selenium (特殊需求除外)。
+- **MOPS 整合**: 實作公開資訊觀測站 (MOPS) 外資持股與月營收解析。
+- **集保股權分散表**: 支援最新一期與歷史資料回補 (自動破解 CSRF Token)。
 
-## 環境變數 (Environment Variables)
-| 變數名稱 | 說明 | 預設值 | 範例 |
-| :--- | :--- | :--- | :--- |
-| `MARKET_TYPE` | 抓取市場 (`SII`, `OTC`, `ALL`) | `ALL` | `OTC` |
-| `START_DATE` | 起始日期 (YYYYMMDD) | 今天 | `20230301` |
-| `END_DATE` | 結束日期 (YYYYMMDD) | 今天 | `20230301` |
-| `FETCH_DELAY` | 請求延遲 (秒) | `3.0` | `5.0` |
+## 1. 每日行情 (Daily Quotes) 
 
-## 如何使用 (Docker)
+抓取每日成交資訊、法人買賣超、融資融券等。
 
-**注意：由於需要包含根目錄的 `common` 模組，建置時請在專案根目錄執行。**
+### 環境變數
+| 變數名稱 | 說明 | 預設值 |
+| :--- | :--- | :--- |
+| `MARKET_TYPE` | 抓取市場 (`SII`, `OTC`, `ALL`) | `ALL` |
+| `START_DATE` | 起始日期 (YYYYMMDD) | 今天 |
+| `END_DATE` | 結束日期 (YYYYMMDD) | 今天 |
 
-### 1. 編譯映像檔
-```bash
-docker build -f scraper/Dockerfile -t stock-scraper .
-```
-
-### 2. 執行抓取任務
+### Docker 使用方式
 ```bash
 docker run --rm \
   -v $(pwd)/data:/app/data \
@@ -39,6 +30,58 @@ docker run --rm \
   stock-scraper
 ```
 
+## 2. 月營收 (Monthly Revenue)
+
+抓取上市櫃公司每月營收報告 (`mopsov.twse.com.tw`)。
+
+### 使用方式
+```bash
+# 抓取指定年月 (例如 2025年 3月)
+python scraper/fetch_monthly_revenue.py --year 2025 --month 3
+
+# 預設抓取上個月
+python scraper/fetch_monthly_revenue.py
+```
+
+## 3. 集保股權分散表 (Shareholding Dispersion)
+
+本專案提供兩套工具來處理集保資料：
+
+### A. 全市場每週快照 (Weekly Snapshot)
+抓取集保 Open Data 的「最新一期」全市場 CSV。適合每週例行更新。
+```bash
+python scraper/fetch_tdcc.py
+```
+輸出：`data/raw/shareholding_div/date=YYYYMMDD/all.csv`
+
+### B. 歷史資料回補 (History Backfill)
+針對 Open Data 無法提供的「歷史日期」進行單檔抓取。支援自動繞過 CSRF 防護與連續抓取。
+
+**步驟 1: 產生活躍股票清單**
+從最新的月營收報告中，篩選出目前活躍的個股代號 (排除 ETF 與權證)。
+```bash
+python scraper/generate_active_stocks.py
+# 輸出: scraper/active_stocks.txt
+```
+
+**步驟 2: 查詢可用日期**
+查詢集保網站上可供查詢的歷史日期列表。
+```bash
+python scraper/fetch_tdcc_history.py --list-dates
+```
+
+**步驟 3: 執行批量抓取**
+根據清單與指定日期進行抓取。
+```bash
+python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20260123
+```
+輸出：`data/raw/shareholding_div/date=20260123/{stock_id}.csv`
+
+### 歷史資料工具特色
+- **自動 Token 管理**: 自動解析並更新 Session Token，防止中斷。
+- **斷點續傳**: 自動跳過已存在的檔案 (`.csv`)，失敗可直接重跑。
+- **禮貌爬蟲**: 內建隨機延遲 (1~2秒)，避免觸發 WAF。
+
 ## 資料目錄結構
 ```
 data/raw/
@@ -46,40 +89,12 @@ data/raw/
 │   └── date=20230301/
 │       ├── sii.csv
 │       └── otc.csv
-└── monthly_revenue/
-    └── date=20230301/
-        └── market.csv
+├── monthly_revenue/
+│   └── date=20230301/
+│       └── market.csv
+└── shareholding_div/
+    └── date=20260123/
+        ├── all.csv        (Open Data 來源)
+        ├── 2330.csv       (歷史回補來源)
+        └── 2317.csv
 ```
-
-## 3. 月營收 (Monthly Revenue)
-
-抓取上市櫃公司每月營收報告。資料來源為公開資訊觀測站 (MOPS) 的靜態彙總報表 (`mopsov.twse.com.tw`)，該路徑無須 Selenium 且回應速度快。
-
-### Usage
-
-**推薦使用 Docker Compose：**
-```bash
-# 抓取指定年月的營收 (例如 2025年 3月)
-docker-compose run --rm scraper python fetch_monthly_revenue.py --year 2025 --month 3
-
-# 若不指定，預設抓取「上個月」的資料
-docker-compose run --rm scraper python fetch_monthly_revenue.py
-```
-
-**或使用原生 Docker：**
-```bash
-# 抓取指定年月
-docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2025 --month 3
-
-# 預設抓取上個月
-docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py
-```
-
-### Output
-資料儲存於：`data/raw/monthly_revenue/date=YYYYMM01/market.csv`
-
----
-
-## 開發筆記 (Development Notes)
-```
-每個 CSV 檔案皆已清理，所有欄位被雙引號 `"` 包裹且編碼為 UTF-8-SIG。
