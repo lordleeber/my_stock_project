@@ -42,13 +42,22 @@ def get_filter_dates():
 def import_data(engine):
     data_dir = "/app/data/processed"
     start_date, end_date = get_filter_dates()
-    
+
     if start_date: print(f"Filter Start Date: {start_date.strftime('%Y-%m-%d')}")
     if end_date: print(f"Filter End Date: {end_date.strftime('%Y-%m-%d')}")
 
-    # 遍歷類別目錄
-    categories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
-    
+    # 類別過濾：支援只導入特定類型的數據
+    import_category = os.getenv("IMPORT_CATEGORY")
+    if import_category:
+        print(f"Import Category Filter: {import_category}")
+        categories = [import_category] if import_category in os.listdir(data_dir) else []
+        if not categories:
+            print(f"Warning: Category '{import_category}' not found in {data_dir}")
+            return
+    else:
+        # 遍歷類別目錄
+        categories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
+
     for category in categories:
         cat_path = os.path.join(data_dir, category)
         
@@ -84,6 +93,18 @@ def import_data(engine):
                         if df.height == 0:
                             print("  -> Empty file, skipping.")
                             continue
+
+                        # 過濾 ETF：排除 symbol 以 "00" 開頭的記錄
+                        if "symbol" in df.columns:
+                            original_count = df.height
+                            df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
+                            filtered_count = original_count - df.height
+                            if filtered_count > 0:
+                                print(f"  -> Filtered out {filtered_count} ETF records")
+
+                            if df.height == 0:
+                                print("  -> No data after filtering ETFs, skipping.")
+                                continue
 
                         # Delete-before-Insert
                         with engine.begin() as conn:
@@ -141,6 +162,18 @@ def import_data(engine):
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
+
+                    # 過濾 ETF：排除 symbol 以 "00" 開頭的記錄（ETF 沒有基本面數據）
+                    if "symbol" in df.columns:
+                        original_count = df.height
+                        df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
+                        filtered_count = original_count - df.height
+                        if filtered_count > 0:
+                            print(f"  -> Filtered out {filtered_count} ETF records")
+
+                        if df.height == 0:
+                            print("  -> No data after filtering ETFs, skipping.")
+                            continue
 
                     # 為了避免重複資料，先刪除該日期與市場的舊資料
                     with engine.begin() as conn:

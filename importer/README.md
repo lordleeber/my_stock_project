@@ -6,6 +6,8 @@
 - **自動化匯入**: 掃描 `data/processed` 目錄下的所有類別與日期。
 - **資料完整性**: 採用 "Delete-before-Insert" 策略，確保同一日期與市場的資料不會重複。
 - **增量匯入支援**: 透過環境變數過濾日期，避免重複掃描舊資料，大幅提升每日更新效率。
+- **分類過濾**: 支援只匯入特定類別的資料（如只匯入月營收），避免不必要的重複處理。
+- **ETF 自動過濾**: 自動排除 ETF（代號以 "00" 開頭）資料，因為 ETF 沒有月營收、本益比等基本面數據。
 - **資料庫等待機制**: 內建連線重試邏輯，確保資料庫啟動完成後才開始作業。
 
 ## 環境變數
@@ -15,6 +17,7 @@
 - `DB_NAME`: 資料庫名稱 (預設: `stock_db`)
 - `START_DATE`: (選填) 起始日期 YYYYMMDD，僅處理此日期之後的資料。
 - `END_DATE`: (選填) 結束日期 YYYYMMDD。
+- `IMPORT_CATEGORY`: (選填) 指定只導入特定類別的資料 (如: `revenue`, `daily_quotes`, `foreign_holding` 等)。未設定則導入所有類別。
 
 ## 如何使用
 
@@ -28,6 +31,26 @@ docker-compose run --rm importer
 ```bash
 START_DATE=20260121 END_DATE=20260121 docker-compose run --rm importer
 ```
+
+### 3. 只匯入特定類別的資料
+僅匯入月營收資料（不重新處理其他資料）：
+```bash
+docker-compose run --rm -e IMPORT_CATEGORY=revenue -e START_DATE=20250101 -e END_DATE=20250331 importer
+```
+
+僅匯入每日報價資料：
+```bash
+docker-compose run --rm -e IMPORT_CATEGORY=daily_quotes -e START_DATE=20250121 -e END_DATE=20250121 importer
+```
+
+可用的類別名稱：
+- `revenue` - 月營收
+- `daily_quotes` - 每日報價
+- `foreign_holding` - 外資持股
+- `institutional_investors` - 法人買賣
+- `margin_sbl` - 融券
+- `margin_trading` - 融資
+- `pe_ratio` - 本益比
 
 ## 注意事項
 - 匯入前請確保 `processor` 已經產生了對應日期的 Processed CSV。

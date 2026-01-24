@@ -61,11 +61,21 @@ START_DATE=20250102 END_DATE=20260119 docker-compose run --rm scraper
 #### 月營收資料 (Monthly Revenue)
 抓取上市櫃公司每月營收統計表：
 ```bash
-# 抓取指定年月 (例如 2023年 3月)
-docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2023 --month 3
+# 抓取指定年月 (例如 2025年 3月)
+docker-compose run --rm scraper python fetch_monthly_revenue.py --year 2025 --month 3
 
 # 預設抓取「上個月」資料
-docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py
+docker-compose run --rm scraper python fetch_monthly_revenue.py
+```
+
+處理月營收數據：
+```bash
+START_DATE=20250301 END_DATE=20250331 docker-compose run --rm processor python convert_revenue.py
+```
+
+匯入月營收到資料庫（只匯入月營收，不重新處理其他數據）：
+```bash
+docker-compose run --rm -e IMPORT_CATEGORY=revenue -e START_DATE=20250301 -e END_DATE=20250331 importer
 ```
 
 ### 2. 清洗與標準化 (Processor)
@@ -75,10 +85,22 @@ START_DATE=20260121 END_DATE=20260121 docker-compose run --rm processor
 ```
 
 ### 3. 匯入資料庫 (Importer)
-支援指定日期過濾，只匯入當天資料 (推薦用於每日更新)：
+
+**匯入所有類別的資料：**
 ```bash
 START_DATE=20260121 END_DATE=20260121 docker-compose run --rm importer
 ```
+
+**只匯入特定類別（推薦，避免重複處理）：**
+```bash
+# 只匯入每日報價
+docker-compose run --rm -e IMPORT_CATEGORY=daily_quotes -e START_DATE=20260121 -e END_DATE=20260121 importer
+
+# 只匯入月營收
+docker-compose run --rm -e IMPORT_CATEGORY=revenue -e START_DATE=20250301 -e END_DATE=20250331 importer
+```
+
+> **注意**: Importer 會自動過濾 ETF（代號以 "00" 開頭），因為 ETF 沒有月營收、本益比等基本面數據。
 
 ### 4. 計算技術指標 (Calculator)
 因為移動平均線需要歷史數據，Calculator 總是會進行全量運算：
@@ -94,10 +116,22 @@ docker-compose up -d backend frontend pgadmin
 - **API 文檔**: `http://localhost:8000/docs`
 - **資料庫管理**: `http://localhost:5050`
 
+## 資料庫結構
+系統使用 PostgreSQL 儲存以下資料：
+- `daily_quotes`: 每日報價（不含 ETF）
+- `foreign_holding`: 外資持股
+- `institutional_investors`: 法人買賣
+- `margin_sbl`: 融券
+- `margin_trading`: 融資
+- `pe_ratio`: 本益比
+- `monthly_revenue`: 月營收（2025 Q1 起）
+- `technical_indicators`: 技術指標 (MA, VMA)
+
 ## 目錄結構
 - `scripts/`: 自動化維護腳本
-- `scraper/`: 資料抓取模組 (Extract)
-- **`processor/` (Data Processor)**: **資料處理模組 (Transform & Load)**。負責清洗 CSV 資料（去除逗號、型別轉換、標頭重命名），並轉換為高效的 **Parquet** 格式。內建資料驗證器 (`validator.py`)。
+- `scraper/`: 資料抓取模組 (Extract) - 支援每日行情與月營收資料
+- **`processor/` (Data Processor)**: **資料處理模組 (Transform & Load)**。負責清洗 CSV 資料（去除逗號、型別轉換、標頭重命名），並轉換為高效的 **CSV/Parquet** 格式。內建資料驗證器 (`validator.py`)。支援月營收資料處理 (`convert_revenue.py`)。
+- **`importer/` (Data Importer)**: **資料載入模組**。將處理後的數據匯入 PostgreSQL，支援分類過濾（只匯入特定類型）與自動過濾 ETF。
 - **`strategy/` (Core Strategy)**: **核心策略模組**。封裝交易邏輯 (如量能爆發、停損停利)，作為 Backend 與 Backtester 的共用核心 (Single Source of Truth)。
 - **`backtester/` (Backtest Engine)**: **策略回測模組**。負責讀取歷史資料進行交易策略模擬，並產出績效報告。
 - **`common/` (Shared Commons)**: **共用模組**。存放跨模組的常數設定（如中英文類別映射表 `CATEGORY_MAP`）。
@@ -117,8 +151,10 @@ docker-compose up -d backend frontend pgadmin
 
 ### 8. 非同步任務佇列 (Task Queue)
 *   **職責:** 處理所有耗時且不需即時回應的背景任務... (略)
-- `importer/`: 資料載入模組 (Load)
 - `calculator/`: 指標運算模組 (Analysis)
 - `backend/`: FastAPI 後端服務
 - `frontend/`: Next.js 前端視覺化
-- `data/`: 資料湖儲存中心 (Raw, Processed, Postgres)
+- `data/`: 資料湖儲存中心
+  - `raw/`: 原始資料 (每日行情、月營收等)
+  - `processed/`: 處理後的標準化數據 (CSV/Parquet)
+  - `postgres/`: PostgreSQL 資料庫持久化目錄

@@ -57,11 +57,21 @@ data/raw/
 
 ### Usage
 
+**推薦使用 Docker Compose：**
 ```bash
-# 抓取指定年月的營收 (例如 2023年 3月)
-docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2023 --month 3
+# 抓取指定年月的營收 (例如 2025年 3月)
+docker-compose run --rm scraper python fetch_monthly_revenue.py --year 2025 --month 3
 
 # 若不指定，預設抓取「上個月」的資料
+docker-compose run --rm scraper python fetch_monthly_revenue.py
+```
+
+**或使用原生 Docker：**
+```bash
+# 抓取指定年月
+docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py --year 2025 --month 3
+
+# 預設抓取上個月
 docker run --rm -v $(pwd):/app stock-scraper python scraper/fetch_monthly_revenue.py
 ```
 

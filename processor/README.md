@@ -4,14 +4,16 @@
 
 ## 核心功能
 - **強健的 CSV 讀取**: 自動處理證交所複雜的多表格結構（如每日行情），精準定位標頭行，忽略 BOM 與雜訊。
-- **增量處理**: 
+- **增量處理**:
     - 支援 `START_DATE` 與 `END_DATE` 指定處理範圍。
     - **自動跳過**: 若目標檔案已存在，自動跳過不重複處理，節省時間。
 - **格式轉換**: Raw CSV -> Cleaned CSV / Parquet。
 - **型別強制**: 字串轉數值 (Float/Int)、民國年轉西元年 (Date)。
 - **Schema 對齊**: 確保不同市場 (SII/OTC) 的資料擁有完全一致的欄位結構與順序。
 - **資料驗證**: 內建**嚴格驗證機制**，確保轉換前後筆數完全一致（零誤差），數值誤差小於 1e-6。
-- **月營收處理**: 專用的 `convert_revenue.py` 處理 MOPS 格式不固定的月營收報表，自動正規化欄位名稱與清洗數值。
+- **月營收處理**: 專用的 `convert_revenue.py` 處理 MOPS 格式不固定的月營收報表，自動正規化欄位名稱與清洗數值，支援中英文列名自動識別。
+
+> **注意**: Processor 不會過濾 ETF。ETF 過濾在 Importer 階段進行，因為 ETF 沒有月營收、本益比等基本面數據。
 
 ## 環境變數 (Environment Variables)
 | 變數名稱 | 說明 | 預設值 | 範例 |
@@ -41,9 +43,14 @@ docker build -t stock-processor ./processor
 docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20230301 -e END_DATE=20230301 stock-processor
 ```
 
-**處理月營收 (需指定執行腳本):**
+**處理月營收（推薦使用 Docker Compose）:**
 ```bash
-docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20250101 stock-processor python convert_revenue.py
+START_DATE=20250301 END_DATE=20250331 docker-compose run --rm processor python convert_revenue.py
+```
+
+**或使用原生 Docker:**
+```bash
+docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20250301 -e END_DATE=20250331 stock-processor python convert_revenue.py
 ```
 
 ### 3. 執行資料驗證 (Validation)

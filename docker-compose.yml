@@ -14,8 +14,7 @@ services:
 
   processor:
     build: 
-      context: . # 修正為根目錄，以便讀取 requirements.txt (如果 processor 有用到 common 則必需)
-      dockerfile: processor/Dockerfile
+      context: ./processor
     volumes:
       - ./data:/app/data
     environment:
