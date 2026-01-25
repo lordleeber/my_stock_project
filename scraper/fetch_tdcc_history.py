@@ -22,9 +22,10 @@ HEADERS = {
 }
 
 class TDCCScraper:
-    def __init__(self):
+    def __init__(self, verify_ssl=True):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        self.session.verify = verify_ssl
         self.current_token = None
         self.current_uri = None
         self.current_fir_date = None
@@ -158,10 +159,15 @@ def main():
     parser.add_argument("--date", "-d", type=str, help="Date to fetch (YYYYMMDD)")
     parser.add_argument("--output", "-o", type=str, default="data/raw/shareholding_div", help="Output directory")
     parser.add_argument("--list-dates", action="store_true", help="List all available dates from TDCC website")
-    
+    parser.add_argument("--no-verify", action="store_true", help="Disable SSL certificate verification")
+
     args = parser.parse_args()
-    
-    scraper = TDCCScraper()
+
+    if args.no_verify:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    scraper = TDCCScraper(verify_ssl=not args.no_verify)
     if not scraper.initialize():
         return
 
