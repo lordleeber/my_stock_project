@@ -75,7 +75,7 @@ data/processed/
 │   └── ...
 ├── shareholding_dispersion/  # 集保股權分散表
 │   ├── date=20250314/
-│   │   └── data.csv
+│   │   └── all.csv
 │   └── ...
 ├── revenue/             # 月營收資料
 │   ├── 2025-01/
