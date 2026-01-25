@@ -16,6 +16,6 @@
 
 ## 如何啟動
 ```bash
-docker-compose up backend frontend
+docker compose up backend frontend
 ```
 訪問 `http://localhost:3000` 開始使用。

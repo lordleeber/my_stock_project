@@ -134,6 +134,18 @@ def read_sii_indices(file_path):
         if df is not None:
              # 確保 name 存在
              if "name" in df.columns:
+                 # 過濾：只保留名稱以「指數」結尾的資料
+                 df = df.filter(pl.col("name").str.ends_with("指數"))
+
+                 # 根據 direction 調整 change 的正負號
+                 if "direction" in df.columns and "change" in df.columns:
+                     df = df.with_columns(
+                         pl.when(pl.col("direction") == "-")
+                         .then(-pl.col("change"))
+                         .otherwise(pl.col("change"))
+                         .alias("change")
+                     )
+
                  # 填補 symbol: 大盤指數沒有代號，直接用名稱當代號
                  if "symbol" not in df.columns:
                      df = df.with_columns(pl.col("name").alias("symbol"))

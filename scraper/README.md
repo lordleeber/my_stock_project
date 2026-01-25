@@ -45,17 +45,7 @@ python scraper/fetch_monthly_revenue.py
 
 ## 3. 集保股權分散表 (Shareholding Dispersion)
 
-本專案提供兩套工具來處理集保資料：
-
-### A. 全市場每週快照 (Weekly Snapshot)
-抓取集保 Open Data 的「最新一期」全市場 CSV。適合每週例行更新。
-```bash
-python scraper/fetch_tdcc.py
-```
-輸出：`data/raw/shareholding_div/date=YYYYMMDD/all.csv`
-
-### B. 歷史資料回補 (History Backfill)
-針對 Open Data 無法提供的「歷史日期」進行單檔抓取。支援自動繞過 CSRF 防護與連續抓取。
+透過 `fetch_tdcc_history.py` 抓取集保網站的歷史股權分散資料。支援自動繞過 CSRF 防護與連續抓取。
 
 **步驟 1: 產生活躍股票清單**
 從最新的月營收報告中，篩選出目前活躍的個股代號 (排除 ETF 與權證)。
@@ -77,10 +67,11 @@ python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20260123
 ```
 輸出：`data/raw/shareholding_div/date=20260123/{stock_id}.csv`
 
-### 歷史資料工具特色
+### 工具特色
 - **自動 Token 管理**: 自動解析並更新 Session Token，防止中斷。
 - **斷點續傳**: 自動跳過已存在的檔案 (`.csv`)，失敗可直接重跑。
 - **禮貌爬蟲**: 內建隨機延遲 (1~2秒)，避免觸發 WAF。
+- **SSL 驗證選項**: 提供 `--no-verify` 參數，解決部分環境的憑證問題。
 
 ## 資料目錄結構
 ```
@@ -94,7 +85,6 @@ data/raw/
 │       └── market.csv
 └── shareholding_div/
     └── date=20260123/
-        ├── all.csv        (Open Data 來源)
-        ├── 2330.csv       (歷史回補來源)
+        ├── 2330.csv
         └── 2317.csv
 ```

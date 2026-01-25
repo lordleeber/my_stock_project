@@ -22,10 +22,10 @@
 | `END_DATE` | 結束日期 (YYYYMMDD) | 無 (處理所有日期) | `20230301` |
 
 ## 模組說明
-- `convert.py`: 每日行情 ETL 核心邏輯，負責遍歷 Raw 資料並執行轉換。
-- `convert_revenue.py`: **[新增]** 月營收 ETL 邏輯，處理 `data/raw/revenue` 下的資料。
+- `convert.py`: 每日行情 ETL 核心邏輯，負責遍歷 Raw 資料並執行轉換。處理 `daily_quotes` 時會自動擷取 `market_indices`（大盤指數）。
+- `convert_revenue.py`: 月營收 ETL 邏輯，處理 `data/raw/revenue` 下的資料。
 - `validator.py`: 資料驗證器，比對 Raw 與 Processed 數據的完整性。
-- `utils.py`: 共用的資料讀取與清洗輔助函式，包含標頭定位邏輯。
+- `utils.py`: 共用的資料讀取與清洗輔助函式，包含標頭定位邏輯與指數擷取功能。
 - `schemas.py`: 定義欄位映射、數值型別與標準 Schema 結構。
 
 ## 如何使用 (Docker)
@@ -45,7 +45,7 @@ docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20230301 -e END_DATE=2023
 
 **處理月營收（推薦使用 Docker Compose）:**
 ```bash
-START_DATE=20250301 END_DATE=20250331 docker-compose run --rm processor python convert_revenue.py
+START_DATE=20250301 END_DATE=20250331 docker compose run --rm processor python convert_revenue.py
 ```
 
 **或使用原生 Docker:**
@@ -67,6 +67,10 @@ data/processed/
 │   ├── date=20230301/
 │   │   ├── sii.csv
 │   │   └── otc.csv
+│   └── ...
+├── market_indices/      # 大盤指數 (自動從 daily_quotes 擷取)
+│   ├── date=20230301/
+│   │   └── sii.csv
 │   └── ...
 ├── revenue/             # 月營收資料
 │   ├── 2025-01/

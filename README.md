@@ -66,17 +66,17 @@
 
 ```bash
 # 1. 抓取每日行情
-START_DATE=20250102 END_DATE=20260119 docker-compose run --rm scraper
+START_DATE=20250102 END_DATE=20260119 docker compose run --rm scraper
 
 # 2. 抓取月營收
-docker-compose run --rm scraper python fetch_monthly_revenue.py
+docker compose run --rm scraper python fetch_monthly_revenue.py
 
 # 3. 處理與匯入 (會自動處理個股與大盤指數)
-docker-compose run --rm processor
-docker-compose run --rm importer
+docker compose run --rm processor
+docker compose run --rm importer
 
 # 4. 啟動服務
-docker-compose up -d backend frontend pgadmin
+docker compose up -d backend frontend pgadmin
 ```
 
 ## 目錄結構

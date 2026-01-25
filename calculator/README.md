@@ -14,5 +14,5 @@
 ## 如何使用
 透過 Docker Compose 執行計算任務：
 ```bash
-docker-compose up --build calculator
+docker compose up --build calculator
 ```

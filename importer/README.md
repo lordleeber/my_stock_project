@@ -23,29 +23,30 @@
 
 ### 1. 全量匯入 (掃描所有檔案)
 ```bash
-docker-compose run --rm importer
+docker compose run --rm importer
 ```
 
 ### 2. 增量匯入 (推薦用於每日自動更新)
 僅匯入指定日期的資料：
 ```bash
-START_DATE=20260121 END_DATE=20260121 docker-compose run --rm importer
+START_DATE=20260121 END_DATE=20260121 docker compose run --rm importer
 ```
 
 ### 3. 只匯入特定類別的資料
 僅匯入月營收資料（不重新處理其他資料）：
 ```bash
-docker-compose run --rm -e IMPORT_CATEGORY=revenue -e START_DATE=20250101 -e END_DATE=20250331 importer
+docker compose run --rm -e IMPORT_CATEGORY=revenue -e START_DATE=20250101 -e END_DATE=20250331 importer
 ```
 
 僅匯入每日報價資料：
 ```bash
-docker-compose run --rm -e IMPORT_CATEGORY=daily_quotes -e START_DATE=20250121 -e END_DATE=20250121 importer
+docker compose run --rm -e IMPORT_CATEGORY=daily_quotes -e START_DATE=20250121 -e END_DATE=20250121 importer
 ```
 
 可用的類別名稱：
 - `revenue` - 月營收
 - `daily_quotes` - 每日報價
+- `market_indices` - 大盤指數 (從 daily_quotes 自動擷取)
 - `foreign_holding` - 外資持股
 - `institutional_investors` - 法人買賣
 - `margin_sbl` - 融券
