@@ -16,7 +16,24 @@
 - **MOPS 整合**: 實作公開資訊觀測站 (MOPS) 外資持股與月營收解析。
 - **集保股權分散表**: 支援最新一期與歷史資料回補 (自動破解 CSRF Token)。
 
-## 1. 每日行情 (Daily Quotes) 
+## Docker Compose 使用方式 (推薦)
+
+根據更新頻率，提供三個獨立的 service：
+
+```bash
+# 每日行情 (交易日執行)
+START_DATE=20250402 END_DATE=20250402 docker compose run --rm scraper-daily
+
+# 集保股權分散表 (每週五執行)
+TDCC_DATE=20250321 docker compose run --rm scraper-weekly
+
+# 月營收 (每月 10 日後執行)
+REVENUE_YEAR=2025 REVENUE_MONTH=3 docker compose run --rm scraper-monthly
+```
+
+---
+
+## 1. 每日行情 (Daily Quotes)
 
 抓取每日成交資訊、法人買賣超、融資融券等。
 
@@ -27,8 +44,12 @@
 | `START_DATE` | 起始日期 (YYYYMMDD) | 今天 |
 | `END_DATE` | 結束日期 (YYYYMMDD) | 今天 |
 
-### Docker 使用方式
+### 使用方式
 ```bash
+# Docker Compose (推薦)
+START_DATE=20250402 END_DATE=20250402 docker compose run --rm scraper-daily
+
+# 原生 Docker
 docker run --rm \
   -v $(pwd)/data:/app/data \
   -e START_DATE=20250102 \
@@ -43,22 +64,30 @@ docker run --rm \
 
 ### 使用方式
 ```bash
-# 抓取指定年月 (例如 2025年 3月)
-python scraper/fetch_monthly_revenue.py --year 2025 --month 3
+# Docker Compose (推薦)
+REVENUE_YEAR=2025 REVENUE_MONTH=3 docker compose run --rm scraper-monthly
 
-# 預設抓取上個月
-python scraper/fetch_monthly_revenue.py
+# 本機執行
+python scraper/fetch_monthly_revenue.py --year 2025 --month 3
 ```
 
 ## 3. 集保股權分散表 (Shareholding Dispersion)
 
 透過 `fetch_tdcc_history.py` 抓取集保網站的歷史股權分散資料。支援自動繞過 CSRF 防護與連續抓取。
 
+### 使用方式
+```bash
+# Docker Compose (推薦)
+TDCC_DATE=20250321 docker compose run --rm scraper-weekly
+```
+
+### 手動執行步驟
+
 **步驟 1: 產生活躍股票清單**
 從最新的月營收報告中，篩選出目前活躍的個股代號 (排除 ETF 與權證)。
 ```bash
 python scraper/generate_active_stocks.py
-# 輸出: scraper/active_stocks.txt
+# 輸出: active_stocks.txt
 ```
 
 **步驟 2: 查詢可用日期**
@@ -70,9 +99,9 @@ python scraper/fetch_tdcc_history.py --list-dates
 **步驟 3: 執行批量抓取**
 根據清單與指定日期進行抓取。
 ```bash
-python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20260123
+python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
 ```
-輸出：`data/raw/shareholding_div/date=20260123/{stock_id}.csv`
+輸出：`data/raw/shareholding_div/date=20250321/{stock_id}.csv`
 
 ### 工具特色
 - **自動 Token 管理**: 自動解析並更新 Session Token，防止中斷。

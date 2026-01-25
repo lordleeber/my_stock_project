@@ -1,5 +1,10 @@
 services:
-  scraper:
+  # ============================================
+  # Scraper Services (依更新頻率分類)
+  # ============================================
+
+  # 每日行情 (交易日執行)
+  scraper-daily:
     build:
       context: .
       dockerfile: scraper/Dockerfile
@@ -11,6 +16,32 @@ services:
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
       - FETCH_DELAY=${FETCH_DELAY:-3.0}
+
+  # 集保股權分散表 (每週五執行)
+  scraper-weekly:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    volumes:
+      - ./data:/app/data
+    command: python fetch_tdcc_history.py -f active_stocks.txt -d ${TDCC_DATE}
+    environment:
+      - OUTPUT_DIR=/app/data
+
+  # 月營收 (每月 10 日後執行)
+  scraper-monthly:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    volumes:
+      - ./data:/app/data
+    command: python fetch_monthly_revenue.py --year ${REVENUE_YEAR} --month ${REVENUE_MONTH}
+    environment:
+      - OUTPUT_DIR=/app/data
+
+  # ============================================
+  # Processor & Importer
+  # ============================================
 
   processor:
     build: 
