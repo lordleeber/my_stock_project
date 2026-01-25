@@ -133,8 +133,8 @@ def import_data(engine):
                         print(traceback.format_exc())
             continue
 
-        # --- 特別處理 shareholding_dispersion (集保股權分散表) ---
-        if category == "shareholding_dispersion":
+        # --- 特別處理 shareholding_div (集保股權分散表) ---
+        if category == "shareholding_div":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
 
             for date_dir in date_dirs:
@@ -154,7 +154,7 @@ def import_data(engine):
                 if not os.path.exists(csv_file):
                     continue
 
-                table_name = "shareholding_dispersion"
+                table_name = "shareholding_div"
                 try:
                     print(f"Processing {table_name} - {date_str}...")
 

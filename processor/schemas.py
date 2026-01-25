@@ -195,7 +195,7 @@ SCHEMA_COLS = {
     "market_indices": [
         "date", "market", "symbol", "name", "close", "change"
     ],
-    "shareholding_dispersion": [
+    "shareholding_div": [
         "date", "symbol", "level", "level_name", "holders", "shares", "percentage"
     ]
 }

@@ -18,7 +18,7 @@ import polars as pl
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
 CATEGORY = "shareholding_div"
-OUTPUT_CATEGORY = "shareholding_dispersion"
+OUTPUT_CATEGORY = "shareholding_div"
 
 
 def parse_number(value: str) -> int:
@@ -109,7 +109,7 @@ def process_date(date_str: str) -> bool:
 
     # 檢查是否已處理
     if os.path.exists(output_file):
-        print(f"Skipping {OUTPUT_CATEGORY}/{date_str} (already exists)")
+        print(f"Skipping {date_str} (already exists)")
         return True
 
     if not os.path.exists(input_dir):
@@ -139,7 +139,7 @@ def process_date(date_str: str) -> bool:
     os.makedirs(output_dir, exist_ok=True)
     combined_df.write_csv(output_file)
 
-    print(f"Processed {OUTPUT_CATEGORY}/{date_str} ({len(csv_files)} stocks, {combined_df.height} rows)")
+    print(f"Processed {date_str} ({len(csv_files)} stocks, {combined_df.height} rows)")
     return True
 
 

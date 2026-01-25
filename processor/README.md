@@ -73,7 +73,7 @@ data/processed/
 │   ├── date=20230301/
 │   │   └── sii.csv
 │   └── ...
-├── shareholding_dispersion/  # 集保股權分散表
+├── shareholding_div/  # 集保股權分散表
 │   ├── date=20250314/
 │   │   └── all.csv
 │   └── ...
