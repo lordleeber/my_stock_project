@@ -105,7 +105,7 @@ def process_date(date_str: str) -> bool:
     """
     input_dir = f"{RAW_DIR}/{CATEGORY}/date={date_str}"
     output_dir = f"{PROCESSED_DIR}/{OUTPUT_CATEGORY}/date={date_str}"
-    output_file = f"{output_dir}/all.csv"
+    output_file = f"{output_dir}/data.csv"
 
     # 檢查是否已處理
     if os.path.exists(output_file):

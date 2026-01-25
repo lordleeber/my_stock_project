@@ -150,7 +150,7 @@ def import_data(engine):
                 except ValueError:
                     continue
 
-                csv_file = os.path.join(date_dir, "all.csv")
+                csv_file = os.path.join(date_dir, "data.csv")
                 if not os.path.exists(csv_file):
                     continue
 
