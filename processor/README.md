@@ -54,6 +54,15 @@ START_DATE=20250301 END_DATE=20250331 docker compose run --rm processor python c
 docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20250301 -e END_DATE=20250331 stock-processor python convert_revenue.py
 ```
 
+**處理集保股權分散表:**
+```bash
+# 處理特定日期
+START_DATE=20250321 END_DATE=20250321 docker compose run --rm processor python convert_shareholding.py
+
+# 處理所有日期
+docker compose run --rm processor python convert_shareholding.py
+```
+
 ### 3. 執行資料驗證 (Validation)
 轉換完成後，建議執行驗證以確保資料品質：
 ```bash
