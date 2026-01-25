@@ -45,7 +45,7 @@
 - 支援增量匯入。
 
 ### 4. Calculator (指標運算)
-位於 `calculator/`，負責計算技術指標 (MA, VMA, RSI 等) 並寫回資料庫。
+位於 `calculator/`，負責計算技術指標 (MA, VMA, RSI, MACD 等) 並寫回資料庫。
 
 ### 5. Backend (API 服務)
 位於 `backend/`，基於 FastAPI 的高效能後端。
