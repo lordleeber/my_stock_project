@@ -71,7 +71,8 @@ def read_raw_csv(file_path):
         # 2. 尋找正確的標頭行 (必須包含 證券代號/代號，且欄位數足夠多)
         header_idx = -1
         for i, line in enumerate(lines):
-            if ("證券代號" in line or "代號" in line) and line.count(",") > 5:
+            clean_line = line.replace('"', '').replace('\ufeff', '')
+            if ("證券代號" in clean_line or "代號" in clean_line) and clean_line.count(",") >= 3:
                 header_idx = i
                 break
         
@@ -89,4 +90,71 @@ def read_raw_csv(file_path):
         return df
     except Exception as e:
         print(f"Failed to read raw csv {file_path}: {e}")
+        return None
+
+def read_sii_indices(file_path):
+    """專門從 SII 每日收盤行情 CSV 中提取大盤指數區塊"""
+    try:
+        with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+            lines = f.readlines()
+        
+        # 1. 尋找指數區塊的開始與結束
+        start_idx = -1
+        end_idx = -1
+        
+        for i, line in enumerate(lines):
+            clean_line = line.replace('"', '').replace('\ufeff', '')
+            # 指數區塊標題通常包含 "指數" 與 "收盤指數"
+            if "指數" in clean_line and "收盤指數" in clean_line:
+                if start_idx == -1:
+                     start_idx = i
+                continue
+            
+            # 找到下一個區塊的標題 (通常是個股區塊) 作為結束點
+            if start_idx != -1 and ("證券代號" in clean_line or "代號" in clean_line):
+                end_idx = i
+                break
+        
+        if start_idx == -1:
+            return None # 沒找到指數區塊
+            
+        if end_idx == -1:
+            end_idx = len(lines) # 如果沒找到下一個區塊，就讀到最後
+
+        print(f"DEBUG: Extracted indices header: {lines[start_idx].strip()}")
+
+        # 2. 擷取指數內容
+        # 排除掉中間可能的空行或分隔線
+        raw_content = "".join(lines[start_idx:end_idx])
+        
+        # 3. 讀取 CSV
+        # 這裡需要小心，因為第一行是 header
+        df = pl.read_csv(BytesIO(raw_content.encode('utf-8')), infer_schema_length=0, 
+                         ignore_errors=True, truncate_ragged_lines=True)
+        
+        # 4. 清洗
+        # 先執行標準清洗，這會把 "指數" -> "name"
+        df = clean_dataframe(df)
+        
+        if df is not None:
+             # 確保 name 存在
+             if "name" in df.columns:
+                 # 填補 symbol: 大盤指數沒有代號，直接用名稱當代號
+                 if "symbol" not in df.columns:
+                     df = df.with_columns(pl.col("name").alias("symbol"))
+                 else:
+                     # 如果有 symbol 但全空，用 name 填補
+                     df = df.with_columns(
+                         pl.when(pl.col("symbol").is_null())
+                         .then(pl.col("name"))
+                         .otherwise(pl.col("symbol"))
+                         .alias("symbol")
+                     )
+             else:
+                 print(f"DEBUG: 'name' column missing after cleaning indices. Cols: {df.columns}")
+
+        return df
+
+    except Exception as e:
+        print(f"Failed to read indices from {file_path}: {e}")
         return None

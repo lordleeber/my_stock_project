@@ -116,6 +116,11 @@ COLUMN_MAP = {
     "外資及陸資尚可投資比率": "foreign_investable_ratio",
     "全體外資及陸資持股比率": "foreign_held_ratio",
     "外資及陸資共用法令投資上限比率": "foreign_legal_limit_ratio",
+
+    # --- 大盤指數 (Market Indices) ---
+    "指數": "name",
+    "收盤指數": "close",
+    "漲跌點數": "change",
 }
 
 # 需要轉為數值的欄位
@@ -186,5 +191,8 @@ SCHEMA_COLS = {
     "pe_ratio": [
         "date", "market", "symbol", "name",
         "pe_ratio" # 其他如殖利率、PB 尚未加入映射，暫時只取這個
+    ],
+    "market_indices": [
+        "date", "market", "symbol", "name", "close", "change"
     ]
 }

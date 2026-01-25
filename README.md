@@ -5,6 +5,7 @@
 ## 核心功能
 - **自動化爬蟲**: 抓取上市 (SII) 與上櫃 (OTC) 的每日行情、三大法人、融資融券、月營收及集保股權分散表。
 - **強健 ETL 流程**: 清洗原始 CSV 雜訊、自動對齊標頭、處理編碼問題並標準化。
+- **大盤指數整合**: 自動從每日行情檔中提取加權指數與櫃買指數數據，作為回測基準。
 - **預先指標運算**: 自動計算價格均線 (MA5~240) 以及成交量均線 (VMA5~240)。
 - **高效 API 服務**: 透過 FastAPI 提供高效能的數據查詢接口，支援排序與過濾。
 - **視覺化儀表板**: 使用 Next.js + Tailwind 打造，支援日期選擇、多指標切換與排行榜呈現。
@@ -34,8 +35,9 @@
 
 ### 2. Processor (資料處理)
 位於 `processor/`，負責將原始 HTML/CSV 轉換為標準化格式。
-- 清洗數據、轉換型別。
-- 支援月營收格式轉換 (`convert_revenue.py`)。
+- **個股處理**: 清洗數據、轉換型別。
+- **大盤指數**: 自動從 `daily_quotes` 中分離出市場指數 (`market_indices`)。
+- **月營收**: 格式轉換 (`convert_revenue.py`)。
 
 ### 3. Importer (資料匯入)
 位於 `importer/`，負責將處理後的 CSV 寫入 PostgreSQL 資料庫。
@@ -69,7 +71,7 @@ START_DATE=20250102 END_DATE=20260119 docker-compose run --rm scraper
 # 2. 抓取月營收
 docker-compose run --rm scraper python fetch_monthly_revenue.py
 
-# 3. 處理與匯入
+# 3. 處理與匯入 (會自動處理個股與大盤指數)
 docker-compose run --rm processor
 docker-compose run --rm importer
 
