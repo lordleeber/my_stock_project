@@ -132,8 +132,8 @@ def process_date(date_str: str) -> bool:
         print(f"No valid data for {date_str}")
         return False
 
-    # 合併所有資料
-    combined_df = pl.concat(all_dfs)
+    # 合併所有資料並依 symbol, level 排序
+    combined_df = pl.concat(all_dfs).sort(["symbol", "level"])
 
     # 儲存
     os.makedirs(output_dir, exist_ok=True)
