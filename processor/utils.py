@@ -30,9 +30,6 @@ def clean_dataframe(df):
                 rename_map[raw_col] = "name"
                 break
 
-    if "symbol" not in rename_map.values():
-        print(f"DEBUG: Failed to find symbol. Available cols: {df.columns}")
-
     if not rename_map:
         return None
 
@@ -117,11 +114,9 @@ def read_sii_indices(file_path):
         
         if start_idx == -1:
             return None # 沒找到指數區塊
-            
+
         if end_idx == -1:
             end_idx = len(lines) # 如果沒找到下一個區塊，就讀到最後
-
-        print(f"DEBUG: Extracted indices header: {lines[start_idx].strip()}")
 
         # 2. 擷取指數內容
         # 排除掉中間可能的空行或分隔線
@@ -150,8 +145,6 @@ def read_sii_indices(file_path):
                          .otherwise(pl.col("symbol"))
                          .alias("symbol")
                      )
-             else:
-                 print(f"DEBUG: 'name' column missing after cleaning indices. Cols: {df.columns}")
 
         return df
 

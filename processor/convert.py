@@ -25,54 +25,71 @@ def save_dataframe(df, output_dir, output_file, category):
 def process_file(file_path, market, category, date_str):
     try:
         # 1. 處理主要資料 (如個股行情)
-        output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
-        output_file = f"{output_dir}/{market}.csv"
-        
-        # 檢查是否已存在 (略過)
-        if not os.path.exists(output_file):
-             # 使用共用的讀取邏輯
-            df = read_raw_csv(file_path)
-            
-            if df is not None:
-                # ... (原本的過濾邏輯)
-                if "symbol" in df.columns: # 確保讀到的是個股資料
-                    # 加入日期與市場
-                    df = df.with_columns([
-                        pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
-                        pl.lit(market).alias("market")
-                    ])
-                    
-                    # 過濾
-                    df = df.filter(pl.col("symbol").is_not_null())
-                    df = df.filter(pl.col("symbol") != "")
-                    df = df.filter(pl.col("symbol").str.len_chars() <= 10)
-                    df = df.filter(pl.col("symbol").str.len_chars() > 1)
+        _process_stock_data(file_path, market, category, date_str)
 
-                    if "name" in df.columns:
-                        df = df.filter(pl.col("name").is_not_null())
-                        df = df.filter(pl.col("name") != "")
-                    
-                    save_dataframe(df, output_dir, output_file, category)
-                    print(f"Processed {category}/{date_str}/{market}")
-        
         # 2. 特殊處理: 如果是 SII Daily Quotes，額外擷取大盤指數
         if category == "daily_quotes" and market == "sii":
-            indices_output_dir = f"{PROCESSED_DIR}/market_indices/date={date_str}"
-            indices_output_file = f"{indices_output_dir}/{market}.csv"
-            
-            if not os.path.exists(indices_output_file):
-                df_indices = read_sii_indices(file_path)
-                if df_indices is not None and not df_indices.is_empty():
-                    df_indices = df_indices.with_columns([
-                        pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
-                        pl.lit(market).alias("market")
-                    ])
-                    # 指數不需要像個股那樣過濾 symbol 長度
-                    save_dataframe(df_indices, indices_output_dir, indices_output_file, "market_indices")
-                    print(f"Processed market_indices/{date_str}/{market} (Extracted from daily_quotes)")
+            _process_market_indices(file_path, market, date_str)
 
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
+
+
+def _process_stock_data(file_path, market, category, date_str):
+    """處理個股行情資料"""
+    output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+    output_file = f"{output_dir}/{market}.csv"
+
+    if os.path.exists(output_file):
+        print(f"Skipping {category}/{date_str}/{market} (already exists)")
+        return
+
+    df = read_raw_csv(file_path)
+    if df is None:
+        return
+
+    if "symbol" not in df.columns:
+        return
+
+    # 加入日期與市場
+    df = df.with_columns([
+        pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+        pl.lit(market).alias("market")
+    ])
+
+    # 過濾無效資料
+    df = df.filter(pl.col("symbol").is_not_null())
+    df = df.filter(pl.col("symbol") != "")
+    df = df.filter(pl.col("symbol").str.len_chars() <= 10)
+    df = df.filter(pl.col("symbol").str.len_chars() > 1)
+
+    if "name" in df.columns:
+        df = df.filter(pl.col("name").is_not_null())
+        df = df.filter(pl.col("name") != "")
+
+    save_dataframe(df, output_dir, output_file, category)
+    print(f"Processed {category}/{date_str}/{market}")
+
+
+def _process_market_indices(file_path, market, date_str):
+    """從 SII Daily Quotes 中擷取大盤指數"""
+    indices_output_dir = f"{PROCESSED_DIR}/market_indices/date={date_str}"
+    indices_output_file = f"{indices_output_dir}/{market}.csv"
+
+    if os.path.exists(indices_output_file):
+        return
+
+    df_indices = read_sii_indices(file_path)
+    if df_indices is None or df_indices.is_empty():
+        return
+
+    df_indices = df_indices.with_columns([
+        pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+        pl.lit(market).alias("market")
+    ])
+
+    save_dataframe(df_indices, indices_output_dir, indices_output_file, "market_indices")
+    print(f"Processed market_indices/{date_str}/{market} (Extracted from daily_quotes)")
 
 def get_date_range():
     start_env = os.getenv("START_DATE")
