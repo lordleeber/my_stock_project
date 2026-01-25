@@ -38,6 +38,7 @@
 - **個股處理**: 清洗數據、轉換型別。
 - **大盤指數**: 自動從 `daily_quotes` 中分離出市場指數 (`market_indices`)。
 - **月營收**: 格式轉換 (`convert_revenue.py`)。
+- **集保股權分散表**: 合併個股 CSV (`convert_shareholding.py`)。
 
 ### 3. Importer (資料匯入)
 位於 `importer/`，負責將處理後的 CSV 寫入 PostgreSQL 資料庫。
@@ -65,17 +66,22 @@
 ## 快速上手 (手動 Docker Compose)
 
 ```bash
-# 1. 抓取每日行情
-START_DATE=20250102 END_DATE=20260119 docker compose run --rm scraper
+# 1. 抓取每日行情 (交易日執行)
+START_DATE=20250402 END_DATE=20250402 docker compose run --rm scraper-daily
 
-# 2. 抓取月營收
-docker compose run --rm scraper python fetch_monthly_revenue.py
+# 2. 抓取月營收 (每月 10 日後執行)
+REVENUE_YEAR=2025 REVENUE_MONTH=3 docker compose run --rm scraper-monthly
 
-# 3. 處理與匯入 (會自動處理個股與大盤指數)
+# 3. 抓取集保股權分散表 (每週五執行)
+TDCC_DATE=20250321 docker compose run --rm scraper-weekly
+
+# 4. 處理與匯入 (會自動處理個股與大盤指數)
 docker compose run --rm processor
+docker compose run --rm processor python convert_revenue.py
+docker compose run --rm processor python convert_shareholding.py
 docker compose run --rm importer
 
-# 4. 啟動服務
+# 5. 啟動服務
 docker compose up -d backend frontend pgadmin
 ```
 
