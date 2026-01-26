@@ -156,7 +156,7 @@ def main():
     parser = argparse.ArgumentParser(description="Fetch TDCC Shareholding Dispersion History")
     parser.add_argument("--stock", "-s", type=str, help="Single stock ID to fetch")
     parser.add_argument("--file", "-f", type=str, help="File containing list of stock IDs (one per line)")
-    parser.add_argument("--date", "-d", type=str, help="Date to fetch (YYYYMMDD)")
+    parser.add_argument("--date", "-d", type=str, help="Date to fetch (YYYYMMDD) or file containing list of dates")
     parser.add_argument("--output", "-o", type=str, default="data/raw/shareholding_div", help="Output directory")
     parser.add_argument("--list-dates", action="store_true", help="List all available dates from TDCC website")
     parser.add_argument("--no-verify", action="store_true", help="Disable SSL certificate verification")
@@ -180,11 +180,14 @@ def main():
         logger.error("Please provide --date or --list-dates")
         return
 
-    # Check date validity
-    if args.date not in scraper.available_dates:
-        logger.warning(f"Date {args.date} might not be available. Available dates (top 5): {scraper.available_dates[:5]}")
-        # We proceed anyway, sometimes hidden dates work? No, usually server validates.
-        # But let's try.
+    # Determine date list
+    date_list = []
+    if os.path.exists(args.date):
+        logger.info(f"Reading dates from file: {args.date}")
+        with open(args.date, 'r', encoding='utf-8') as f:
+            date_list = [line.strip() for line in f if line.strip()]
+    else:
+        date_list = [args.date]
 
     stock_list = []
     if args.stock:
@@ -200,27 +203,34 @@ def main():
         logger.error("Please provide --stock or --file")
         return
 
-    logger.info(f"Target: {len(stock_list)} stocks, Date: {args.date}")
-    
-    # Prepare output dir
-    output_dir = os.path.join(args.output, f"date={args.date}")
-    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Target: {len(stock_list)} stocks, Dates: {len(date_list)}")
 
-    for idx, stock_id in enumerate(stock_list):
-        output_path = os.path.join(output_dir, f"{stock_id}.csv")
+    for date_str in date_list:
+        logger.info(f"Processing date: {date_str}")
         
-        if os.path.exists(output_path):
-            logger.info(f"[{idx+1}/{len(stock_list)}] {stock_id} already exists. Skipping.")
-            continue
+        # Check date validity
+        if date_str not in scraper.available_dates:
+            logger.warning(f"Date {date_str} might not be available. Available dates (top 5): {scraper.available_dates[:5]}")
+        
+        # Prepare output dir
+        output_dir = os.path.join(args.output, f"date={date_str}")
+        os.makedirs(output_dir, exist_ok=True)
 
-        logger.info(f"[{idx+1}/{len(stock_list)}] Fetching {stock_id}...")
-        df = scraper.scrape_stock(stock_id, args.date)
-        
-        if df is not None and not df.empty:
-            df.to_csv(output_path, index=False, encoding='utf-8-sig')
-            logger.info(f"Saved {stock_id}.csv ({len(df)} rows)")
-        else:
-            logger.warning(f"Failed to fetch or empty data for {stock_id}")
+        for idx, stock_id in enumerate(stock_list):
+            output_path = os.path.join(output_dir, f"{stock_id}.csv")
+            
+            if os.path.exists(output_path):
+                logger.info(f"[{idx+1}/{len(stock_list)}] {stock_id} already exists for {date_str}. Skipping.")
+                continue
+
+            logger.info(f"[{idx+1}/{len(stock_list)}] Fetching {stock_id} for {date_str}...")
+            df = scraper.scrape_stock(stock_id, date_str)
+            
+            if df is not None and not df.empty:
+                df.to_csv(output_path, index=False, encoding='utf-8-sig')
+                logger.info(f"Saved {stock_id}.csv ({len(df)} rows)")
+            else:
+                logger.warning(f"Failed to fetch or empty data for {stock_id} on {date_str}")
             
         # Optional: Save checkpoint or retry logic could be added here
 
