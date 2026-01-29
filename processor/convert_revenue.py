@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 RAW_DIR = "/app/data/raw/monthly_revenue"
-PROCESSED_DIR = "/app/data/processed/revenue"
+PROCESSED_DIR = "/app/data/processed/monthly_revenue"
 
 # 欄位映射字典（中文列名）
 COL_MAPPING = {

@@ -61,9 +61,9 @@ def import_data(engine):
     for category in categories:
         cat_path = os.path.join(data_dir, category)
         
-        # --- 特別處理 revenue (月營收) ---
-        if category == "revenue":
-            # 目錄結構: revenue/YYYY-MM/revenue_YYYYMM.csv
+        # --- 特別處理 monthly_revenue (月營收) ---
+        if category == "monthly_revenue":
+            # 目錄結構: monthly_revenue/YYYY-MM/revenue_YYYYMM.csv
             subdirs = sorted([d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))])
             
             for subdir in subdirs: # subdir is YYYY-MM
