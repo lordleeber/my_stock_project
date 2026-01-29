@@ -48,6 +48,7 @@ docker compose run --rm -e IMPORT_CATEGORY=daily_quotes -e START_DATE=20250121 -
 - `daily_quotes` - 每日報價
 - `market_indices` - 大盤指數 (從 daily_quotes 自動擷取)
 - `shareholding_div` - 集保股權分散表 (供 AI 模型訓練)
+- `institutional_summary` - 三大法人買賣超彙總 (市場層級)
 - `foreign_holding` - 外資持股
 - `institutional_investors` - 法人買賣
 - `margin_sbl` - 融券
