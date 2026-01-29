@@ -25,6 +25,7 @@
 - `convert.py`: 每日行情 ETL 核心邏輯，負責遍歷 Raw 資料並執行轉換。處理 `daily_quotes` 時會自動擷取 `market_indices`（大盤指數）。
 - `convert_monthly_revenue.py`: 月營收 ETL 邏輯，處理 `data/raw/monthly_revenue` 下的資料。
 - `convert_shareholding.py`: 集保股權分散表 ETL 邏輯，將每支股票的 CSV 合併成單一檔案。
+- `convert_institutional_summary.py`: 三大法人買賣超彙總 ETL 邏輯，標準化 SII/OTC 機構名稱並合併。
 - `validator.py`: 資料驗證器，比對 Raw 與 Processed 數據的完整性。
 - `utils.py`: 共用的資料讀取與清洗輔助函式，包含標頭定位邏輯與指數擷取功能。
 - `schemas.py`: 定義欄位映射、數值型別與標準 Schema 結構。
@@ -63,6 +64,15 @@ START_DATE=20250321 END_DATE=20250321 docker compose run --rm processor python c
 docker compose run --rm processor python convert_shareholding.py
 ```
 
+**處理三大法人買賣超彙總:**
+```bash
+# 處理特定日期
+START_DATE=20250402 END_DATE=20250402 docker compose run --rm processor python convert_institutional_summary.py
+
+# 處理所有日期
+docker compose run --rm processor python convert_institutional_summary.py
+```
+
 ### 3. 執行資料驗證 (Validation)
 轉換完成後，建議執行驗證以確保資料品質：
 ```bash
@@ -84,6 +94,10 @@ data/processed/
 │   └── ...
 ├── shareholding_div/  # 集保股權分散表
 │   ├── date=20250314/
+│   │   └── all.csv
+│   └── ...
+├── institutional_summary/ # 三大法人買賣超彙總
+│   ├── date=20250102/
 │   │   └── all.csv
 │   └── ...
 ├── monthly_revenue/     # 月營收資料

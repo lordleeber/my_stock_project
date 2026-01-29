@@ -39,6 +39,7 @@
 - **大盤指數**: 自動從 `daily_quotes` 中分離出市場指數 (`market_indices`)。
 - **月營收**: 格式轉換 (`convert_monthly_revenue.py`)。
 - **集保股權分散表**: 合併個股 CSV (`convert_shareholding.py`)。
+- **三大法人買賣超彙總**: 標準化 SII/OTC 法人進出 (`convert_institutional_summary.py`)。
 
 ### 3. Importer (資料匯入)
 位於 `importer/`，負責將處理後的 CSV 寫入 PostgreSQL 資料庫。
@@ -79,6 +80,7 @@ TDCC_DATE=20250321 docker compose run --rm scraper-weekly
 docker compose run --rm processor
 docker compose run --rm processor python convert_monthly_revenue.py
 docker compose run --rm processor python convert_shareholding.py
+docker compose run --rm processor python convert_institutional_summary.py
 docker compose run --rm importer
 
 # 5. 啟動服務
