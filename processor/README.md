@@ -11,7 +11,7 @@
 - **型別強制**: 字串轉數值 (Float/Int)、民國年轉西元年 (Date)。
 - **Schema 對齊**: 確保不同市場 (SII/OTC) 的資料擁有完全一致的欄位結構與順序。
 - **資料驗證**: 內建**嚴格驗證機制**，確保轉換前後筆數完全一致（零誤差），數值誤差小於 1e-6。
-- **月營收處理**: 專用的 `convert_revenue.py` 處理 MOPS 格式不固定的月營收報表，自動正規化欄位名稱與清洗數值，支援中英文列名自動識別。
+- **月營收處理**: 專用的 `convert_monthly_revenue.py` 處理 MOPS 格式不固定的月營收報表，自動正規化欄位名稱與清洗數值，支援中英文列名自動識別。
 
 > **注意**: Processor 不會過濾 ETF。ETF 過濾在 Importer 階段進行，因為 ETF 沒有月營收、本益比等基本面數據。
 
@@ -23,7 +23,7 @@
 
 ## 模組說明
 - `convert.py`: 每日行情 ETL 核心邏輯，負責遍歷 Raw 資料並執行轉換。處理 `daily_quotes` 時會自動擷取 `market_indices`（大盤指數）。
-- `convert_revenue.py`: 月營收 ETL 邏輯，處理 `data/raw/monthly_revenue` 下的資料。
+- `convert_monthly_revenue.py`: 月營收 ETL 邏輯，處理 `data/raw/monthly_revenue` 下的資料。
 - `convert_shareholding.py`: 集保股權分散表 ETL 邏輯，將每支股票的 CSV 合併成單一檔案。
 - `validator.py`: 資料驗證器，比對 Raw 與 Processed 數據的完整性。
 - `utils.py`: 共用的資料讀取與清洗輔助函式，包含標頭定位邏輯與指數擷取功能。
@@ -46,12 +46,12 @@ docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20230301 -e END_DATE=2023
 
 **處理月營收（推薦使用 Docker Compose）:**
 ```bash
-START_DATE=20250301 END_DATE=20250331 docker compose run --rm processor python convert_revenue.py
+START_DATE=20250301 END_DATE=20250331 docker compose run --rm processor python convert_monthly_revenue.py
 ```
 
 **或使用原生 Docker:**
 ```bash
-docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20250301 -e END_DATE=20250331 stock-processor python convert_revenue.py
+docker run --rm -v $(pwd)/data:/app/data -e START_DATE=20250301 -e END_DATE=20250331 stock-processor python convert_monthly_revenue.py
 ```
 
 **處理集保股權分散表:**

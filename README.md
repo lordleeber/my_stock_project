@@ -37,7 +37,7 @@
 位於 `processor/`，負責將原始 HTML/CSV 轉換為標準化格式。
 - **個股處理**: 清洗數據、轉換型別。
 - **大盤指數**: 自動從 `daily_quotes` 中分離出市場指數 (`market_indices`)。
-- **月營收**: 格式轉換 (`convert_revenue.py`)。
+- **月營收**: 格式轉換 (`convert_monthly_revenue.py`)。
 - **集保股權分散表**: 合併個股 CSV (`convert_shareholding.py`)。
 
 ### 3. Importer (資料匯入)
@@ -77,7 +77,7 @@ TDCC_DATE=20250321 docker compose run --rm scraper-weekly
 
 # 4. 處理與匯入 (會自動處理個股與大盤指數)
 docker compose run --rm processor
-docker compose run --rm processor python convert_revenue.py
+docker compose run --rm processor python convert_monthly_revenue.py
 docker compose run --rm processor python convert_shareholding.py
 docker compose run --rm importer
 
