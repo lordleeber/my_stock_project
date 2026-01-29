@@ -132,8 +132,16 @@ def process_date(date_str: str) -> bool:
         print(f"No valid data for {date_str}")
         return False
 
-    # 合併所有資料並依 symbol, level 排序
-    combined_df = pl.concat(all_dfs).sort(["symbol", "level"])
+    # 合併所有資料
+    combined_df = pl.concat(all_dfs)
+
+    # 只保留 level 1~15（實際持股分級）
+    # level 16 = 「差異數調整」：集保庫存與實際發行股數的差額，非持股分布
+    # level 17 = 「合計」：各級加總，可由 level 1~15 自行計算
+    combined_df = combined_df.filter(pl.col("level") <= 15)
+
+    # 依 symbol, level 排序
+    combined_df = combined_df.sort(["symbol", "level"])
 
     # 儲存
     os.makedirs(output_dir, exist_ok=True)
