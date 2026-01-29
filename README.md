@@ -64,6 +64,14 @@
 - **Strategy**: 定義核心交易邏輯 (如量能爆發)。
 - **Backtester**: 歷史回測引擎，產生績效報告。
 
+### 8. Deep Learning (深度學習交易系統) 🆕
+位於 `deep_learning/`，使用 PyTorch LSTM 進行智能交易決策。
+- **AI 預測**：每天預測該不該持有股票（以台積電為例）。
+- **自動交易**：根據預測結果自動買入/賣出。
+- **模型架構**：LSTM + 全連接層，使用技術指標作為特徵。
+- **完整流程**：數據加載 → 特徵工程 → 模型訓練 → 回測評估。
+- **詳細說明**：參考 [deep_learning/README.md](deep_learning/README.md)
+
 ## 快速上手 (手動 Docker Compose)
 
 ```bash
@@ -85,6 +93,12 @@ docker compose run --rm importer
 
 # 5. 啟動服務
 docker compose up -d backend frontend pgadmin
+
+# 6. 深度學習交易 (新功能 🆕)
+cd deep_learning
+pip3 install -r requirements.txt
+python3 train.py      # 訓練 LSTM 模型
+python3 backtest.py   # 回測評估
 ```
 
 ## 目錄結構
@@ -99,6 +113,7 @@ root/
 ├── frontend/           # 網頁介面
 ├── strategy/           # 交易策略核心
 ├── backtester/         # 回測系統
+├── deep_learning/      # 🆕 深度學習交易系統 (LSTM)
 ├── common/             # 共用常數與工具
 └── data/               # 資料存放區 (Raw/Processed)
 ```

@@ -1,41 +1,83 @@
 #!/bin/bash
 
-# 取得腳本所在目錄的上一層 (專案根目錄)
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$PROJECT_DIR"
+# 每日股票數據更新腳本
+# 執行順序: scraper -> processor -> importer -> calculator
 
-# 優先使用參數傳入的日期，若無則使用今天日期 YYYYMMDD
-TODAY=${1:-$(date +"%Y%m%d")}
+set -e  # 遇到錯誤立即停止
 
-echo "========================================"
-echo "Starting Daily Stock Update: $TODAY"
-echo "Project Dir: $PROJECT_DIR"
-echo "========================================"
+# 設定工作目錄
+cd "$(dirname "$0")/.."
 
-# [重要] 強制重新建置容器，確保最新的代碼生效
-echo "Rebuilding containers..."
-docker-compose build scraper processor importer calculator
+# 設定日期範圍（抓取今天的資料）
+TODAY=$(date +%Y%m%d)
+export START_DATE=$TODAY
+export END_DATE=$TODAY
+
+# 設定日誌目錄
+LOG_DIR="./logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/daily_update_$(date +%Y%m%d_%H%M%S).log"
+
+echo "========================================" | tee -a "$LOG_FILE"
+echo "Daily Stock Data Update Started" | tee -a "$LOG_FILE"
+echo "Date: $(date)" | tee -a "$LOG_FILE"
+echo "Target Date: $TODAY" | tee -a "$LOG_FILE"
+echo "========================================" | tee -a "$LOG_FILE"
 
 # 1. Scraper
-echo "[1/4] Running Scraper for $TODAY..."
-docker-compose run --rm -e START_DATE=$TODAY -e END_DATE=$TODAY scraper
-if [ $? -ne 0 ]; then echo "Scraper failed"; exit 1; fi
+echo "[1/5] Running scraper..." | tee -a "$LOG_FILE"
+docker compose run --rm scraper-daily 2>&1 | tee -a "$LOG_FILE"
+if [ $? -eq 0 ]; then
+    echo "✓ Scraper completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Scraper failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# 2. Processor
-echo "[2/4] Running Processor for $TODAY..."
-docker-compose run --rm -e START_DATE=$TODAY -e END_DATE=$TODAY processor
-if [ $? -ne 0 ]; then echo "Processor failed"; exit 1; fi
+# 2. Processor (daily)
+echo "[2/5] Running processor..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor 2>&1 | tee -a "$LOG_FILE"
+if [ $? -eq 0 ]; then
+    echo "✓ Processor completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Processor failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# 3. Importer
-echo "[3/4] Running Importer for $TODAY..."
-docker-compose run --rm -e START_DATE=$TODAY -e END_DATE=$TODAY importer
-if [ $? -ne 0 ]; then echo "Importer failed"; exit 1; fi
+# 3. Processor (institutional_summary)
+echo "[3/5] Running institutional_summary processor..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor python convert_institutional_summary.py 2>&1 | tee -a "$LOG_FILE"
+if [ $? -eq 0 ]; then
+    echo "✓ Institutional summary processor completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Institutional summary processor failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# 4. Calculator
-echo "[4/4] Running Calculator..."
-docker-compose run --rm calculator
-if [ $? -ne 0 ]; then echo "Calculator failed"; exit 1; fi
+# 4. Importer
+echo "[4/5] Running importer..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer 2>&1 | tee -a "$LOG_FILE"
+if [ $? -eq 0 ]; then
+    echo "✓ Importer completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Importer failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-echo "========================================"
-echo "Daily Update for $TODAY Completed Successfully!"
-echo "========================================"
+# 5. Calculator
+echo "[5/5] Running calculator..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE calculator 2>&1 | tee -a "$LOG_FILE"
+if [ $? -eq 0 ]; then
+    echo "✓ Calculator completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Calculator failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
+
+echo "========================================" | tee -a "$LOG_FILE"
+echo "Daily Stock Data Update Completed" | tee -a "$LOG_FILE"
+echo "Date: $(date)" | tee -a "$LOG_FILE"
+echo "========================================" | tee -a "$LOG_FILE"
+
+# 保留最近 30 天的日誌
+find "$LOG_DIR" -name "daily_update_*.log" -mtime +30 -delete
