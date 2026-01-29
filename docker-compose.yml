@@ -71,11 +71,10 @@ services:
 
   calculator:
     build: ./calculator
-    container_name: ${PROJECT_NAME}-calculator
     environment:
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
       - DB_HOST=db
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
@@ -86,14 +85,13 @@ services:
         condition: service_healthy
 
   backtester:
-    build: 
+    build:
       context: .
       dockerfile: backtester/Dockerfile
-    container_name: ${PROJECT_NAME}-backtester
     environment:
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
       - DB_HOST=db
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
