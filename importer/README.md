@@ -18,6 +18,7 @@
 - `START_DATE`: (選填) 起始日期 YYYYMMDD，僅處理此日期之後的資料。
 - `END_DATE`: (選填) 結束日期 YYYYMMDD。
 - `IMPORT_CATEGORY`: (選填) 指定只導入特定類別的資料 (如: `monthly_revenue`, `daily_quotes`, `foreign_holding` 等)。未設定則導入所有類別。
+- `FORCE_REIMPORT`: (選填) 設為 `1` 時強制刪除並重新匯入已存在的資料。預設跳過已存在的日期。
 
 ## 如何使用
 

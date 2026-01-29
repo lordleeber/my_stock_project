@@ -31,22 +31,77 @@ def wait_for_db(engine):
 def get_filter_dates():
     start_env = os.getenv("START_DATE")
     end_env = os.getenv("END_DATE")
-    # 這裡的 DEBUG 訊息非常重要
     print(f"DEBUG: START_DATE from env: {start_env}")
     print(f"DEBUG: END_DATE from env: {end_env}")
-    
+
     start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if (start_env and start_env.strip()) else None
     end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if (end_env and end_env.strip()) else None
     return start_date, end_date
 
+def table_exists(engine, table_name):
+    """檢查 table 是否存在"""
+    with engine.connect() as conn:
+        return conn.execute(text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :name)"
+        ), {"name": table_name}).scalar()
+
+def date_exists_in_db(engine, table_name, target_date, market=None):
+    """
+    檢查該日期（及市場）的資料是否已存在於 DB 中。
+    用於 skip 已匯入的資料，避免不必要的刪除與重新寫入。
+    """
+    if not table_exists(engine, table_name):
+        return False
+
+    with engine.connect() as conn:
+        if market:
+            result = conn.execute(
+                text(f"SELECT EXISTS (SELECT 1 FROM {table_name} WHERE date = :date AND market = :market)"),
+                {"date": target_date, "market": market}
+            ).scalar()
+        else:
+            result = conn.execute(
+                text(f"SELECT EXISTS (SELECT 1 FROM {table_name} WHERE date = :date)"),
+                {"date": target_date}
+            ).scalar()
+    return result
+
+def delete_by_date(engine, table_name, target_date, market=None):
+    """刪除指定日期（及市場）的資料"""
+    with engine.begin() as conn:
+        if market:
+            conn.execute(
+                text(f"DELETE FROM {table_name} WHERE date = :date AND market = :market"),
+                {"date": target_date, "market": market}
+            )
+        else:
+            conn.execute(
+                text(f"DELETE FROM {table_name} WHERE date = :date"),
+                {"date": target_date}
+            )
+
+def filter_etf(df):
+    """過濾 ETF（代號以 '00' 開頭）"""
+    if "symbol" not in df.columns:
+        return df
+
+    original_count = df.height
+    df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
+    filtered_count = original_count - df.height
+    if filtered_count > 0:
+        print(f"  -> Filtered out {filtered_count} ETF records")
+    return df
+
 def import_data(engine):
     data_dir = "/app/data/processed"
     start_date, end_date = get_filter_dates()
+    force_reimport = os.getenv("FORCE_REIMPORT", "").lower() in ("1", "true", "yes")
 
     if start_date: print(f"Filter Start Date: {start_date.strftime('%Y-%m-%d')}")
     if end_date: print(f"Filter End Date: {end_date.strftime('%Y-%m-%d')}")
+    if force_reimport: print("FORCE_REIMPORT: enabled (will delete and re-import existing data)")
 
-    # 類別過濾：支援只導入特定類型的數據
+    # 類別過濾
     import_category = os.getenv("IMPORT_CATEGORY")
     if import_category:
         print(f"Import Category Filter: {import_category}")
@@ -55,79 +110,62 @@ def import_data(engine):
             print(f"Warning: Category '{import_category}' not found in {data_dir}")
             return
     else:
-        # 遍歷類別目錄
         categories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
 
     for category in categories:
         cat_path = os.path.join(data_dir, category)
-        
+
         # --- 特別處理 monthly_revenue (月營收) ---
         if category == "monthly_revenue":
-            # 目錄結構: monthly_revenue/YYYY-MM/revenue_YYYYMM.csv
             subdirs = sorted([d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))])
-            
-            for subdir in subdirs: # subdir is YYYY-MM
+
+            for subdir in subdirs:
                 if len(subdir) != 7: continue
-                
-                # 日期篩選 (以月份的第一天為準)
+
                 try:
                     month_date = datetime.datetime.strptime(f"{subdir}-01", "%Y-%m-%d")
-                    # 如果有設定 start_date，且該月份 < start_date 的月份 (忽略日)，則跳過
-                    # 比較邏輯：
-                    # start_date: 20250515 -> start_month: 20250501
                     if start_date:
-                        start_month = start_date.replace(day=1)
-                        if month_date < start_month: continue
+                        if month_date < start_date.replace(day=1): continue
                     if end_date:
-                        end_month = end_date.replace(day=1)
-                        if month_date > end_month: continue
+                        if month_date > end_date.replace(day=1): continue
                 except ValueError:
                     continue
-                
+
                 csv_files = glob.glob(os.path.join(cat_path, subdir, "*.csv"))
                 for csv_file in csv_files:
                     table_name = "monthly_revenue"
                     try:
+                        target_date = f"{subdir}-01"
+
+                        # 檢查是否已存在
+                        if not force_reimport and date_exists_in_db(engine, table_name, target_date):
+                            print(f"Skipping {table_name} - {subdir} (already in DB)")
+                            continue
+
                         print(f"Processing {table_name} - {subdir}...")
                         df = pl.read_csv(csv_file)
                         if df.height == 0:
                             print("  -> Empty file, skipping.")
                             continue
 
-                        # 過濾 ETF：排除 symbol 以 "00" 開頭的記錄
-                        if "symbol" in df.columns:
-                            original_count = df.height
-                            df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
-                            filtered_count = original_count - df.height
-                            if filtered_count > 0:
-                                print(f"  -> Filtered out {filtered_count} ETF records")
+                        df = filter_etf(df)
+                        if df.height == 0:
+                            print("  -> No data after filtering ETFs, skipping.")
+                            continue
 
-                            if df.height == 0:
-                                print("  -> No data after filtering ETFs, skipping.")
-                                continue
+                        # 強制重新匯入時先刪除
+                        if force_reimport:
+                            delete_by_date(engine, table_name, target_date)
 
-                        # Delete-before-Insert
-                        with engine.begin() as conn:
-                            # 檢查 table 是否存在
-                            table_exists = conn.execute(text(
-                                f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')"
-                            )).scalar()
-
-                            if table_exists:
-                                # 刪除該月份的所有資料 (因為 CSV 包含 sii + otc)
-                                # CSV 內的 date 欄位格式為 YYYY-MM-01
-                                target_date = f"{subdir}-01"
-                                conn.execute(text(f"DELETE FROM {table_name} WHERE date = :date"), {"date": target_date})
-                        
                         df.to_pandas().to_sql(
                             name=table_name,
                             con=engine,
-                            if_exists="append", # Table 不存在時會自動建立
+                            if_exists="append",
                             index=False,
                             chunksize=2000
                         )
-                        print(f"  -> Imported {df.height} rows to {table_name}.")
-                        
+                        print(f"  -> Imported {df.height} rows.")
+
                     except Exception as e:
                         print(f"Failed to import {csv_file}")
                         print(traceback.format_exc())
@@ -140,50 +178,37 @@ def import_data(engine):
             for date_dir in date_dirs:
                 date_str = date_dir.split("=")[1]
 
-                # 日期篩選
                 try:
                     current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
-                    if start_date and current_date < start_date:
-                        continue
-                    if end_date and current_date > end_date:
-                        continue
+                    if start_date and current_date < start_date: continue
+                    if end_date and current_date > end_date: continue
                 except ValueError:
                     continue
 
                 csv_file = os.path.join(date_dir, "all.csv")
-                if not os.path.exists(csv_file):
-                    continue
+                if not os.path.exists(csv_file): continue
 
                 table_name = "shareholding_div"
                 try:
-                    print(f"Processing {table_name} - {date_str}...")
+                    target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
 
+                    if not force_reimport and date_exists_in_db(engine, table_name, target_date):
+                        print(f"Skipping {table_name} - {date_str} (already in DB)")
+                        continue
+
+                    print(f"Processing {table_name} - {date_str}...")
                     df = pl.read_csv(csv_file)
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
 
-                    # 過濾 ETF
-                    if "symbol" in df.columns:
-                        original_count = df.height
-                        df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
-                        filtered_count = original_count - df.height
-                        if filtered_count > 0:
-                            print(f"  -> Filtered out {filtered_count} ETF records")
+                    df = filter_etf(df)
+                    if df.height == 0:
+                        print("  -> No data after filtering ETFs, skipping.")
+                        continue
 
-                        if df.height == 0:
-                            print("  -> No data after filtering ETFs, skipping.")
-                            continue
-
-                    # Delete-before-Insert (依日期)
-                    with engine.begin() as conn:
-                        table_exists = conn.execute(text(
-                            f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')"
-                        )).scalar()
-
-                        if table_exists:
-                            target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-                            conn.execute(text(f"DELETE FROM {table_name} WHERE date = :date"), {"date": target_date})
+                    if force_reimport:
+                        delete_by_date(engine, table_name, target_date)
 
                     df.to_pandas().to_sql(
                         name=table_name,
@@ -206,38 +231,32 @@ def import_data(engine):
             for date_dir in date_dirs:
                 date_str = date_dir.split("=")[1]
 
-                # 日期篩選
                 try:
                     current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
-                    if start_date and current_date < start_date:
-                        continue
-                    if end_date and current_date > end_date:
-                        continue
+                    if start_date and current_date < start_date: continue
+                    if end_date and current_date > end_date: continue
                 except ValueError:
                     continue
 
                 csv_file = os.path.join(date_dir, "all.csv")
-                if not os.path.exists(csv_file):
-                    continue
+                if not os.path.exists(csv_file): continue
 
                 table_name = "institutional_summary"
                 try:
-                    print(f"Processing {table_name} - {date_str}...")
+                    target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
 
+                    if not force_reimport and date_exists_in_db(engine, table_name, target_date):
+                        print(f"Skipping {table_name} - {date_str} (already in DB)")
+                        continue
+
+                    print(f"Processing {table_name} - {date_str}...")
                     df = pl.read_csv(csv_file)
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
 
-                    # Delete-before-Insert (依日期)
-                    with engine.begin() as conn:
-                        table_exists = conn.execute(text(
-                            f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')"
-                        )).scalar()
-
-                        if table_exists:
-                            target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-                            conn.execute(text(f"DELETE FROM {table_name} WHERE date = :date"), {"date": target_date})
+                    if force_reimport:
+                        delete_by_date(engine, table_name, target_date)
 
                     df.to_pandas().to_sql(
                         name=table_name,
@@ -255,62 +274,50 @@ def import_data(engine):
 
         # --- 一般處理 (daily_quotes, etc.) ---
         date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
-        
+
         for date_dir in sorted(date_dirs):
             date_str = date_dir.split("=")[1]
-            
-            # 日期篩選邏輯
+
             try:
                 current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
-                if start_date and current_date < start_date:
-                    continue
-                if end_date and current_date > end_date:
-                    continue
+                if start_date and current_date < start_date: continue
+                if end_date and current_date > end_date: continue
             except ValueError:
                 continue
 
-            # 遍歷 CSV 檔案
             csv_files = glob.glob(os.path.join(date_dir, "*.csv"))
             for csv_file in csv_files:
-                market = os.path.basename(csv_file).split(".")[0] # sii or otc
-                table_name = category # 資料表名稱 = 類別名稱
-                
+                market = os.path.basename(csv_file).split(".")[0]
+                table_name = category
+
                 try:
+                    target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+
+                    if not force_reimport and date_exists_in_db(engine, table_name, target_date, market=market):
+                        print(f"Skipping {table_name} - {date_str} - {market} (already in DB)")
+                        continue
+
                     print(f"Processing {table_name} - {date_str} - {market}...")
-                    
+
                     df = pl.read_csv(csv_file)
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
 
-                    # 過濾 ETF：排除 symbol 以 "00" 開頭的記錄（ETF 沒有基本面數據）
-                    if "symbol" in df.columns:
-                        original_count = df.height
-                        df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
-                        filtered_count = original_count - df.height
-                        if filtered_count > 0:
-                            print(f"  -> Filtered out {filtered_count} ETF records")
+                    df = filter_etf(df)
+                    if df.height == 0:
+                        print("  -> No data after filtering ETFs, skipping.")
+                        continue
 
-                        if df.height == 0:
-                            print("  -> No data after filtering ETFs, skipping.")
-                            continue
-
-                    # 為了避免重複資料，先刪除該日期與市場的舊資料
-                    with engine.begin() as conn:
-                        table_exists = conn.execute(text(
-                            f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')"
-                        )).scalar()
-                        
-                        if table_exists:
-                            delete_query = text(f"DELETE FROM {table_name} WHERE date = :date AND market = :market")
-                            conn.execute(delete_query, {"date": f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}", "market": market})
+                    if force_reimport:
+                        delete_by_date(engine, table_name, target_date, market=market)
 
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
                         if_exists="append",
                         index=False,
-                        chunksize=2000 
+                        chunksize=2000
                     )
                     print(f"  -> Imported {df.height} rows.")
 
@@ -322,7 +329,7 @@ if __name__ == "__main__":
     print("Starting Importer...")
     db_url = get_db_url()
     engine = create_engine(db_url)
-    
+
     wait_for_db(engine)
     import_data(engine)
     print("All imports completed.")
