@@ -106,6 +106,42 @@ class BacktestResult(BaseModel):
     summary: BacktestSummary
     trades: List[TradeRecord]
 
+# --- Scanner Models ---
+class VolumeSpikeResult(BaseModel):
+    symbol: str
+    name: str
+    date: datetime.date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    volume_ratio: float
+    distance_from_high_pct: Optional[float] = None
+    upper_shadow_ratio: Optional[float] = None
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+    k: Optional[float] = None
+    d: Optional[float] = None
+    rsi6: Optional[float] = None
+    rsi12: Optional[float] = None
+    macd_dif: Optional[float] = None
+    macd_dea: Optional[float] = None
+
+class CandlestickData(BaseModel):
+    date: datetime.date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+
 # ... (get_db_url, read_root, health_check) ...
 
 # ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
@@ -185,6 +221,146 @@ def run_backtest_api(request: BacktestRequest):
 
     except Exception as e:
         print(f"Backtest Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
+def get_volume_spike_scanner(
+    date: str = Query(..., description="Scan date in YYYY-MM-DD format"),
+    min_volume: int = Query(5000000, description="Minimum volume threshold"),
+    volume_ratio: float = Query(3.0, description="Volume spike ratio vs average"),
+    avg_days: int = Query(10, description="Days for average volume calculation"),
+    filter_long_shadow: bool = Query(True, description="Filter long upper shadow candles")
+):
+    """
+    Run volume spike scanner for a specific date
+    Returns stocks with significant volume breakouts
+    """
+    try:
+        # Import scanner function
+        from scanner.volume_spike_scanner import scan_volume_spike
+
+        # Run scanner
+        df = scan_volume_spike(
+            scan_date=date,
+            min_volume=min_volume,
+            volume_ratio=volume_ratio,
+            avg_days=avg_days,
+            filter_long_shadow=filter_long_shadow
+        )
+
+        if df.empty:
+            return []
+
+        # Convert DataFrame to Pydantic models
+        results = []
+        for _, row in df.iterrows():
+            results.append(VolumeSpikeResult(
+                symbol=row['symbol'],
+                name=row['name'],
+                date=row['date'],
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume']),
+                volume_ratio=float(row['volume_ratio']),
+                distance_from_high_pct=float(row['distance_from_high_pct']) if pd.notna(row['distance_from_high_pct']) else None,
+                upper_shadow_ratio=float(row['upper_shadow_ratio']) if pd.notna(row['upper_shadow_ratio']) else None,
+                ma5=float(row['ma5']) if pd.notna(row['ma5']) else None,
+                ma10=float(row['ma10']) if pd.notna(row['ma10']) else None,
+                ma20=float(row['ma20']) if pd.notna(row['ma20']) else None,
+                ma60=float(row['ma60']) if pd.notna(row['ma60']) else None,
+                k=float(row['k']) if pd.notna(row['k']) else None,
+                d=float(row['d']) if pd.notna(row['d']) else None,
+                rsi6=float(row['rsi6']) if pd.notna(row['rsi6']) else None,
+                rsi12=float(row['rsi12']) if pd.notna(row['rsi12']) else None,
+                macd_dif=float(row['macd_dif']) if pd.notna(row['macd_dif']) else None,
+                macd_dea=float(row['macd_dea']) if pd.notna(row['macd_dea']) else None
+            ))
+
+        return results
+
+    except Exception as e:
+        print(f"Scanner Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/scanner/candlestick/{symbol}", response_model=List[CandlestickData])
+def get_candlestick_data(
+    symbol: str,
+    date: str = Query(..., description="Center date in YYYY-MM-DD format"),
+    days_before: int = Query(30, description="Days before center date"),
+    days_after: int = Query(10, description="Days after center date")
+):
+    """
+    Get candlestick chart data for a specific stock around a date
+    Used to render charts in frontend
+    """
+    try:
+        from datetime import timedelta
+
+        # Calculate date range
+        center_date = datetime.datetime.strptime(date, '%Y-%m-%d')
+        start_date = (center_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
+        end_date = (center_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
+
+        # Query data
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+
+        sql = text("""
+            SELECT
+                dq.date,
+                dq.open,
+                dq.high,
+                dq.low,
+                dq.close,
+                dq.volume,
+                ti.ma5,
+                ti.ma10,
+                ti.ma20,
+                ti.ma60
+            FROM daily_quotes dq
+            LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date
+            WHERE dq.symbol = :symbol
+              AND dq.date >= :start_date
+              AND dq.date <= :end_date
+            ORDER BY dq.date
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(sql, {
+                "symbol": symbol,
+                "start_date": start_date,
+                "end_date": end_date
+            }).fetchall()
+
+        if not result:
+            return []
+
+        # Convert to Pydantic models
+        candlestick_data = []
+        for row in result:
+            candlestick_data.append(CandlestickData(
+                date=row.date,
+                open=float(row.open),
+                high=float(row.high),
+                low=float(row.low),
+                close=float(row.close),
+                volume=float(row.volume),
+                ma5=float(row.ma5) if row.ma5 is not None else None,
+                ma10=float(row.ma10) if row.ma10 is not None else None,
+                ma20=float(row.ma20) if row.ma20 is not None else None,
+                ma60=float(row.ma60) if row.ma60 is not None else None
+            ))
+
+        return candlestick_data
+
+    except Exception as e:
+        print(f"Candlestick Data Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,13 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # 使用 Tailscale IP 連接到 backend
+      - NEXT_PUBLIC_API_URL=http://100.103.191.79:8000
+    volumes:
+      - .:/app
+      - /app/node_modules

@@ -40,6 +40,23 @@ services:
       - OUTPUT_DIR=/app/data
 
   # ============================================
+  # Scanner - 爆量翻多掃描器
+  # ============================================
+  scanner:
+    build:
+      context: ./scanner
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=stock_db
+
+  # ============================================
   # Processor & Importer
   # ============================================
 
