@@ -98,7 +98,7 @@ def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=3.0, avg_days=
           AND dq.volume >= vs.avg_volume_nd * %(volume_ratio)s
           AND (%(filter_long_shadow)s = FALSE OR
                (ABS(dq.close - dq.open) >= 0.01 AND (dq.high - GREATEST(dq.open, dq.close)) / ABS(dq.close - dq.open) < 1.0))
-          AND (ti.ma60 IS NULL OR dq.close >= ti.ma60)
+          AND ti.ma60 IS NOT NULL AND dq.close >= ti.ma60
     )
     SELECT
         symbol,
