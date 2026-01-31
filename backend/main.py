@@ -344,6 +344,8 @@ def get_candlestick_data(
         # Convert to Pydantic models
         candlestick_data = []
         for row in result:
+            if row.open is None or row.high is None or row.low is None or row.close is None or row.volume is None:
+                continue
             candlestick_data.append(CandlestickData(
                 date=row.date,
                 open=float(row.open),

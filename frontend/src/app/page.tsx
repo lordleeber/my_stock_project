@@ -85,15 +85,14 @@ export default function Home() {
       const data = await res.json();
       setScanResults(data);
 
-      // Pre-load chart data for top 3 results
+      // Pre-load chart data for all results
       if (data.length > 0) {
-        const top3 = data.slice(0, 3);
-        const chartPromises = top3.map((stock: any) =>
+        const chartPromises = data.map((stock: any) =>
           fetchChartData(stock.symbol, stock.date)
         );
         await Promise.all(chartPromises);
 
-        const initialExpanded = new Set(top3.map((s: any) => s.symbol)) as Set<string>;
+        const initialExpanded = new Set(data.map((s: any) => s.symbol)) as Set<string>;
         setExpandedCharts(initialExpanded);
       }
     } catch (err) {
@@ -108,7 +107,7 @@ export default function Home() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const res = await fetch(
-        `${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=30&days_after=10`
+        `${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=60&days_after=60`
       );
       if (!res.ok) throw new Error("無法取得圖表資料");
 
@@ -384,11 +383,11 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold mb-1">最小成交量 (股)</label>
+                  <label className="block text-sm font-bold mb-1">最小成交量 (張)</label>
                   <input
                     type="number"
-                    value={scanMinVolume}
-                    onChange={(e) => setScanMinVolume(Number(e.target.value))}
+                    value={scanMinVolume / 1000}
+                    onChange={(e) => setScanMinVolume(Number(e.target.value) * 1000)}
                     className="w-full border p-2 rounded"
                   />
                 </div>
@@ -431,16 +430,11 @@ export default function Home() {
                             開: {stock.open.toFixed(2)} 高: {stock.high.toFixed(2)} 低: {stock.low.toFixed(2)} 收: {stock.close.toFixed(2)}
                           </span>
                           <span className="text-sm text-gray-600">
-                            成交量: {(stock.volume / 10000).toLocaleString()} 萬股
+                            成交量: {(stock.volume / 1000).toLocaleString()} 張
                           </span>
                           <span className="text-sm font-bold text-red-600">
                             量比: {stock.volume_ratio.toFixed(2)}x
                           </span>
-                          {stock.rsi6 && (
-                            <span className="text-sm text-gray-600">
-                              RSI6: {stock.rsi6.toFixed(1)}
-                            </span>
-                          )}
                         </div>
                         <button
                           onClick={() => toggleChart(stock.symbol, stock.date)}

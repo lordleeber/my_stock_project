@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createChart } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from "lightweight-charts";
 
 interface CandlestickData {
   date: string;
@@ -45,7 +45,20 @@ export default function CandlestickChart({
       },
       grid: {
         vertLines: { color: "#f0f0f0" },
-        horzLines: { color: "#f0f0f0" },
+        horzLines: { visible: false, color: "transparent" },
+      },
+      leftPriceScale: {
+        visible: true,
+        drawTicks: false,
+      },
+      rightPriceScale: {
+        drawTicks: false,
+      },
+      handleScroll: {
+        mouseWheel: false,
+      },
+      handleScale: {
+        mouseWheel: false,
       },
       timeScale: {
         timeVisible: true,
@@ -56,8 +69,7 @@ export default function CandlestickChart({
     chartRef.current = chart;
 
     // Add candlestick series
-    // @ts-ignore - lightweight-charts v5 type definitions issue
-    const candlestickSeries = chart.addCandlestickSeries({
+    const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#ef4444", // Red for up (Taiwan convention)
       downColor: "#22c55e", // Green for down
       borderUpColor: "#ef4444",
@@ -79,8 +91,7 @@ export default function CandlestickChart({
 
     // Add MA lines
     if (data.some((d) => d.ma5)) {
-      // @ts-ignore
-      const ma5Series = chart.addLineSeries({ color: "#f97316", lineWidth: 1 });
+      const ma5Series = chart.addSeries(LineSeries, { color: "#f97316", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       ma5Series.setData(
         data
           .filter((d) => d.ma5 !== null && d.ma5 !== undefined)
@@ -89,8 +100,7 @@ export default function CandlestickChart({
     }
 
     if (data.some((d) => d.ma10)) {
-      // @ts-ignore
-      const ma10Series = chart.addLineSeries({ color: "#3b82f6", lineWidth: 1 });
+      const ma10Series = chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       ma10Series.setData(
         data
           .filter((d) => d.ma10 !== null && d.ma10 !== undefined)
@@ -99,8 +109,7 @@ export default function CandlestickChart({
     }
 
     if (data.some((d) => d.ma20)) {
-      // @ts-ignore
-      const ma20Series = chart.addLineSeries({ color: "#ef4444", lineWidth: 1 });
+      const ma20Series = chart.addSeries(LineSeries, { color: "#ef4444", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       ma20Series.setData(
         data
           .filter((d) => d.ma20 !== null && d.ma20 !== undefined)
@@ -109,8 +118,7 @@ export default function CandlestickChart({
     }
 
     if (data.some((d) => d.ma60)) {
-      // @ts-ignore
-      const ma60Series = chart.addLineSeries({ color: "#a855f7", lineWidth: 1 });
+      const ma60Series = chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       ma60Series.setData(
         data
           .filter((d) => d.ma60 !== null && d.ma60 !== undefined)
@@ -119,18 +127,21 @@ export default function CandlestickChart({
     }
 
     // Add volume histogram
-    // @ts-ignore
-    const volumeSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addSeries(HistogramSeries, {
       color: "#cbd5e1",
       priceFormat: {
         type: "volume",
       },
-      priceScaleId: "",
+      priceScaleId: "left",
+    });
+
+    chart.priceScale("left").applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
     });
 
     const volumeData = data.map((d) => ({
       time: d.date,
-      value: d.volume,
+      value: d.volume / 1000,
       color: d.close >= d.open ? "#ef444480" : "#22c55e80",
     }));
 
@@ -140,9 +151,8 @@ export default function CandlestickChart({
     const scanDateTime = new Date(scanDate).getTime() / 1000;
     chart.timeScale().setVisibleRange({
       // @ts-ignore
-      from: scanDateTime - 30 * 24 * 60 * 60,
-      // @ts-ignore
-      to: scanDateTime + 10 * 24 * 60 * 60,
+      from: scanDateTime - 60 * 24 * 60 * 60,
+      to: scanDateTime + 60 * 24 * 60 * 60,
     });
 
     // Resize handler
@@ -168,7 +178,12 @@ export default function CandlestickChart({
       <div className="text-sm font-semibold mb-2 text-gray-700">
         {symbol} {name} - K線圖
       </div>
-      <div ref={chartContainerRef} className="w-full border rounded" />
+      <div className="relative w-full border rounded">
+        <div ref={chartContainerRef} className="w-full" />
+        <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
+          成交量(張)
+        </span>
+      </div>
       <div className="flex gap-4 text-xs text-gray-600 mt-2">
         <span className="flex items-center gap-1">
           <span className="w-3 h-0.5 bg-orange-500"></span> MA5
