@@ -143,6 +143,7 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./strategy:/app/strategy
+      - ./scanner:/app/scanner
 
   frontend:
     build:
