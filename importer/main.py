@@ -309,6 +309,23 @@ def import_data(engine):
                         print("  -> No data after filtering ETFs, skipping.")
                         continue
 
+                    # 過濾 OHLCV 全為 0 或 null 的無效資料（停牌或資料缺失）
+                    if table_name == "daily_quotes":
+                        ohlcv_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                        if ohlcv_cols:
+                            before = df.height
+                            df = df.filter(
+                                ~pl.all_horizontal(
+                                    (pl.col(c).is_null() | (pl.col(c) == 0)) for c in ohlcv_cols
+                                )
+                            )
+                            filtered = before - df.height
+                            if filtered > 0:
+                                print(f"  -> Filtered {filtered} rows with all-zero/null OHLCV.")
+                            if df.height == 0:
+                                print("  -> No data after filtering zero OHLCV, skipping.")
+                                continue
+
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date, market=market)
 
