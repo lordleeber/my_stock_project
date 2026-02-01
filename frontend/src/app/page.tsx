@@ -23,7 +23,7 @@ export default function Home() {
   // Scanner State
   const [scanDate, setScanDate] = useState("");
   const [scanMinVolume, setScanMinVolume] = useState(5000000);
-  const [scanVolumeRatio, setScanVolumeRatio] = useState(3.0);
+  const [scanVolumeRatio, setScanVolumeRatio] = useState(4.0);
   const [scanResults, setScanResults] = useState<any[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
   const [chartDataCache, setChartDataCache] = useState<Record<string, any[]>>({});
@@ -107,7 +107,7 @@ export default function Home() {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const res = await fetch(
-        `${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=60&days_after=60`
+        `${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=90&days_after=90`
       );
       if (!res.ok) throw new Error("無法取得圖表資料");
 

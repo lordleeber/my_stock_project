@@ -147,13 +147,34 @@ export default function CandlestickChart({
 
     volumeSeries.setData(volumeData);
 
-    // Highlight scan date
-    const scanDateTime = new Date(scanDate).getTime() / 1000;
-    chart.timeScale().setVisibleRange({
-      // @ts-ignore
-      from: scanDateTime - 60 * 24 * 60 * 60,
-      to: scanDateTime + 60 * 24 * 60 * 60,
+    // Highlight scan date background with yellow
+    const highlightSeries = chart.addSeries(HistogramSeries, {
+      color: "#facc1580",
+      priceScaleId: "highlight",
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
+    chart.priceScale("highlight").applyOptions({
+      visible: false,
+      scaleMargins: { top: 0, bottom: 0 },
+    });
+    const maxPrice = Math.max(...data.map((d) => d.high));
+    highlightSeries.setData(
+      candleData.map((d) => ({
+        time: d.time,
+        value: d.time === scanDate ? maxPrice * 2 : 0,
+        color: d.time === scanDate ? "#facc1580" : "transparent",
+      }))
+    );
+
+    // Set visible range: center on scanDate with ±60 bars of space
+    const scanIndex = candleData.findIndex((d) => d.time === scanDate);
+    if (scanIndex >= 0) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: scanIndex - 60,
+        to: scanIndex + 60,
+      });
+    }
 
     // Resize handler
     const handleResize = () => {
