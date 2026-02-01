@@ -5,6 +5,9 @@ import CandlestickChart from "./components/CandlestickChart";
 import InstitutionalChart from "./components/InstitutionalChart";
 
 export default function Home() {
+  // Theme State
+  const [darkMode, setDarkMode] = useState(false);
+
   // Tab State
   const [activeTab, setActiveTab] = useState<"dashboard" | "backtest" | "scanner">("dashboard");
 
@@ -154,19 +157,40 @@ export default function Home() {
     setExpandedCharts(newExpanded);
   };
 
+  const bg = darkMode ? "bg-gray-900" : "bg-gray-100";
+  const cardBg = darkMode ? "bg-gray-800" : "bg-white";
+  const controlBg = darkMode ? "bg-gray-800" : "bg-gray-50";
+  const textPrimary = darkMode ? "text-gray-100" : "text-gray-900";
+  const textSecondary = darkMode ? "text-gray-400" : "text-gray-600";
+  const borderColor = darkMode ? "border-gray-700" : "border-gray-200";
+  const inputClass = darkMode
+    ? "w-full border border-gray-600 bg-gray-700 text-gray-200 p-2 rounded"
+    : "w-full border p-2 rounded";
+  const btnToggle = darkMode
+    ? "px-4 py-1 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded"
+    : "px-4 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded";
+
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className={`min-h-screen ${bg} ${textPrimary}`}>
       <div className="container mx-auto p-4">
-        <h1 className="text-3xl font-bold mb-6">台股分析系統</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">台股分析系統</h1>
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className={`px-3 py-1 rounded text-lg ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-200 hover:bg-gray-300"}`}
+          >
+            {darkMode ? "\u2600\uFE0F" : "\uD83C\uDF19"}
+          </button>
+        </div>
 
         {/* Tabs */}
-        <div className="flex border-b mb-6">
+        <div className={`flex border-b ${borderColor} mb-6`}>
           <button
             onClick={() => setActiveTab("dashboard")}
             className={`px-6 py-2 font-bold ${
               activeTab === "dashboard"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600"
+                ? "border-b-2 border-blue-500 text-blue-500"
+                : textSecondary
             }`}
           >
             Dashboard
@@ -175,8 +199,8 @@ export default function Home() {
             onClick={() => setActiveTab("backtest")}
             className={`px-6 py-2 font-bold ${
               activeTab === "backtest"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600"
+                ? "border-b-2 border-blue-500 text-blue-500"
+                : textSecondary
             }`}
           >
             策略回測
@@ -185,8 +209,8 @@ export default function Home() {
             onClick={() => setActiveTab("scanner")}
             className={`px-6 py-2 font-bold ${
               activeTab === "scanner"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-600"
+                ? "border-b-2 border-blue-500 text-blue-500"
+                : textSecondary
             }`}
           >
             爆量掃描器
@@ -195,23 +219,23 @@ export default function Home() {
 
         {/* Dashboard Tab */}
         {activeTab === "dashboard" && (
-          <div className="p-4 bg-white rounded-lg shadow">
+          <div className={`p-4 ${cardBg} rounded-lg shadow`}>
             <h2 className="text-xl font-bold mb-4">Dashboard</h2>
-            <p className="text-gray-600">即將推出更多功能...</p>
+            <p className={textSecondary}>即將推出更多功能...</p>
           </div>
         )}
 
         {/* Backtest Tab */}
         {activeTab === "backtest" && (
           <div className="p-4">
-            <div className="bg-gray-50 p-6 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className={`${controlBg} p-6 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4`}>
               <div>
                 <label className="block text-sm font-bold mb-1">開始日期</label>
                 <input
                   type="date"
                   value={btStartDate}
                   onChange={(e) => setBtStartDate(e.target.value)}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 />
               </div>
               <div>
@@ -220,7 +244,7 @@ export default function Home() {
                   type="date"
                   value={btEndDate}
                   onChange={(e) => setBtEndDate(e.target.value)}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 />
               </div>
               <div>
@@ -229,7 +253,7 @@ export default function Home() {
                   type="number"
                   value={btHoldDays}
                   onChange={(e) => setBtHoldDays(Number(e.target.value))}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 />
               </div>
               <div>
@@ -237,7 +261,7 @@ export default function Home() {
                 <select
                   value={btMode}
                   onChange={(e) => setBtMode(e.target.value as any)}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 >
                   <option value="shares">固定張數 (1張)</option>
                   <option value="amount">固定金額 (預設10萬)</option>
@@ -250,32 +274,32 @@ export default function Home() {
                     type="number"
                     value={btCapital}
                     onChange={(e) => setBtCapital(Number(e.target.value))}
-                    className="w-full border p-2 rounded"
+                    className={inputClass}
                   />
                 </div>
               )}
               <div>
                 <label className="block text-sm font-bold mb-1 text-green-600">
-                  停利 (%) <span className="text-xs font-normal text-gray-500">(選填)</span>
+                  停利 (%) <span className={`text-xs font-normal ${textSecondary}`}>(選填)</span>
                 </label>
                 <input
                   type="number"
                   placeholder="例如: 10"
                   value={btTakeProfit || ""}
                   onChange={(e) => setBtTakeProfit(e.target.value ? Number(e.target.value) : 0)}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 />
               </div>
               <div>
                 <label className="block text-sm font-bold mb-1 text-red-600">
-                  停損 (%) <span className="text-xs font-normal text-gray-500">(選填)</span>
+                  停損 (%) <span className={`text-xs font-normal ${textSecondary}`}>(選填)</span>
                 </label>
                 <input
                   type="number"
                   placeholder="例如: 5"
                   value={btStopLoss || ""}
                   onChange={(e) => setBtStopLoss(e.target.value ? Number(e.target.value) : 0)}
-                  className="w-full border p-2 rounded"
+                  className={inputClass}
                 />
               </div>
               <div className="flex items-center space-x-4 md:col-span-3 mt-2">
@@ -287,7 +311,7 @@ export default function Home() {
                     onChange={(e) => setBtPyramiding(e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
-                  <label htmlFor="pyramiding" className="ml-2 block text-sm font-bold text-gray-900">
+                  <label htmlFor="pyramiding" className={`ml-2 block text-sm font-bold ${textPrimary}`}>
                     允許重複加碼 (Pyramiding)
                   </label>
                 </div>
@@ -317,31 +341,31 @@ export default function Home() {
 
             {/* Backtest Results */}
             {btResult && (
-              <div className="bg-white p-6 rounded-lg shadow">
+              <div className={`${cardBg} p-6 rounded-lg shadow`}>
                 <h3 className="text-lg font-bold mb-4">回測結果</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <div className="text-sm text-gray-600">總交易次數</div>
+                    <div className={`text-sm ${textSecondary}`}>總交易次數</div>
                     <div className="text-xl font-bold">{btResult.summary.total_trades}</div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">總損益</div>
+                    <div className={`text-sm ${textSecondary}`}>總損益</div>
                     <div className={`text-xl font-bold ${btResult.summary.total_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {btResult.summary.total_profit.toLocaleString()} 元
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">投資報酬率</div>
+                    <div className={`text-sm ${textSecondary}`}>投資報酬率</div>
                     <div className={`text-xl font-bold ${btResult.summary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {btResult.summary.roi.toFixed(2)}%
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">勝率</div>
+                    <div className={`text-sm ${textSecondary}`}>勝率</div>
                     <div className="text-xl font-bold">{btResult.summary.win_rate.toFixed(2)}%</div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-600">平均報酬</div>
+                    <div className={`text-sm ${textSecondary}`}>平均報酬</div>
                     <div className="text-xl font-bold">{btResult.summary.avg_return.toFixed(2)}%</div>
                   </div>
                 </div>
@@ -350,7 +374,7 @@ export default function Home() {
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
-                        <tr className="border-b">
+                        <tr className={`border-b ${borderColor}`}>
                           <th className="text-left p-2">代號</th>
                           <th className="text-left p-2">名稱</th>
                           <th className="text-left p-2">買入日期</th>
@@ -391,7 +415,7 @@ export default function Home() {
         {activeTab === "scanner" && (
           <div className="p-4">
             {/* Scanner Controls */}
-            <div className="bg-gray-50 p-6 rounded-lg mb-6">
+            <div className={`${controlBg} p-6 rounded-lg mb-6`}>
               <h2 className="text-xl font-bold mb-4">爆量掃描器設定</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -400,7 +424,7 @@ export default function Home() {
                     type="date"
                     value={scanDate}
                     onChange={(e) => setScanDate(e.target.value)}
-                    className="w-full border p-2 rounded"
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -409,7 +433,7 @@ export default function Home() {
                     type="number"
                     value={scanMinVolume / 1000}
                     onChange={(e) => setScanMinVolume(Number(e.target.value) * 1000)}
-                    className="w-full border p-2 rounded"
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -419,7 +443,7 @@ export default function Home() {
                     step="0.1"
                     value={scanVolumeRatio}
                     onChange={(e) => setScanVolumeRatio(Number(e.target.value))}
-                    className="w-full border p-2 rounded"
+                    className={inputClass}
                   />
                 </div>
               </div>
@@ -440,17 +464,17 @@ export default function Home() {
                 </h3>
                 <div className="space-y-4">
                   {scanResults.map((stock) => (
-                    <div key={stock.symbol} className="border rounded-lg p-4 bg-white">
+                    <div key={stock.symbol} className={`border ${borderColor} rounded-lg p-4 ${cardBg}`}>
                       {/* Stock Info Row */}
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex gap-4 items-center flex-wrap">
                           <span className="text-lg font-bold">
                             {stock.symbol} {stock.name}
                           </span>
-                          <span className="text-sm text-gray-600">
+                          <span className={`text-sm ${textSecondary}`}>
                             開: {stock.open.toFixed(2)} 高: {stock.high.toFixed(2)} 低: {stock.low.toFixed(2)} 收: {stock.close.toFixed(2)}
                           </span>
-                          <span className="text-sm text-gray-600">
+                          <span className={`text-sm ${textSecondary}`}>
                             成交量: {(stock.volume / 1000).toLocaleString()} 張
                           </span>
                           <span className="text-sm font-bold text-red-600">
@@ -459,7 +483,7 @@ export default function Home() {
                         </div>
                         <button
                           onClick={() => toggleChart(stock.symbol, stock.date)}
-                          className="px-4 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+                          className={btnToggle}
                         >
                           {expandedCharts.has(stock.symbol) ? "隱藏圖表" : "顯示圖表"}
                         </button>
@@ -475,18 +499,20 @@ export default function Home() {
                                 symbol={stock.symbol}
                                 name={stock.name}
                                 scanDate={stock.date}
+                                darkMode={darkMode}
                               />
                               {institutionalDataCache[stock.symbol] && institutionalDataCache[stock.symbol].length > 0 && (
                                 <div className="mt-4">
                                   <InstitutionalChart
                                     data={institutionalDataCache[stock.symbol]}
                                     scanDate={stock.date}
+                                    darkMode={darkMode}
                                   />
                                 </div>
                               )}
                             </>
                           ) : (
-                            <div className="h-40 flex items-center justify-center text-gray-500">
+                            <div className={`h-40 flex items-center justify-center ${textSecondary}`}>
                               載入圖表中...
                             </div>
                           )}
@@ -499,7 +525,7 @@ export default function Home() {
             )}
 
             {scanResults.length === 0 && !scanLoading && (
-              <div className="text-center text-gray-500 py-12">
+              <div className={`text-center ${textSecondary} py-12`}>
                 請選擇日期並點擊「開始掃描」
               </div>
             )}

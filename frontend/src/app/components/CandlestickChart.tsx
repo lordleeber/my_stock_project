@@ -21,6 +21,7 @@ interface CandlestickChartProps {
   symbol: string;
   name: string;
   scanDate: string;
+  darkMode?: boolean;
 }
 
 export default function CandlestickChart({
@@ -28,6 +29,7 @@ export default function CandlestickChart({
   symbol,
   name,
   scanDate,
+  darkMode = false,
 }: CandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
@@ -40,11 +42,11 @@ export default function CandlestickChart({
       width: chartContainerRef.current.clientWidth,
       height: 400,
       layout: {
-        background: { color: "#ffffff" },
-        textColor: "#333",
+        background: { color: darkMode ? "#1f2937" : "#ffffff" },
+        textColor: darkMode ? "#d1d5db" : "#333",
       },
       grid: {
-        vertLines: { color: "#f0f0f0" },
+        vertLines: { color: darkMode ? "#374151" : "#f0f0f0" },
         horzLines: { visible: false, color: "transparent" },
       },
       leftPriceScale: {
@@ -192,20 +194,20 @@ export default function CandlestickChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, scanDate]);
+  }, [data, scanDate, darkMode]);
 
   return (
     <div className="w-full">
-      <div className="text-sm font-semibold mb-2 text-gray-700">
+      <div className={`text-sm font-semibold mb-2 ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
         {symbol} {name} - K線圖
       </div>
-      <div className="relative w-full border rounded">
+      <div className={`relative w-full border rounded ${darkMode ? "border-gray-700" : ""}`}>
         <div ref={chartContainerRef} className="w-full" />
         <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
           成交量(張)
         </span>
       </div>
-      <div className="flex gap-4 text-xs text-gray-600 mt-2">
+      <div className={`flex gap-4 text-xs ${darkMode ? "text-gray-400" : "text-gray-600"} mt-2`}>
         <span className="flex items-center gap-1">
           <span className="w-3 h-0.5 bg-orange-500"></span> MA5
         </span>

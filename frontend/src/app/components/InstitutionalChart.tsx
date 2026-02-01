@@ -14,6 +14,7 @@ interface InstitutionalData {
 interface InstitutionalChartProps {
   data: InstitutionalData[];
   scanDate: string;
+  darkMode?: boolean;
 }
 
 function createInstitutionalSubChart(
@@ -21,18 +22,19 @@ function createInstitutionalSubChart(
   data: InstitutionalData[],
   field: "foreign_net" | "trust_net",
   heldField: "foreign_held_shares" | "trust_held_shares",
-  scanDate: string
+  scanDate: string,
+  darkMode: boolean
 ) {
   const hasHeldData = data.some((d) => d[heldField] != null);
   const chart = createChart(container, {
     width: container.clientWidth,
     height: 200,
     layout: {
-      background: { color: "#ffffff" },
-      textColor: "#333",
+      background: { color: darkMode ? "#1f2937" : "#ffffff" },
+      textColor: darkMode ? "#d1d5db" : "#333",
     },
     grid: {
-      vertLines: { color: "#f0f0f0" },
+      vertLines: { color: darkMode ? "#374151" : "#f0f0f0" },
       horzLines: { visible: false, color: "transparent" },
     },
     leftPriceScale: {
@@ -143,6 +145,7 @@ function createInstitutionalSubChart(
 export default function InstitutionalChart({
   data,
   scanDate,
+  darkMode = false,
 }: InstitutionalChartProps) {
   const foreignRef = useRef<HTMLDivElement>(null);
   const trustRef = useRef<HTMLDivElement>(null);
@@ -155,7 +158,8 @@ export default function InstitutionalChart({
       data,
       "foreign_net",
       "foreign_held_shares",
-      scanDate
+      scanDate,
+      darkMode
     );
 
     const cleanupTrust = createInstitutionalSubChart(
@@ -163,14 +167,15 @@ export default function InstitutionalChart({
       data,
       "trust_net",
       "trust_held_shares",
-      scanDate
+      scanDate,
+      darkMode
     );
 
     return () => {
       cleanupForeign();
       cleanupTrust();
     };
-  }, [data, scanDate]);
+  }, [data, scanDate, darkMode]);
 
   const hasForeignHeld = data.some((d) => d.foreign_held_shares != null);
   const hasTrustHeld = data.some((d) => d.trust_held_shares != null);
@@ -178,13 +183,13 @@ export default function InstitutionalChart({
   return (
     <div className="w-full space-y-2">
       <div>
-        <div className="text-sm font-semibold text-gray-700">
+        <div className={`text-sm font-semibold ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
           外資買賣超
           {hasForeignHeld && (
             <span className="ml-2 text-xs font-normal text-amber-500">● 外資總持股(張) → 右軸</span>
           )}
         </div>
-        <div className="relative w-full border rounded">
+        <div className={`relative w-full border rounded ${darkMode ? "border-gray-700" : ""}`}>
           <div ref={foreignRef} className="w-full" />
           <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
             買賣超(張)
@@ -192,13 +197,13 @@ export default function InstitutionalChart({
         </div>
       </div>
       <div>
-        <div className="text-sm font-semibold text-gray-700">
+        <div className={`text-sm font-semibold ${darkMode ? "text-gray-300" : "text-gray-700"}`}>
           投信買賣超
           {hasTrustHeld && (
             <span className="ml-2 text-xs font-normal text-amber-500">● 投信總持股(張) → 右軸</span>
           )}
         </div>
-        <div className="relative w-full border rounded">
+        <div className={`relative w-full border rounded ${darkMode ? "border-gray-700" : ""}`}>
           <div ref={trustRef} className="w-full" />
           <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
             買賣超(張)
