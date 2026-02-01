@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createChart, HistogramSeries } from "lightweight-charts";
+import { createChart, HistogramSeries, LineSeries } from "lightweight-charts";
 
 interface InstitutionalData {
   date: string;
   foreign_net: number;
   trust_net: number;
+  foreign_held_shares?: number;
 }
 
 interface InstitutionalChartProps {
@@ -19,7 +20,7 @@ function createInstitutionalSubChart(
   data: InstitutionalData[],
   field: "foreign_net" | "trust_net",
   scanDate: string,
-  title: string
+  showHeldLine: boolean
 ) {
   const chart = createChart(container, {
     width: container.clientWidth,
@@ -37,7 +38,8 @@ function createInstitutionalSubChart(
       drawTicks: false,
     },
     rightPriceScale: {
-      visible: false,
+      visible: showHeldLine,
+      drawTicks: false,
     },
     handleScroll: {
       mouseWheel: false,
@@ -71,6 +73,30 @@ function createInstitutionalSubChart(
   });
 
   series.setData(chartData);
+
+  // Add foreign held shares line on right axis
+  if (showHeldLine) {
+    const heldData = data
+      .filter((d) => d.foreign_held_shares != null)
+      .map((d) => ({
+        time: d.date as any,
+        value: d.foreign_held_shares! / 1000, // convert to 張
+      }));
+
+    if (heldData.length > 0) {
+      const heldSeries = chart.addSeries(LineSeries, {
+        color: "#f59e0b",
+        lineWidth: 2,
+        priceScaleId: "right",
+        lastValueVisible: true,
+        priceLineVisible: false,
+        priceFormat: {
+          type: "volume",
+        },
+      });
+      heldSeries.setData(heldData);
+    }
+  }
 
   // Highlight scan date
   const highlightSeries = chart.addSeries(HistogramSeries, {
@@ -127,7 +153,7 @@ export default function InstitutionalChart({
       data,
       "foreign_net",
       scanDate,
-      "外資買賣超"
+      true // show foreign held shares line
     );
 
     const cleanupTrust = createInstitutionalSubChart(
@@ -135,7 +161,7 @@ export default function InstitutionalChart({
       data,
       "trust_net",
       scanDate,
-      "投信買賣超"
+      false
     );
 
     return () => {
@@ -144,14 +170,21 @@ export default function InstitutionalChart({
     };
   }, [data, scanDate]);
 
+  const hasForeignHeld = data.some((d) => d.foreign_held_shares != null);
+
   return (
     <div className="w-full space-y-2">
       <div>
-        <div className="text-sm font-semibold text-gray-700">外資買賣超</div>
+        <div className="text-sm font-semibold text-gray-700">
+          外資買賣超
+          {hasForeignHeld && (
+            <span className="ml-2 text-xs font-normal text-amber-500">● 外資總持股(張) → 右軸</span>
+          )}
+        </div>
         <div className="relative w-full border rounded">
           <div ref={foreignRef} className="w-full" />
           <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
-            單位(張)
+            買賣超(張)
           </span>
         </div>
       </div>
@@ -160,7 +193,7 @@ export default function InstitutionalChart({
         <div className="relative w-full border rounded">
           <div ref={trustRef} className="w-full" />
           <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
-            單位(張)
+            買賣超(張)
           </span>
         </div>
       </div>

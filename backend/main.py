@@ -146,6 +146,7 @@ class InstitutionalData(BaseModel):
     date: datetime.date
     foreign_net: float
     trust_net: float
+    foreign_held_shares: Optional[float] = None
 
 # ... (get_db_url, read_root, health_check) ...
 
@@ -391,12 +392,17 @@ def get_institutional_data(
         engine = create_engine(db_url)
 
         sql = text("""
-            SELECT date, foreign_net, trust_net
-            FROM institutional_investors
-            WHERE symbol = :symbol
-              AND date >= :start_date
-              AND date <= :end_date
-            ORDER BY date
+            SELECT
+                ii.date,
+                ii.foreign_net,
+                ii.trust_net,
+                fh.foreign_held_shares
+            FROM institutional_investors ii
+            LEFT JOIN foreign_holding fh ON ii.symbol = fh.symbol AND ii.date = fh.date
+            WHERE ii.symbol = :symbol
+              AND ii.date >= :start_date
+              AND ii.date <= :end_date
+            ORDER BY ii.date
         """)
 
         with engine.connect() as conn:
@@ -416,7 +422,8 @@ def get_institutional_data(
             data.append(InstitutionalData(
                 date=row.date,
                 foreign_net=float(row.foreign_net) if row.foreign_net is not None else 0,
-                trust_net=float(row.trust_net) if row.trust_net is not None else 0
+                trust_net=float(row.trust_net) if row.trust_net is not None else 0,
+                foreign_held_shares=float(row.foreign_held_shares) if row.foreign_held_shares is not None else None
             ))
 
         return data

@@ -117,10 +117,22 @@ export default function Home() {
       if (candleRes.ok) {
         const candleData = await candleRes.json();
         setChartDataCache((prev) => ({ ...prev, [symbol]: candleData }));
-      }
-      if (instRes.ok) {
-        const instData = await instRes.json();
-        setInstitutionalDataCache((prev) => ({ ...prev, [symbol]: instData }));
+
+        // Merge institutional data with candle dates, fill missing dates with 0
+        if (instRes.ok) {
+          const instData = await instRes.json();
+          const instMap = new Map(instData.map((d: any) => [d.date, d]));
+          const merged = candleData.map((c: any) => {
+            const inst = instMap.get(c.date) as any;
+            return {
+              date: c.date,
+              foreign_net: inst?.foreign_net ?? 0,
+              trust_net: inst?.trust_net ?? 0,
+              foreign_held_shares: inst?.foreign_held_shares ?? null,
+            };
+          });
+          setInstitutionalDataCache((prev) => ({ ...prev, [symbol]: merged }));
+        }
       }
     } catch (err) {
       console.error(`Failed to load chart for ${symbol}:`, err);
