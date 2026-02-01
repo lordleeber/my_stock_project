@@ -8,6 +8,7 @@ interface InstitutionalData {
   foreign_net: number;
   trust_net: number;
   foreign_held_shares?: number;
+  trust_held_shares?: number;
 }
 
 interface InstitutionalChartProps {
@@ -19,9 +20,10 @@ function createInstitutionalSubChart(
   container: HTMLDivElement,
   data: InstitutionalData[],
   field: "foreign_net" | "trust_net",
-  scanDate: string,
-  showHeldLine: boolean
+  heldField: "foreign_held_shares" | "trust_held_shares",
+  scanDate: string
 ) {
+  const hasHeldData = data.some((d) => d[heldField] != null);
   const chart = createChart(container, {
     width: container.clientWidth,
     height: 200,
@@ -38,7 +40,7 @@ function createInstitutionalSubChart(
       drawTicks: false,
     },
     rightPriceScale: {
-      visible: showHeldLine,
+      visible: hasHeldData,
       drawTicks: false,
     },
     handleScroll: {
@@ -74,13 +76,13 @@ function createInstitutionalSubChart(
 
   series.setData(chartData);
 
-  // Add foreign held shares line on right axis
-  if (showHeldLine) {
+  // Add held shares line on right axis
+  if (hasHeldData) {
     const heldData = data
-      .filter((d) => d.foreign_held_shares != null)
+      .filter((d) => d[heldField] != null)
       .map((d) => ({
         time: d.date as any,
-        value: d.foreign_held_shares! / 1000, // convert to 張
+        value: d[heldField]! / 1000, // convert to 張
       }));
 
     if (heldData.length > 0) {
@@ -152,16 +154,16 @@ export default function InstitutionalChart({
       foreignRef.current,
       data,
       "foreign_net",
-      scanDate,
-      true // show foreign held shares line
+      "foreign_held_shares",
+      scanDate
     );
 
     const cleanupTrust = createInstitutionalSubChart(
       trustRef.current,
       data,
       "trust_net",
-      scanDate,
-      false
+      "trust_held_shares",
+      scanDate
     );
 
     return () => {
@@ -171,6 +173,7 @@ export default function InstitutionalChart({
   }, [data, scanDate]);
 
   const hasForeignHeld = data.some((d) => d.foreign_held_shares != null);
+  const hasTrustHeld = data.some((d) => d.trust_held_shares != null);
 
   return (
     <div className="w-full space-y-2">
@@ -189,7 +192,12 @@ export default function InstitutionalChart({
         </div>
       </div>
       <div>
-        <div className="text-sm font-semibold text-gray-700">投信買賣超</div>
+        <div className="text-sm font-semibold text-gray-700">
+          投信買賣超
+          {hasTrustHeld && (
+            <span className="ml-2 text-xs font-normal text-amber-500">● 投信總持股(張) → 右軸</span>
+          )}
+        </div>
         <div className="relative w-full border rounded">
           <div ref={trustRef} className="w-full" />
           <span className="absolute left-1 text-[10px] text-gray-400" style={{ bottom: "4px" }}>
