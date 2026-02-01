@@ -55,7 +55,13 @@ def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=4.0, avg_days=
                 PARTITION BY symbol
                 ORDER BY date
                 ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING
-            ) as prev_high_20d
+            ) as prev_high_20d,
+            -- 計算過去90日最高收盤價 (用來判斷是否創近期新高)
+            MAX(close) OVER (
+                PARTITION BY symbol
+                ORDER BY date
+                ROWS BETWEEN 90 PRECEDING AND 1 PRECEDING
+            ) as prev_close_90d
         FROM daily_quotes
         WHERE date <= %(scan_date)s
     ),
@@ -100,6 +106,7 @@ def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=4.0, avg_days=
                (ABS(dq.close - dq.open) >= 0.01 AND (dq.high - GREATEST(dq.open, dq.close)) / ABS(dq.close - dq.open) < 1.0))
           AND ti.ma60 IS NOT NULL AND dq.close >= ti.ma60
           AND dq.close > dq.open
+          AND dq.close >= vs.prev_close_90d
     )
     SELECT
         symbol,
