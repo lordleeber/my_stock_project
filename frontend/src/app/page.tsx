@@ -457,20 +457,22 @@ export default function Home() {
                       {expandedCharts.has(stock.symbol) && (
                         <div className="mt-4">
                           {chartDataCache[stock.symbol] ? (
-                            <CandlestickChart
-                              data={chartDataCache[stock.symbol]}
-                              symbol={stock.symbol}
-                              name={stock.name}
-                              scanDate={stock.date}
-                            />
-                            {institutionalDataCache[stock.symbol] && institutionalDataCache[stock.symbol].length > 0 && (
-                              <div className="mt-4">
-                                <InstitutionalChart
-                                  data={institutionalDataCache[stock.symbol]}
-                                  scanDate={stock.date}
-                                />
-                              </div>
-                            )}
+                            <>
+                              <CandlestickChart
+                                data={chartDataCache[stock.symbol]}
+                                symbol={stock.symbol}
+                                name={stock.name}
+                                scanDate={stock.date}
+                              />
+                              {institutionalDataCache[stock.symbol] && institutionalDataCache[stock.symbol].length > 0 && (
+                                <div className="mt-4">
+                                  <InstitutionalChart
+                                    data={institutionalDataCache[stock.symbol]}
+                                    scanDate={stock.date}
+                                  />
+                                </div>
+                              )}
+                            </>
                           ) : (
                             <div className="h-40 flex items-center justify-center text-gray-500">
                               載入圖表中...
