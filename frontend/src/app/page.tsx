@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import CandlestickChart from "./components/CandlestickChart";
+import InstitutionalChart from "./components/InstitutionalChart";
 
 export default function Home() {
   // Tab State
@@ -28,6 +29,7 @@ export default function Home() {
   const [scanLoading, setScanLoading] = useState(false);
   const [chartDataCache, setChartDataCache] = useState<Record<string, any[]>>({});
   const [expandedCharts, setExpandedCharts] = useState<Set<string>>(new Set());
+  const [institutionalDataCache, setInstitutionalDataCache] = useState<Record<string, any[]>>({});
 
   const runBacktest = async () => {
     setBtLoading(true);
@@ -70,6 +72,7 @@ export default function Home() {
     setScanResults([]);
     setExpandedCharts(new Set());
     setChartDataCache({});
+    setInstitutionalDataCache({});
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -106,13 +109,19 @@ export default function Home() {
   const fetchChartData = async (symbol: string, date: string) => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(
-        `${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=90&days_after=90`
-      );
-      if (!res.ok) throw new Error("無法取得圖表資料");
+      const [candleRes, instRes] = await Promise.all([
+        fetch(`${apiUrl}/scanner/candlestick/${symbol}?date=${date}&days_before=90&days_after=90`),
+        fetch(`${apiUrl}/scanner/institutional/${symbol}?date=${date}&days_before=90&days_after=90`),
+      ]);
 
-      const data = await res.json();
-      setChartDataCache((prev) => ({ ...prev, [symbol]: data }));
+      if (candleRes.ok) {
+        const candleData = await candleRes.json();
+        setChartDataCache((prev) => ({ ...prev, [symbol]: candleData }));
+      }
+      if (instRes.ok) {
+        const instData = await instRes.json();
+        setInstitutionalDataCache((prev) => ({ ...prev, [symbol]: instData }));
+      }
     } catch (err) {
       console.error(`Failed to load chart for ${symbol}:`, err);
     }
@@ -454,6 +463,14 @@ export default function Home() {
                               name={stock.name}
                               scanDate={stock.date}
                             />
+                            {institutionalDataCache[stock.symbol] && institutionalDataCache[stock.symbol].length > 0 && (
+                              <div className="mt-4">
+                                <InstitutionalChart
+                                  data={institutionalDataCache[stock.symbol]}
+                                  scanDate={stock.date}
+                                />
+                              </div>
+                            )}
                           ) : (
                             <div className="h-40 flex items-center justify-center text-gray-500">
                               載入圖表中...

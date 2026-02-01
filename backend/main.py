@@ -142,6 +142,11 @@ class CandlestickData(BaseModel):
     ma20: Optional[float] = None
     ma60: Optional[float] = None
 
+class InstitutionalData(BaseModel):
+    date: datetime.date
+    foreign_net: float
+    trust_net: float
+
 # ... (get_db_url, read_root, health_check) ...
 
 # ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
@@ -363,6 +368,61 @@ def get_candlestick_data(
 
     except Exception as e:
         print(f"Candlestick Data Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/scanner/institutional/{symbol}", response_model=List[InstitutionalData])
+def get_institutional_data(
+    symbol: str,
+    date: str = Query(..., description="Center date in YYYY-MM-DD format"),
+    days_before: int = Query(90, description="Days before center date"),
+    days_after: int = Query(90, description="Days after center date")
+):
+    """Get institutional investor net buy/sell data for a specific stock around a date"""
+    try:
+        from datetime import timedelta
+
+        center_date = datetime.datetime.strptime(date, '%Y-%m-%d')
+        start_date = (center_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
+        end_date = (center_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
+
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+
+        sql = text("""
+            SELECT date, foreign_net, trust_net
+            FROM institutional_investors
+            WHERE symbol = :symbol
+              AND date >= :start_date
+              AND date <= :end_date
+            ORDER BY date
+        """)
+
+        with engine.connect() as conn:
+            result = conn.execute(sql, {
+                "symbol": symbol,
+                "start_date": start_date,
+                "end_date": end_date
+            }).fetchall()
+
+        if not result:
+            return []
+
+        data = []
+        for row in result:
+            if row.foreign_net is None and row.trust_net is None:
+                continue
+            data.append(InstitutionalData(
+                date=row.date,
+                foreign_net=float(row.foreign_net) if row.foreign_net is not None else 0,
+                trust_net=float(row.trust_net) if row.trust_net is not None else 0
+            ))
+
+        return data
+
+    except Exception as e:
+        print(f"Institutional Data Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
