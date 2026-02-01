@@ -8,10 +8,10 @@ set -e  # 遇到錯誤立即停止
 # 設定工作目錄
 cd "$(dirname "$0")/.."
 
-# 設定日期範圍（抓取今天的資料）
-TODAY=$(date +%Y%m%d)
-export START_DATE=$TODAY
-export END_DATE=$TODAY
+# 設定日期範圍（支援傳入日期參數，預設為今天）
+TARGET_DATE=${1:-$(date +%Y%m%d)}
+export START_DATE=$TARGET_DATE
+export END_DATE=$TARGET_DATE
 
 # 設定日誌目錄
 LOG_DIR="./logs"
@@ -21,7 +21,7 @@ LOG_FILE="$LOG_DIR/daily_update_$(date +%Y%m%d_%H%M%S).log"
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Daily Stock Data Update Started" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
-echo "Target Date: $TODAY" | tee -a "$LOG_FILE"
+echo "Target Date: $TARGET_DATE" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
 # 1. Scraper

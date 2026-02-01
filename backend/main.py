@@ -229,7 +229,7 @@ def run_backtest_api(request: BacktestRequest):
 def get_volume_spike_scanner(
     date: str = Query(..., description="Scan date in YYYY-MM-DD format"),
     min_volume: int = Query(5000000, description="Minimum volume threshold"),
-    volume_ratio: float = Query(3.0, description="Volume spike ratio vs average"),
+    volume_ratio: float = Query(4.0, description="Volume spike ratio vs average"),
     avg_days: int = Query(10, description="Days for average volume calculation"),
     filter_long_shadow: bool = Query(True, description="Filter long upper shadow candles")
 ):

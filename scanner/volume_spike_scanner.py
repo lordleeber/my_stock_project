@@ -21,14 +21,14 @@ def get_db_connection():
     """建立資料庫連線"""
     return psycopg2.connect(**DB_CONFIG)
 
-def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=3.0, avg_days=10, filter_long_shadow=True):
+def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=4.0, avg_days=10, filter_long_shadow=True):
     """
     掃描爆量股票
 
     參數:
         scan_date: 掃描日期 (格式: '2025-10-03')
         min_volume: 最小成交量門檻 (預設 500萬股)
-        volume_ratio: 爆量倍數 (預設 3倍，與過去均量比較)
+        volume_ratio: 爆量倍數 (預設 4倍，與過去均量比較)
         avg_days: 計算平均量的天數 (預設 10日，可改為 5/20/60)
         filter_long_shadow: 是否過濾長上影線 (預設 True，過濾拉高出貨)
 
@@ -99,6 +99,7 @@ def scan_volume_spike(scan_date, min_volume=5000000, volume_ratio=3.0, avg_days=
           AND (%(filter_long_shadow)s = FALSE OR
                (ABS(dq.close - dq.open) >= 0.01 AND (dq.high - GREATEST(dq.open, dq.close)) / ABS(dq.close - dq.open) < 1.0))
           AND ti.ma60 IS NOT NULL AND dq.close >= ti.ma60
+          AND dq.close > dq.open
     )
     SELECT
         symbol,
@@ -224,7 +225,7 @@ def main():
     parser = argparse.ArgumentParser(description='爆量翻多掃描器')
     parser.add_argument('--date', type=str, required=True, help='掃描日期 (YYYY-MM-DD)')
     parser.add_argument('--min-volume', type=int, default=5000000, help='最小成交量 (預設500萬股)')
-    parser.add_argument('--volume-ratio', type=float, default=3.0, help='爆量倍數 (預設3倍)')
+    parser.add_argument('--volume-ratio', type=float, default=4.0, help='爆量倍數 (預設4倍)')
     parser.add_argument('--avg-days', type=int, default=10, help='計算平均量天數 (預設10日，可選5/20/60)')
     parser.add_argument('--no-filter-shadow', dest='filter_long_shadow', action='store_false', help='不過濾長上影線 (預設會過濾)')
     parser.add_argument('--filter-long-shadow', dest='filter_long_shadow', action='store_true', help='過濾長上影線 (預設已開啟)')
