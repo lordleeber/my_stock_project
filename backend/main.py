@@ -147,6 +147,7 @@ class InstitutionalData(BaseModel):
     foreign_net: float
     trust_net: float
     foreign_held_shares: Optional[float] = None
+    trust_held_shares: Optional[float] = None
 
 # ... (get_db_url, read_root, health_check) ...
 
@@ -392,17 +393,23 @@ def get_institutional_data(
         engine = create_engine(db_url)
 
         sql = text("""
-            SELECT
-                ii.date,
-                ii.foreign_net,
-                ii.trust_net,
-                fh.foreign_held_shares
-            FROM institutional_investors ii
-            LEFT JOIN foreign_holding fh ON ii.symbol = fh.symbol AND ii.date = fh.date
-            WHERE ii.symbol = :symbol
-              AND ii.date >= :start_date
-              AND ii.date <= :end_date
-            ORDER BY ii.date
+            WITH cumulative AS (
+                SELECT
+                    ii.date,
+                    ii.foreign_net,
+                    ii.trust_net,
+                    fh.foreign_held_shares,
+                    SUM(ii.trust_net) OVER (
+                        ORDER BY ii.date
+                    ) AS trust_held_shares
+                FROM institutional_investors ii
+                LEFT JOIN foreign_holding fh ON ii.symbol = fh.symbol AND ii.date = fh.date
+                WHERE ii.symbol = :symbol
+            )
+            SELECT * FROM cumulative
+            WHERE date >= :start_date
+              AND date <= :end_date
+            ORDER BY date
         """)
 
         with engine.connect() as conn:
@@ -423,7 +430,8 @@ def get_institutional_data(
                 date=row.date,
                 foreign_net=float(row.foreign_net) if row.foreign_net is not None else 0,
                 trust_net=float(row.trust_net) if row.trust_net is not None else 0,
-                foreign_held_shares=float(row.foreign_held_shares) if row.foreign_held_shares is not None else None
+                foreign_held_shares=float(row.foreign_held_shares) if row.foreign_held_shares is not None else None,
+                trust_held_shares=float(row.trust_held_shares) if row.trust_held_shares is not None else None
             ))
 
         return data
