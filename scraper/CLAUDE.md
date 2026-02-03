@@ -3,6 +3,10 @@
 This document covers the **entire data pipeline**: scraper → processor → importer → calculator.
 All components live in the project root under their respective directories.
 
+## Maintaining This Document
+
+**After completing each task**, review this CLAUDE.md to ensure it remains consistent with the actual code. If you modified any behavior, schema, environment variable, or pipeline logic, update the relevant sections here. Keeping this document in sync with the codebase is essential for future AI assistants.
+
 ## Architecture Overview
 
 ```
@@ -30,14 +34,14 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm calculator
 
 Pipeline order matters: scraper → processor → importer → calculator.
 
-## Data Sources
+## Data Sources & Update Frequency
 
-| Source | Service | What it fetches |
-|--------|---------|----------------|
-| TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E |
-| TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks |
-| MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports |
-| TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock |
+| Source | Service | What it fetches | Update Frequency |
+|--------|---------|----------------|------------------|
+| TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E | Daily (after market close) |
+| TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks | Daily (after market close) |
+| MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
+| TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (Friday after close) |
 
 ## Directory Structure (Data)
 
@@ -97,6 +101,23 @@ Database (used by importer, calculator, backend):
 | `shareholding_div` | date, symbol, level, holders, shares | TDCC |
 | `market_indices` | date, symbol, close, change | Extracted from daily_quotes |
 
+## Processor Modules
+
+| Module | Purpose |
+|--------|---------|
+| `convert.py` | Main ETL for daily data; auto-extracts `market_indices` from `daily_quotes` |
+| `convert_monthly_revenue.py` | Monthly revenue ETL (handles MOPS format variations) |
+| `convert_shareholding.py` | Merges per-stock TDCC CSVs into single file per date |
+| `convert_institutional_summary.py` | Standardizes SII/OTC institution names and merges |
+| `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
+| `schemas.py` | Column mappings, numeric types, standard schema definitions |
+| `utils.py` | Shared helpers: header detection, index extraction |
+
+Run validation after processing:
+```bash
+docker compose run --rm processor python validator.py
+```
+
 ## Processor Column Mapping
 
 The processor converts Chinese column names to English. Key mappings in `processor/schemas.py`:
@@ -109,7 +130,8 @@ The processor converts Chinese column names to English. Key mappings in `process
 
 ## Calculator: Technical Indicators
 
-Computed for every stock, stored in `technical_indicators` table:
+Computed for every stock, stored in `technical_indicators` table.
+Uses Pandas vectorized operations with grouped apply (by symbol) for efficiency.
 
 - **MA**: 5, 10, 20, 60, 120, 240-day moving averages
 - **VMA**: Volume moving averages (same periods)
@@ -120,13 +142,15 @@ Computed for every stock, stored in `technical_indicators` table:
 
 ## Important Behaviors
 
-1. **Incremental by default**: Each stage skips existing data. Use `FORCE_REIMPORT=1` for importer override.
+1. **Incremental by default**: Each stage skips existing data. Use `FORCE_REIMPORT=1` for importer to delete and re-import (Delete-before-Insert).
 2. **Encoding**: Raw CSVs from TWSE/TPEx are Big5 → converted to UTF-8-sig by scraper.
 3. **ETF filtering**: Importer excludes symbols starting with "00" (ETFs).
 4. **OHLCV validation**: Importer filters rows where all of open/high/low/close/volume are NULL or 0.
 5. **Rate limiting**: Scraper waits 3 seconds between requests. TDCC uses random 1-2s delays.
 6. **Taiwan calendar**: Uses `pandas_market_calendars` (XTAI) to determine trading days.
 7. **ROC year**: MOPS uses 民國 year (AD year - 1911). Scraper handles conversion.
+8. **Database wait**: Importer has built-in retry logic to wait for database availability.
+9. **market_indices extraction**: Processor auto-extracts market indices from daily_quotes during conversion.
 
 ## Common Tasks
 
@@ -156,6 +180,35 @@ docker compose run --rm calculator
 ```bash
 docker compose run --rm -e IMPORT_CATEGORY=monthly_revenue importer
 ```
+
+Available `IMPORT_CATEGORY` values:
+- `daily_quotes` — Daily OHLCV data
+- `market_indices` — Market indices (auto-extracted from daily_quotes)
+- `institutional_investors` — Institutional buy/sell per stock
+- `institutional_summary` — Institutional buy/sell market-level summary
+- `foreign_holding` — Foreign shareholding ratio
+- `margin_trading` — Margin long/short balance
+- `margin_sbl` — Securities borrowing and lending
+- `pe_ratio` — Price-to-earnings ratio
+- `monthly_revenue` — Monthly revenue
+- `shareholding_div` — TDCC shareholding dispersion
+
+### TDCC manual steps (if not using Docker)
+```bash
+# Step 1: Generate active stock list from latest monthly revenue
+python scraper/generate_active_stocks.py  # outputs active_stocks.txt
+
+# Step 2: Query available dates from TDCC
+python scraper/fetch_tdcc_history.py --list-dates
+
+# Step 3: Fetch data for specific date
+python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
+```
+
+TDCC scraper features:
+- Auto CSRF token management (parses and renews session tokens)
+- Checkpoint resume (skips existing .csv files, safe to re-run on failure)
+- `--no-verify` flag for SSL certificate issues
 
 ## Docker Services Reference
 
