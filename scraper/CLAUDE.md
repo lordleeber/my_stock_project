@@ -56,7 +56,8 @@ data/
 │   ├── margin_sbl/date=YYYYMMDD/{sii,otc}.csv
 │   ├── pe_ratio/date=YYYYMMDD/{sii,otc}.csv
 │   ├── monthly_revenue/date=YYYYMM01/market.csv
-│   └── shareholding_div/date=YYYYMMDD/{symbol}.csv
+│   ├── shareholding_div/date=YYYYMMDD/{symbol}.csv   # Per-stock format (2023/09~)
+│   └── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # All-in-one format (2020/01~2023/09)
 ├── processed/                    # Processor output (cleaned CSVs)
 │   └── (same structure, standardized schemas)
 └── postgres/                     # PostgreSQL data volume
@@ -98,7 +99,7 @@ Database (used by importer, calculator, backend):
 | `foreign_holding` | date, symbol, foreign_held_shares, foreign_held_ratio | TWSE/TPEx QFIIS |
 | `margin_trading` | date, symbol, margin_long_balance, margin_short_balance | TWSE/TPEx |
 | `monthly_revenue` | date, symbol, revenue, yoy_pct | MOPS |
-| `shareholding_div` | date, symbol, level, holders, shares | TDCC |
+| `shareholding_div` | date, symbol (text), level, level_name, holders, shares, percentage | TDCC |
 | `market_indices` | date, symbol, close, change | Extracted from daily_quotes |
 
 ## Processor Modules
@@ -107,7 +108,8 @@ Database (used by importer, calculator, backend):
 |--------|---------|
 | `convert.py` | Main ETL for daily data; auto-extracts `market_indices` from `daily_quotes` |
 | `convert_monthly_revenue.py` | Monthly revenue ETL (handles MOPS format variations) |
-| `convert_shareholding.py` | Merges per-stock TDCC CSVs into single file per date |
+| `convert_shareholding.py` | Merges per-stock TDCC CSVs into single file per date (shareholding_div) |
+| `convert_shareholding2.py` | Converts all-in-one TDCC CSVs with level_name mapping (shareholding_div2) |
 | `convert_institutional_summary.py` | Standardizes SII/OTC institution names and merges |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions |
@@ -144,7 +146,7 @@ Uses Pandas vectorized operations with grouped apply (by symbol) for efficiency.
 
 1. **Incremental by default**: Each stage skips existing data. Use `FORCE_REIMPORT=1` for importer to delete and re-import (Delete-before-Insert).
 2. **Encoding**: Raw CSVs from TWSE/TPEx are Big5 → converted to UTF-8-sig by scraper.
-3. **ETF filtering**: Importer excludes symbols starting with "00" (ETFs).
+3. **ETF & preferred stock filtering**: Importer excludes symbols starting with "00" (ETFs) and symbols containing letters (preferred stocks like 1101B).
 4. **OHLCV validation**: Importer filters rows where all of open/high/low/close/volume are NULL or 0.
 5. **Rate limiting**: Scraper waits 3 seconds between requests. TDCC uses random 1-2s delays.
 6. **Taiwan calendar**: Uses `pandas_market_calendars` (XTAI) to determine trading days.
@@ -181,6 +183,20 @@ docker compose run --rm calculator
 docker compose run --rm -e IMPORT_CATEGORY=monthly_revenue importer
 ```
 
+### Force re-import (delete and re-import existing data)
+```bash
+docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding_div importer
+```
+Note: `FORCE_REIMPORT` must be passed via `-e` flag, not as a shell env var prefix.
+
+### Process shareholding_div2 (historical all-in-one TDCC format)
+```bash
+docker compose run --rm processor python convert_shareholding2.py
+# Or with date range:
+START_DATE=20200103 END_DATE=20230908 docker compose run --rm processor python convert_shareholding2.py
+```
+Both `convert_shareholding.py` and `convert_shareholding2.py` output to the same `data/processed/shareholding_div/` directory.
+
 Available `IMPORT_CATEGORY` values:
 - `daily_quotes` — Daily OHLCV data
 - `market_indices` — Market indices (auto-extracted from daily_quotes)
@@ -205,6 +221,13 @@ python scraper/fetch_tdcc_history.py --list-dates
 python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
 ```
 
+### Weekly TDCC automation (launchctl)
+```bash
+# Scheduled: every Sunday at 13:15 via launchctl
+# Plist: ~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist
+# Script: scripts/weekly_tdcc_update.sh (queries latest date, scrapes, processes, imports)
+```
+
 TDCC scraper features:
 - Auto CSRF token management (parses and renews session tokens)
 - Checkpoint resume (skips existing .csv files, safe to re-run on failure)
@@ -215,7 +238,7 @@ TDCC scraper features:
 | Service | Command | Purpose |
 |---------|---------|---------|
 | `scraper-daily` | `python main.py` | Fetch daily market data |
-| `scraper-weekly` | `python fetch_tdcc_history.py` | Fetch TDCC shareholding |
+| `scraper-weekly` | `python fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Fetch TDCC shareholding (fixed command, requires TDCC_DATE) |
 | `scraper-monthly` | `python fetch_monthly_revenue.py` | Fetch monthly revenue |
 | `processor` | `python convert.py` | Process daily data |
 | `importer` | `python main.py` | Load CSVs into PostgreSQL |

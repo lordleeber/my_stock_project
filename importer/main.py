@@ -81,15 +81,19 @@ def delete_by_date(engine, table_name, target_date, market=None):
             )
 
 def filter_etf(df):
-    """過濾 ETF（代號以 '00' 開頭）"""
+    """過濾 ETF（代號以 '00' 開頭）及特別股（代號含英文字母，如 1101B）"""
     if "symbol" not in df.columns:
         return df
 
     original_count = df.height
-    df = df.filter(~pl.col("symbol").cast(pl.Utf8).str.starts_with("00"))
+    symbol_col = pl.col("symbol").cast(pl.Utf8)
+    df = df.filter(
+        ~symbol_col.str.starts_with("00") &
+        ~symbol_col.str.contains(r"[A-Za-z]")
+    )
     filtered_count = original_count - df.height
     if filtered_count > 0:
-        print(f"  -> Filtered out {filtered_count} ETF records")
+        print(f"  -> Filtered out {filtered_count} ETF/preferred stock records")
     return df
 
 def import_data(engine):
@@ -197,7 +201,7 @@ def import_data(engine):
                         continue
 
                     print(f"Processing {table_name} - {date_str}...")
-                    df = pl.read_csv(csv_file)
+                    df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
