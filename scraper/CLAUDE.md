@@ -221,11 +221,29 @@ python scraper/fetch_tdcc_history.py --list-dates
 python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
 ```
 
-### Weekly TDCC automation (launchctl)
+### Monthly revenue manual fetch
 ```bash
-# Scheduled: every Sunday at 13:15 via launchctl
-# Plist: ~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist
-# Script: scripts/weekly_tdcc_update.sh (queries latest date, scrapes, processes, imports)
+# Fetch a specific month (e.g. 2026/01)
+REVENUE_YEAR=2026 REVENUE_MONTH=1 docker compose run --rm scraper-monthly
+# Then process + import
+START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python convert_monthly_revenue.py
+docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 -e IMPORT_CATEGORY=monthly_revenue importer
+```
+Note: Monthly revenue is published before the 10th of each month. Fetching after the 11th ensures completeness.
+
+### Automation schedules (launchctl)
+
+| Schedule | Plist | Script | Time |
+|----------|-------|--------|------|
+| Daily quotes | `com.poyilee.stock-daily-update` | StockDailyUpdate.app | Every day 19:45 |
+| Weekly TDCC | `com.poyilee.stock-weekly-update` | `scripts/weekly_tdcc_update.sh` | Every Sunday 13:15 |
+| Monthly revenue | `com.poyilee.stock-monthly-update` | `scripts/monthly_revenue_update.sh` | Every 12th 17:00 |
+
+All plist files are in `~/Library/LaunchAgents/`. Manage with:
+```bash
+launchctl load ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
+launchctl unload ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
+launchctl list | grep poyilee  # verify loaded
 ```
 
 TDCC scraper features:
@@ -239,7 +257,7 @@ TDCC scraper features:
 |---------|---------|---------|
 | `scraper-daily` | `python main.py` | Fetch daily market data |
 | `scraper-weekly` | `python fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Fetch TDCC shareholding (fixed command, requires TDCC_DATE) |
-| `scraper-monthly` | `python fetch_monthly_revenue.py` | Fetch monthly revenue |
+| `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
 | `processor` | `python convert.py` | Process daily data |
 | `importer` | `python main.py` | Load CSVs into PostgreSQL |
 | `calculator` | `python main.py` | Compute technical indicators |
