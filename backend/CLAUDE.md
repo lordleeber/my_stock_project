@@ -487,9 +487,15 @@ Note: Monthly revenue is published before the 10th of each month. Fetching after
 
 | Schedule | Plist | Script | Time |
 |----------|-------|--------|------|
-| Daily quotes | `com.poyilee.stock-daily-update` | StockDailyUpdate.app | Every day 19:45 |
+| Daily quotes | `com.poyilee.stock-daily-update` | StockDailyUpdate.app | Every day 21:00 |
 | Weekly TDCC | `com.poyilee.stock-weekly-update` | `scripts/weekly_tdcc_update.sh` | Every Sunday 13:15 |
 | Monthly revenue | `com.poyilee.stock-monthly-update` | `scripts/monthly_revenue_update.sh` | Every 12th 17:00 |
+
+**Note on Daily Schedule Timing (21:00):**
+- TWSE publishes most data immediately after market close (~14:30)
+- **Foreign holding data (`foreign_holding`) is published with delay** - typically available after 20:00
+- Daily schedule set to 21:00 ensures all data (including foreign_holding) is available
+- If scraper runs too early, foreign_holding files will only contain headers (no data rows)
 
 All plist files are in `~/Library/LaunchAgents/`. Manage with:
 ```bash
