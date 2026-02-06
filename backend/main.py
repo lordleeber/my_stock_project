@@ -177,18 +177,16 @@ class MLTrainingData(BaseModel):
     trust_net: Optional[float] = None
     dealer_net: Optional[float] = None
     foreign_held_shares: Optional[float] = None
+    trust_held_shares: Optional[float] = None
 
-# ... (get_db_url, read_root, health_check) ...
+@app.get("/")
+def read_root():
+    return {"message": "Stock Analysis API is running"}
 
-# ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
-
-# ... (保留前面的 import)
 import sys
 # 確保能 import strategy
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from strategy.core import run_backtest, StrategyConfig
-
-# ... (保留前面定義的模型與函式，直到 run_backtest_api)
 
 @app.post("/backtest/run", response_model=BacktestResult)
 def run_backtest_api(request: BacktestRequest):
@@ -241,8 +239,6 @@ def run_backtest_api(request: BacktestRequest):
         trades = result['trades']
         
         # 4. 轉換格式回傳
-        # TradeRecord dataclass -> Pydantic model
-        # 注意: dataclass 的屬性與 Pydantic 定義需一致
         return BacktestResult(
             summary=BacktestSummary(
                 total_trades=summary.total_trades,
@@ -274,10 +270,8 @@ def get_volume_spike_scanner(
     Returns stocks with significant volume breakouts
     """
     try:
-        # Import scanner function
         from scanner.volume_spike_scanner import scan_volume_spike
 
-        # Run scanner
         df = scan_volume_spike(
             scan_date=date,
             min_volume=min_volume,
@@ -289,7 +283,6 @@ def get_volume_spike_scanner(
         if df.empty:
             return []
 
-        # Convert DataFrame to Pydantic models
         results = []
         for _, row in df.iterrows():
             results.append(VolumeSpikeResult(
@@ -333,32 +326,20 @@ def get_candlestick_data(
 ):
     """
     Get candlestick chart data for a specific stock around a date
-    Used to render charts in frontend
     """
     try:
         from datetime import timedelta
 
-        # Calculate date range
         center_date = datetime.datetime.strptime(date, '%Y-%m-%d')
         start_date = (center_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
         end_date = (center_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
 
-        # Query data
         db_url = get_db_url()
         engine = create_engine(db_url)
 
         sql = text("""
-            SELECT
-                dq.date,
-                dq.open,
-                dq.high,
-                dq.low,
-                dq.close,
-                dq.volume,
-                ti.ma5,
-                ti.ma10,
-                ti.ma20,
-                ti.ma60
+            SELECT dq.date, dq.open, dq.high, dq.low, dq.close, dq.volume,
+                   ti.ma5, ti.ma10, ti.ma20, ti.ma60
             FROM daily_quotes dq
             LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date
             WHERE dq.symbol = :symbol
@@ -377,7 +358,6 @@ def get_candlestick_data(
         if not result:
             return []
 
-        # Convert to Pydantic models
         candlestick_data = []
         for row in result:
             if row.open is None or row.high is None or row.low is None or row.close is None or row.volume is None:
@@ -423,21 +403,14 @@ def get_institutional_data(
 
         sql = text("""
             WITH cumulative AS (
-                SELECT
-                    ii.date,
-                    ii.foreign_net,
-                    ii.trust_net,
-                    fh.foreign_held_shares,
-                    SUM(ii.trust_net) OVER (
-                        ORDER BY ii.date
-                    ) AS trust_held_shares
+                SELECT ii.date, ii.foreign_net, ii.trust_net, fh.foreign_held_shares,
+                       SUM(ii.trust_net) OVER (ORDER BY ii.date) AS trust_held_shares
                 FROM institutional_investors ii
                 LEFT JOIN foreign_holding fh ON ii.symbol = fh.symbol AND ii.date = fh.date
                 WHERE ii.symbol = :symbol
             )
             SELECT * FROM cumulative
-            WHERE date >= :start_date
-              AND date <= :end_date
+            WHERE date >= :start_date AND date <= :end_date
             ORDER BY date
         """)
 
@@ -488,9 +461,6 @@ def get_top_volume(
     limit: int = 10,
     sort: str = Query("desc", description="Sort order: asc or desc")
 ):
-    """
-    取得指定日期成交量排行 (可選遞增或遞減)
-    """
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
     else:
@@ -540,9 +510,6 @@ def get_ma_data(
     limit: int = 10,
     sort: str = Query("desc", description="Sort by volume: asc or desc")
 ):
-    """
-    取得指定日期各均線數值 (以成交量排序)
-    """
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
     else:
@@ -559,8 +526,7 @@ def get_ma_data(
                    t.ma5, t.ma10, t.ma20, t.ma60, t.ma120, t.ma240
             FROM technical_indicators t
             JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
-            WHERE t.date = :date 
-              AND d.volume > 0
+            WHERE t.date = :date AND d.volume > 0
             ORDER BY d.volume {sort_order}
             LIMIT :limit
         """)
@@ -594,9 +560,6 @@ def get_vma_data(
     limit: int = 10,
     sort: str = Query("desc", description="Sort by volume: asc or desc")
 ):
-    """
-    取得指定日期各成交量均線數值 (以成交量排序)
-    """
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
     else:
@@ -613,8 +576,7 @@ def get_vma_data(
                    t.vma5, t.vma10, t.vma20, t.vma60, t.vma120, t.vma240
             FROM technical_indicators t
             JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
-            WHERE t.date = :date 
-              AND d.volume > 0
+            WHERE t.date = :date AND d.volume > 0
             ORDER BY d.volume {sort_order}
             LIMIT :limit
         """)
@@ -646,46 +608,23 @@ def get_vma_data(
 def get_ml_training_data(
     start_date: str = Query(..., description="Start date in YYYY-MM-DD"),
     end_date: str = Query(..., description="End date in YYYY-MM-DD"),
-    symbols: Optional[str] = Query(None, description="Comma-separated list of symbols (e.g., '2330,2317,2454'). If omitted, returns all stocks."),
-    include_indicators: bool = Query(True, description="Include technical indicators"),
-    include_institutional: bool = Query(True, description="Include institutional investor data")
+    symbols: Optional[str] = Query(None, description="Comma-separated symbols"),
+    include_indicators: bool = Query(True, description="Include indicators"),
+    include_institutional: bool = Query(True, description="Include institutional")
 ):
-    """
-    Bulk historical data endpoint for ML/RL training.
-    Returns OHLCV data with optional technical indicators and institutional data.
-    Optimized for minimal API round-trips.
-    """
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
 
-        # Build SELECT clause
-        select_fields = [
-            "dq.date",
-            "dq.symbol",
-            "dq.open",
-            "dq.high",
-            "dq.low",
-            "dq.close",
-            "dq.volume"
-        ]
-
+        select_fields = ["dq.date", "dq.symbol", "dq.open", "dq.high", "dq.low", "dq.close", "dq.volume"]
         if include_indicators:
-            select_fields.extend([
-                "ti.ma5", "ti.ma10", "ti.ma20", "ti.ma60", "ti.ma120", "ti.ma240",
-                "ti.vma5", "ti.vma10", "ti.vma20", "ti.vma60",
-                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea"
-            ])
-
+            select_fields.extend(["ti.ma5", "ti.ma10", "ti.ma20", "ti.ma60", "ti.ma120", "ti.ma240",
+                                "ti.vma5", "ti.vma10", "ti.vma20", "ti.vma60",
+                                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea"])
         if include_institutional:
-            select_fields.extend([
-                "ii.foreign_net", "ii.trust_net", "ii.dealer_net",
-                "fh.foreign_held_shares"
-            ])
+            select_fields.extend(["ii.foreign_net", "ii.trust_net", "ii.dealer_net", "fh.foreign_held_shares",
+                                "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares"])
 
-        select_clause = ", ".join(select_fields)
-
-        # Build JOIN clauses
         joins = []
         if include_indicators:
             joins.append("LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date")
@@ -693,83 +632,58 @@ def get_ml_training_data(
             joins.append("LEFT JOIN institutional_investors ii ON dq.symbol = ii.symbol AND dq.date = ii.date")
             joins.append("LEFT JOIN foreign_holding fh ON dq.symbol = fh.symbol AND dq.date = fh.date")
 
-        join_clause = " ".join(joins)
-
-        # Build WHERE clause
-        where_conditions = ["dq.date >= :start_date", "dq.date <= :end_date"]
         params = {"start_date": start_date, "end_date": end_date}
-
+        where = ["dq.date >= :start_date", "dq.date <= :end_date"]
         if symbols:
-            symbol_list = [s.strip() for s in symbols.split(",")]
-            placeholders = ", ".join([f":symbol_{i}" for i in range(len(symbol_list))])
-            where_conditions.append(f"dq.symbol IN ({placeholders})")
-            for i, sym in enumerate(symbol_list):
-                params[f"symbol_{i}"] = sym
+            s_list = [s.strip() for s in symbols.split(",")]
+            placeholders = ", ".join([f":s{i}" for i in range(len(s_list))])
+            where.append(f"dq.symbol IN ({placeholders})")
+            for i, s in enumerate(s_list): params[f"s{i}"] = s
 
-        where_clause = " AND ".join(where_conditions)
-
-        # Build final query
-        query = text(f"""
-            SELECT {select_clause}
-            FROM daily_quotes dq
-            {join_clause}
-            WHERE {where_clause}
-            ORDER BY dq.date, dq.symbol
-        """)
-
-        print(f"Fetching ML training data: {start_date} to {end_date}, symbols={symbols or 'ALL'}")
+        query = text(f"SELECT {', '.join(select_fields)} FROM daily_quotes dq {' '.join(joins)} WHERE {' AND '.join(where)} ORDER BY dq.date, dq.symbol")
 
         with engine.connect() as conn:
             result = conn.execute(query, params).fetchall()
 
-        # Map results to response model
         data = []
         for row in result:
-            record = {
-                "date": row.date,
-                "symbol": row.symbol,
-                "open": float(row.open),
-                "high": float(row.high),
-                "low": float(row.low),
-                "close": float(row.close),
-                "volume": float(row.volume)
-            }
-
+            record = {"date": row.date, "symbol": row.symbol, "open": float(row.open), "high": float(row.high),
+                      "low": float(row.low), "close": float(row.close), "volume": float(row.volume)}
             if include_indicators:
-                record.update({
-                    "ma5": float(row.ma5) if row.ma5 is not None else None,
-                    "ma10": float(row.ma10) if row.ma10 is not None else None,
-                    "ma20": float(row.ma20) if row.ma20 is not None else None,
-                    "ma60": float(row.ma60) if row.ma60 is not None else None,
-                    "ma120": float(row.ma120) if row.ma120 is not None else None,
-                    "ma240": float(row.ma240) if row.ma240 is not None else None,
-                    "vma5": float(row.vma5) if row.vma5 is not None else None,
-                    "vma10": float(row.vma10) if row.vma10 is not None else None,
-                    "vma20": float(row.vma20) if row.vma20 is not None else None,
-                    "vma60": float(row.vma60) if row.vma60 is not None else None,
-                    "k": float(row.k) if row.k is not None else None,
-                    "d": float(row.d) if row.d is not None else None,
-                    "rsi6": float(row.rsi6) if row.rsi6 is not None else None,
-                    "rsi12": float(row.rsi12) if row.rsi12 is not None else None,
-                    "macd_dif": float(row.macd_dif) if row.macd_dif is not None else None,
-                    "macd_dea": float(row.macd_dea) if row.macd_dea is not None else None
-                })
-
+                record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
+                             for k in ["ma5", "ma10", "ma20", "ma60", "ma120", "ma240", "vma5", "vma10", "vma20", "vma60",
+                                       "k", "d", "rsi6", "rsi12", "macd_dif", "macd_dea"]})
             if include_institutional:
-                record.update({
-                    "foreign_net": float(row.foreign_net) if row.foreign_net is not None else None,
-                    "trust_net": float(row.trust_net) if row.trust_net is not None else None,
-                    "dealer_net": float(row.dealer_net) if row.dealer_net is not None else None,
-                    "foreign_held_shares": float(row.foreign_held_shares) if row.foreign_held_shares is not None else None
-                })
-
+                record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
+                             for k in ["foreign_net", "trust_net", "dealer_net", "foreign_held_shares", "trust_held_shares"]})
             data.append(MLTrainingData(**record))
-
-        print(f"Returned {len(data)} records")
         return data
-
     except Exception as e:
         import traceback
-        print(f"Error: {e}")
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/quotes/volume-breakout", response_model=List[VolumeBreakoutQuote])
+def get_volume_breakout(
+    date: str = Query(..., description="Date in YYYY-MM-DD"),
+    min_volume: int = 1000000,
+    ratio: float = 3.0,
+    limit: int = 20
+):
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        sql = text("""
+            SELECT t.date, t.symbol, d.name, d.close, d.volume, t.vma10,
+                   (d.volume / NULLIF(t.vma10, 0)) as ratio
+            FROM technical_indicators t
+            JOIN daily_quotes d ON t.symbol = d.symbol AND t.date = d.date
+            WHERE t.date = :date AND d.volume >= :min_volume AND (d.volume / NULLIF(t.vma10, 0)) >= :ratio
+            ORDER BY ratio DESC LIMIT :limit
+        """)
+        with engine.connect() as conn:
+            result = conn.execute(sql, {"date": date, "min_volume": min_volume, "ratio": ratio, "limit": limit}).fetchall()
+        return [VolumeBreakoutQuote(date=row.date, symbol=row.symbol, name=row.name, close=float(row.close),
+                                   volume=float(row.volume), vma10=float(row.vma10), ratio=float(row.ratio)) for row in result]
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

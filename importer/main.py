@@ -276,6 +276,54 @@ def import_data(engine):
                     print(traceback.format_exc())
             continue
 
+        # --- 特別處理 margin_summary (市場信用交易彙總) ---
+        if category == "margin_summary":
+            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+
+            for date_dir in date_dirs:
+                date_str = date_dir.split("=")[1]
+
+                try:
+                    current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
+                    if start_date and current_date < start_date: continue
+                    if end_date and current_date > end_date: continue
+                except ValueError:
+                    continue
+
+                csv_file = os.path.join(date_dir, "all.csv")
+                if not os.path.exists(csv_file): continue
+
+                table_name = "margin_summary"
+                try:
+                    target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+
+                    if not force_reimport and date_exists_in_db(engine, table_name, target_date):
+                        print(f"Skipping {table_name} - {date_str} (already in DB)")
+                        continue
+
+                    print(f"Processing {table_name} - {date_str}...")
+                    df = pl.read_csv(csv_file)
+                    if df.height == 0:
+                        print("  -> Empty file, skipping.")
+                        continue
+
+                    if force_reimport:
+                        delete_by_date(engine, table_name, target_date)
+
+                    df.to_pandas().to_sql(
+                        name=table_name,
+                        con=engine,
+                        if_exists="append",
+                        index=False,
+                        chunksize=1000
+                    )
+                    print(f"  -> Imported {df.height} rows.")
+
+                except Exception as e:
+                    print(f"Failed to import {csv_file}")
+                    print(traceback.format_exc())
+            continue
+
         # --- 一般處理 (daily_quotes, etc.) ---
         date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
 
