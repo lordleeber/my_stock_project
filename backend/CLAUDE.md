@@ -98,6 +98,20 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | `/analysis/ma` | GET | `date`, `limit`, `sort` | `List[MAQuote]` |
 | `/analysis/vma` | GET | `date`, `limit`, `sort` | `List[VMAQuote]` |
 
+### ML/RL Training Data
+
+| Endpoint | Method | Key Params | Response Model |
+|----------|--------|-----------|----------------|
+| `/ml/training-data` | GET | `start_date`, `end_date`, `symbols` (optional), `include_indicators` (true), `include_institutional` (true) | `List[MLTrainingData]` |
+
+**Purpose:** Bulk historical data endpoint for Machine Learning / Reinforcement Learning training. Optimized for minimal API round-trips.
+
+**Features:**
+- Dynamic SQL with optional JOINs (only fetch what's needed)
+- Supports filtering by symbols or returns all active stocks
+- Results sorted by `date` and `symbol` for training pipeline efficiency
+- Composite indexes for fast query performance
+
 ### Health
 
 | Endpoint | Method | Response |
@@ -138,16 +152,34 @@ summary: { total_trades, total_profit, total_cost, roi, win_rate, avg_return }
 trades: [{ symbol, name, buy_date, sell_date, buy_price, sell_price, shares, profit, return_rate }]
 ```
 
+### MLTrainingData
+```
+date, symbol, open, high, low, close, volume,
+ma5?, ma10?, ma20?, ma60?, ma120?, ma240?,
+vma5?, vma10?, vma20?, vma60?,
+k?, d?, rsi6?, rsi12?, macd_dif?, macd_dea?,
+foreign_net?, trust_net?, dealer_net?, foreign_held_shares?
+```
+- All fields with `?` are optional (null when `include_indicators=false` or `include_institutional=false`)
+- Designed for ML/RL training with complete OHLCV + indicators + institutional data
+- Supports bulk queries across multiple stocks and date ranges
+
 ## Database Tables Used
 
 | Table | Key Columns | Used By |
 |-------|------------|---------|
 | `daily_quotes` | date, symbol, open, high, low, close, volume, name, market | Most endpoints |
-| `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea | Scanner, analysis |
-| `institutional_investors` | date, symbol, foreign_net, trust_net | Institutional API |
-| `foreign_holding` | date, symbol, foreign_held_shares | Institutional API |
+| `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea | Scanner, analysis, ML training |
+| `institutional_investors` | date, symbol, foreign_net, trust_net, dealer_net | Institutional API, ML training |
+| `foreign_holding` | date, symbol, foreign_held_shares | Institutional API, ML training |
 
-Indexes: `idx_daily_quotes_date_symbol`, `idx_daily_quotes_symbol_date`
+**Indexes:**
+- `idx_daily_quotes_date_symbol`, `idx_daily_quotes_symbol_date` (daily_quotes)
+- `idx_technical_indicators_symbol_date` (technical_indicators)
+- `idx_institutional_investors_symbol_date` (institutional_investors)
+- `idx_foreign_holding_symbol_date` (foreign_holding)
+
+The composite indexes on `(symbol, date)` optimize JOIN performance for the ML training data endpoint.
 
 ## Scanner Filter Logic (volume-spike)
 
@@ -215,6 +247,15 @@ curl -X POST http://localhost:8000/backtest/run \
 
 # Top volume
 curl "http://localhost:8000/quotes/top-volume?date=2025-10-03&limit=5"
+
+# ML training data - specific stocks with all data
+curl "http://localhost:8000/ml/training-data?start_date=2025-01-01&end_date=2025-01-31&symbols=2330,2317,2454"
+
+# ML training data - all stocks for a single day
+curl "http://localhost:8000/ml/training-data?start_date=2025-01-02&end_date=2025-01-02"
+
+# ML training data - OHLCV only (no indicators or institutional)
+curl "http://localhost:8000/ml/training-data?start_date=2025-01-01&end_date=2025-01-10&symbols=2330&include_indicators=false&include_institutional=false"
 ```
 
 ## Adding a New Endpoint
