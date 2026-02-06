@@ -158,9 +158,10 @@ date, symbol, open, high, low, close, volume,
 ma5?, ma10?, ma20?, ma60?, ma120?, ma240?,
 vma5?, vma10?, vma20?, vma60?,
 k?, d?, rsi6?, rsi12?, macd_dif?, macd_dea?,
-foreign_net?, trust_net?, dealer_net?, foreign_held_shares?
+foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 ```
 - All fields with `?` are optional (null when `include_indicators=false` or `include_institutional=false`)
+- `trust_held_shares` is computed as running sum of `trust_net` (similar to `foreign_held_shares`)
 - Designed for ML/RL training with complete OHLCV + indicators + institutional data
 - Supports bulk queries across multiple stocks and date ranges
 
@@ -265,6 +266,41 @@ curl "http://localhost:8000/ml/training-data?start_date=2025-01-01&end_date=2025
 3. Write raw SQL via `text()`, execute with `engine.connect()`
 4. Map rows to Pydantic models
 5. Rebuild: `docker compose up -d --build backend`
+
+## Database Maintenance Best Practices
+
+### Creating and Managing Indexes
+
+**Critical Indexes:** The composite indexes listed in the "Database Tables Used" section are essential for API performance. If indexes are lost due to database operations:
+
+1. **Verify indexes exist:**
+   ```bash
+   docker compose exec -T db psql -U user -d stock_db -c \
+     "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname LIKE 'idx_%' ORDER BY tablename, indexname;"
+   ```
+
+2. **Recreate missing indexes:**
+   ```bash
+   docker compose run --rm backend python create_indexes.py
+   ```
+
+3. **Expected indexes (5 total):**
+   - `idx_daily_quotes_date_symbol` (daily_quotes)
+   - `idx_daily_quotes_symbol_date` (daily_quotes)
+   - `idx_tech_symbol_date` (technical_indicators)
+   - `idx_institutional_investors_symbol_date` (institutional_investors)
+   - `idx_foreign_holding_symbol_date` (foreign_holding)
+
+**Performance Impact:** Missing indexes can degrade query performance from ~50ms to several seconds for multi-table JOINs (e.g., ML training data endpoint).
+
+**Prevention:**
+- Always verify indexes after database maintenance operations
+- Document any manual database schema changes
+- Test critical endpoints after database operations
+
+### Database Recovery Incidents
+
+For historical database issues and resolutions, see `backend/requests.md` → Data Recovery Log section.
 
 ---
 
