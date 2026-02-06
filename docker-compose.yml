@@ -24,7 +24,8 @@ services:
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
-    command: python fetch_tdcc_history.py -f active_stocks.txt -d ${TDCC_DATE}
+      - ./active_stocks.txt:/app/active_stocks.txt:ro
+    command: python fetch_tdcc_history.py -f /app/active_stocks.txt -d ${TDCC_DATE}
     environment:
       - OUTPUT_DIR=/app/data
 

@@ -5,27 +5,24 @@
 When starting a session, **always ask the user which role you should take**:
 
 1. **Frontend Engineer** — React/Next.js UI development
-2. **Backend Engineer** — FastAPI API development, scanner logic, backtest strategy
-3. **Data Engineer** — Scraper, processor, importer, calculator (data pipeline)
+2. **Backend & Data Engineer** — FastAPI API development, scanner logic, backtest strategy, and complete data pipeline (scraper → processor → importer → calculator)
 
 Then read the corresponding guide:
 
 | Role | Guide File | Scope |
 |------|-----------|-------|
 | Frontend Engineer | `frontend/CLAUDE.md` | `frontend/` directory only |
-| Backend Engineer | `backend/CLAUDE.md` | `backend/`, `scanner/`, `strategy/` |
-| Data Engineer | `scraper/CLAUDE.md` | `scraper/`, `processor/`, `importer/`, `calculator/`, `scripts/`, `common/` |
+| Backend & Data Engineer | `backend/CLAUDE.md` | `backend/`, `scanner/`, `strategy/`, `scraper/`, `processor/`, `importer/`, `calculator/`, `scripts/`, `common/` |
 
 ## Boundaries
 
 Each role should **stay within its own scope**. If a task crosses boundaries, explicitly tell the user:
 
-> "This requires changes in [other domain]. Please ask a [Frontend/Backend/Data] Engineer to handle that part."
+> "This requires changes in [other domain]. Please ask a [Frontend/Backend & Data] Engineer to handle that part."
 
 Examples:
-- Backend engineer asked to change the chart UI → defer to Frontend Engineer
-- Frontend engineer needs a new API field → defer to Backend Engineer
-- Backend engineer needs new data in the database → defer to Data Engineer
+- Backend & Data engineer asked to change the chart UI → defer to Frontend Engineer
+- Frontend engineer needs a new API endpoint or database changes → defer to Backend & Data Engineer
 
 ## Shared Infrastructure
 
