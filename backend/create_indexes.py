@@ -19,6 +19,12 @@ def add_indexes():
         # 建立複合索引以加速查詢
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_daily_quotes_date_symbol ON daily_quotes (date, symbol)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_daily_quotes_symbol_date ON daily_quotes (symbol, date)"))
+
+        # ML training data optimization indexes
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_technical_indicators_symbol_date ON technical_indicators (symbol, date)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_institutional_investors_symbol_date ON institutional_investors (symbol, date)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_foreign_holding_symbol_date ON foreign_holding (symbol, date)"))
+
         print("Indexes created successfully.")
     except Exception as e:
         print(f"Error creating indexes: {e}")

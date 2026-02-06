@@ -149,6 +149,35 @@ class InstitutionalData(BaseModel):
     foreign_held_shares: Optional[float] = None
     trust_held_shares: Optional[float] = None
 
+class MLTrainingData(BaseModel):
+    date: datetime.date
+    symbol: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+    ma120: Optional[float] = None
+    ma240: Optional[float] = None
+    vma5: Optional[float] = None
+    vma10: Optional[float] = None
+    vma20: Optional[float] = None
+    vma60: Optional[float] = None
+    k: Optional[float] = None
+    d: Optional[float] = None
+    rsi6: Optional[float] = None
+    rsi12: Optional[float] = None
+    macd_dif: Optional[float] = None
+    macd_dea: Optional[float] = None
+    foreign_net: Optional[float] = None
+    trust_net: Optional[float] = None
+    dealer_net: Optional[float] = None
+    foreign_held_shares: Optional[float] = None
+
 # ... (get_db_url, read_root, health_check) ...
 
 # ... (get_top_volume, get_ma_data, get_vma_data, get_volume_breakout) ...
@@ -611,4 +640,136 @@ def get_vma_data(
 
     except Exception as e:
         print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/ml/training-data", response_model=List[MLTrainingData])
+def get_ml_training_data(
+    start_date: str = Query(..., description="Start date in YYYY-MM-DD"),
+    end_date: str = Query(..., description="End date in YYYY-MM-DD"),
+    symbols: Optional[str] = Query(None, description="Comma-separated list of symbols (e.g., '2330,2317,2454'). If omitted, returns all stocks."),
+    include_indicators: bool = Query(True, description="Include technical indicators"),
+    include_institutional: bool = Query(True, description="Include institutional investor data")
+):
+    """
+    Bulk historical data endpoint for ML/RL training.
+    Returns OHLCV data with optional technical indicators and institutional data.
+    Optimized for minimal API round-trips.
+    """
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+
+        # Build SELECT clause
+        select_fields = [
+            "dq.date",
+            "dq.symbol",
+            "dq.open",
+            "dq.high",
+            "dq.low",
+            "dq.close",
+            "dq.volume"
+        ]
+
+        if include_indicators:
+            select_fields.extend([
+                "ti.ma5", "ti.ma10", "ti.ma20", "ti.ma60", "ti.ma120", "ti.ma240",
+                "ti.vma5", "ti.vma10", "ti.vma20", "ti.vma60",
+                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea"
+            ])
+
+        if include_institutional:
+            select_fields.extend([
+                "ii.foreign_net", "ii.trust_net", "ii.dealer_net",
+                "fh.foreign_held_shares"
+            ])
+
+        select_clause = ", ".join(select_fields)
+
+        # Build JOIN clauses
+        joins = []
+        if include_indicators:
+            joins.append("LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date")
+        if include_institutional:
+            joins.append("LEFT JOIN institutional_investors ii ON dq.symbol = ii.symbol AND dq.date = ii.date")
+            joins.append("LEFT JOIN foreign_holding fh ON dq.symbol = fh.symbol AND dq.date = fh.date")
+
+        join_clause = " ".join(joins)
+
+        # Build WHERE clause
+        where_conditions = ["dq.date >= :start_date", "dq.date <= :end_date"]
+        params = {"start_date": start_date, "end_date": end_date}
+
+        if symbols:
+            symbol_list = [s.strip() for s in symbols.split(",")]
+            placeholders = ", ".join([f":symbol_{i}" for i in range(len(symbol_list))])
+            where_conditions.append(f"dq.symbol IN ({placeholders})")
+            for i, sym in enumerate(symbol_list):
+                params[f"symbol_{i}"] = sym
+
+        where_clause = " AND ".join(where_conditions)
+
+        # Build final query
+        query = text(f"""
+            SELECT {select_clause}
+            FROM daily_quotes dq
+            {join_clause}
+            WHERE {where_clause}
+            ORDER BY dq.date, dq.symbol
+        """)
+
+        print(f"Fetching ML training data: {start_date} to {end_date}, symbols={symbols or 'ALL'}")
+
+        with engine.connect() as conn:
+            result = conn.execute(query, params).fetchall()
+
+        # Map results to response model
+        data = []
+        for row in result:
+            record = {
+                "date": row.date,
+                "symbol": row.symbol,
+                "open": float(row.open),
+                "high": float(row.high),
+                "low": float(row.low),
+                "close": float(row.close),
+                "volume": float(row.volume)
+            }
+
+            if include_indicators:
+                record.update({
+                    "ma5": float(row.ma5) if row.ma5 is not None else None,
+                    "ma10": float(row.ma10) if row.ma10 is not None else None,
+                    "ma20": float(row.ma20) if row.ma20 is not None else None,
+                    "ma60": float(row.ma60) if row.ma60 is not None else None,
+                    "ma120": float(row.ma120) if row.ma120 is not None else None,
+                    "ma240": float(row.ma240) if row.ma240 is not None else None,
+                    "vma5": float(row.vma5) if row.vma5 is not None else None,
+                    "vma10": float(row.vma10) if row.vma10 is not None else None,
+                    "vma20": float(row.vma20) if row.vma20 is not None else None,
+                    "vma60": float(row.vma60) if row.vma60 is not None else None,
+                    "k": float(row.k) if row.k is not None else None,
+                    "d": float(row.d) if row.d is not None else None,
+                    "rsi6": float(row.rsi6) if row.rsi6 is not None else None,
+                    "rsi12": float(row.rsi12) if row.rsi12 is not None else None,
+                    "macd_dif": float(row.macd_dif) if row.macd_dif is not None else None,
+                    "macd_dea": float(row.macd_dea) if row.macd_dea is not None else None
+                })
+
+            if include_institutional:
+                record.update({
+                    "foreign_net": float(row.foreign_net) if row.foreign_net is not None else None,
+                    "trust_net": float(row.trust_net) if row.trust_net is not None else None,
+                    "dealer_net": float(row.dealer_net) if row.dealer_net is not None else None,
+                    "foreign_held_shares": float(row.foreign_held_shares) if row.foreign_held_shares is not None else None
+                })
+
+            data.append(MLTrainingData(**record))
+
+        print(f"Returned {len(data)} records")
+        return data
+
+    except Exception as e:
+        import traceback
+        print(f"Error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
