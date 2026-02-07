@@ -42,6 +42,17 @@ def get_filter_dates():
             return datetime.datetime.strptime(date_str, "%Y%m%d")
         except ValueError:
             pass
+        
+        # 嘗試 YYYYQX
+        try:
+            if 'Q' in date_str and len(date_str) == 6:
+                year = int(date_str[:4])
+                q = int(date_str[5])
+                # 轉為該季最後一天的日期物件供過濾比較
+                return datetime.datetime(year, q * 3, 28) # 28號保證月份合法
+        except Exception:
+            pass
+            
         return None
 
     start_date = parse_date(start_env)

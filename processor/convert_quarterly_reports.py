@@ -57,31 +57,35 @@ def process_file(file_path, date_str, market):
         
         # 建立欄位映射 (索引基準)
         col_map = {}
+        
+        # 共通模糊比對關鍵字 (適用於 SII 與 OTC)
+        for i, c in enumerate(header_row):
+            if "Code" in c and "Name" in c: col_map["symbol_name"] = i
+            elif "代號" in c: col_map["symbol"] = i
+            elif "名稱" in c: col_map["name"] = i
+            elif "營業收入" in c and "1-" not in c: col_map["revenue"] = i
+            elif "營業利益" in c or "Income(Lose) from Operation" in c: col_map["operating_income"] = i
+            elif "營業外" in c: col_map["non_operating_income"] = i
+            # 先檢查 EPS，因為它的字串通常包含 "稅後純益"
+            elif "每股盈餘" in c or "每股稅後純益" in c or "Net Income Per Share" in c: col_map["eps"] = i
+            elif "稅後淨利" in c or "稅後純益" in c or "Net Income after Tax" in c: col_map["net_income"] = i
+            elif "每股淨值" in c: col_map["nav_per_share"] = i
+            elif "流動比率" in c: col_map["current_ratio"] = i
+            elif "速動比率" in c: col_map["quick_ratio"] = i
+            elif "淨值佔總資產" in c: col_map["nav_asset_ratio"] = i
+            # 註：營業活動現金流量通常不在彙總報表 (C05001) 中，此處留作預留比對
+            elif "營業活動現金流量" in c or "Cash Flow from Operating" in c: col_map["operating_cash_flow"] = i
+
         if market == 'sii':
-            # TWSE SII 格式固定 (C05001 一般業彙總表)
-            col_map = {
+            # TWSE SII 格式固定 (C05001 一般業彙總表)，若模糊比對失敗則使用硬編碼索引作為 Fallback
+            default_sii_map = {
                 "symbol": 0, "name": 1, "revenue": 2, "operating_income": 5,
                 "non_operating_income": 7, "net_income": 9, "eps": 13,
                 "nav_per_share": 15, "nav_asset_ratio": 16, "current_ratio": 17,
                 "quick_ratio": 18
             }
-        else:
-            # OTC 模糊比對
-            for i, c in enumerate(header_row):
-                if "Code" in c and "Name" in c: col_map["symbol_name"] = i
-                elif "代號" in c: col_map["symbol"] = i
-                elif "名稱" in c: col_map["name"] = i
-                elif "營業收入" in c and "1-" not in c: col_map["revenue"] = i
-                elif "營業利益" in c or "Income(Lose) from Operation" in c: col_map["operating_income"] = i
-                elif "營業外" in c: col_map["non_operating_income"] = i
-                # 先檢查 EPS，因為它的字串通常包含 "稅後純益"
-                elif "每股盈餘" in c or "每股稅後純益" in c or "Net Income Per Share" in c: col_map["eps"] = i
-                elif "稅後淨利" in c or "稅後純益" in c or "Net Income after Tax" in c: col_map["net_income"] = i
-                elif "每股淨值" in c: col_map["nav_per_share"] = i
-                elif "流動比率" in c: col_map["current_ratio"] = i
-                elif "速動比率" in c: col_map["quick_ratio"] = i
-                elif "淨值佔總資產" in c: col_map["nav_asset_ratio"] = i
-                elif "營業活動現金流量" in c or "Cash Flow from Operating" in c: col_map["operating_cash_flow"] = i
+            for k, v in default_sii_map.items():
+                if k not in col_map: col_map[k] = v
 
         records = []
         # 從 header_idx + 1 開始尋找資料
