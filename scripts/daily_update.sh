@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 每日股票數據更新腳本
-# 執行順序: scraper -> processor -> importer -> calculator
+# 執行順序: scraper -> processor -> data_quality_checker -> importer -> calculator
 
 set -e  # 遇到錯誤立即停止
 
@@ -25,7 +25,7 @@ echo "Target Date: $TARGET_DATE" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
 # 1. Scraper
-echo "[1/5] Running scraper..." | tee -a "$LOG_FILE"
+echo "[1/6] Running scraper..." | tee -a "$LOG_FILE"
 docker compose run --rm scraper-daily 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Scraper completed" | tee -a "$LOG_FILE"
@@ -35,7 +35,7 @@ else
 fi
 
 # 2. Processor (daily)
-echo "[2/5] Running processor..." | tee -a "$LOG_FILE"
+echo "[2/6] Running processor..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Processor completed" | tee -a "$LOG_FILE"
@@ -45,7 +45,7 @@ else
 fi
 
 # 3. Processor (institutional_summary)
-echo "[3/5] Running institutional_summary processor..." | tee -a "$LOG_FILE"
+echo "[3/6] Running institutional_summary processor..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor python convert_institutional_summary.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Institutional summary processor completed" | tee -a "$LOG_FILE"
@@ -54,8 +54,19 @@ else
     exit 1
 fi
 
-# 4. Importer
-echo "[4/5] Running importer..." | tee -a "$LOG_FILE"
+# 4. Data Quality Checker (runs after all processor steps)
+echo "[4/6] Running data quality checker..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE processor python data_quality_checker.py 2>&1 | tee -a "$LOG_FILE"
+CHECKER_EXIT_CODE=$?
+if [ $CHECKER_EXIT_CODE -eq 0 ]; then
+    echo "✓ Data quality check passed" | tee -a "$LOG_FILE"
+else
+    echo "⚠ Data quality check found issues (see error.md)" | tee -a "$LOG_FILE"
+    echo "⚠ Continuing with import despite data quality issues..." | tee -a "$LOG_FILE"
+fi
+
+# 5. Importer
+echo "[5/6] Running importer..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
@@ -64,8 +75,8 @@ else
     exit 1
 fi
 
-# 5. Calculator
-echo "[5/5] Running calculator..." | tee -a "$LOG_FILE"
+# 6. Calculator
+echo "[6/6] Running calculator..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE calculator 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Calculator completed" | tee -a "$LOG_FILE"

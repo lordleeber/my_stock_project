@@ -62,10 +62,11 @@ services:
   # ============================================
 
   processor:
-    build: 
+    build:
       context: ./processor
     volumes:
       - ./data:/app/data
+      - ./error.md:/app/error.md
     environment:
       - START_DATE=${START_DATE}
       - END_DATE=${END_DATE}
