@@ -218,7 +218,7 @@ class MarginTradingRaw(BaseModel):
     offset_balance: Optional[float] = None
 
 class MarginSummaryRaw(BaseModel):
-    date: datetime.date  # Stored as date type (not text) in database
+    date: str  # Stored as text (consistent with all other tables)
     market: str
     item: str
     buy: Optional[float]
@@ -342,17 +342,10 @@ def get_raw_data(
         if df.empty:
             return []
         
-        # 統一日期格式，處理 NaT
-        # Note: margin_summary uses date type, all others use text type
+        # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
+        # All tables now use text type for date column (consistent schema)
         if 'date' in df.columns:
-            # Convert to appropriate format based on original type
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
-            if table == 'margin_summary':
-                # Keep as date object for margin_summary (uses DATE type)
-                df['date'] = df['date'].dt.date
-            else:
-                # Convert to YYYY-MM-DD string for all other tables (use TEXT type)
-                df['date'] = df['date'].dt.strftime('%Y-%m-%d')
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
 
         return df.where(pd.notnull(df), None).to_dict(orient="records")
