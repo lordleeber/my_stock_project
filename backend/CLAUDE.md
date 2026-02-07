@@ -414,7 +414,7 @@ Database (shared with backend):
 |--------|---------|
 | `convert.py` | **Unified ETL entry point**: Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files before DB import. |
+| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions. |
 | `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction. |
 
@@ -470,7 +470,7 @@ Uses Pandas vectorized operations with grouped apply (by symbol) for efficiency.
 
 ### Batch import historical data
 ```bash
-# Process + import a full year
+# Process + import a full year (uses unified convert.py)
 for date in $(python3 -c "
 import pandas_market_calendars as mcal
 cal = mcal.get_calendar('XTAI')
@@ -478,7 +478,6 @@ for d in cal.schedule('2022-01-01','2022-12-31').index:
     print(d.strftime('%Y%m%d'))
 "); do
   START_DATE=$date END_DATE=$date docker compose run --rm processor
-  START_DATE=$date END_DATE=$date docker compose run --rm processor python convert_institutional_summary.py
   START_DATE=$date END_DATE=$date docker compose run --rm importer
 done
 # Then recalculate all indicators
