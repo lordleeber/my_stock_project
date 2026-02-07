@@ -311,6 +311,30 @@ class ShareholdingRaw(BaseModel):
     shares: Optional[float]
     percentage: Optional[float]
 
+class QuarterlyReportRaw(BaseModel):
+    date: str  # Format: YYYYQ1, YYYYQ2...
+    symbol: str
+    market: str
+    name: Optional[str] = None
+    # Income Statement
+    revenue: Optional[float] = None
+    operating_income: Optional[float] = None
+    non_operating_income: Optional[float] = None
+    net_income: Optional[float] = None
+    eps: Optional[float] = None
+    # Balance Sheet (Raw)
+    total_assets: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+    nav_per_share: Optional[float] = None
+    # Cash Flow
+    operating_cash_flow: Optional[float] = None
+    # Ratios (From Source)
+    current_ratio: Optional[float] = None
+    quick_ratio: Optional[float] = None
+    debt_ratio: Optional[float] = None  # 100 - (NAV/Assets)
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
@@ -499,6 +523,21 @@ def get_raw_shareholding(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit, offset)
+
+@app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
+def get_raw_quarterly_reports(
+    start_date: str = Query(..., description="Format: YYYYQ1 (e.g. 2020Q1)"),
+    end_date: str = Query(..., description="Format: YYYYQ1"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    """
+    Fetch quarterly financial reports.
+    Note: Date filtering for this endpoint uses 'YYYYQX' string format (e.g. '2020Q1'), not YYYY-MM-DD.
+    """
+    return get_raw_data("quarterly_reports", start_date, end_date, symbol, market, limit, offset)
 
 import sys
 # 確保能 import strategy

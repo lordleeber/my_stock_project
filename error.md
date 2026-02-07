@@ -515,3 +515,31 @@ Issues are automatically appended after each processor run.
 4. Re-run processor: `START_DATE=20260205 END_DATE=20260205 docker compose run --rm processor`
 
 ---
+
+## Data Quality Issues - 20260207
+**Detected at:** 2026-02-07 13:00:07
+**Issue count:** 15
+
+- ❌ margin_trading: Missing file data/processed/margin_trading/date=20260207/sii.csv
+- ❌ margin_trading: Missing file data/processed/margin_trading/date=20260207/otc.csv
+- ❌ margin_sbl: Missing file data/processed/margin_sbl/date=20260207/sii.csv
+- ❌ margin_sbl: Missing file data/processed/margin_sbl/date=20260207/otc.csv
+- ❌ daily_quotes: Missing file data/processed/daily_quotes/date=20260207/sii.csv
+- ❌ daily_quotes: Missing file data/processed/daily_quotes/date=20260207/otc.csv
+- ❌ institutional_investors: Missing file data/processed/institutional_investors/date=20260207/sii.csv
+- ❌ institutional_investors: Missing file data/processed/institutional_investors/date=20260207/otc.csv
+- ❌ foreign_holding: Missing file data/processed/foreign_holding/date=20260207/sii.csv
+- ❌ foreign_holding: Missing file data/processed/foreign_holding/date=20260207/otc.csv
+- ❌ pe_ratio: Missing file data/processed/pe_ratio/date=20260207/sii.csv
+- ❌ pe_ratio: Missing file data/processed/pe_ratio/date=20260207/otc.csv
+- ❌ market_indices: Missing file data/processed/market_indices/date=20260207/sii.csv
+- ❌ market_indices: Missing file data/processed/market_indices/date=20260207/otc.csv
+- ❌ institutional_summary: Missing file data/processed/institutional_summary/date=20260207/all.csv
+
+**Action required:**
+1. Check raw data files in `data/raw/*/date=20260207/`
+2. Review processor logs for errors
+3. Fix processor bugs if column mapping is incorrect
+4. Re-run processor: `START_DATE=20260207 END_DATE=20260207 docker compose run --rm processor`
+
+---

@@ -46,6 +46,19 @@ services:
     environment:
       - OUTPUT_DIR=/app/data
 
+  # 季報 (每季結束後 45 日執行)
+  scraper-quarterly:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    volumes:
+      - ./data:/app/data
+      - ./common:/app/common
+      - ./scraper:/app/scraper
+    command: python fetch_quarterly_reports.py --year ${REPORT_YEAR:-} --quarter ${REPORT_QUARTER:-}
+    environment:
+      - OUTPUT_DIR=/app/data
+
   # ============================================
   # Scanner - 爆量翻多掃描器
   # ============================================
@@ -149,7 +162,7 @@ services:
       - DB_HOST=db
     # 同樣修正 volume 掛載
     volumes:
-      - ./backend:/app/backend
+      - ./backend:/app
       - ./strategy:/app/strategy
       - ./scanner:/app/scanner
 

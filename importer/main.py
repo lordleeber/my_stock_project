@@ -278,44 +278,55 @@ def import_data(engine):
 
         # --- 特別處理 margin_summary (市場信用交易彙總) ---
         if category == "margin_summary":
+            # ... (現有邏輯保持不變)
+            continue
+
+        # --- 特別處理 quarterly_reports (公司季報) ---
+        if category == "quarterly_reports":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]
+                date_str = date_dir.split("=")[1] # YYYYQX
 
-                try:
-                    current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
-                    if start_date and current_date < start_date: continue
-                    if end_date and current_date > end_date: continue
-                except ValueError:
-                    continue
+                # 季報日期過濾邏輯略有不同，若有設定 START_DATE/END_DATE (YYYYMMDD) 則轉換比較
+                if start_date or end_date:
+                    # 粗略轉換: 2020Q1 -> 2020-03-31 (季末)
+                    year = int(date_str[:4])
+                    q = int(date_str[5])
+                    q_month = q * 3
+                    q_date = datetime.datetime(year, q_month, 1)
+                    if start_date and q_date < start_date.replace(day=1): continue
+                    if end_date and q_date > end_date.replace(day=1): continue
 
                 csv_file = os.path.join(date_dir, "all.csv")
                 if not os.path.exists(csv_file): continue
 
-                table_name = "margin_summary"
+                table_name = "quarterly_reports"
                 try:
-                    target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-
-                    if not force_reimport and date_exists_in_db(engine, table_name, target_date):
+                    if not force_reimport and date_exists_in_db(engine, table_name, date_str):
                         print(f"Skipping {table_name} - {date_str} (already in DB)")
                         continue
 
                     print(f"Processing {table_name} - {date_str}...")
-                    df = pl.read_csv(csv_file)
+                    df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue
 
+                    df = filter_etf(df)
+                    if df.height == 0:
+                        print("  -> No data after filtering ETFs, skipping.")
+                        continue
+
                     if force_reimport:
-                        delete_by_date(engine, table_name, target_date)
+                        delete_by_date(engine, table_name, date_str)
 
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
                         if_exists="append",
                         index=False,
-                        chunksize=1000
+                        chunksize=2000
                     )
                     print(f"  -> Imported {df.height} rows.")
 

@@ -75,14 +75,20 @@ Raw endpoints have pytest coverage under `backend/tests/`.
 - Tests query the real Postgres at `localhost:5432` (default envs in `backend/tests/conftest.py`).
 - The tests sample the latest row per table and validate `/raw/*` endpoints, date format, required fields, and filters.
 
-## IMPORTANT: File Path Gotcha
+## IMPORTANT: File Path Gotcha (Live Reload)
 
-The Dockerfile copies `backend/main.py` → `/app/main.py`. The volume mount `./backend:/app/backend` maps to `/app/backend/main.py`. Uvicorn imports from `/app/main.py` (the baked-in copy).
+The `backend` service uses a volume mount `./backend:/app` in `docker-compose.yml`. This maps your local `backend/` directory directly to `/app` in the container.
 
-**This means:** Editing `backend/main.py` on the host does NOT auto-reload the running server. You **MUST** rebuild the image:
-`docker compose build backend && docker compose up -d backend`.
+**This means:** 
+- Editing `backend/main.py` on the host **DOES** trigger an auto-reload of the Uvicorn server (it's started with `--reload`).
+- The `strategy/` and `scanner/` directories are also mounted (`./strategy:/app/strategy`, `./scanner:/app/scanner`), so changes there also reflect immediately.
 
-The `scanner/` and `strategy/` volume mounts work the same way — they're COPYed at build time.
+**When to rebuild:** 
+You only need to run `docker compose build backend` if you change `backend/requirements.txt` or the `backend/Dockerfile`.
+
+**Note on other services:** 
+The `processor` and `importer` services **DO NOT** use code volume mounts. You **MUST** rebuild them after any code change:
+`docker compose build processor importer`
 
 ## Database Connection
 
@@ -148,6 +154,7 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
+| `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` |
 
 **Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
 - **Features:** Supports pagination via `limit` (max 5000) & `offset`. 
@@ -233,6 +240,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
 - **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct
 - **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
+- **QuarterlyReportRaw**: date (YYYYQX), symbol, market, revenue, operating_income, net_income, eps, total_assets, total_liabilities, current_assets, current_liabilities, operating_cash_flow, current_ratio, quick_ratio, debt_ratio, nav_per_share
 
 ## Database Tables Used
 
@@ -341,6 +349,9 @@ curl "http://localhost:8000/raw/institutional-summary?start_date=2026-02-06&end_
 
 # Get raw monthly revenue
 curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026-01-01&end_date=2026-01-01"
+
+# Get raw quarterly reports (Uses YYYYQX format)
+curl "http://localhost:8000/raw/quarterly-reports?symbol=2330&start_date=2024Q1&end_date=2025Q3"
 ```
 
 ## Adding a New Endpoint
@@ -440,6 +451,7 @@ The following dates correctly return no data for OTC indices due to market closu
 | TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E, indices | Daily (after market close) |
 | TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks + Index Summary | Daily (after market close) |
 | MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
+| MOPS (mopsov.twse.com.tw) | `scraper-quarterly` | Quarterly financial reports (SII/OTC) | Quarterly (approx. 45 days after Q-end) |
 | TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (scraped on Sunday) |
 
 ## Directory Structure (Data)
@@ -494,6 +506,7 @@ Database (shared with backend):
 | Module | Purpose |
 |--------|---------|
 | `convert.py` | **Unified ETL entry point**: Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
+| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions. |
@@ -504,8 +517,9 @@ Database (shared with backend):
 1. **Unified Pipeline**: All categories (OHLCV, Institutional, Margin, etc.) are processed via `python convert.py`.
 2. **Incremental Processing**: By default, skips files that already exist in the processed directory. Set `FORCE_REPROCESS=1` to force reprocessing.
 3. **Multi-line Header Merging**: `utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
-4. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
-5. **Market Index Extraction**:
+4. **Quarterly Report Parsing (SII)**: Handles complex multi-row headers (Rows 2-5) in 2025+ SII Excel files by locating the first row with a 4-digit numeric symbol and using fixed index-based mapping (Col 13: EPS, Col 20: Op Cash Flow).
+5. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
+6. **Market Index Extraction**:
    - **SII**: Extracted from `daily_quotes/sii.csv` via `utils.read_sii_indices`.
    - **OTC**: Fetched as a dedicated category using modernized TPEx JSON-to-CSV APIs.
 
@@ -624,6 +638,15 @@ START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python c
 docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 -e IMPORT_CATEGORY=monthly_revenue importer
 ```
 Note: Monthly revenue is published before the 10th of each month. Fetching after the 11th ensures completeness.
+
+### Quarterly report manual fetch
+```bash
+# Fetch 2025 Q3
+REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
+# Process + Import (Use YYYYQX for start/end date for quarterly reports)
+START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=quarterly_reports importer
+```
 
 ### Automation schedules (launchctl)
 
