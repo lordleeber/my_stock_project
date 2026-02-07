@@ -410,7 +410,7 @@ def get_raw_margin_trading(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit, offset)
@@ -420,7 +420,7 @@ def get_raw_margin_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("margin_summary", start_date, end_date, None, market, limit, offset)
@@ -431,7 +431,7 @@ def get_raw_institutional(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit, offset)
@@ -441,7 +441,7 @@ def get_raw_institutional_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("institutional_summary", start_date, end_date, None, market, limit, offset)
@@ -452,7 +452,7 @@ def get_raw_foreign_holding(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit, offset)
@@ -463,7 +463,7 @@ def get_raw_pe_ratio(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit, offset)
@@ -474,7 +474,7 @@ def get_raw_market_indices(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("market_indices", start_date, end_date, symbol, market, limit, offset)
@@ -485,7 +485,7 @@ def get_raw_monthly_revenue(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
@@ -495,7 +495,7 @@ def get_raw_shareholding(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
-    limit: int = Query(1000, gt=0),
+    limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit, offset)

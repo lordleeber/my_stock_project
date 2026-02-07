@@ -150,9 +150,16 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
 
 **Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
-- **Features:** Supports pagination via `limit` & `offset`. 
+- **Features:** Supports pagination via `limit` (max 5000) & `offset`. 
 - **Data Integrity:** Automatically handles non-JSON values (NaN/Inf) by converting them to `null`.
 - **Sorting:** Defaults to `date DESC` (and `symbol ASC` where applicable).
+
+**Pagination Example:**
+To fetch the first 1000 records:
+`GET /raw/daily-quotes?start_date=2026-01-01&end_date=2026-01-31&limit=1000&offset=0`
+
+To fetch the next 1000 records:
+`GET /raw/daily-quotes?start_date=2026-01-01&end_date=2026-01-31&limit=1000&offset=1000`
 
 ### Health
 
