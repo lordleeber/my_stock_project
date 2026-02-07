@@ -194,8 +194,8 @@ class DailyQuoteRaw(BaseModel):
     transactions: Optional[float] = None
     change: Optional[float] = None
     direction: Optional[str] = None
-    bid: Optional[str] = None
-    ask: Optional[str] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
     pe_ratio: Optional[float] = None
 
 class MarginTradingRaw(BaseModel):
@@ -342,9 +342,15 @@ def get_raw_data(
         if df.empty:
             return []
         
-        # 統一日期格式為 YYYY-MM-DD 字串
+        # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
         if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            df['date'] = df['date'].where(df['date'].notnull(), None)
+        
+        # 嘗試將 bid/ask 欄位轉為數值 (若存在於 table 中)
+        for col in ['bid', 'ask']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
             
         return df.where(pd.notnull(df), None).to_dict(orient="records")
 
