@@ -41,20 +41,29 @@ def process_file(file_path, date_str, market):
         if header_idx == -1:
             return None
 
-        # 取得表頭行名稱
-        header_row = df_raw.iloc[header_idx].astype(str).tolist()
-        # 標準化欄位名稱
-        header_row = [str(c).replace("\r", "").replace("\n", "").strip() for c in header_row]
+        # 取得表頭行名稱 (合併 header_idx 及其前後行，以應對多列標題)
+        merged_headers = []
+        for col_idx in range(len(df_raw.columns)):
+            parts = []
+            # 檢查 header_idx 附近幾行，合併成單一標題字串供模糊比對
+            for r_offset in range(-2, 2): 
+                r_idx = header_idx + r_offset
+                if 0 <= r_idx < len(df_raw):
+                    val = str(df_raw.iloc[r_idx, col_idx]).strip()
+                    if val and val != 'nan':
+                        parts.append(val.replace("\r", "").replace("\n", ""))
+            merged_headers.append(" ".join(parts))
+        header_row = merged_headers
         
         # 建立欄位映射 (索引基準)
         col_map = {}
         if market == 'sii':
-            # TWSE SII 格式極其固定，即便表頭文字變動，索引通常不變
+            # TWSE SII 格式固定 (C05001 一般業彙總表)
             col_map = {
                 "symbol": 0, "name": 1, "revenue": 2, "operating_income": 5,
                 "non_operating_income": 7, "net_income": 9, "eps": 13,
-                "nav_per_share": 15, "nav_asset_ratio": 16, "current_ratio": 18,
-                "quick_ratio": 19, "operating_cash_flow": 20
+                "nav_per_share": 15, "nav_asset_ratio": 16, "current_ratio": 17,
+                "quick_ratio": 18
             }
         else:
             # OTC 模糊比對
@@ -65,12 +74,14 @@ def process_file(file_path, date_str, market):
                 elif "營業收入" in c and "1-" not in c: col_map["revenue"] = i
                 elif "營業利益" in c or "Income(Lose) from Operation" in c: col_map["operating_income"] = i
                 elif "營業外" in c: col_map["non_operating_income"] = i
-                elif "稅後淨利" in c or "稅後純益" in c or "Net Income after Tax" in c: col_map["net_income"] = i
+                # 先檢查 EPS，因為它的字串通常包含 "稅後純益"
                 elif "每股盈餘" in c or "每股稅後純益" in c or "Net Income Per Share" in c: col_map["eps"] = i
+                elif "稅後淨利" in c or "稅後純益" in c or "Net Income after Tax" in c: col_map["net_income"] = i
                 elif "每股淨值" in c: col_map["nav_per_share"] = i
                 elif "流動比率" in c: col_map["current_ratio"] = i
                 elif "速動比率" in c: col_map["quick_ratio"] = i
                 elif "淨值佔總資產" in c: col_map["nav_asset_ratio"] = i
+                elif "營業活動現金流量" in c or "Cash Flow from Operating" in c: col_map["operating_cash_flow"] = i
 
         records = []
         # 從 header_idx + 1 開始尋找資料
@@ -93,7 +104,13 @@ def process_file(file_path, date_str, market):
             if len(raw_symbol) == 4 and raw_symbol.isdigit():
                 symbol = raw_symbol
                 name_idx = col_map.get("name")
-                if name_idx is not None: name = str(row[name_idx]).strip()
+                if name_idx is not None: 
+                    name = str(row[name_idx]).strip()
+                elif market == 'otc' and sym_idx + 1 < len(row):
+                    # 如果 OTC 沒有找到 name 欄位，嘗試取 symbol 的下一欄
+                    next_val = str(row[sym_idx + 1]).strip()
+                    if next_val and next_val != 'nan' and not next_val.replace('.', '').isdigit():
+                        name = next_val
             elif " " in raw_symbol: # 處理 "1101 台泥"
                 parts = raw_symbol.split(maxsplit=1)
                 if len(parts[0]) == 4 and parts[0].isdigit():

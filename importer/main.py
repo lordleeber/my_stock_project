@@ -34,8 +34,18 @@ def get_filter_dates():
     print(f"DEBUG: START_DATE from env: {start_env}")
     print(f"DEBUG: END_DATE from env: {end_env}")
 
-    start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if (start_env and start_env.strip()) else None
-    end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if (end_env and end_env.strip()) else None
+    def parse_date(date_str):
+        if not date_str or not date_str.strip():
+            return None
+        # 嘗試 YYYYMMDD
+        try:
+            return datetime.datetime.strptime(date_str, "%Y%m%d")
+        except ValueError:
+            pass
+        return None
+
+    start_date = parse_date(start_env)
+    end_date = parse_date(end_env)
     return start_date, end_date
 
 def table_exists(engine, table_name):
