@@ -200,6 +200,101 @@ def check_institutional_investors(date_str):
     return issues
 
 
+def check_foreign_holding(date_str):
+    """Check foreign_holding data quality"""
+    issues = []
+
+    for market in ['sii', 'otc']:
+        file_path = Path(f"data/processed/foreign_holding/date={date_str}/{market}.csv")
+
+        if not file_path.exists():
+            issues.append(f"foreign_holding: Missing file {file_path}")
+            continue
+
+        try:
+            df = pd.read_csv(file_path)
+
+            if len(df) == 0:
+                issues.append(f"foreign_holding {market}: File is empty (0 rows)")
+                continue
+
+            # Key columns for foreign shareholding
+            key_columns = [
+                'foreign_held_shares',
+                'foreign_investable_shares',
+                'foreign_held_ratio'
+            ]
+
+            for col in key_columns:
+                if col not in df.columns:
+                    issues.append(f"foreign_holding {market}: Missing column '{col}'")
+                    continue
+
+                null_count = df[col].isna().sum()
+                null_pct = (null_count / len(df)) * 100
+
+                # >70% NULL is suspicious for foreign holding data
+                if null_pct > 70:
+                    issues.append(
+                        f"foreign_holding {market}: Column '{col}' has {null_pct:.1f}% NULL values "
+                        f"({null_count}/{len(df)} rows)"
+                    )
+
+        except Exception as e:
+            issues.append(f"foreign_holding {market}: Error reading file - {str(e)}")
+
+    return issues
+
+
+def check_pe_ratio(date_str):
+    """Check pe_ratio data quality"""
+    issues = []
+
+    for market in ['sii', 'otc']:
+        file_path = Path(f"data/processed/pe_ratio/date={date_str}/{market}.csv")
+
+        if not file_path.exists():
+            issues.append(f"pe_ratio: Missing file {file_path}")
+            continue
+
+        try:
+            df = pd.read_csv(file_path)
+
+            if len(df) == 0:
+                issues.append(f"pe_ratio {market}: File is empty (0 rows)")
+                continue
+
+            # PE ratio column
+            if 'pe_ratio' not in df.columns:
+                issues.append(f"pe_ratio {market}: Missing column 'pe_ratio'")
+                continue
+
+            null_count = df['pe_ratio'].isna().sum()
+            null_pct = (null_count / len(df)) * 100
+
+            # Note: PE ratio can legitimately be NULL for many stocks (loss-making, special cases)
+            # Only flag if >80% are NULL (suggests data source issue)
+            if null_pct > 80:
+                issues.append(
+                    f"pe_ratio {market}: Column 'pe_ratio' has {null_pct:.1f}% NULL values "
+                    f"({null_count}/{len(df)} rows) - may indicate data source issue"
+                )
+
+            # Check for invalid values (negative PE ratio)
+            if 'pe_ratio' in df.columns:
+                invalid_count = (df['pe_ratio'] < 0).sum()
+                if invalid_count > 0:
+                    issues.append(
+                        f"pe_ratio {market}: Found {invalid_count} negative PE ratio values "
+                        "(PE ratio should be positive or NULL)"
+                    )
+
+        except Exception as e:
+            issues.append(f"pe_ratio {market}: Error reading file - {str(e)}")
+
+    return issues
+
+
 def write_error_report(date_str, issues):
     """Write error report to root error.md file"""
     if not issues:
@@ -269,6 +364,12 @@ def main():
 
     print("Checking institutional_investors...")
     all_issues.extend(check_institutional_investors(date_str))
+
+    print("Checking foreign_holding...")
+    all_issues.extend(check_foreign_holding(date_str))
+
+    print("Checking pe_ratio...")
+    all_issues.extend(check_pe_ratio(date_str))
 
     # Write report if issues found
     if all_issues:
