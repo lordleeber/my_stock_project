@@ -194,12 +194,12 @@ class DailyQuoteRaw(BaseModel):
     transactions: Optional[float] = None
     change: Optional[float] = None
     direction: Optional[str] = None
-    bid: Optional[float] = None
-    ask: Optional[float] = None
+    bid: Optional[str] = None  # Stored as text in database
+    ask: Optional[str] = None  # Stored as text in database
     pe_ratio: Optional[float] = None
 
 class MarginTradingRaw(BaseModel):
-    date: datetime.date
+    date: str  # Stored as text in database
     symbol: str
     market: str
     name: Optional[str] = None
@@ -218,7 +218,7 @@ class MarginTradingRaw(BaseModel):
     offset_balance: Optional[float] = None
 
 class MarginSummaryRaw(BaseModel):
-    date: str
+    date: datetime.date  # Stored as date type (not text) in database
     market: str
     item: str
     buy: Optional[float]
@@ -342,16 +342,19 @@ def get_raw_data(
         if df.empty:
             return []
         
-        # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
+        # 統一日期格式，處理 NaT
+        # Note: margin_summary uses date type, all others use text type
         if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+            # Convert to appropriate format based on original type
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            if table == 'margin_summary':
+                # Keep as date object for margin_summary (uses DATE type)
+                df['date'] = df['date'].dt.date
+            else:
+                # Convert to YYYY-MM-DD string for all other tables (use TEXT type)
+                df['date'] = df['date'].dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
-        
-        # 嘗試將 bid/ask 欄位轉為數值 (若存在於 table 中)
-        for col in ['bid', 'ask']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            
+
         return df.where(pd.notnull(df), None).to_dict(orient="records")
 
     except Exception as e:
