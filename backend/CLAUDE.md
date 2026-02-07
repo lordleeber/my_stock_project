@@ -187,14 +187,14 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 
 ### Raw Data Models
 - **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, change
-- **MarginTradingRaw**: date, symbol, market, margin_long_buy/sell/repay/balance/limit, margin_short_buy/sell/repay/balance/limit, offset_buy_short
+- **MarginTradingRaw**: date, symbol, name, market, margin_long_buy/sell/cash_repay/prev_balance/balance/limit, margin_short_buy/sell/cash_repay/prev_balance/balance/limit, offset_balance
 - **MarginSummaryRaw**: date, market, item, buy, sell, cash_repay, yesterday_balance, today_balance
 - **InstitutionalInvestorsRaw**: date, symbol, market, foreign_buy/sell/net, trust_buy/sell/net, dealer_buy/sell/net
 - **InstitutionalSummaryRaw**: date, market, item, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
 - **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
-- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_yoy_pct
+- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct
 - **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
 
 ## Database Tables Used
