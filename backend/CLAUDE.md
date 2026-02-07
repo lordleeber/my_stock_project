@@ -190,6 +190,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 **Important Notes:**
 - All `date` fields return YYYY-MM-DD format strings (not datetime objects)
 - Database schema uses TEXT type for all date columns (standardized across 12 tables)
+- All `symbol` fields use TEXT type (standardized across 10 tables)
 - `bid` and `ask` fields in DailyQuoteRaw are strings (stored as TEXT in database)
 
 **Models:**
