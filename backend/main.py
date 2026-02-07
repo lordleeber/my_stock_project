@@ -1,5 +1,6 @@
 import os
 import datetime
+import numpy as np
 import pandas as pd
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
@@ -322,14 +323,15 @@ def get_raw_data(
     end_date: str,
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
     """通用原始資料查詢邏輯"""
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
         
-        params = {"start": start_date, "end": end_date, "limit": limit}
+        params = {"start": start_date, "end": end_date, "limit": limit, "offset": offset}
         where_clauses = ["date >= :start", "date <= :end"]
         
         if symbol:
@@ -353,7 +355,7 @@ def get_raw_data(
                 SELECT * FROM {table}
                 WHERE {" AND ".join(where_clauses)}
                 ORDER BY {order_by}
-                LIMIT :limit
+                LIMIT :limit OFFSET :offset
             """)
             
             df = pd.read_sql(sql, conn, params=params)
@@ -370,7 +372,19 @@ def get_raw_data(
         if 'symbol' in df.columns:
             df['symbol'] = df['symbol'].astype(str)
                 
-        return df.where(pd.notnull(df), None).to_dict(orient="records")
+        # 終極清理：將所有 dict 中的 NaN/Inf 轉為 None
+        raw_list = df.to_dict(orient="records")
+        clean_list = []
+        for row in raw_list:
+            clean_row = {}
+            for k, v in row.items():
+                if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                    clean_row[k] = None
+                else:
+                    clean_row[k] = v
+            clean_list.append(clean_row)
+            
+        return clean_list
 
     except Exception as e:
         print(f"Raw Data Error ({table}): {e}")
@@ -382,9 +396,10 @@ def get_raw_quotes(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("daily_quotes", start_date, end_date, symbol, market, limit)
+    return get_raw_data("daily_quotes", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/margin-trading", response_model=List[MarginTradingRaw])
 def get_raw_margin_trading(
@@ -392,18 +407,20 @@ def get_raw_margin_trading(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit)
+    return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/margin-summary", response_model=List[MarginSummaryRaw])
 def get_raw_margin_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("margin_summary", start_date, end_date, None, market, limit)
+    return get_raw_data("margin_summary", start_date, end_date, None, market, limit, offset)
 
 @app.get("/raw/institutional-investors", response_model=List[InstitutionalInvestorsRaw])
 def get_raw_institutional(
@@ -411,18 +428,20 @@ def get_raw_institutional(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit)
+    return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/institutional-summary", response_model=List[InstitutionalSummaryRaw])
 def get_raw_institutional_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("institutional_summary", start_date, end_date, None, market, limit)
+    return get_raw_data("institutional_summary", start_date, end_date, None, market, limit, offset)
 
 @app.get("/raw/foreign-holding", response_model=List[ForeignHoldingRaw])
 def get_raw_foreign_holding(
@@ -430,9 +449,10 @@ def get_raw_foreign_holding(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit)
+    return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/pe-ratio", response_model=List[PeRatioRaw])
 def get_raw_pe_ratio(
@@ -440,9 +460,10 @@ def get_raw_pe_ratio(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit)
+    return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/market-indices", response_model=List[MarketIndexRaw])
 def get_raw_market_indices(
@@ -450,9 +471,10 @@ def get_raw_market_indices(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("market_indices", start_date, end_date, symbol, market, limit)
+    return get_raw_data("market_indices", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/monthly-revenue", response_model=List[MonthlyRevenueRaw])
 def get_raw_monthly_revenue(
@@ -460,18 +482,20 @@ def get_raw_monthly_revenue(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit)
+    return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/shareholding", response_model=List[ShareholdingRaw])
 def get_raw_shareholding(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
-    limit: int = 1000
+    limit: int = 1000,
+    offset: int = 0
 ):
-    return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit)
+    return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit, offset)
 
 import sys
 # 確保能 import strategy

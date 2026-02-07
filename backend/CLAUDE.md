@@ -138,18 +138,21 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 
 | Endpoint | Method | Key Params | Response Model |
 |----------|--------|-----------|----------------|
-| `/raw/daily-quotes` | GET | `start_date`, `end_date`, `symbol?`, `market?`, `limit=1000` | `List[DailyQuoteRaw]` |
+| `/raw/daily-quotes` | GET | `start_date`, `end_date`, `symbol?`, `market?`, `limit=1000`, `offset=0` | `List[DailyQuoteRaw]` |
 | `/raw/margin-trading` | GET | Same as above | `List[MarginTradingRaw]` |
-| `/raw/margin-summary` | GET | `start_date`, `end_date`, `market?`, `limit=1000` | `List[MarginSummaryRaw]` |
+| `/raw/margin-summary` | GET | `start_date`, `end_date`, `market?`, `limit=1000`, `offset=0` | `List[MarginSummaryRaw]` |
 | `/raw/institutional-investors`| GET | Same as daily-quotes | `List[InstitutionalInvestorsRaw]` |
 | `/raw/institutional-summary` | GET | Same as margin-summary | `List[InstitutionalSummaryRaw]` |
 | `/raw/foreign-holding` | GET | Same as daily-quotes | `List[ForeignHoldingRaw]` |
 | `/raw/pe-ratio` | GET | Same as daily-quotes | `List[PeRatioRaw]` |
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
-| `/raw/shareholding` | GET | Same as daily-quotes | `List[ShareholdingRaw]` |
+| `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
 
-**Purpose:** Provides direct access to standardized "raw" data from every table in the database. Essential for custom analytics and debugging.
+**Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
+- **Features:** Supports pagination via `limit` & `offset`. 
+- **Data Integrity:** Automatically handles non-JSON values (NaN/Inf) by converting them to `null`.
+- **Sorting:** Defaults to `date DESC` (and `symbol ASC` where applicable).
 
 ### Health
 
