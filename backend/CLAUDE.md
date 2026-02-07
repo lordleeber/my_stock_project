@@ -8,6 +8,15 @@ This guide covers two main areas:
 
 **After completing each task**, review this CLAUDE.md to ensure it remains consistent with the actual code. If you modified any behavior, schema, environment variable, or pipeline logic, update the relevant sections here. Keeping this document in sync with the codebase is essential for future AI assistants.
 
+### 🔴 STRICT ENVIRONMENT CONSISTENCY RULE (CORE MANDATE)
+
+**NEVER take shortcuts by manually copying files or relying solely on volume mounts for core logic updates.**
+Whenever you modify code in `processor/`, `importer/`, `scraper/`, or `common/`, you **MUST** rebuild the corresponding Docker image:
+```bash
+docker compose build <service_name>
+```
+Failing to do this leads to "Host-Container desync" where the container runs old logic even though the host files look correct. This is especially critical for `processor` and `importer` which handle complex parsing and database schema logic.
+
 ---
 
 # Part 1: Backend API
@@ -40,26 +49,19 @@ strategy/                # Imported by backend at runtime
 ## Running
 
 ```bash
-# Via Docker (recommended)
-docker compose up -d backend
+# REBUILD after ANY code change to ensure consistency:
+docker compose build backend && docker compose up -d backend
 
 # Rebuild after changing Dockerfile or requirements.txt
 docker compose up -d --build backend
-
-# After changing only Python code (volume-mounted):
-# NOTE: uvicorn --reload watches /app/main.py, but the Dockerfile
-# COPYs main.py to /app/main.py. Volume mounts go to /app/backend/.
-# So code changes require a rebuild OR manual restart:
-docker compose stop backend && docker compose up -d backend
 ```
 
 ## IMPORTANT: File Path Gotcha
 
 The Dockerfile copies `backend/main.py` → `/app/main.py`. The volume mount `./backend:/app/backend` maps to `/app/backend/main.py`. Uvicorn imports from `/app/main.py` (the baked-in copy).
 
-**This means:** Editing `backend/main.py` on the host does NOT auto-reload the running server. You must either:
-1. `docker compose up -d --build backend` (rebuild image)
-2. `docker compose stop backend && docker compose up -d backend` (restart)
+**This means:** Editing `backend/main.py` on the host does NOT auto-reload the running server. You **MUST** rebuild the image:
+`docker compose build backend && docker compose up -d backend`.
 
 The `scanner/` and `strategy/` volume mounts work the same way — they're COPYed at build time.
 
@@ -324,10 +326,11 @@ common/      → Shared constants (CATEGORY_MAP)
 ## Daily Update Pipeline
 
 ```bash
-# Run full pipeline for a specific date
+# Run full pipeline for a specific date (Always BUILD before bulk runs to ensure logic sync)
+docker compose build processor importer calculator
 ./scripts/daily_update.sh 20260201
 
-# Or run each step manually via Docker
+# Manual steps (Use --rm for transient tasks):
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm scraper-daily
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python convert_institutional_summary.py
@@ -336,6 +339,19 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm calculator
 ```
 
 Pipeline order matters: scraper → processor → importer → calculator.
+
+## Known Data Gaps & Market Rules
+
+### OTC Index Holidays (Trading Closed)
+The following dates correctly return no data for OTC indices due to market closures:
+- **2022-02-04**: Lunar New Year Holiday
+- **2023-01-18**: Market Closing Day (Last trading day before Lunar New Year)
+- **2024-10-31**: Typhoon Kong-rey
+- **Weekends/National Holidays**: No data for any market category.
+
+### Unified Processing Logic
+- `processor/convert.py` is the **single entry point**.
+- It checks for specific output files (`otc.csv`, `sii.csv`, `all.csv`) in the processed directory to determine if a date/category is truly "complete", allowing for granular backfilling.
 
 ## Data Sources & Update Frequency
 

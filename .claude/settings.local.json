@@ -91,7 +91,15 @@
       "Bash(START_DATE=20200103 END_DATE=20230908 IMPORT_CATEGORY=shareholding_div docker compose run:*)",
       "Bash(IMPORT_CATEGORY=shareholding_div FORCE_REIMPORT=1 docker compose run:*)",
       "Bash(START_DATE=20200101 END_DATE=20221201 docker compose run:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(START_DATE=20260204 END_DATE=20260204 docker compose run:*)",
+      "Bash(iconv:*)",
+      "Bash(START_DATE=20260203 END_DATE=20260203 docker compose run:*)",
+      "Bash(for date in 20260204 20260205 20260206)",
+      "Bash(START_DATE=$date END_DATE=$date docker compose run --rm scraper-daily)",
+      "Bash(bash:*)",
+      "Bash(START_DATE=20260202 docker compose run:*)",
+      "Bash(START_DATE=20260206 docker compose run:*)"
     ]
   }
 }

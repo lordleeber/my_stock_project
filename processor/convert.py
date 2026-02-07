@@ -104,30 +104,37 @@ def process_date_category(category, date_str):
     output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
     
     if category in ["institutional_summary", "margin_summary"]:
+        output_file = f"{output_dir}/all.csv"
+        if os.path.exists(output_file):
+            print(f"Skipping {category}/{date_str} (already exists)")
+            return
         df = _handle_institutional_summary(date_str) if category == "institutional_summary" else _handle_margin_summary(date_str)
         if df is not None:
-            os.makedirs(output_dir, exist_ok=True); df.write_csv(f"{output_dir}/all.csv")
+            os.makedirs(output_dir, exist_ok=True); df.write_csv(output_file)
             print(f"Processed {category}/{date_str}")
         return
 
     if category == "market_indices":
         # OTC (Raw)
+        otc_output = f"{output_dir}/otc.csv"
         otc_raw = f"{RAW_DIR}/market_indices/date={date_str}/otc.csv"
-        if os.path.exists(otc_raw):
+        if os.path.exists(otc_raw) and not os.path.exists(otc_output):
             df = _handle_generic_category(otc_raw, "otc", category, date_str)
             if df is not None:
                 if "symbol" not in df.columns or df["symbol"].null_count() == len(df): df = df.with_columns(pl.col("name").alias("symbol"))
                 df = enforce_schema(df, "market_indices")
-                os.makedirs(output_dir, exist_ok=True); df.write_csv(f"{output_dir}/otc.csv")
+                os.makedirs(output_dir, exist_ok=True); df.write_csv(otc_output)
                 print(f"Processed market_indices/{date_str}/otc")
+        
         # SII (Extract)
+        sii_output = f"{output_dir}/sii.csv"
         sii_quote = f"{RAW_DIR}/daily_quotes/date={date_str}/sii.csv"
-        if os.path.exists(sii_quote):
+        if os.path.exists(sii_quote) and not os.path.exists(sii_output):
             df_indices = read_sii_indices(sii_quote)
             if df_indices is not None:
                 df_indices = df_indices.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit("sii").alias("market")])
                 df_indices = enforce_schema(df_indices, "market_indices")
-                os.makedirs(output_dir, exist_ok=True); df_indices.write_csv(f"{output_dir}/sii.csv")
+                os.makedirs(output_dir, exist_ok=True); df_indices.write_csv(sii_output)
                 print(f"Processed market_indices/{date_str}/sii (Extracted)")
         return
 
