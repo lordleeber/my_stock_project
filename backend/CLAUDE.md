@@ -115,6 +115,23 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 - Results sorted by `date` and `symbol` for training pipeline efficiency
 - Composite indexes for fast query performance
 
+### Raw Data API (Direct Table Access)
+
+| Endpoint | Method | Key Params | Response Model |
+|----------|--------|-----------|----------------|
+| `/raw/daily-quotes` | GET | `start_date`, `end_date`, `symbol?`, `market?`, `limit=1000` | `List[DailyQuoteRaw]` |
+| `/raw/margin-trading` | GET | Same as above | `List[MarginTradingRaw]` |
+| `/raw/margin-summary` | GET | `start_date`, `end_date`, `market?`, `limit=1000` | `List[MarginSummaryRaw]` |
+| `/raw/institutional-investors`| GET | Same as daily-quotes | `List[InstitutionalInvestorsRaw]` |
+| `/raw/institutional-summary` | GET | Same as margin-summary | `List[InstitutionalSummaryRaw]` |
+| `/raw/foreign-holding` | GET | Same as daily-quotes | `List[ForeignHoldingRaw]` |
+| `/raw/pe-ratio` | GET | Same as daily-quotes | `List[PeRatioRaw]` |
+| `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
+| `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
+| `/raw/shareholding` | GET | Same as daily-quotes | `List[ShareholdingRaw]` |
+
+**Purpose:** Provides direct access to standardized "raw" data from every table in the database. Essential for custom analytics and debugging.
+
 ### Health
 
 | Endpoint | Method | Response |
@@ -167,6 +184,18 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - `trust_held_shares` is computed as running sum of `trust_net` (similar to `foreign_held_shares`)
 - Designed for ML/RL training with complete OHLCV + indicators + institutional data
 - Supports bulk queries across multiple stocks and date ranges
+
+### Raw Data Models
+- **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, change
+- **MarginTradingRaw**: date, symbol, market, margin_long_buy/sell/repay/balance/limit, margin_short_buy/sell/repay/balance/limit, offset_buy_short
+- **MarginSummaryRaw**: date, market, item, buy, sell, cash_repay, yesterday_balance, today_balance
+- **InstitutionalInvestorsRaw**: date, symbol, market, foreign_buy/sell/net, trust_buy/sell/net, dealer_buy/sell/net
+- **InstitutionalSummaryRaw**: date, market, item, buy, sell, net
+- **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
+- **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
+- **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
+- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_yoy_pct
+- **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
 
 ## Database Tables Used
 
@@ -261,6 +290,20 @@ curl "http://localhost:8000/ml/training-data?start_date=2025-01-02&end_date=2025
 
 # ML training data - OHLCV only (no indicators or institutional)
 curl "http://localhost:8000/ml/training-data?start_date=2025-01-01&end_date=2025-01-10&symbols=2330&include_indicators=false&include_institutional=false"
+
+# --- Raw Data API Tests ---
+
+# Get raw quotes for TSMC (2330) on a specific day
+curl "http://localhost:8000/raw/daily-quotes?symbol=2330&start_date=2026-02-06&end_date=2026-02-06"
+
+# Get raw margin trading balance for TSMC
+curl "http://localhost:8000/raw/margin-trading?symbol=2330&start_date=2026-02-01&end_date=2026-02-06"
+
+# Get raw institutional market summary
+curl "http://localhost:8000/raw/institutional-summary?start_date=2026-02-06&end_date=2026-02-06"
+
+# Get raw monthly revenue
+curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026-01-01&end_date=2026-01-01"
 ```
 
 ## Adding a New Endpoint
