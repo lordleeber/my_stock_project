@@ -56,6 +56,25 @@ docker compose build backend && docker compose up -d backend
 docker compose up -d --build backend
 ```
 
+## Raw Data API Tests
+
+Raw endpoints have pytest coverage under `backend/tests/`.
+
+**Prereqs (local venv):**
+- `pytest`
+- `sqlalchemy`
+- `psycopg2-binary`
+- `httpx`
+
+**Run:**
+```bash
+./venv/bin/python -m pytest backend/tests -q
+```
+
+**Notes:**
+- Tests query the real Postgres at `localhost:5432` (default envs in `backend/tests/conftest.py`).
+- The tests sample the latest row per table and validate `/raw/*` endpoints, date format, required fields, and filters.
+
 ## IMPORTANT: File Path Gotcha
 
 The Dockerfile copies `backend/main.py` → `/app/main.py`. The volume mount `./backend:/app/backend` maps to `/app/backend/main.py`. Uvicorn imports from `/app/main.py` (the baked-in copy).
