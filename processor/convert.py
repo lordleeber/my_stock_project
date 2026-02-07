@@ -14,6 +14,7 @@ from utils import read_raw_csv, read_sii_indices
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
 
 INSTITUTION_MAP = {
     "自營商(自行買賣)": "dealer_self", "自營商(避險)": "dealer_hedge",
@@ -105,7 +106,7 @@ def process_date_category(category, date_str):
     
     if category in ["institutional_summary", "margin_summary"]:
         output_file = f"{output_dir}/all.csv"
-        if os.path.exists(output_file):
+        if os.path.exists(output_file) and not FORCE_REPROCESS:
             print(f"Skipping {category}/{date_str} (already exists)")
             return
         df = _handle_institutional_summary(date_str) if category == "institutional_summary" else _handle_margin_summary(date_str)
@@ -118,7 +119,7 @@ def process_date_category(category, date_str):
         # OTC (Raw)
         otc_output = f"{output_dir}/otc.csv"
         otc_raw = f"{RAW_DIR}/market_indices/date={date_str}/otc.csv"
-        if os.path.exists(otc_raw) and not os.path.exists(otc_output):
+        if os.path.exists(otc_raw) and (not os.path.exists(otc_output) or FORCE_REPROCESS):
             df = _handle_generic_category(otc_raw, "otc", category, date_str)
             if df is not None:
                 if "symbol" not in df.columns or df["symbol"].null_count() == len(df): df = df.with_columns(pl.col("name").alias("symbol"))
@@ -129,7 +130,7 @@ def process_date_category(category, date_str):
         # SII (Extract)
         sii_output = f"{output_dir}/sii.csv"
         sii_quote = f"{RAW_DIR}/daily_quotes/date={date_str}/sii.csv"
-        if os.path.exists(sii_quote) and not os.path.exists(sii_output):
+        if os.path.exists(sii_quote) and (not os.path.exists(sii_output) or FORCE_REPROCESS):
             df_indices = read_sii_indices(sii_quote)
             if df_indices is not None:
                 df_indices = df_indices.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit("sii").alias("market")])
@@ -143,6 +144,8 @@ def process_date_category(category, date_str):
     for market_file in os.listdir(cat_raw_path):
         if not market_file.endswith(".csv"): continue
         market = market_file.split(".")[0]; output_file = f"{output_dir}/{market}.csv"
+        if os.path.exists(output_file) and not FORCE_REPROCESS:
+            continue
         df = _handle_generic_category(os.path.join(cat_raw_path, market_file), market, category, date_str)
         if df is not None:
             df = enforce_schema(df, category); os.makedirs(output_dir, exist_ok=True); df.write_csv(output_file)

@@ -392,7 +392,8 @@ All pipeline services use these:
 | `END_DATE` | today | YYYYMMDD format |
 | `MARKET_TYPE` | ALL | SII, OTC, or ALL |
 | `FETCH_DELAY` | 3.0 | Seconds between scraper requests |
-| `FORCE_REIMPORT` | 0 | Set to 1 to overwrite existing DB data |
+| `FORCE_REPROCESS` | 0 | Set to 1 to reprocess already-processed files (processor) |
+| `FORCE_REIMPORT` | 0 | Set to 1 to overwrite existing DB data (importer) |
 | `IMPORT_CATEGORY` | (all) | Import only a specific category |
 | `REVENUE_YEAR` | - | For scraper-monthly (AD year) |
 | `REVENUE_MONTH` | - | For scraper-monthly |
@@ -421,9 +422,10 @@ Database (shared with backend):
 ### Advanced Processing Features (convert.py)
 
 1. **Unified Pipeline**: All categories (OHLCV, Institutional, Margin, etc.) are processed via `python convert.py`.
-2. **Multi-line Header Merging**: `utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
-3. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
-4. **Market Index Extraction**:
+2. **Incremental Processing**: By default, skips files that already exist in the processed directory. Set `FORCE_REPROCESS=1` to force reprocessing.
+3. **Multi-line Header Merging**: `utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
+4. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
+5. **Market Index Extraction**:
    - **SII**: Extracted from `daily_quotes/sii.csv` via `utils.read_sii_indices`.
    - **OTC**: Fetched as a dedicated category using modernized TPEx JSON-to-CSV APIs.
 
