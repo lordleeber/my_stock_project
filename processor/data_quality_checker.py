@@ -295,6 +295,201 @@ def check_pe_ratio(date_str):
     return issues
 
 
+def check_market_indices(date_str):
+    """Check market_indices data quality"""
+    issues = []
+
+    for market in ['sii', 'otc']:
+        file_path = Path(f"data/processed/market_indices/date={date_str}/{market}.csv")
+
+        if not file_path.exists():
+            issues.append(f"market_indices: Missing file {file_path}")
+            continue
+
+        try:
+            df = pd.read_csv(file_path)
+
+            if len(df) == 0:
+                issues.append(f"market_indices {market}: File is empty (0 rows)")
+                continue
+
+            # Key columns for market indices
+            key_columns = ['close', 'change']
+
+            for col in key_columns:
+                if col not in df.columns:
+                    issues.append(f"market_indices {market}: Missing column '{col}'")
+                    continue
+
+                null_count = df[col].isna().sum()
+                null_pct = (null_count / len(df)) * 100
+
+                # Market indices should have very low NULL rate
+                if null_pct > 30:
+                    issues.append(
+                        f"market_indices {market}: Column '{col}' has {null_pct:.1f}% NULL values "
+                        f"({null_count}/{len(df)} rows)"
+                    )
+
+        except Exception as e:
+            issues.append(f"market_indices {market}: Error reading file - {str(e)}")
+
+    return issues
+
+
+def check_monthly_revenue(date_str):
+    """Check monthly_revenue data quality
+
+    Note: Monthly revenue uses YYYY-MM directory format, not YYYYMMDD.
+    This check converts date_str to YYYY-MM format.
+    """
+    issues = []
+
+    try:
+        # Convert YYYYMMDD to YYYY-MM
+        year = date_str[:4]
+        month = date_str[4:6]
+        ym_str = f"{year}-{month}"
+
+        file_path = Path(f"data/processed/monthly_revenue/{ym_str}/revenue_{year}{month}.csv")
+
+        if not file_path.exists():
+            # Monthly revenue is optional (only available after 10th of each month)
+            # Don't flag as error if file doesn't exist
+            return issues
+
+        df = pd.read_csv(file_path)
+
+        if len(df) == 0:
+            issues.append(f"monthly_revenue {ym_str}: File is empty (0 rows)")
+            return issues
+
+        # Key columns for revenue
+        key_columns = [
+            'revenue_current',
+            'mom_pct',
+            'yoy_pct'
+        ]
+
+        for col in key_columns:
+            if col not in df.columns:
+                issues.append(f"monthly_revenue {ym_str}: Missing column '{col}'")
+                continue
+
+            null_count = df[col].isna().sum()
+            null_pct = (null_count / len(df)) * 100
+
+            # Revenue data can have some NULL (not all companies report monthly)
+            if null_pct > 60:
+                issues.append(
+                    f"monthly_revenue {ym_str}: Column '{col}' has {null_pct:.1f}% NULL values "
+                    f"({null_count}/{len(df)} rows)"
+                )
+
+    except Exception as e:
+        issues.append(f"monthly_revenue: Error reading file - {str(e)}")
+
+    return issues
+
+
+def check_shareholding_div(date_str):
+    """Check shareholding_div (TDCC) data quality"""
+    issues = []
+
+    file_path = Path(f"data/processed/shareholding_div/date={date_str}/all.csv")
+
+    if not file_path.exists():
+        # TDCC data is weekly, so it's normal for most dates to not have data
+        # Don't flag as error if file doesn't exist
+        return issues
+
+    try:
+        df = pd.read_csv(file_path)
+
+        if len(df) == 0:
+            issues.append(f"shareholding_div: File is empty (0 rows)")
+            return issues
+
+        # Key columns for shareholding dispersion
+        key_columns = [
+            'holders',
+            'shares',
+            'percentage'
+        ]
+
+        for col in key_columns:
+            if col not in df.columns:
+                issues.append(f"shareholding_div: Missing column '{col}'")
+                continue
+
+            null_count = df[col].isna().sum()
+            null_pct = (null_count / len(df)) * 100
+
+            # Shareholding data should have low NULL rate
+            if null_pct > 50:
+                issues.append(
+                    f"shareholding_div: Column '{col}' has {null_pct:.1f}% NULL values "
+                    f"({null_count}/{len(df)} rows)"
+                )
+
+    except Exception as e:
+        issues.append(f"shareholding_div: Error reading file - {str(e)}")
+
+    return issues
+
+
+def check_institutional_summary(date_str):
+    """Check institutional_summary data quality"""
+    issues = []
+
+    file_path = Path(f"data/processed/institutional_summary/date={date_str}/all.csv")
+
+    if not file_path.exists():
+        issues.append(f"institutional_summary: Missing file {file_path}")
+        return issues
+
+    try:
+        df = pd.read_csv(file_path)
+
+        if len(df) == 0:
+            issues.append(f"institutional_summary: File is empty (0 rows)")
+            return issues
+
+        # Key columns for institutional summary
+        key_columns = ['buy', 'sell', 'net']
+
+        for col in key_columns:
+            if col not in df.columns:
+                issues.append(f"institutional_summary: Missing column '{col}'")
+                continue
+
+            null_count = df[col].isna().sum()
+            null_pct = (null_count / len(df)) * 100
+
+            # Institutional summary should have no NULL values
+            if null_pct > 10:
+                issues.append(
+                    f"institutional_summary: Column '{col}' has {null_pct:.1f}% NULL values "
+                    f"({null_count}/{len(df)} rows)"
+                )
+
+        # Check that we have data for major institution types
+        if 'institution' in df.columns:
+            institutions = df['institution'].unique()
+            expected_institutions = ['foreign', 'trust', 'dealer']
+
+            for inst in expected_institutions:
+                if not any(inst in str(i).lower() for i in institutions):
+                    issues.append(
+                        f"institutional_summary: Missing expected institution type '{inst}'"
+                    )
+
+    except Exception as e:
+        issues.append(f"institutional_summary: Error reading file - {str(e)}")
+
+    return issues
+
+
 def write_error_report(date_str, issues):
     """Write error report to root error.md file"""
     if not issues:
@@ -370,6 +565,18 @@ def main():
 
     print("Checking pe_ratio...")
     all_issues.extend(check_pe_ratio(date_str))
+
+    print("Checking market_indices...")
+    all_issues.extend(check_market_indices(date_str))
+
+    print("Checking monthly_revenue...")
+    all_issues.extend(check_monthly_revenue(date_str))
+
+    print("Checking shareholding_div...")
+    all_issues.extend(check_shareholding_div(date_str))
+
+    print("Checking institutional_summary...")
+    all_issues.extend(check_institutional_summary(date_str))
 
     # Write report if issues found
     if all_issues:
