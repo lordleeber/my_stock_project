@@ -232,64 +232,74 @@ class InstitutionalInvestorsRaw(BaseModel):
     symbol: str
     name: Optional[str] = None
     market: str
-    foreign_buy: Optional[float]
-    foreign_sell: Optional[float]
-    foreign_net: Optional[float]
-    trust_buy: Optional[float]
-    trust_sell: Optional[float]
-    trust_net: Optional[float]
-    dealer_buy: Optional[float]
-    dealer_sell: Optional[float]
-    dealer_net: Optional[float]
+    foreign_buy: Optional[float] = None
+    foreign_sell: Optional[float] = None
+    foreign_net: Optional[float] = None
+    trust_buy: Optional[float] = None
+    trust_sell: Optional[float] = None
+    trust_net: Optional[float] = None
+    dealer_buy: Optional[float] = None
+    dealer_sell: Optional[float] = None
+    dealer_net: Optional[float] = None
+    dealer_self_buy: Optional[float] = None
+    dealer_self_sell: Optional[float] = None
+    dealer_self_net: Optional[float] = None
+    dealer_hedge_buy: Optional[float] = None
+    dealer_hedge_sell: Optional[float] = None
+    dealer_hedge_net: Optional[float] = None
 
 class InstitutionalSummaryRaw(BaseModel):
     date: str
     market: str
-    item: str
-    buy: Optional[float]
-    sell: Optional[float]
-    net: Optional[float]
+    institution: str
+    buy: Optional[float] = None
+    sell: Optional[float] = None
+    net: Optional[float] = None
 
 class ForeignHoldingRaw(BaseModel):
     date: str
     symbol: str
     market: str
-    issued_shares: Optional[float]
-    available_shares: Optional[float]
-    foreign_held_shares: Optional[float]
-    available_pct: Optional[float]
-    held_pct: Optional[float]
-    limit_pct: Optional[float]
+    name: Optional[str] = None
+    issued_shares: Optional[float] = None
+    foreign_investable_shares: Optional[float] = None
+    foreign_held_shares: Optional[float] = None
+    foreign_investable_ratio: Optional[float] = None
+    foreign_held_ratio: Optional[float] = None
+    foreign_legal_limit_ratio: Optional[float] = None
 
 class PeRatioRaw(BaseModel):
     date: str
     symbol: str
     market: str
-    pe_ratio: Optional[float]
-    dividend_yield: Optional[float]
-    pb_ratio: Optional[float]
+    name: Optional[str] = None
+    pe_ratio: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    dividend_year: Optional[int] = None
+    pb_ratio: Optional[float] = None
 
 class MarketIndexRaw(BaseModel):
     date: str
     symbol: str
     name: str
     market: str
-    close: Optional[float]
-    change: Optional[float]
-    change_pct: Optional[float]
+    close: Optional[float] = None
+    change: Optional[float] = None
+    change_pct: Optional[float] = None
 
 class MonthlyRevenueRaw(BaseModel):
     date: str
     symbol: str
     market: str
+    name: Optional[str] = None
     revenue_current: Optional[float]
     revenue_last_month: Optional[float]
     revenue_last_year: Optional[float]
     mom_pct: Optional[float]
     yoy_pct: Optional[float]
-    accumulated_revenue: Optional[float]
-    accumulated_revenue_last_year: Optional[float]
-    accumulated_yoy_pct: Optional[float]
+    revenue_cumulative: Optional[float] = None
+    revenue_cumulative_last_year: Optional[float] = None
+    cumulative_yoy_pct: Optional[float] = None
 
 class ShareholdingRaw(BaseModel):
     date: str
@@ -326,28 +336,40 @@ def get_raw_data(
             params["symbol"] = symbol
             where_clauses.append("symbol = :symbol")
         if market:
-            params["market"] = market.lower()
+            params["market"] = market
             where_clauses.append("market = :market")
             
-        sql = text(f"""
-            SELECT * FROM {table}
-            WHERE {" AND ".join(where_clauses)}
-            ORDER BY date DESC, symbol ASC
-            LIMIT :limit
-        """)
-        
         with engine.connect() as conn:
+            # 先獲取表格的所有欄位名稱
+            column_query = text(f"SELECT * FROM {table} LIMIT 0")
+            table_columns = conn.execute(column_query).keys()
+            
+            # 動態建立 ORDER BY
+            order_by = "date DESC"
+            if "symbol" in table_columns:
+                order_by += ", symbol ASC"
+                
+            sql = text(f"""
+                SELECT * FROM {table}
+                WHERE {" AND ".join(where_clauses)}
+                ORDER BY {order_by}
+                LIMIT :limit
+            """)
+            
             df = pd.read_sql(sql, conn, params=params)
         
         if df.empty:
             return []
         
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
-        # All tables now use text type for date column (consistent schema)
         if 'date' in df.columns:
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
-
+        
+        # 確保 symbol 是字串
+        if 'symbol' in df.columns:
+            df['symbol'] = df['symbol'].astype(str)
+                
         return df.where(pd.notnull(df), None).to_dict(orient="records")
 
     except Exception as e:
