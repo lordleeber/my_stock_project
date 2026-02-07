@@ -17,7 +17,7 @@ services:
       - END_DATE=${END_DATE:-}
       - FETCH_DELAY=${FETCH_DELAY:-3.0}
 
-  # 集保股權分散表 (每週五執行)
+  # 集保股權分散表 (每週日執行)
   scraper-weekly:
     build:
       context: .

@@ -95,6 +95,7 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | Endpoint | Method | Key Params | Response Model |
 |----------|--------|-----------|----------------|
 | `/quotes/top-volume` | GET | `date`, `limit` (10), `sort` (asc/desc) | `List[StockQuote]` |
+| `/quotes/volume-breakout` | GET | `date`, `min_volume`, `ratio`, `limit` | `List[VolumeBreakoutQuote]` |
 | `/analysis/ma` | GET | `date`, `limit`, `sort` | `List[MAQuote]` |
 | `/analysis/vma` | GET | `date`, `limit`, `sort` | `List[VMAQuote]` |
 
@@ -173,6 +174,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 | `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea | Scanner, analysis, ML training |
 | `institutional_investors` | date, symbol, foreign_net, trust_net, dealer_net | Institutional API, ML training |
 | `foreign_holding` | date, symbol, foreign_held_shares | Institutional API, ML training |
+| `margin_summary` | date, market, item, buy, sell, cash_repay, today_balance | Market analysis |
 
 **Indexes:**
 - `idx_daily_quotes_date_symbol`, `idx_daily_quotes_symbol_date` (daily_quotes)
@@ -342,7 +344,7 @@ Pipeline order matters: scraper → processor → importer → calculator.
 | TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E | Daily (after market close) |
 | TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks | Daily (after market close) |
 | MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
-| TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (Friday after close) |
+| TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (scraped on Sunday) |
 
 ## Directory Structure (Data)
 
@@ -399,6 +401,7 @@ Database (shared with backend):
 | `convert_shareholding.py` | Merges per-stock TDCC CSVs into single file per date (shareholding_div) |
 | `convert_shareholding2.py` | Converts all-in-one TDCC CSVs with level_name mapping (shareholding_div2) |
 | `convert_institutional_summary.py` | Standardizes SII/OTC institution names and merges |
+| `convert_margin_summary.py` | Extracts market-level margin trading summary from raw data |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions |
 | `utils.py` | Shared helpers: header detection, index extraction |
@@ -479,6 +482,7 @@ Available `IMPORT_CATEGORY` values:
 - `foreign_holding` — Foreign shareholding ratio
 - `margin_trading` — Margin long/short balance
 - `margin_sbl` — Securities borrowing and lending
+- `margin_summary` — Market-level margin trading summary
 - `pe_ratio` — Price-to-earnings ratio
 - `monthly_revenue` — Monthly revenue
 - `shareholding_div` — TDCC shareholding dispersion

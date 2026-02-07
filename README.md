@@ -91,7 +91,7 @@ START_DATE=20250402 END_DATE=20250402 docker compose run --rm scraper-daily
 # 2. 抓取月營收 (每月 10 日後執行)
 REVENUE_YEAR=2025 REVENUE_MONTH=3 docker compose run --rm scraper-monthly
 
-# 3. 抓取集保股權分散表 (每週五執行)
+# 3. 抓取集保股權分散表 (每週日執行)
 TDCC_DATE=20250321 docker compose run --rm scraper-weekly
 
 # 4. 處理與匯入 (會自動處理個股與大盤指數)
