@@ -287,8 +287,8 @@ class MonthlyRevenueRaw(BaseModel):
 class ShareholdingRaw(BaseModel):
     date: datetime.date
     symbol: str
-    market: str
     level: int
+    level_name: Optional[str] = None
     holders: Optional[float]
     shares: Optional[float]
     percentage: Optional[float]
@@ -436,10 +436,9 @@ def get_raw_shareholding(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
-    market: Optional[str] = None,
     limit: int = 1000
 ):
-    return get_raw_data("shareholding_dispersion", start_date, end_date, symbol, market, limit)
+    return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit)
 
 import sys
 # 確保能 import strategy
