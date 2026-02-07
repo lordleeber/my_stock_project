@@ -181,7 +181,7 @@ class MLTrainingData(BaseModel):
 
 # --- Raw Data Models ---
 class DailyQuoteRaw(BaseModel):
-    date: datetime.date
+    date: str  # 改為字串以確保一致
     symbol: str
     name: str
     market: str
@@ -190,7 +190,13 @@ class DailyQuoteRaw(BaseModel):
     low: Optional[float]
     close: Optional[float]
     volume: Optional[float]
-    change: Optional[float]
+    value: Optional[float] = None
+    transactions: Optional[float] = None
+    change: Optional[float] = None
+    direction: Optional[str] = None
+    bid: Optional[str] = None
+    ask: Optional[str] = None
+    pe_ratio: Optional[float] = None
 
 class MarginTradingRaw(BaseModel):
     date: datetime.date
@@ -212,18 +218,19 @@ class MarginTradingRaw(BaseModel):
     offset_balance: Optional[float] = None
 
 class MarginSummaryRaw(BaseModel):
-    date: datetime.date
+    date: str
     market: str
     item: str
     buy: Optional[float]
     sell: Optional[float]
     cash_repay: Optional[float]
-    yesterday_balance: Optional[float]
+    prev_balance: Optional[float]
     today_balance: Optional[float]
 
 class InstitutionalInvestorsRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
+    name: Optional[str] = None
     market: str
     foreign_buy: Optional[float]
     foreign_sell: Optional[float]
@@ -236,7 +243,7 @@ class InstitutionalInvestorsRaw(BaseModel):
     dealer_net: Optional[float]
 
 class InstitutionalSummaryRaw(BaseModel):
-    date: datetime.date
+    date: str
     market: str
     item: str
     buy: Optional[float]
@@ -244,7 +251,7 @@ class InstitutionalSummaryRaw(BaseModel):
     net: Optional[float]
 
 class ForeignHoldingRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
     market: str
     issued_shares: Optional[float]
@@ -255,7 +262,7 @@ class ForeignHoldingRaw(BaseModel):
     limit_pct: Optional[float]
 
 class PeRatioRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
     market: str
     pe_ratio: Optional[float]
@@ -263,7 +270,7 @@ class PeRatioRaw(BaseModel):
     pb_ratio: Optional[float]
 
 class MarketIndexRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
     name: str
     market: str
@@ -272,7 +279,7 @@ class MarketIndexRaw(BaseModel):
     change_pct: Optional[float]
 
 class MonthlyRevenueRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
     market: str
     revenue_current: Optional[float]
@@ -285,7 +292,7 @@ class MonthlyRevenueRaw(BaseModel):
     accumulated_yoy_pct: Optional[float]
 
 class ShareholdingRaw(BaseModel):
-    date: datetime.date
+    date: str
     symbol: str
     level: int
     level_name: Optional[str] = None
@@ -335,8 +342,10 @@ def get_raw_data(
         if df.empty:
             return []
         
-        # 轉換日期格式並處理 NaN 為 None (JSON 友善)
-        df['date'] = df['date'].apply(lambda x: x.date() if isinstance(x, datetime.datetime) else x)
+        # 統一日期格式為 YYYY-MM-DD 字串
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+            
         return df.where(pd.notnull(df), None).to_dict(orient="records")
 
     except Exception as e:

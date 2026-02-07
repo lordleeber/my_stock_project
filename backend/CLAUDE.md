@@ -186,9 +186,9 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - Supports bulk queries across multiple stocks and date ranges
 
 ### Raw Data Models
-- **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, change
+- **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, value, transactions, change, direction, bid, ask, pe_ratio
 - **MarginTradingRaw**: date, symbol, name, market, margin_long_buy/sell/cash_repay/prev_balance/balance/limit, margin_short_buy/sell/cash_repay/prev_balance/balance/limit, offset_balance
-- **MarginSummaryRaw**: date, market, item, buy, sell, cash_repay, yesterday_balance, today_balance
+- **MarginSummaryRaw**: date, market, item, buy, sell, cash_repay, prev_balance, today_balance
 - **InstitutionalInvestorsRaw**: date, symbol, market, foreign_buy/sell/net, trust_buy/sell/net, dealer_buy/sell/net
 - **InstitutionalSummaryRaw**: date, market, item, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
