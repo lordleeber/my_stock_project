@@ -86,65 +86,70 @@ def process_file(file_path, date_str, market):
             }
             for k, v in default_sii_map.items():
                 if k not in col_map: col_map[k] = v
+                
+        def extract_records(current_col_map):
+            results = []
+            for i in range(header_idx + 1, len(df_raw)):
+                row = df_raw.iloc[i]
+                sym_idx = current_col_map.get("symbol")
+                if sym_idx is None and "symbol_name" in current_col_map:
+                    sym_idx = current_col_map["symbol_name"]
+                if sym_idx is None: continue
+                
+                raw_symbol = str(row[sym_idx]).strip()
+                if raw_symbol.endswith(".0"): raw_symbol = raw_symbol[:-2]
+                
+                symbol = ""
+                name = ""
+                if len(raw_symbol) == 4 and raw_symbol.isdigit():
+                    symbol = raw_symbol
+                    name_idx = current_col_map.get("name")
+                    if name_idx is not None: 
+                        name = str(row[name_idx]).strip()
+                    elif market == 'otc' and sym_idx + 1 < len(row):
+                        next_val = str(row[sym_idx + 1]).strip()
+                        if next_val and next_val != 'nan' and not next_val.replace('.', '').isdigit():
+                            name = next_val
+                elif " " in raw_symbol: # 處理 "1101 台泥"
+                    parts = raw_symbol.split(maxsplit=1)
+                    if len(parts[0]) == 4 and parts[0].isdigit():
+                        symbol, name = parts[0], parts[1]
+                elif len(raw_symbol) > 4 and raw_symbol[:4].isdigit(): # 處理 "1101台泥"
+                    symbol = raw_symbol[:4]
+                    name = raw_symbol[4:]
+                
+                if not symbol: continue
+                
+                res = {
+                    "date": date_str, "symbol": symbol, "market": market, "name": name,
+                    "revenue": clean_numeric(row[current_col_map["revenue"]]) if "revenue" in current_col_map else None,
+                    "operating_income": clean_numeric(row[current_col_map["operating_income"]]) if "operating_income" in current_col_map else None,
+                    "non_operating_income": clean_numeric(row[current_col_map["non_operating_income"]]) if "non_operating_income" in current_col_map else None,
+                    "net_income": clean_numeric(row[current_col_map["net_income"]]) if "net_income" in current_col_map else None,
+                    "eps": clean_numeric(row[current_col_map["eps"]]) if "eps" in current_col_map else None,
+                    "total_assets": None, "total_liabilities": None, "current_assets": None, "current_liabilities": None,
+                    "nav_per_share": clean_numeric(row[current_col_map["nav_per_share"]]) if "nav_per_share" in current_col_map else None,
+                    "operating_cash_flow": clean_numeric(row[current_col_map["operating_cash_flow"]]) if "operating_cash_flow" in current_col_map else None,
+                    "current_ratio": clean_numeric(row[current_col_map["current_ratio"]]) if "current_ratio" in current_col_map else None,
+                    "quick_ratio": clean_numeric(row[current_col_map["quick_ratio"]]) if "quick_ratio" in current_col_map else None,
+                    "debt_ratio": None
+                }
+                nav_asset = clean_numeric(row[current_col_map["nav_asset_ratio"]]) if "nav_asset_ratio" in current_col_map else None
+                if nav_asset is not None: res["debt_ratio"] = 100.0 - nav_asset
+                results.append(res)
+            return results
 
-        records = []
-        # 從 header_idx + 1 開始尋找資料
-        for i in range(header_idx + 1, len(df_raw)):
-            row = df_raw.iloc[i]
-            
-            # 取得 symbol
-            sym_idx = col_map.get("symbol")
-            if sym_idx is None and "symbol_name" in col_map:
-                sym_idx = col_map["symbol_name"]
-            
-            if sym_idx is None: continue
-            
-            raw_symbol = str(row[sym_idx]).strip()
-            if raw_symbol.endswith(".0"): raw_symbol = raw_symbol[:-2]
-            
-            # 判斷是否為合法個股代號 (4位數字)
-            symbol = ""
-            name = ""
-            if len(raw_symbol) == 4 and raw_symbol.isdigit():
-                symbol = raw_symbol
-                name_idx = col_map.get("name")
-                if name_idx is not None: 
-                    name = str(row[name_idx]).strip()
-                elif market == 'otc' and sym_idx + 1 < len(row):
-                    # 如果 OTC 沒有找到 name 欄位，嘗試取 symbol 的下一欄
-                    next_val = str(row[sym_idx + 1]).strip()
-                    if next_val and next_val != 'nan' and not next_val.replace('.', '').isdigit():
-                        name = next_val
-            elif " " in raw_symbol: # 處理 "1101 台泥"
-                parts = raw_symbol.split(maxsplit=1)
-                if len(parts[0]) == 4 and parts[0].isdigit():
-                    symbol, name = parts[0], parts[1]
-            elif len(raw_symbol) > 4 and raw_symbol[:4].isdigit(): # 處理 "1101台泥"
-                symbol = raw_symbol[:4]
-                name = raw_symbol[4:]
-            
-            if not symbol: continue # 跳過分類行或垃圾行
-            
-            # 提取數據
-            res = {
-                "date": date_str, "symbol": symbol, "market": market, "name": name,
-                "revenue": clean_numeric(row[col_map["revenue"]]) if "revenue" in col_map else None,
-                "operating_income": clean_numeric(row[col_map["operating_income"]]) if "operating_income" in col_map else None,
-                "non_operating_income": clean_numeric(row[col_map["non_operating_income"]]) if "non_operating_income" in col_map else None,
-                "net_income": clean_numeric(row[col_map["net_income"]]) if "net_income" in col_map else None,
-                "eps": clean_numeric(row[col_map["eps"]]) if "eps" in col_map else None,
-                "total_assets": None, "total_liabilities": None, "current_assets": None, "current_liabilities": None,
-                "nav_per_share": clean_numeric(row[col_map["nav_per_share"]]) if "nav_per_share" in col_map else None,
-                "operating_cash_flow": clean_numeric(row[col_map["operating_cash_flow"]]) if "operating_cash_flow" in col_map else None,
-                "current_ratio": clean_numeric(row[col_map["current_ratio"]]) if "current_ratio" in col_map else None,
-                "quick_ratio": clean_numeric(row[col_map["quick_ratio"]]) if "quick_ratio" in col_map else None,
-                "debt_ratio": None
-            }
-            
-            nav_asset = clean_numeric(row[col_map["nav_asset_ratio"]]) if "nav_asset_ratio" in col_map else None
-            if nav_asset is not None: res["debt_ratio"] = 100.0 - nav_asset
+        records = extract_records(col_map)
+        
+        # SII 額外檢核：如果 EPS 或 Revenue 全為空值，代表 Fuzzy Match 可能對錯欄位，Fallback 到硬編碼
+        if market == 'sii' and records:
+            eps_null_ratio = sum(1 for r in records if r['eps'] is None) / len(records)
+            rev_null_ratio = sum(1 for r in records if r['revenue'] is None) / len(records)
+            if eps_null_ratio > 0.9 or rev_null_ratio > 0.9:
+                print(f"  [!] SII Fuzzy Match quality low (EPS null: {eps_null_ratio:.1%}). Falling back to hardcoded index.")
+                records = extract_records(default_sii_map)
 
-            records.append(res)
+        if not records: return None
             
         if not records: return None
         

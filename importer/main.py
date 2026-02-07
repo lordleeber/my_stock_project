@@ -305,19 +305,27 @@ def import_data(engine):
         # --- 特別處理 quarterly_reports (公司季報) ---
         if category == "quarterly_reports":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+            start_env = os.getenv("START_DATE")
+            end_env = os.getenv("END_DATE")
 
             for date_dir in date_dirs:
                 date_str = date_dir.split("=")[1] # YYYYQX
 
-                # 季報日期過濾邏輯略有不同，若有設定 START_DATE/END_DATE (YYYYMMDD) 則轉換比較
-                if start_date or end_date:
-                    # 粗略轉換: 2020Q1 -> 2020-03-31 (季末)
-                    year = int(date_str[:4])
-                    q = int(date_str[5])
-                    q_month = q * 3
-                    q_date = datetime.datetime(year, q_month, 1)
-                    if start_date and q_date < start_date.replace(day=1): continue
-                    if end_date and q_date > end_date.replace(day=1): continue
+                # 季報日期過濾：優先使用 YYYYQX 字串比對 (最精確)
+                # 若環境變數不是 YYYYQX 格式，則 fallback 到 datetime 粗略轉換比對
+                is_q_format = lambda s: s and len(s) == 6 and 'Q' in s
+                
+                if is_q_format(start_env):
+                    if date_str < start_env: continue
+                elif start_date:
+                    year, q = int(date_str[:4]), int(date_str[5])
+                    if datetime.datetime(year, q * 3, 1) < start_date.replace(day=1): continue
+
+                if is_q_format(end_env):
+                    if date_str > end_env: continue
+                elif end_date:
+                    year, q = int(date_str[:4]), int(date_str[5])
+                    if datetime.datetime(year, q * 3, 1) > end_date.replace(day=1): continue
 
                 csv_file = os.path.join(date_dir, "all.csv")
                 if not os.path.exists(csv_file): continue
