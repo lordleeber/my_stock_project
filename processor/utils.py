@@ -58,27 +58,67 @@ def clean_dataframe(df):
             
     return df
 
-def read_raw_csv(file_path):
-    """標準化的 Raw CSV 讀取函式"""
+def read_raw_csv(file_path, category=None):
+    """標準化的 Raw CSV 讀取函式，支援跨列標題合併"""
     try:
         # 1. 讀取檔案內容
         with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             lines = f.readlines()
         
-        # 2. 尋找正確的標頭行 (必須包含 證券代號/代號，且欄位數足夠多)
+        # 2. 尋找主標頭行 (包含 證券代號/代號/指數)
+        # 注意: 如果是 daily_quotes，應排除 "指數"，否則會抓到大盤區塊
         header_idx = -1
+        keywords = ["證券代號", "代號"]
+        if category == "market_indices":
+            keywords.append("指數")
+            
         for i, line in enumerate(lines):
             clean_line = line.replace('"', '').replace('\ufeff', '')
-            if ("證券代號" in clean_line or "代號" in clean_line) and clean_line.count(",") >= 3:
+            if any(k in clean_line for k in keywords) and clean_line.count(",") >= 3:
+                # 特別檢查: 排除大盤指數區塊，如果目標是個股
+                if category != "market_indices" and "收盤指數" in clean_line:
+                    continue
                 header_idx = i
                 break
         
         if header_idx == -1:
             return None
 
-        # 3. 讀取標頭及其後內容
-        # 這裡我們不使用 BytesIO + content，直接用 lines
-        content = "".join(lines[header_idx:])
+        # 3. 處理跨列標題 (例如 SII 融資融券)
+        # 如果上一行 (header_idx - 1) 包含「融資」或「融券」等分類字眼，且其逗號數較少
+        # 則我們嘗試手動合併它們
+        current_header = [c.strip().replace('"', '') for c in lines[header_idx].split(",")]
+        
+        if header_idx > 0:
+            prev_line = lines[header_idx-1].replace('"', '').strip()
+            # 偵測是否為分類行 (通常有大量空欄位)
+            if "融資" in prev_line or "融券" in prev_line or "借券" in prev_line:
+                categories = [c.strip().replace('"', '') for c in lines[header_idx-1].split(",")]
+                
+                # 合併邏輯: 遍歷子標題，向上尋找最近的一個非空分類名
+                merged_header = []
+                last_cat = ""
+                for j, sub in enumerate(current_header):
+                    # 如果當前分類行有值，更新 last_cat
+                    if j < len(categories) and categories[j]:
+                        last_cat = categories[j]
+                    
+                    # 只有在有分類且 sub 不是關鍵欄位時才合併
+                    if last_cat and sub and sub not in ["代號", "名稱", "證券代號", "證券名稱", "註記", "備註"]:
+                        merged_header.append(f"{last_cat}-{sub}")
+                    else:
+                        merged_header.append(sub)
+                
+                # 使用合併後的標題重建資料
+                data_lines = lines[header_idx+1:]
+                content = ",".join(merged_header) + "\n" + "".join(data_lines)
+                data_lines = lines[header_idx+1:]
+                content = ",".join(merged_header) + "\n" + "".join(data_lines)
+            else:
+                content = "".join(lines[header_idx:])
+        else:
+            content = "".join(lines[header_idx:])
+
         df = pl.read_csv(BytesIO(content.encode('utf-8')), infer_schema_length=0, 
                          ignore_errors=True, truncate_ragged_lines=True)
         
@@ -87,6 +127,8 @@ def read_raw_csv(file_path):
         return df
     except Exception as e:
         print(f"Failed to read raw csv {file_path}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def read_sii_indices(file_path):

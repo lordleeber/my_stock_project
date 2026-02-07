@@ -7,4 +7,5 @@ CATEGORY_MAP = {
     "融資融券": "margin_trading",
     "融券借券": "margin_sbl",
     "本益比殖利率淨值": "pe_ratio",
+    "指數行情": "market_indices",
 }

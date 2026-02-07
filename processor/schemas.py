@@ -69,26 +69,47 @@ COLUMN_MAP = {
     "自營商(避險)-買進股數": "dealer_hedge_buy",
     "自營商(避險)-賣出股數": "dealer_hedge_sell",
     "自營商(避險)-買賣超股數": "dealer_hedge_net",
+    "自營商-買賣超股數": "dealer_net", # 修正：讓它直接對應到標準欄位
     "自營商-買進股數": "dealer_total_buy",
     "自營商-賣出股數": "dealer_total_sell",
-    "自營商-買賣超股數": "dealer_total_net",
     "三大法人買賣超股數合計": "total_net",
 
     # --- 融資融券 (Margin Trading) ---
-    # SII 欄位
-    "融資買進": "margin_long_buy",
-    "融資賣出": "margin_long_sell",
-    "融資現金償還": "margin_long_cash_repay",
-    "融資前日餘額": "margin_long_prev_balance",
-    "融資今日餘額": "margin_long_balance",
-    "融資限額": "margin_long_limit",
-    "融券買進": "margin_short_buy",
-    "融券賣出": "margin_short_sell",
-    "融券現券償還": "margin_short_cash_repay",
-    "融券前日餘額": "margin_short_prev_balance",
-    "融券今日餘額": "margin_short_balance",
-    "融券限額": "margin_short_limit",
-    "資券互抵": "offset_balance",
+    # 合併後的欄位名 (由 utils.py 處理)
+    "融資-買進": "margin_long_buy",
+    "融資-賣出": "margin_long_sell",
+    "融資-現金償還": "margin_long_cash_repay",
+    "融資-前日餘額": "margin_long_prev_balance",
+    "融資-今日餘額": "margin_long_balance",
+    "融資-次一營業日限額": "margin_long_limit",
+    "融券-買進": "margin_short_buy",
+    "融券-賣出": "margin_short_sell",
+    "融券-現券償還": "margin_short_cash_repay",
+    "融券-前日餘額": "margin_short_prev_balance",
+    "融券-今日餘額": "margin_short_balance",
+    "融券-次一營業日限額": "margin_short_limit",
+    "融券-資券互抵": "offset_balance",
+    
+    # 融券借券 (margin_sbl) 合併後的欄位名
+    "融券-前日餘額": "margin_short_prev_balance",
+    "融券-賣出": "margin_short_sell",
+    "融券-買進": "margin_short_buy",
+    "融券-今日餘額": "margin_short_balance",
+    "借券賣出-當日餘額": "sbl_balance",
+    "借券賣出-當日還券": "sbl_repay",
+    "借券賣出-當日賣出": "sbl_sell",
+    "借券賣出-前日餘額": "sbl_prev_balance",
+    "融券當日餘額": "margin_short_balance", # OTC SBL
+    "融券賣出": "margin_short_sell", # OTC SBL
+    "融券買進": "margin_short_buy", # OTC SBL
+    "融券前日餘額": "margin_short_prev_balance", # OTC SBL
+    "借券賣出當日賣出": "sbl_sell", # OTC SBL (無橫槓)
+    "借券賣出當日還券": "sbl_repay", # OTC SBL
+    "借券賣出當日餘額": "sbl_balance", # OTC SBL
+    "借券賣出 當日餘額": "sbl_balance", # OTC SBL (含空格)
+    "借券賣出前日餘額": "sbl_prev_balance", # OTC SBL
+    "股票代號": "symbol", # OTC SBL
+    "股票名稱": "name", # OTC SBL
     
     # OTC 欄位 (簡稱)
     "前資餘額(張)": "margin_long_prev_balance", # 注意單位是張，SII是股，需要統一
@@ -120,7 +141,9 @@ COLUMN_MAP = {
     # --- 大盤指數 (Market Indices) ---
     "指數": "name",
     "收盤指數": "close",
+    "收市指數": "close", # OTC
     "漲跌點數": "change",
+    "漲跌": "change", # 這裡直接指向 change
 }
 
 # 需要轉為數值的欄位
@@ -148,6 +171,7 @@ NUMERIC_COLS = [
     "margin_short_prev_balance", "margin_short_balance", "margin_short_limit",
     "margin_short_utilization",
     "offset_balance",
+    "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance",
 
     # Foreign Holding
     "issued_shares", "foreign_investable_shares", "foreign_held_shares",
@@ -186,7 +210,8 @@ SCHEMA_COLS = {
     "margin_sbl": [
         "date", "market", "symbol", "name",
         "margin_short_prev_balance", "margin_short_balance",
-        "margin_short_buy", "margin_short_sell", "margin_short_cash_repay"
+        "margin_short_buy", "margin_short_sell",
+        "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance"
     ],
     "pe_ratio": [
         "date", "market", "symbol", "name",

@@ -6,141 +6,149 @@ import pathlib
 import datetime
 import pandas as pd
 import csv
+import json
+import urllib3
 from io import StringIO, BytesIO
 from bs4 import BeautifulSoup
 from common.constants import CATEGORY_MAP
+
+# 禁用 SSL 警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 櫃買中心 (TPEx) API 網址設定
 CATEGORY_DIC = {
     "每日收盤行情": "https://www.tpex.org.tw/web/stock/aftertrading/otc_quotes_no1430/stk_wn1430_result.php?l=zh-tw&o=csv&d={date_tw}&se=EW&s=0,asc,0",
     "三大法人買賣金額統計表": "https://www.tpex.org.tw/web/stock/3insti/3insti_summary/3itrdsum_result.php?l=zh-tw&t=D&p=1&d={date_tw}&o=csv",
     "三大法人買賣超日報": "https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=csv&se=EW&t=D&d={date_tw}&s=0,asc",
-    "外資及陸資投資持股統計": "MOPS_SPECIAL_HANDLING", # 特殊標記，使用 MOPS 抓取
+    "外資及陸資投資持股統計": "MOPS_SPECIAL_HANDLING", 
     "融資融券": "https://www.tpex.org.tw/web/stock/margin_trading/margin_balance/margin_bal_result.php?l=zh-tw&o=csv&charset=UTF-8&d={date_tw}&c=&s=0,asc",
     "融券借券": "https://www.tpex.org.tw/web/stock/margin_trading/margin_sbl/margin_sbl_result.php?l=zh-tw&d={date_tw}&s=0,asc&o=csv",
-    "本益比殖利率淨值": "https://www.tpex.org.tw/web/stock/aftertrading/peratio_analysis/pera_result.php?l=zh-tw&o=csv&charset=UTF-8&d={date_tw}&c=&s=0,asc"
+    "本益比殖利率淨值": "https://www.tpex.org.tw/web/stock/aftertrading/peratio_analysis/pera_result.php?l=zh-tw&o=csv&charset=UTF-8&d={date_tw}&c=&s=0,asc",
+    "指數行情": "https://www.tpex.org.tw/www/zh-tw/afterTrading/indexSummary" # 現代化 API 路徑
 }
 
-# 各頁面的 Referer
 REFERER_DIC = {
-    "每日收盤行情": "https://www.tpex.org.tw/web/stock/aftertrading/otc_quotes_no1430/stk_wn1430.php",
-    "三大法人買賣金額統計表": "https://www.tpex.org.tw/web/stock/3insti/3insti_summary/3itrdsum.php",
-    "三大法人買賣超日報": "https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge.php",
-    "外資及陸資投資持股統計": "https://mops.twse.com.tw/mops/web/t13sa150_otc",
-    "融資融券": "https://www.tpex.org.tw/web/stock/margin_trading/margin_balance/margin_bal.php",
-    "融券借券": "https://www.tpex.org.tw/web/stock/margin_trading/margin_sbl/margin_sbl.php",
-    "本益比殖利率淨值": "https://www.tpex.org.tw/web/stock/aftertrading/peratio_analysis/pera.php"
+    "指數行情": "https://www.tpex.org.tw/zh-tw/mainboard/trading/info/indices-pricing.html"
 }
 
 EMPTY_SIZE_DIC = {
-    "每日收盤行情": 105,
-    "三大法人買賣金額統計表": 519,
-    "三大法人買賣超日報": 512,
-    "外資及陸資投資持股統計": 1040,
-    "融資融券": 1300,
-    "融券借券": 1483,
-    "本益比殖利率淨值": 216
+    "每日收盤行情": 105, "三大法人買賣金額統計表": 519, "三大法人買賣超日報": 512,
+    "外資及陸資投資持股統計": 1040, "融資融券": 1300, "融券借券": 1483, "本益比殖利率淨值": 216
 }
 
 COMMON_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/json,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
 def to_tw_date(date_str):
     year = int(date_str[0:4]) - 1911
-    month = date_str[4:6]
-    day = date_str[6:8]
-    return f"{year}/{month}/{day}"
+    return f"{year}/{date_str[4:6]}/{date_str[6:8]}"
 
-def fetch_mops_foreign_hold(date_string, dst_file_path):
-    url = "https://mopsov.twse.com.tw/server-java/t13sa150_otc"
-    year = int(date_string[0:4])
-    month = date_string[4:6]
-    day = date_string[6:8]
-    payload = {"step": "2", "years": str(year), "months": month, "days": day, "bcode": ""}
-    headers = COMMON_HEADERS.copy()
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+def fetch_tpex_index_json(date_string, dst_file_path):
+    """
+    實作與 scripts/fetch_tpex_index_summary.py 相同的抓取邏輯
+    """
+    url_base = CATEGORY_DIC["指數行情"]
+    # 嘗試多種日期格式
+    year_tw = int(date_string[0:4]) - 1911
+    date_candidates = [
+        date_string,
+        f"{date_string[0:4]}/{date_string[4:6]}/{date_string[6:8]}",
+        f"{year_tw}/{date_string[4:6]}/{date_string[6:8]}",
+        f"{year_tw:03d}{date_string[4:6]}{date_string[6:8]}"
+    ]
     
-    try:
-        print(f"Fetching MOPS foreign hold for {date_string}...")
-        res = requests.post(url, data=payload, headers=headers)
-        soup = BeautifulSoup(res.content, 'html.parser', from_encoding='big5')
-        rows = soup.find_all('tr')
-        data = []
-        for row in rows:
-            cols = row.find_all(['td', 'th'])
-            cols_text = [ele.get_text(strip=True) for ele in cols]
-            if len(cols_text) > 5:
-                data.append(cols_text)
-        if not data: return
-        df = pd.DataFrame(data)
-        for i in range(len(df)):
-            if any("證券代號" in str(x) for x in df.iloc[i].values):
-                df.columns = df.iloc[i]; df = df.iloc[i+1:]; break
-        if "證券代號" in df.columns:
-            df = df[~df['證券代號'].astype(str).str.contains('證券代號|說明|註|因素', na=False)]
-        df.to_csv(dst_file_path, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_ALL)
-        print(f"[{date_string}] OTC Foreign Hold saved to {dst_file_path} ({len(df)} rows)")
-    except Exception as e:
-        print(f"[{date_string}] Error fetching MOPS data: {e}")
+    for cand in date_candidates:
+        url = f"{url_base}?date={cand}&response=json"
+        try:
+            res = requests.get(url, headers=COMMON_HEADERS, verify=False, timeout=20)
+            if res.status_code == 200:
+                obj = res.json()
+                if "tables" in obj and len(obj["tables"]) > 0:
+                    # 尋找「上櫃股價指數收盤行情」表格
+                    target_table = None
+                    for t in obj["tables"]:
+                        if "上櫃股價指數收盤行情" in t.get("title", ""):
+                            target_table = t
+                            break
+                    
+                    if not target_table: target_table = obj["tables"][0]
+                    
+                    fields = target_table.get("fields", [])
+                    data = target_table.get("data", [])
+                    if data:
+                        df = pd.DataFrame(data, columns=fields)
+                        df.to_csv(dst_file_path, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_ALL)
+                        print(f"[{date_string}] OTC Index saved successfully using candidate '{cand}'")
+                        return True
+        except Exception as e:
+            continue
+    print(f"[{date_string}] Failed to fetch OTC Index after trying all date formats.")
+    return False
 
 def fetch_data(date_string, category, output_dir):
-    date_tw = to_tw_date(date_string)
     eng_category = CATEGORY_MAP.get(category, category)
-    # 結構變更: raw/{category}/date={date}/
     dst_folder = os.path.join(output_dir, "raw", eng_category, f"date={date_string}")
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
-    
-    # 檔名變更: otc.csv
     dst_file_path = os.path.join(dst_folder, "otc.csv")
     
     if os.path.exists(dst_file_path):
-        print(f"[{date_string}] OTC {eng_category} already exists, skip.")
+        return
+
+    if category == "指數行情":
+        fetch_tpex_index_json(date_string, dst_file_path)
         return
 
     if category == "外資及陸資投資持股統計":
-        fetch_mops_foreign_hold(date_string, dst_file_path)
+        # (保留原本 MOPS 邏輯)
+        from bs4 import BeautifulSoup
+        url = "https://mopsov.twse.com.tw/server-java/t13sa150_otc"
+        year = int(date_string[0:4]); month = date_string[4:6]; day = date_string[6:8]
+        payload = {"step": "2", "years": str(year), "months": month, "days": day, "bcode": ""}
+        try:
+            res = requests.post(url, data=payload, headers=COMMON_HEADERS, verify=False)
+            soup = BeautifulSoup(res.content, 'html.parser', from_encoding='big5')
+            rows = soup.find_all('tr'); data = []
+            for row in rows:
+                cols = row.find_all(['td', 'th'])
+                cols_text = [ele.get_text(strip=True) for ele in cols]
+                if len(cols_text) > 5: data.append(cols_text)
+            if data:
+                df = pd.DataFrame(data)
+                for i in range(len(df)):
+                    if any("證券代號" in str(x) for x in df.iloc[i].values):
+                        df.columns = df.iloc[i]; df = df.iloc[i+1:]; break
+                if "證券代號" in df.columns:
+                    df = df[~df['證券代號'].astype(str).str.contains('證券代號|說明|註|因素', na=False)]
+                df.to_csv(dst_file_path, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_ALL)
+                print(f"[{date_string}] OTC Foreign Hold saved.")
+        except: pass
         return
 
+    date_tw = to_tw_date(date_string)
     url = CATEGORY_DIC[category].format(date_tw=date_tw)
     headers = COMMON_HEADERS.copy()
     headers['Referer'] = REFERER_DIC.get(category, "https://www.tpex.org.tw/")
 
     try:
-        print(f"Fetching OTC {eng_category} for {date_string}...")
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30, verify=False)
         if response.status_code == 200 and "404 - 證券櫃檯買賣中心" not in response.text:
-            if len(response.content) <= EMPTY_SIZE_DIC.get(category, 0):
-                print(f"[{date_string}] OTC {eng_category} is empty or no data.")
-            else:
+            if len(response.content) > EMPTY_SIZE_DIC.get(category, 0):
                 content = response.content.decode('big5', errors='ignore')
                 f_in = StringIO(content); reader = csv.reader(f_in)
                 f_out = StringIO(); writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
                 for row in reader:
-                    clean_row = []
-                    for cell in row:
-                        cell = cell.strip()
-                        # Remove Excel anti-formatting wrapper ="..."
-                        if cell.startswith('="') and cell.endswith('"'):
-                            cell = cell[2:-1]
-                        clean_row.append(cell)
-                    
-                    # 只有欄位數大於 1 的行才寫入
-                    if len(clean_row) > 1:
-                        writer.writerow(clean_row)
+                    clean_row = [c.strip()[2:-1] if c.strip().startswith('="') else c.strip() for c in row]
+                    if len(clean_row) > 1: writer.writerow(clean_row)
                 with open(dst_file_path, 'w', encoding='utf-8-sig') as f:
                     f.write(f_out.getvalue())
-                print(f"[{date_string}] OTC {eng_category} saved and cleaned to {dst_file_path}")
-        else:
-            print(f"[{date_string}] OTC {eng_category} data not available (404 or missing).")
-    except Exception as e:
-        print(f"[{date_string}] Error fetching OTC {eng_category}: {e}")
+                print(f"[{date_string}] OTC {eng_category} saved.")
+    except: pass
 
 def run_scraper(date_list, output_dir, delay=3.0):
     for date_str in date_list:
-        if datetime.datetime.strptime(date_str, "%Y%m%d") > datetime.datetime.today():
-            continue
         for category in CATEGORY_DIC:
             fetch_data(date_str, category, output_dir)
             time.sleep(delay)
@@ -152,9 +160,7 @@ if __name__ == "__main__":
     if start_date_env and end_date_env:
          start = datetime.datetime.strptime(start_date_env, "%Y%m%d")
          end = datetime.datetime.strptime(end_date_env, "%Y%m%d")
-         delta = end - start
-         date_list = [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range(delta.days + 1)]
+         date_list = [(start + datetime.timedelta(days=i)).strftime("%Y%m%d") for i in range((end-start).days + 1)]
     else:
         date_list = [datetime.datetime.today().strftime("%Y%m%d")]
-    delay = float(os.getenv("FETCH_DELAY", "3.0"))
-    run_scraper(date_list, output_dir, delay)
+    run_scraper(date_list, output_dir, float(os.getenv("FETCH_DELAY", "3.0")))

@@ -341,8 +341,8 @@ Pipeline order matters: scraper → processor → importer → calculator.
 
 | Source | Service | What it fetches | Update Frequency |
 |--------|---------|----------------|------------------|
-| TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E | Daily (after market close) |
-| TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks | Daily (after market close) |
+| TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E, indices | Daily (after market close) |
+| TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks + Index Summary | Daily (after market close) |
 | MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
 | TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (scraped on Sunday) |
 
@@ -396,15 +396,20 @@ Database (shared with backend):
 
 | Module | Purpose |
 |--------|---------|
-| `convert.py` | Main ETL for daily data; auto-extracts `market_indices` from `daily_quotes` |
-| `convert_monthly_revenue.py` | Monthly revenue ETL (handles MOPS format variations) |
-| `convert_shareholding.py` | Merges per-stock TDCC CSVs into single file per date (shareholding_div) |
-| `convert_shareholding2.py` | Converts all-in-one TDCC CSVs with level_name mapping (shareholding_div2) |
-| `convert_institutional_summary.py` | Standardizes SII/OTC institution names and merges |
-| `convert_margin_summary.py` | Extracts market-level margin trading summary from raw data |
+| `convert.py` | **Unified ETL entry point**: Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `schemas.py` | Column mappings, numeric types, standard schema definitions |
-| `utils.py` | Shared helpers: header detection, index extraction |
+| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files before DB import. |
+| `schemas.py` | Column mappings, numeric types, standard schema definitions. |
+| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction. |
+
+### Advanced Processing Features (convert.py)
+
+1. **Unified Pipeline**: All categories (OHLCV, Institutional, Margin, etc.) are processed via `python convert.py`.
+2. **Multi-line Header Merging**: `utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
+3. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
+4. **Market Index Extraction**:
+   - **SII**: Extracted from `daily_quotes/sii.csv` via `utils.read_sii_indices`.
+   - **OTC**: Fetched as a dedicated category using modernized TPEx JSON-to-CSV APIs.
 
 Run validation after processing:
 ```bash

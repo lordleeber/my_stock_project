@@ -10,6 +10,8 @@ services:
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
+      - ./scraper:/app/scraper
     environment:
       - OUTPUT_DIR=/app/data
       - MARKET_TYPE=${MARKET_TYPE:-ALL}
@@ -24,6 +26,8 @@ services:
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
+      - ./scraper:/app/scraper
       - ./active_stocks.txt:/app/active_stocks.txt:ro
     command: python fetch_tdcc_history.py -f /app/active_stocks.txt -d ${TDCC_DATE:-}
     environment:
@@ -36,6 +40,8 @@ services:
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
+      - ./scraper:/app/scraper
     command: python fetch_monthly_revenue.py --year ${REVENUE_YEAR:-} --month ${REVENUE_MONTH:-}
     environment:
       - OUTPUT_DIR=/app/data
