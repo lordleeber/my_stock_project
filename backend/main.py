@@ -372,13 +372,16 @@ def get_raw_data(
         if 'symbol' in df.columns:
             df['symbol'] = df['symbol'].astype(str)
                 
-        # 終極清理：將所有 dict 中的 NaN/Inf 轉為 None
+        # 終極清理：將所有 dict 中的 NaN/Inf/NA 轉為 None (JSON 友善)
         raw_list = df.to_dict(orient="records")
         clean_list = []
         for row in raw_list:
             clean_row = {}
             for k, v in row.items():
-                if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                # 使用 np.isfinite 處理所有 numpy/python 數值型態，並排除 NaN/Inf
+                if isinstance(v, (float, np.floating)) and not np.isfinite(v):
+                    clean_row[k] = None
+                elif pd.isna(v): # 處理 pandas.NA 或其他缺失值
                     clean_row[k] = None
                 else:
                     clean_row[k] = v
@@ -396,8 +399,8 @@ def get_raw_quotes(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("daily_quotes", start_date, end_date, symbol, market, limit, offset)
 
@@ -407,8 +410,8 @@ def get_raw_margin_trading(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit, offset)
 
@@ -417,8 +420,8 @@ def get_raw_margin_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("margin_summary", start_date, end_date, None, market, limit, offset)
 
@@ -428,8 +431,8 @@ def get_raw_institutional(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit, offset)
 
@@ -438,8 +441,8 @@ def get_raw_institutional_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("institutional_summary", start_date, end_date, None, market, limit, offset)
 
@@ -449,8 +452,8 @@ def get_raw_foreign_holding(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit, offset)
 
@@ -460,8 +463,8 @@ def get_raw_pe_ratio(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit, offset)
 
@@ -471,8 +474,8 @@ def get_raw_market_indices(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("market_indices", start_date, end_date, symbol, market, limit, offset)
 
@@ -482,8 +485,8 @@ def get_raw_monthly_revenue(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
 
@@ -492,8 +495,8 @@ def get_raw_shareholding(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
-    limit: int = 1000,
-    offset: int = 0
+    limit: int = Query(1000, gt=0),
+    offset: int = Query(0, ge=0)
 ):
     return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit, offset)
 

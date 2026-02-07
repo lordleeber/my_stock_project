@@ -232,6 +232,35 @@ def test_raw_endpoint_limit_behavior(case, client, engine):
 
 
 @pytest.mark.parametrize("case", CASES)
+def test_raw_endpoint_offset_behavior(case, client, engine):
+    """Verify that offset correctly shifts the result set."""
+    # Fetch 2 rows with limit=2, offset=0
+    params = {
+        "start_date": "2020-01-01",
+        "end_date": "2026-12-31",
+        "limit": 2,
+        "offset": 0
+    }
+    resp1 = client.get(case["endpoint"], params=params)
+    assert resp1.status_code == 200
+    data1 = resp1.json()
+    
+    if len(data1) < 2:
+        pytest.skip(f"Not enough data in {case['table']} to test offset")
+        
+    # Fetch the 2nd row using limit=1, offset=1
+    params["limit"] = 1
+    params["offset"] = 1
+    resp2 = client.get(case["endpoint"], params=params)
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    
+    assert len(data2) == 1
+    # The record at offset 1 should match the 2nd record from the first request
+    assert data2[0] == data1[1]
+
+
+@pytest.mark.parametrize("case", CASES)
 def test_raw_endpoint_no_data_returns_empty(case, client):
     params = {
         "start_date": "2100-01-01",
