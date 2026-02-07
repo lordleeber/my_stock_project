@@ -179,9 +179,267 @@ class MLTrainingData(BaseModel):
     foreign_held_shares: Optional[float] = None
     trust_held_shares: Optional[float] = None
 
+# --- Raw Data Models ---
+class DailyQuoteRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    name: str
+    market: str
+    open: Optional[float]
+    high: Optional[float]
+    low: Optional[float]
+    close: Optional[float]
+    volume: Optional[float]
+    change: Optional[float]
+
+class MarginTradingRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    name: Optional[str] = None
+    margin_long_buy: Optional[float]
+    margin_long_sell: Optional[float]
+    margin_long_cash_repay: Optional[float]
+    margin_long_prev_balance: Optional[float] = None
+    margin_long_balance: Optional[float]
+    margin_long_limit: Optional[float]
+    margin_short_buy: Optional[float]
+    margin_short_sell: Optional[float]
+    margin_short_cash_repay: Optional[float]
+    margin_short_prev_balance: Optional[float] = None
+    margin_short_balance: Optional[float]
+    margin_short_limit: Optional[float]
+    offset_balance: Optional[float] = None
+
+class MarginSummaryRaw(BaseModel):
+    date: datetime.date
+    market: str
+    item: str
+    buy: Optional[float]
+    sell: Optional[float]
+    cash_repay: Optional[float]
+    yesterday_balance: Optional[float]
+    today_balance: Optional[float]
+
+class InstitutionalInvestorsRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    foreign_buy: Optional[float]
+    foreign_sell: Optional[float]
+    foreign_net: Optional[float]
+    trust_buy: Optional[float]
+    trust_sell: Optional[float]
+    trust_net: Optional[float]
+    dealer_buy: Optional[float]
+    dealer_sell: Optional[float]
+    dealer_net: Optional[float]
+
+class InstitutionalSummaryRaw(BaseModel):
+    date: datetime.date
+    market: str
+    item: str
+    buy: Optional[float]
+    sell: Optional[float]
+    net: Optional[float]
+
+class ForeignHoldingRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    issued_shares: Optional[float]
+    available_shares: Optional[float]
+    foreign_held_shares: Optional[float]
+    available_pct: Optional[float]
+    held_pct: Optional[float]
+    limit_pct: Optional[float]
+
+class PeRatioRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    pe_ratio: Optional[float]
+    dividend_yield: Optional[float]
+    pb_ratio: Optional[float]
+
+class MarketIndexRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    name: str
+    market: str
+    close: Optional[float]
+    change: Optional[float]
+    change_pct: Optional[float]
+
+class MonthlyRevenueRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    revenue_current: Optional[float]
+    revenue_last_month: Optional[float]
+    revenue_last_year: Optional[float]
+    mom_pct: Optional[float]
+    yoy_pct: Optional[float]
+    accumulated_revenue: Optional[float]
+    accumulated_revenue_last_year: Optional[float]
+    accumulated_yoy_pct: Optional[float]
+
+class ShareholdingRaw(BaseModel):
+    date: datetime.date
+    symbol: str
+    market: str
+    level: int
+    holders: Optional[float]
+    shares: Optional[float]
+    percentage: Optional[float]
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
+
+# --- Raw Data Endpoints ---
+
+def get_raw_data(
+    table: str,
+    start_date: str,
+    end_date: str,
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    """通用原始資料查詢邏輯"""
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        params = {"start": start_date, "end": end_date, "limit": limit}
+        where_clauses = ["date >= :start", "date <= :end"]
+        
+        if symbol:
+            params["symbol"] = symbol
+            where_clauses.append("symbol = :symbol")
+        if market:
+            params["market"] = market.lower()
+            where_clauses.append("market = :market")
+            
+        sql = text(f"""
+            SELECT * FROM {table}
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY date DESC, symbol ASC
+            LIMIT :limit
+        """)
+        
+        with engine.connect() as conn:
+            df = pd.read_sql(sql, conn, params=params)
+        
+        if df.empty:
+            return []
+        
+        # 轉換日期格式並處理 NaN 為 None (JSON 友善)
+        df['date'] = df['date'].apply(lambda x: x.date() if isinstance(x, datetime.datetime) else x)
+        return df.where(pd.notnull(df), None).to_dict(orient="records")
+
+    except Exception as e:
+        print(f"Raw Data Error ({table}): {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/raw/daily-quotes", response_model=List[DailyQuoteRaw])
+def get_raw_quotes(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("daily_quotes", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/margin-trading", response_model=List[MarginTradingRaw])
+def get_raw_margin_trading(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/margin-summary", response_model=List[MarginSummaryRaw])
+def get_raw_margin_summary(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("margin_summary", start_date, end_date, None, market, limit)
+
+@app.get("/raw/institutional-investors", response_model=List[InstitutionalInvestorsRaw])
+def get_raw_institutional(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/institutional-summary", response_model=List[InstitutionalSummaryRaw])
+def get_raw_institutional_summary(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("institutional_summary", start_date, end_date, None, market, limit)
+
+@app.get("/raw/foreign-holding", response_model=List[ForeignHoldingRaw])
+def get_raw_foreign_holding(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/pe-ratio", response_model=List[PeRatioRaw])
+def get_raw_pe_ratio(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/market-indices", response_model=List[MarketIndexRaw])
+def get_raw_market_indices(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("market_indices", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/monthly-revenue", response_model=List[MonthlyRevenueRaw])
+def get_raw_monthly_revenue(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit)
+
+@app.get("/raw/shareholding", response_model=List[ShareholdingRaw])
+def get_raw_shareholding(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = 1000
+):
+    return get_raw_data("shareholding_dispersion", start_date, end_date, symbol, market, limit)
 
 import sys
 # 確保能 import strategy
