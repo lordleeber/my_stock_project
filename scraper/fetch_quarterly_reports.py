@@ -5,11 +5,20 @@ import io
 import argparse
 from datetime import datetime
 import time
+from io import StringIO
+
+import pandas as pd
 
 # URL Templates
 SII_URL = "https://www.twse.com.tw/staticFiles/inspection/inspection/05/001/{year}Q{quarter}_C05001.zip"
 OTC_URL = "https://www.tpex.org.tw/storage/statistic/financial/O_{year}Q{quarter}.xls"
+MOPS_AJAX_URL = "https://mopsov.twse.com.tw/mops/web/ajax_t163sb04"
+MOPS_BALANCE_URL = "https://mopsov.twse.com.tw/mops/web/ajax_t163sb05"
+MOPS_CASHFLOW_URL = "https://mopsov.twse.com.tw/mops/web/ajax_t163sb20"
 RAW_DIR = "data/raw/quarterly_reports"
+INCOME_STATEMENT_DIR = "data/raw/income_statement"
+BALANCE_SHEET_DIR = "data/raw/balance_sheet"
+CASH_FLOW_DIR = "data/raw/cash_flow"
 
 def download_sii(year, quarter, target_dir):
     """下載並解壓上市公司季報 ZIP，確保存為 sii.xls"""
@@ -66,8 +75,218 @@ def download_quarterly_report(year, quarter, output_base_dir):
     s_ok = download_sii(year, quarter, target_dir)
     time.sleep(2) # 禮貌性延遲
     o_ok = download_otc(year, quarter, target_dir)
+    time.sleep(2) # 禮貌性延遲
+    m_ok = download_mops_income_statement(year, quarter, INCOME_STATEMENT_DIR)
+    b_ok = download_mops_balance_sheet(year, quarter, BALANCE_SHEET_DIR)
+    c_ok = download_mops_cash_flow(year, quarter, CASH_FLOW_DIR)
     
-    return s_ok or o_ok
+    return s_ok or o_ok or m_ok or b_ok or c_ok
+
+
+def _post_mops(payload, url=MOPS_AJAX_URL):
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    return requests.post(url, data=payload, headers=headers, timeout=30)
+
+
+def _table_label(cols):
+    joined = " ".join(cols)
+    if any(k in joined for k in ["營業活動之淨現金流入", "投資活動之淨現金流入", "籌資活動之淨現金流入", "期末現金及約當現金"]):
+        if any(k in joined for k in ["利息淨收益", "存放央行及拆借銀行同業", "貼現及放款", "存款及匯款"]):
+            return "cashflow_bank"
+        if any(k in joined for k in ["保險", "再保險", "保險負債"]):
+            return "cashflow_insurance"
+        return "cashflow_general"
+    # Balance sheet subtype detection first
+    if any(k in joined for k in ["資產總計", "資產總額", "負債總計", "負債總額", "權益總額"]):
+        if any(k in joined for k in ["存款及匯款", "貼現及放款", "附買回票券", "央行及同業融資"]):
+            return "bank"
+        if any(k in joined for k in ["保險負債", "再保險", "保險合約"]):
+            return "insurance"
+        if any(k in joined for k in ["流動資產", "非流動資產", "流動負債", "非流動負債"]):
+            return "general"
+        return "balance"
+    if any(k in joined for k in ["利息淨收益", "利息以外淨收益", "呆帳"]):
+        return "bank"
+    if any(k in joined for k in ["保險", "保險負債準備", "保險負債"]):
+        return "insurance"
+    if any(k in joined for k in ["營業收入", "營業成本", "營業毛利"]):
+        return "general"
+    return "table"
+
+
+def _save_tables_as_csv(resp_text, target_dir, market):
+    if "<table" not in resp_text:
+        return []
+    try:
+        tables = pd.read_html(StringIO(resp_text))
+    except Exception:
+        return []
+    if not tables:
+        return []
+
+    labeled = []
+    for df in tables:
+        if df.empty:
+            continue
+        # Keep only tables that look like company data
+        cols = [str(c) for c in df.columns]
+        if not any("公司" in c or "代號" in c or "Code" in c for c in cols):
+            continue
+        # Drop header-like rows duplicated in body
+        first_col = df.columns[0]
+        df = df[df[first_col].astype(str).str.match(r"^\d{4}")].copy()
+        if df.empty:
+            continue
+        label = _table_label(cols)
+        labeled.append((label, df))
+
+    if not labeled:
+        return []
+
+    os.makedirs(target_dir, exist_ok=True)
+    label_counts = {}
+    outputs = []
+    for label, df in labeled:
+        label_counts[label] = label_counts.get(label, 0) + 1
+        suffix = f"{label}{label_counts[label]}" if label_counts[label] > 1 else label
+        target_file = os.path.join(target_dir, f"{market}_{suffix}.csv")
+        df.to_csv(target_file, index=False, encoding="utf-8-sig")
+        outputs.append(target_file)
+    return outputs
+
+
+def download_mops_income_statement(year, quarter, output_base_dir):
+    """抓取 MOPS 綜合損益表 (t163sb04)，存成多個 CSV。"""
+    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    os.makedirs(target_dir, exist_ok=True)
+    ok = False
+    for market, typek in (("sii", "sii"), ("otc", "otc")):
+        print(f"[*] Fetching MOPS t163sb04 Income Statement ({market.upper()}) {year}Q{quarter}")
+        # First try AD year (YYYY)
+        payload = {
+            "encodeURIComponent": 1,
+            "step": 1,
+            "firstin": 1,
+            "off": 1,
+            "TYPEK": typek,
+            "year": str(year),
+            "season": str(quarter),
+        }
+        try:
+            resp = _post_mops(payload, url=MOPS_AJAX_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)}")
+                ok = True
+                continue
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (AD year): {e}")
+
+        # Fallback to ROC year
+        roc_year = year - 1911
+        payload["year"] = str(roc_year)
+        try:
+            resp = _post_mops(payload, url=MOPS_AJAX_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                ok = True
+            else:
+                print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (ROC year): {e}")
+    return ok
+
+
+def download_mops_balance_sheet(year, quarter, output_base_dir):
+    """抓取 MOPS 資產負債表 (t163sb05)，存成多個 CSV。"""
+    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    os.makedirs(target_dir, exist_ok=True)
+    ok = False
+    for market, typek in (("sii", "sii"), ("otc", "otc")):
+        print(f"[*] Fetching MOPS t163sb05 Balance Sheet ({market.upper()}) {year}Q{quarter}")
+        payload = {
+            "encodeURIComponent": 1,
+            "step": 1,
+            "firstin": 1,
+            "off": 1,
+            "TYPEK": typek,
+            "year": str(year),
+            "season": str(quarter),
+        }
+        try:
+            resp = _post_mops(payload, url=MOPS_BALANCE_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)}")
+                ok = True
+                continue
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (AD year): {e}")
+
+        roc_year = year - 1911
+        payload["year"] = str(roc_year)
+        try:
+            resp = _post_mops(payload, url=MOPS_BALANCE_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                ok = True
+            else:
+                print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (ROC year): {e}")
+    return ok
+
+
+def download_mops_cash_flow(year, quarter, output_base_dir):
+    """抓取 MOPS 現金流量表 (t163sb20)，存成多個 CSV。"""
+    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    os.makedirs(target_dir, exist_ok=True)
+    ok = False
+    for market, typek in (("sii", "sii"), ("otc", "otc")):
+        print(f"[*] Fetching MOPS t163sb20 Cash Flow ({market.upper()}) {year}Q{quarter}")
+        payload = {
+            "encodeURIComponent": 1,
+            "step": 1,
+            "firstin": 1,
+            "off": 1,
+            "TYPEK": typek,
+            "year": str(year),
+            "season": str(quarter),
+        }
+        try:
+            resp = _post_mops(payload, url=MOPS_CASHFLOW_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)}")
+                ok = True
+                continue
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (AD year): {e}")
+
+        roc_year = year - 1911
+        payload["year"] = str(roc_year)
+        try:
+            resp = _post_mops(payload, url=MOPS_CASHFLOW_URL)
+            resp.encoding = "utf-8"
+            outputs = _save_tables_as_csv(resp.text, target_dir, market)
+            if outputs:
+                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                ok = True
+            else:
+                print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
+        except Exception as e:
+            print(f"[!] MOPS {market.upper()} error (ROC year): {e}")
+    return ok
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch Quarterly Financial Reports (SII & OTC)")

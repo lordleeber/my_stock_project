@@ -451,7 +451,7 @@ The following dates correctly return no data for OTC indices due to market closu
 | TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E, indices | Daily (after market close) |
 | TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks + Index Summary | Daily (after market close) |
 | MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
-| MOPS (mopsov.twse.com.tw) | `scraper-quarterly` | Quarterly financial reports (SII/OTC) | Quarterly (approx. 45 days after Q-end) |
+| MOPS (mopsov.twse.com.tw) | `scraper-quarterly` | Quarterly financial reports (SII/OTC), income statement (t163sb04), balance sheet (t163sb05), cash flow (t163sb20) | Quarterly (approx. 45 days after Q-end) |
 | TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (scraped on Sunday) |
 
 ## Directory Structure (Data)
@@ -467,6 +467,9 @@ data/
 │   ├── margin_sbl/date=YYYYMMDD/{sii,otc}.csv
 │   ├── pe_ratio/date=YYYYMMDD/{sii,otc}.csv
 │   ├── monthly_revenue/date=YYYYMM01/market.csv
+│   ├── income_statement/date=YYYYQX/{sii,otc}_*.csv
+│   ├── balance_sheet/date=YYYYQX/{sii,otc}_*.csv
+│   ├── cash_flow/date=YYYYQX/{sii,otc}_*.csv
 │   ├── shareholding_div/date=YYYYMMDD/{symbol}.csv   # Per-stock format (2023/09~)
 │   └── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # All-in-one format (2020/01~2023/09)
 ├── processed/                    # Processor output (cleaned CSVs)
