@@ -222,5 +222,36 @@ SCHEMA_COLS = {
     ],
     "shareholding_div": [
         "date", "symbol", "level", "level_name", "holders", "shares", "percentage"
+    ],
+    "income_statement": [
+        "date", "market", "symbol", "name", "statement_type",
+        "revenue", "cost_of_revenue", "gross_profit", "operating_expense",
+        "operating_income", "non_operating_income", "pretax_income", "tax_expense",
+        "net_income", "other_comprehensive_income", "comprehensive_income", "eps",
+        "net_interest_income", "non_interest_income", "net_revenue", "other_income_net"
+    ],
+    "balance_sheet": [
+        "date", "market", "symbol", "name", "statement_type",
+        "current_assets", "noncurrent_assets", "total_assets",
+        "current_liabilities", "noncurrent_liabilities", "total_liabilities",
+        "total_equity", "equity_parent",
+        "share_capital", "capital_surplus", "retained_earnings",
+        "other_equity", "treasury_shares", "nav_per_share"
+    ],
+    "cash_flow": [
+        "date", "market", "symbol", "name", "statement_type",
+        "cash_flow_operating", "cash_flow_investing", "cash_flow_financing",
+        "fx_effect", "net_cash_change", "cash_begin", "cash_end"
+    ],
+    "quarterly_reports": [
+        "date", "symbol", "name", "market",
+        "revenue", "revenue_ly", "revenue_yoy",
+        "op_income", "op_income_ly", "op_income_yoy",
+        "non_op_income", "non_op_income_ly", "non_op_income_yoy",
+        "pretax_income", "pretax_income_ly", "pretax_income_yoy",
+        "net_income", "net_income_ly", "net_income_yoy",
+        "eps", "eps_ly", "eps_yoy",
+        "capital", "nav_per_share", "equity_to_assets_ratio",
+        "current_ratio", "quick_ratio"
     ]
 }

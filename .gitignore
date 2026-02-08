@@ -208,6 +208,7 @@ __marimo__/
 
 # macOS
 .DS_Store
+StockDailyUpdate.app/
 
 # Project specific
 data/
