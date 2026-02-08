@@ -118,9 +118,9 @@ def check_margin_sbl(date_str):
 
 
 def check_daily_quotes(date_str):
-    """Check daily_quotes data quality - core OHLCV data"""
+    """Check daily_quotes data quality - core OHLCV data with internal consistency checks"""
     issues = []
-
+    
     for market in ['sii', 'otc']:
         file_path = Path(f"data/processed/daily_quotes/date={date_str}/{market}.csv")
 
@@ -135,23 +135,30 @@ def check_daily_quotes(date_str):
                 issues.append(f"daily_quotes {market}: File is empty (0 rows)")
                 continue
 
-            # Core OHLCV columns
+            # 1. 基礎欄位與 NULL 檢查
             key_columns = ['open', 'high', 'low', 'close', 'volume']
-
             for col in key_columns:
                 if col not in df.columns:
                     issues.append(f"daily_quotes {market}: Missing column '{col}'")
                     continue
-
-                null_count = df[col].isna().sum()
-                null_pct = (null_count / len(df)) * 100
-
-                # >50% NULL in OHLCV is suspicious (some NULL is OK for suspended stocks)
+                null_pct = (df[col].isna().sum() / len(df)) * 100
                 if null_pct > 50:
-                    issues.append(
-                        f"daily_quotes {market}: Column '{col}' has {null_pct:.1f}% NULL values "
-                        f"({null_count}/{len(df)} rows) - check if market was open"
-                    )
+                    issues.append(f"daily_quotes {market}: Column '{col}' has {null_pct:.1f}% NULLs")
+
+            # 2. 內部 OHLC 邏輯檢查 (避免欄位位移)
+            # 這是偵測數據錯位最穩健的方式，不受除權息影響
+            # 例如：High 必須是當日最高點，Low 必須是當日最低點
+            ohlc_err = df[
+                (df['high'] < df['open']) | 
+                (df['high'] < df['close']) | 
+                (df['low'] > df['open']) | 
+                (df['low'] > df['close'])
+            ]
+            if len(ohlc_err) > 0:
+                issues.append(
+                    f"daily_quotes {market}: Found {len(ohlc_err)} rows with invalid OHLC logic "
+                    f"(e.g., high < close). This strongly suggests column shifting in raw CSV."
+                )
 
         except Exception as e:
             issues.append(f"daily_quotes {market}: Error reading file - {str(e)}")
