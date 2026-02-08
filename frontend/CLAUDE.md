@@ -58,7 +58,7 @@ This project uses **v5** which has a different API from v4:
 - Each is an independent `createChart` instance
 - Buy (positive) = red, Sell (negative) = green
 - Foreign chart shows `foreign_held_shares` as orange line on right axis (when data available)
-- Trust chart is prepared for `trust_held_shares` (pending backend support, see backend/buglist.md)
+- Trust chart is prepared for `trust_held_shares` (pending backend support, see backend/requests.md)
 - Same highlight/range/scroll behavior as CandlestickChart
 - Accepts `darkMode` prop
 
@@ -100,4 +100,4 @@ npm install && npm run dev
 
 ## Scope
 
-This is the frontend project only. Do NOT modify backend files (`backend/`, `scanner/`, `scraper/`, `importer/`, `processor/`). If you need backend changes, document requirements in `backend/buglist.md`.
+This is the frontend project only. Do NOT modify backend files (`backend/`, `scanner/`, `scraper/`, `importer/`, `processor/`). If you need backend changes, document requirements in `backend/requests.md`.
