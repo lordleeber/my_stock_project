@@ -1,118 +1,154 @@
 import pandas as pd
 import requests
 import sys
+import numpy as np
+import os
+import time
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------------
-# 基本面旗艦級選股系統 4.5 (絕對時間軸嚴謹版)
+# 基本面旗艦級選股系統 5.2 (完整歷史批次版)
 # ---------------------------------------------------------
 
 API_BASE = "http://100.103.191.79:8000"
 
-if sys.stdout.encoding.lower() != 'utf-8':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+def get_20th_business_day(year, month):
+    count = 0
+    curr = datetime(year, month, 1)
+    while count < 20:
+        if curr.weekday() < 5:
+            count += 1
+        if count < 20:
+            curr += timedelta(days=1)
+    return curr.strftime("%Y-%m-%d")
 
-def fetch_data_snapshot():
-    # 模擬時間點：2025-11-17
-    SIM_DATE = "2025-11-17"
+def score_linear(val, min_val, max_val):
+    if pd.isna(val): return 0
+    if val <= min_val: return 0
+    if val >= max_val: return 100
+    return (val - min_val) / (max_val - min_val) * 100
+
+def is_regular_stock(symbol):
+    s = str(symbol).strip()
+    return s.isdigit() and len(s) == 4 and not s.startswith(('00', '02', '91', '01'))
+
+def get_config_for_quarter(q_str):
+    year = int(q_str[:4])
+    q = q_str[4:]
+    if q == "Q1":
+        sim_date = get_20th_business_day(year, 6)
+        rev_months = [f"{year}M03", f"{year}M04", f"{year}M05"]
+    elif q == "Q2":
+        sim_date = get_20th_business_day(year, 9)
+        rev_months = [f"{year}M06", f"{year}M07", f"{year}M08"]
+    elif q == "Q3":
+        sim_date = get_20th_business_day(year, 12)
+        rev_months = [f"{year}M09", f"{year}M10", f"{year}M11"]
+    elif q == "Q4":
+        sim_date = get_20th_business_day(year + 1, 4)
+        rev_months = [f"{year+1}M01", f"{year+1}M02", f"{year+1}M03"]
+    else: return None, None
+    return sim_date, rev_months
+
+def process_quarter(q_str):
+    sim_date, rev_months = get_config_for_quarter(q_str)
+    print(f">>> 正在處理 {q_str} (公告模擬日: {sim_date})...")
     
-    print(f"正在還原 {SIM_DATE} 當下的資訊環境...")
     try:
-        # 1. 2025Q3 財報
-        df_q = pd.DataFrame(requests.get(f"{API_BASE}/raw/quarterly-reports?start_date=2025Q3&end_date=2025Q3&limit=3000").json())
-        # 2. 現金流量
-        df_cf = pd.DataFrame(requests.get(f"{API_BASE}/raw/cash-flows?start_date=2025Q3&end_date=2025Q3&limit=3000").json())
-        # 3. 當時的股價 (2025-11-17)
-        df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={SIM_DATE}&end_date={SIM_DATE}&limit=5000").json())
+        df_q = pd.DataFrame(requests.get(f"{API_BASE}/raw/quarterly-reports?start_date={q_str}&end_date={q_str}&limit=3000").json())
+        df_cf = pd.DataFrame(requests.get(f"{API_BASE}/raw/cash-flows?start_date={q_str}&end_date={q_str}&limit=3000").json())
+        df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={sim_date}&end_date={sim_date}&limit=5000").json())
+        df_info = pd.DataFrame(requests.get(f"{API_BASE}/raw/stock-info?limit=5000").json())
         
-        # 4. 當時能看到的最新 3 個月營收 (8, 9, 10月)
-        # 11月營收要到 12/10 才公佈，所以當時看不到
-        rev_months = ["2025-08-01", "2025-09-01", "2025-10-01"]
+        if df_p.empty:
+            curr = datetime.strptime(sim_date, "%Y-%m-%d")
+            for _ in range(5):
+                curr += timedelta(days=1)
+                d_str = curr.strftime("%Y-%m-%d")
+                df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={d_str}&end_date={d_str}&limit=5000").json())
+                if not df_p.empty: 
+                    sim_date = d_str
+                    break
+
         all_rev = []
         for m in rev_months:
-            print(f"  抓取歷史營收: {m}...")
             r = requests.get(f"{API_BASE}/raw/monthly-revenue?start_date={m}&end_date={m}&limit=3000").json()
             if r: all_rev.extend(r)
-            
         df_r = pd.DataFrame(all_rev)
+
+        if df_q.empty or df_p.empty or df_r.empty:
+            print(f"  [跳過] 資料不足 (Q:{len(df_q)} P:{len(df_p)} R:{len(df_r)})")
+            return
+
+        for d in [df_q, df_cf, df_p, df_r, df_info]: d['symbol'] = d['symbol'].astype(str)
+        df_p = df_p[df_p['symbol'].apply(is_regular_stock)]
+        df_r['yoy_pct'] = pd.to_numeric(df_r['yoy_pct'], errors='coerce')
+        rev_trend = df_r.sort_values(['symbol', 'date']).groupby('symbol').agg({'yoy_pct': ['mean', 'last']}).reset_index()
+        rev_trend.columns = ['symbol', 'rev_avg_3m', 'rev_latest_yoy']
+
+        df = pd.merge(df_p[['symbol', 'name', 'close', 'pe_ratio']], df_q.drop(columns=['name', 'market'], errors='ignore'), on='symbol', how='left')
+        df = pd.merge(df, df_cf[['symbol', 'cash_flow_operating']], on='symbol', how='left')
+        df = pd.merge(df, rev_trend, on='symbol', how='left')
+        df = pd.merge(df, df_info[['symbol', 'industry']], on='symbol', how='left')
+
+        num_cols = ['revenue', 'op_income', 'net_income', 'eps_yoy', 'equity_to_assets_ratio', 'pe_ratio', 'rev_avg_3m', 'cash_flow_operating', 'close']
+        for c in num_cols: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+
+        df['op_margin'] = np.where(df['revenue'] > 0, (df['op_income'] / df['revenue']) * 100, 0)
+        df['cash_quality'] = np.where(df['net_income'] > 0, df['cash_flow_operating'] / df['net_income'], 0)
+
+        df_valid_pe = df[df['pe_ratio'] > 0].copy()
+        ind_pe_map = df_valid_pe.groupby('industry')['pe_ratio'].median().to_dict()
+        def calc_v(row):
+            pe = row['pe_ratio']
+            if pe <= 0: return 0
+            base = ind_pe_map.get(row['industry'], 15)
+            return score_linear(1.5 - (pe/base), 0, 1.0)
+
+        df['value_score'] = df.apply(calc_v, axis=1)
+        df['growth_score'] = df['eps_yoy'].apply(lambda x: score_linear(x, 0, 50))
+        df['momentum_score'] = df['rev_avg_3m'].apply(lambda x: score_linear(x, 0, 20))
+        df['quality_score'] = df['cash_quality'].apply(lambda x: score_linear(x, 0.5, 1.2))
+        df['profit_score'] = df['op_margin'].apply(lambda x: score_linear(x, 5, 25))
+        df['safety_score'] = df['equity_to_assets_ratio'].apply(lambda x: score_linear(x, 20, 60))
+
+        df['total_score'] = (df['growth_score'] * 0.25) + (df['momentum_score'] * 0.20) + \
+                            (df['quality_score'] * 0.20) + (df['profit_score'] * 0.15) + \
+                            (df['safety_score'] * 0.10) + (df['value_score'] * 0.10)
+
+        df = df.rename(columns={'close': 'market_price', 'rev_avg_3m': 'avg_revenue_yoy_3m'})
+        df['price_date'] = sim_date
+        df['report_quarter'] = q_str
+
+        final_cols = [
+            'symbol', 'name', 'industry', 'market_price', 'price_date', 'report_quarter',
+            'pe_ratio', 'value_score', 'eps_yoy', 'growth_score',
+            'avg_revenue_yoy_3m', 'momentum_score', 'op_margin', 'profit_score',
+            'cash_quality', 'quality_score', 'equity_to_assets_ratio', 'safety_score',
+            'total_score'
+        ]
         
-        return df_q, df_cf, df_p, df_r, SIM_DATE
+        final_df = df[final_cols].sort_values('total_score', ascending=False)
+        output_path = os.path.join("strategy", "fundamental", f"fundamental_report_{q_str}.csv")
+        final_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"  [成功] 已產生報告，決策日：{sim_date}")
+
     except Exception as e:
-        print(f"資料抓取失敗: {e}")
-        return [pd.DataFrame()]*4 + [None]
+        print(f"  [失敗] {q_str} 異常: {e}")
 
-def run_screener():
-    print("=== 基本面專家：旗艦級選股系統 4.5 (時間軸嚴謹版) ===")
-    df_q, df_cf, df_p, df_r, sim_date = fetch_data_snapshot()
+def main():
+    quarters = []
+    # 完整產生 2020Q1 到 2025Q3
+    for y in range(2020, 2026):
+        for q in ["Q1", "Q2", "Q3", "Q4"]:
+            qs = f"{y}{q}"
+            if y == 2025 and q == "Q4": break
+            quarters.append(qs)
     
-    if df_q.empty or df_p.empty or df_r.empty:
-        print("資料不足。")
-        return
-
-    # 1. 計算當時可見的營收趨勢 (8, 9, 10月)
-    df_r['symbol'] = df_r['symbol'].astype(str)
-    df_r['yoy_pct'] = pd.to_numeric(df_r['yoy_pct'], errors='coerce')
-    df_r = df_r.dropna(subset=['yoy_pct'])
-    
-    # 確保只用這三個月算平均
-    df_r = df_r.sort_values(['symbol', 'date'])
-    # 對每檔股票，只取最後 3 筆 (理論上就是 8, 9, 10)
-    rev_trend = df_r.groupby('symbol').tail(3).groupby('symbol').agg({
-        'yoy_pct': ['mean', 'last'], # last 就是 10月 YoY
-        'date': 'count' # 確認是否真的有 3 個月資料
-    }).reset_index()
-    
-    # 欄位扁平化
-    rev_trend.columns = ['symbol', 'rev_avg_3m', 'rev_oct_yoy', 'rev_count']
-    # 只保留資料完整的股票 (有3個月營收)
-    rev_trend = rev_trend[rev_trend['rev_count'] == 3]
-
-    # 2. 合併
-    for df in [df_q, df_cf, df_p]: df['symbol'] = df['symbol'].astype(str)
-    
-    df = pd.merge(df_q, df_cf[['symbol', 'cash_flow_operating']], on='symbol', how='inner')
-    df = pd.merge(df, df_p[['symbol', 'close', 'pe_ratio', 'volume']], on='symbol', how='inner')
-    df = pd.merge(df, rev_trend, on='symbol', how='inner')
-
-    # 3. 指標計算
-    num_cols = ['revenue', 'op_income', 'net_income', 'eps_yoy', 'equity_to_assets_ratio', 'pe_ratio', 'rev_avg_3m', 'rev_oct_yoy', 'cash_flow_operating']
-    for c in num_cols: df[c] = pd.to_numeric(df[c], errors='coerce')
-
-    df['op_margin'] = (df['op_income'] / df['revenue']) * 100
-    df['cash_quality'] = df['cash_flow_operating'] / df['net_income']
-
-    # --- 歷史模擬篩選邏輯 ---
-    # 在 11/17 財報公佈當下，我們會選誰？
-    # 1. 營收動能: 8-10月平均成長 > 10% 且 10月營收持續成長 (>0)
-    # 2. 財報爆發: Q3 EPS YoY > 20%
-    # 3. 獲利品質: 營益率 > 10%, 含金量 > 0.8
-    # 4. 安全便宜: 權益比 > 40%, 當時 PE < 18 (考量當時可能已漲一段，稍微放寬 PE)
-    
-    mask = (df['rev_avg_3m'] > 10) & (df['rev_oct_yoy'] > 0) & \
-           (df['eps_yoy'] > 20) & \
-           (df['op_margin'] > 10) & \
-           (df['cash_quality'] > 0.8) & \
-           (df['equity_to_assets_ratio'] > 40) & \
-           (df['pe_ratio'] < 18) & (df['pe_ratio'] > 0) & \
-           (df['volume'] >= 300000)
-    
-    candidates = df[mask].copy()
-    
-    # 評分
-    candidates['master_score'] = (candidates['rev_avg_3m'] * 0.4) + (candidates['eps_yoy'] * 0.3) + (candidates['op_margin'] * 0.3)
-    candidates = candidates.sort_values('master_score', ascending=False)
-
-    print(f"\n模擬決策日：{sim_date}")
-    print(f"當時符合「財報優 + Q4開局動能強」嚴選個股：{len(candidates)} 檔")
-    
-    if not candidates.empty:
-        show_cols = ['symbol', 'name', 'close', 'pe_ratio', 'rev_avg_3m', 'rev_oct_yoy', 'eps_yoy', 'op_margin']
-        print("\n💎 2025年11月 專家真實推薦名單 (Top 10):")
-        pd.options.display.max_columns = None
-        pd.options.display.width = 1000
-        print(candidates[show_cols].head(10).to_string(index=False))
-    else:
-        print("\n模擬當時無符合高標準標的。")
+    print(f"啟動 2020-2025 完整批次報告產生器...")
+    for q in quarters:
+        process_quarter(q)
+        time.sleep(0.5)
 
 if __name__ == "__main__":
-    run_screener()
+    main()
