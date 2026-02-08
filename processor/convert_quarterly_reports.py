@@ -10,6 +10,19 @@ RAW_DIR = os.environ.get("RAW_DIR", "data/raw")
 PROCESSED_DIR = os.environ.get("PROCESSED_DIR", "data/processed")
 CATEGORY = "quarterly_reports"
 
+# 定義最終統一的欄位順序
+FINAL_FIELDS = [
+    "date", "symbol", "name", "market",
+    "revenue", "revenue_ly", "revenue_yoy",
+    "op_income", "op_income_ly", "op_income_yoy",
+    "non_op_income", "non_op_income_ly", "non_op_income_yoy",
+    "pretax_income", "pretax_income_ly", "pretax_income_yoy",
+    "net_income", "net_income_ly", "net_income_yoy",
+    "eps", "eps_ly", "eps_yoy",
+    "capital", "nav_per_share", "equity_to_assets_ratio",
+    "current_ratio", "quick_ratio"
+]
+
 def clean_numeric(val):
     """清理數值，處理 --, null, nan, (123)"""
     if pd.isna(val) or val == "--" or str(val).strip() == "":
@@ -22,15 +35,18 @@ def clean_numeric(val):
     except (ValueError, TypeError):
         return None
 
+def calculate_yoy(current, ly):
+    """手動計算 YoY %"""
+    if current is None or ly is None or ly == 0:
+        return None
+    return round((current - ly) / abs(ly) * 100, 2)
+
 def process_file(file_path, date_str, market):
     """
-    處理單一季報 XLS 檔案
+    處理單一季報 XLS 檔案，提取本期、去年同期與 YoY
     """
     try:
-        # 使用 Pandas 讀取 Excel
         df_raw = pd.read_excel(file_path, engine='xlrd', header=None)
-        
-        # 尋找包含 "Code" 或 "代號" 的行作為 header
         header_idx = -1
         for idx, row in df_raw.head(15).iterrows():
             row_str = "".join(row.astype(str).tolist())
@@ -38,164 +54,106 @@ def process_file(file_path, date_str, market):
                 header_idx = idx
                 break
         
-        if header_idx == -1:
-            return None
-
-        # 取得表頭行名稱 (合併 header_idx 及其前後行，以應對多列標題)
-        merged_headers = []
-        for col_idx in range(len(df_raw.columns)):
-            parts = []
-            # 檢查 header_idx 附近幾行，合併成單一標題字串供模糊比對
-            for r_offset in range(-2, 2): 
-                r_idx = header_idx + r_offset
-                if 0 <= r_idx < len(df_raw):
-                    val = str(df_raw.iloc[r_idx, col_idx]).strip()
-                    if val and val != 'nan':
-                        parts.append(val.replace("\r", "").replace("\n", ""))
-            merged_headers.append(" ".join(parts))
-        header_row = merged_headers
-        
-        # 建立欄位映射 (索引基準)
-        col_map = {}
-        
-        # 共通模糊比對關鍵字 (適用於 SII 與 OTC)
-        for i, c in enumerate(header_row):
-            if "Code" in c and "Name" in c: col_map["symbol_name"] = i
-            elif "代號" in c: col_map["symbol"] = i
-            elif "名稱" in c: col_map["name"] = i
-            elif "營業收入" in c and "1-" not in c: col_map["revenue"] = i
-            elif "營業利益" in c or "Income(Lose) from Operation" in c: col_map["operating_income"] = i
-            elif "營業外" in c: col_map["non_operating_income"] = i
-            # 先檢查 EPS，因為它的字串通常包含 "稅後純益"
-            elif "每股盈餘" in c or "每股稅後純益" in c or "Net Income Per Share" in c: col_map["eps"] = i
-            elif "稅後淨利" in c or "稅後純益" in c or "Net Income after Tax" in c: col_map["net_income"] = i
-            elif "每股淨值" in c: col_map["nav_per_share"] = i
-            elif "流動比率" in c: col_map["current_ratio"] = i
-            elif "速動比率" in c: col_map["quick_ratio"] = i
-            elif "淨值佔總資產" in c: col_map["nav_asset_ratio"] = i
-            # 註：營業活動現金流量通常不在彙總報表 (C05001) 中，此處留作預留比對
-            elif "營業活動現金流量" in c or "Cash Flow from Operating" in c: col_map["operating_cash_flow"] = i
+        if header_idx == -1: return None
 
         if market == 'sii':
-            # TWSE SII 格式固定 (C05001 一般業彙總表)，若模糊比對失敗則使用硬編碼索引作為 Fallback
-            default_sii_map = {
-                "symbol": 0, "name": 1, "revenue": 2, "operating_income": 5,
-                "non_operating_income": 7, "net_income": 9, "eps": 13,
-                "nav_per_share": 15, "nav_asset_ratio": 16, "current_ratio": 17,
-                "quick_ratio": 18
+            mapping = {
+                "symbol": 0, "name": 1,
+                "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
+                "op_income": 5, "op_income_ly": 6,
+                "non_op_income": 7, "non_op_income_ly": 8,
+                "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
+                "pretax_income": 19, "pretax_income_ly": 20, "pretax_income_yoy": 21,
+                "eps": 13, "eps_ly": 14,
+                "capital": 12, "nav_per_share": 15, "equity_to_assets_ratio": 16,
+                "current_ratio": 17, "quick_ratio": 18
             }
-            for k, v in default_sii_map.items():
-                if k not in col_map: col_map[k] = v
-                
-        def extract_records(current_col_map):
-            results = []
-            for i in range(header_idx + 1, len(df_raw)):
-                row = df_raw.iloc[i]
-                sym_idx = current_col_map.get("symbol")
-                if sym_idx is None and "symbol_name" in current_col_map:
-                    sym_idx = current_col_map["symbol_name"]
-                if sym_idx is None: continue
-                
-                raw_symbol = str(row[sym_idx]).strip()
-                if raw_symbol.endswith(".0"): raw_symbol = raw_symbol[:-2]
-                
-                symbol = ""
-                name = ""
-                if len(raw_symbol) == 4 and raw_symbol.isdigit():
-                    symbol = raw_symbol
-                    name_idx = current_col_map.get("name")
-                    if name_idx is not None: 
-                        name = str(row[name_idx]).strip()
-                    elif market == 'otc' and sym_idx + 1 < len(row):
-                        next_val = str(row[sym_idx + 1]).strip()
-                        if next_val and next_val != 'nan' and not next_val.replace('.', '').isdigit():
-                            name = next_val
-                elif " " in raw_symbol: # 處理 "1101 台泥"
-                    parts = raw_symbol.split(maxsplit=1)
-                    if len(parts[0]) == 4 and parts[0].isdigit():
-                        symbol, name = parts[0], parts[1]
-                elif len(raw_symbol) > 4 and raw_symbol[:4].isdigit(): # 處理 "1101台泥"
-                    symbol = raw_symbol[:4]
-                    name = raw_symbol[4:]
-                
-                if not symbol: continue
-                
-                res = {
-                    "date": date_str, "symbol": symbol, "market": market, "name": name,
-                    "revenue": clean_numeric(row[current_col_map["revenue"]]) if "revenue" in current_col_map else None,
-                    "operating_income": clean_numeric(row[current_col_map["operating_income"]]) if "operating_income" in current_col_map else None,
-                    "non_operating_income": clean_numeric(row[current_col_map["non_operating_income"]]) if "non_operating_income" in current_col_map else None,
-                    "net_income": clean_numeric(row[current_col_map["net_income"]]) if "net_income" in current_col_map else None,
-                    "eps": clean_numeric(row[current_col_map["eps"]]) if "eps" in current_col_map else None,
-                    "total_assets": None, "total_liabilities": None, "current_assets": None, "current_liabilities": None,
-                    "nav_per_share": clean_numeric(row[current_col_map["nav_per_share"]]) if "nav_per_share" in current_col_map else None,
-                    "operating_cash_flow": clean_numeric(row[current_col_map["operating_cash_flow"]]) if "operating_cash_flow" in current_col_map else None,
-                    "current_ratio": clean_numeric(row[current_col_map["current_ratio"]]) if "current_ratio" in current_col_map else None,
-                    "quick_ratio": clean_numeric(row[current_col_map["quick_ratio"]]) if "quick_ratio" in current_col_map else None,
-                    "debt_ratio": None
-                }
-                nav_asset = clean_numeric(row[current_col_map["nav_asset_ratio"]]) if "nav_asset_ratio" in current_col_map else None
-                if nav_asset is not None: res["debt_ratio"] = 100.0 - nav_asset
-                results.append(res)
-            return results
+        else:
+            mapping = {
+                "symbol": 0, "name": 1,
+                "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
+                "op_income": 5, "op_income_ly": 6,
+                "non_op_income": 7, "non_op_income_ly": 8,
+                "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
+                "eps": 13, "eps_ly": 14,
+                "capital": 12, "nav_per_share": 15, "equity_to_assets_ratio": 16,
+                "current_ratio": 17, "quick_ratio": 18
+            }
 
-        records = extract_records(col_map)
-        
-        # SII 額外檢核：如果 EPS 或 Revenue 全為空值，代表 Fuzzy Match 可能對錯欄位，Fallback 到硬編碼
-        if market == 'sii' and records:
-            eps_null_ratio = sum(1 for r in records if r['eps'] is None) / len(records)
-            rev_null_ratio = sum(1 for r in records if r['revenue'] is None) / len(records)
-            if eps_null_ratio > 0.9 or rev_null_ratio > 0.9:
-                print(f"  [!] SII Fuzzy Match quality low (EPS null: {eps_null_ratio:.1%}). Falling back to hardcoded index.")
-                records = extract_records(default_sii_map)
-
-        if not records: return None
+        records = []
+        for i in range(header_idx + 1, len(df_raw)):
+            row = df_raw.iloc[i]
+            raw_symbol = str(row[mapping["symbol"]]).strip()
+            if raw_symbol.endswith(".0"): raw_symbol = raw_symbol[:-2]
             
-        if not records: return None
-        
-        schema = {
-            "date": pl.Utf8, "symbol": pl.Utf8, "market": pl.Utf8, "name": pl.Utf8,
-            "revenue": pl.Float64, "operating_income": pl.Float64, "non_operating_income": pl.Float64,
-            "net_income": pl.Float64, "eps": pl.Float64,
-            "total_assets": pl.Float64, "total_liabilities": pl.Float64, 
-            "current_assets": pl.Float64, "current_liabilities": pl.Float64,
-            "nav_per_share": pl.Float64, "operating_cash_flow": pl.Float64,
-            "current_ratio": pl.Float64, "quick_ratio": pl.Float64, "debt_ratio": pl.Float64
-        }
-        return pl.DataFrame(records, schema=schema)
+            if len(raw_symbol) != 4 or not raw_symbol.isdigit(): continue
+            
+            data = {f: None for f in FINAL_FIELDS}
+            data.update({"date": date_str, "symbol": raw_symbol, "market": market, "name": str(row[mapping["name"]]).strip()})
+            
+            for field, idx in mapping.items():
+                if field in ["date", "symbol", "market", "name"]: continue
+                data[field] = clean_numeric(row[idx]) if idx < len(row) else None
+            
+            # 補齊 YoY
+            if data["op_income_yoy"] is None:
+                data["op_income_yoy"] = calculate_yoy(data["op_income"], data["op_income_ly"])
+            if data["non_op_income_yoy"] is None:
+                data["non_op_income_yoy"] = calculate_yoy(data["non_op_income"], data["non_op_income_ly"])
+            if data["eps_yoy"] is None:
+                data["eps_yoy"] = calculate_yoy(data["eps"], data["eps_ly"])
+            
+            # OTC 手動計算稅前
+            if market == 'otc':
+                if data["op_income"] is not None and data["non_op_income"] is not None:
+                    data["pretax_income"] = data["op_income"] + data["non_op_income"]
+                if data["op_income_ly"] is not None and data["non_op_income_ly"] is not None:
+                    data["pretax_income_ly"] = data["op_income_ly"] + data["non_op_income_ly"]
+                data["pretax_income_yoy"] = calculate_yoy(data["pretax_income"], data["pretax_income_ly"])
+
+            records.append(data)
+            
+        return pl.DataFrame(records) if records else None
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
-        import traceback
-        traceback.print_exc()
         return None
 
 def main():
     raw_path = os.path.join(RAW_DIR, CATEGORY)
-    date_dirs = glob.glob(os.path.join(raw_path, "date=*"))
+    date_dirs = sorted(glob.glob(os.path.join(raw_path, "date=*")))
     
-    for date_dir in sorted(date_dirs):
+    for date_dir in date_dirs:
         date_str = os.path.basename(date_dir).split("=")[1]
-        print(f"\nProcessing {date_str}...")
-        
-        output_dir = os.path.join(PROCESSED_DIR, CATEGORY, f"date={date_str}")
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, "all.csv")
+        print(f"Processing {date_str}...")
         
         all_dfs = []
         for market in ["sii", "otc"]:
             xls_path = os.path.join(date_dir, f"{market}.xls")
             if os.path.exists(xls_path):
-                print(f"[*] Processing {market} file...")
                 df = process_file(xls_path, date_str, market)
-                if df is not None and not df.is_empty():
-                    all_dfs.append(df)
+                if df is not None: all_dfs.append(df)
         
         if all_dfs:
-            final_df = pl.concat(all_dfs)
-            final_df = final_df.unique(subset=["symbol"])
-            final_df.write_csv(output_file)
-            print(f"[+] Saved {final_df.height} combined records to {output_file}")
+            final_df = pl.concat(all_dfs).unique(subset=["symbol"])
+            # 強制統一欄位順序，確保匯入穩定
+            final_df = final_df.select(FINAL_FIELDS)
+            output_dir = os.path.join(PROCESSED_DIR, CATEGORY, f"date={date_str}")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, "all.csv")
+            final_df.write_csv(output_path)
+            print(f"  [+] Saved {final_df.height} records")
+            
+            # 簡易資料品質檢查 (Post-processing check)
+            if final_df.is_empty():
+                print(f"  [!] Warning: {date_str} generated an empty CSV.")
+            else:
+                # 檢查關鍵欄位是否全為 null (代表映射可能錯誤)
+                for col in ["revenue", "eps", "net_income"]:
+                    if col in final_df.columns:
+                        null_count = final_df.select(pl.col(col).null_count()).item()
+                        if null_count == final_df.height:
+                            print(f"  [!] CRITICAL: Column '{col}' is entirely NULL in {date_str}. Check mapping logic.")
 
 if __name__ == "__main__":
     main()

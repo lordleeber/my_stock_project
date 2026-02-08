@@ -526,8 +526,8 @@ def get_raw_shareholding(
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(
-    start_date: str = Query(..., description="Format: YYYYQ1 (e.g. 2020Q1)"),
-    end_date: str = Query(..., description="Format: YYYYQ1"),
+    start_date: str = Query(..., description="Format: YYYYQX (e.g. 2020Q1)"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
@@ -537,6 +537,13 @@ def get_raw_quarterly_reports(
     Fetch quarterly financial reports.
     Note: Date filtering for this endpoint uses 'YYYYQX' string format (e.g. '2020Q1'), not YYYY-MM-DD.
     """
+    import re
+    q_pattern = re.compile(r"^\d{4}Q[1-4]$")
+    if not q_pattern.match(start_date) or not q_pattern.match(end_date):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid date format. Quarterly reports require 'YYYYQX' format (e.g., 2025Q1)."
+        )
     return get_raw_data("quarterly_reports", start_date, end_date, symbol, market, limit, offset)
 
 import sys

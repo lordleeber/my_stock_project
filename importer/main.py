@@ -364,6 +364,71 @@ def import_data(engine):
                     print(traceback.format_exc())
             continue
 
+        # --- 特別處理 MOPS 季報三表 (income_statement / balance_sheet / cash_flow) ---
+        if category in ("income_statement", "balance_sheet", "cash_flow"):
+            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+            start_env = os.getenv("START_DATE")
+            end_env = os.getenv("END_DATE")
+
+            is_q_format = lambda s: s and len(s) == 6 and "Q" in s
+
+            for date_dir in date_dirs:
+                date_str = date_dir.split("=")[1]  # YYYYQX
+
+                if is_q_format(start_env):
+                    if date_str < start_env:
+                        continue
+                elif start_date:
+                    year, q = int(date_str[:4]), int(date_str[5])
+                    if datetime.datetime(year, q * 3, 1) < start_date.replace(day=1):
+                        continue
+
+                if is_q_format(end_env):
+                    if date_str > end_env:
+                        continue
+                elif end_date:
+                    year, q = int(date_str[:4]), int(date_str[5])
+                    if datetime.datetime(year, q * 3, 1) > end_date.replace(day=1):
+                        continue
+
+                csv_file = os.path.join(date_dir, "all.csv")
+                if not os.path.exists(csv_file):
+                    continue
+
+                table_name = f"{category}_raw"
+                try:
+                    if not force_reimport and date_exists_in_db(engine, table_name, date_str):
+                        print(f"Skipping {table_name} - {date_str} (already in DB)")
+                        continue
+
+                    print(f"Processing {table_name} - {date_str}...")
+                    df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                    if df.height == 0:
+                        print("  -> Empty file, skipping.")
+                        continue
+
+                    df = filter_etf(df)
+                    if df.height == 0:
+                        print("  -> No data after filtering ETFs, skipping.")
+                        continue
+
+                    if force_reimport:
+                        delete_by_date(engine, table_name, date_str)
+
+                    df.to_pandas().to_sql(
+                        name=table_name,
+                        con=engine,
+                        if_exists="append",
+                        index=False,
+                        chunksize=2000
+                    )
+                    print(f"  -> Imported {df.height} rows.")
+
+                except Exception:
+                    print(f"Failed to import {csv_file}")
+                    print(traceback.format_exc())
+            continue
+
         # --- 一般處理 (daily_quotes, etc.) ---
         date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
 
