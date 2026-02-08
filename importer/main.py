@@ -140,6 +140,26 @@ def import_data(engine):
     for category in categories:
         cat_path = os.path.join(data_dir, category)
 
+        # --- 特別處理 stock_info (股票基本資料，無日期欄位) ---
+        if category == "stock_info":
+            csv_file = os.path.join(cat_path, "all.csv")
+            if not os.path.exists(csv_file): continue
+            
+            print(f"Processing {category}...")
+            try:
+                df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                # 直接覆蓋整張表
+                df.to_pandas().to_sql(
+                    name="stock_info",
+                    con=engine,
+                    if_exists="replace",
+                    index=False
+                )
+                print(f"  -> Imported {df.height} stocks into stock_info.")
+            except Exception as e:
+                print(f"Failed to import stock_info: {e}")
+            continue
+
         # --- 特別處理 shareholding_div (集保股權分散表) ---
         if category == "shareholding_div":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))

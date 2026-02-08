@@ -253,5 +253,8 @@ SCHEMA_COLS = {
         "eps", "eps_ly", "eps_yoy",
         "capital", "nav_per_share", "equity_to_assets_ratio",
         "current_ratio", "quick_ratio"
+    ],
+    "stock_info": [
+        "symbol", "name", "industry", "market", "listing_date"
     ]
 }

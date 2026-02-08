@@ -302,6 +302,13 @@ class MonthlyRevenueRaw(BaseModel):
     revenue_cumulative_last_year: Optional[float] = None
     cumulative_yoy_pct: Optional[float] = None
 
+class StockInfoRaw(BaseModel):
+    symbol: str
+    name: str
+    industry: str
+    market: str
+    listing_date: Optional[str] = None
+
 class ShareholdingRaw(BaseModel):
     date: str
     symbol: str
@@ -482,6 +489,44 @@ def get_raw_data(
 
     except Exception as e:
         print(f"Raw Data Error ({table}): {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/raw/stock-info", response_model=List[StockInfoRaw])
+def get_raw_stock_info(
+    symbol: Optional[str] = None,
+    industry: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    """取得股票基本資料與產業分類"""
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+        
+        params = {"limit": limit, "offset": offset}
+        where_clauses = []
+        
+        if symbol:
+            params["symbol"] = symbol
+            where_clauses.append("symbol = :symbol")
+        if industry:
+            params["industry"] = industry
+            where_clauses.append("industry = :industry")
+        if market:
+            params["market"] = market.lower()
+            where_clauses.append("market = :market")
+            
+        sql_text = "SELECT * FROM stock_info"
+        if where_clauses:
+            sql_text += " WHERE " + " AND ".join(where_clauses)
+        sql_text += " ORDER BY symbol ASC LIMIT :limit OFFSET :offset"
+        
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql_text), conn, params=params)
+        
+        return df.to_dict(orient="records")
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/raw/daily-quotes", response_model=List[DailyQuoteRaw])

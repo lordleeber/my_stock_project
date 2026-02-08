@@ -209,8 +209,7 @@ services:
   validator:
     image: stock-processor
     build:
-      context: .
-      dockerfile: processor/Dockerfile
+      context: ./processor
     volumes:
       - ./data:/app/data
     command: ["python", "validator.py"]

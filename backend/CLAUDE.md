@@ -154,6 +154,7 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
+| `/raw/stock-info` | GET | `symbol?`, `industry?`, `market?`, `limit`, `offset` | `List[StockInfoRaw]` |
 | `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` |
 | `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` |
 | `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` |
@@ -244,6 +245,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
 - **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct
 - **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
+- **StockInfoRaw**: symbol, name, industry, market, listing_date
 - **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue, revenue_ly, revenue_yoy, op_income, op_income_ly, op_income_yoy, non_op_income, pretax_income, net_income, eps, eps_ly, eps_yoy, capital, nav_per_share, equity_to_assets_ratio, current_ratio, quick_ratio
 - **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue, cost_of_revenue, gross_profit, operating_expense, operating_income, non_operating_income, pretax_income, tax_expense, net_income, eps, etc.
 - **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, noncurrent_assets, total_assets, current_liabilities, total_liabilities, total_equity, share_capital, nav_per_share, etc.
