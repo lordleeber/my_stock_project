@@ -337,7 +337,8 @@ def import_data(engine):
                         continue
 
                     print(f"Processing {table_name} - {date_str}...")
-                    df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                    # 強制指定 date 和 symbol 為 Utf8，避免 Polars/Pandas 誤判日期格式
+                    df = pl.read_csv(csv_file, schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8})
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
                         continue

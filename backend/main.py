@@ -395,7 +395,8 @@ def get_raw_data(
             return []
         
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
-        if 'date' in df.columns:
+        # 註：季報 (quarterly_reports) 使用 YYYYQX 格式，應跳過轉換
+        if 'date' in df.columns and table != "quarterly_reports":
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
         
