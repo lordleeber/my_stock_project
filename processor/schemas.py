@@ -256,5 +256,8 @@ SCHEMA_COLS = {
     ],
     "stock_info": [
         "symbol", "name", "industry", "market", "listing_date"
+    ],
+    "stock_tags": [
+        "symbol", "tag"
     ]
 }

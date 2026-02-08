@@ -308,6 +308,7 @@ class StockInfoRaw(BaseModel):
     industry: str
     market: str
     listing_date: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 class ShareholdingRaw(BaseModel):
     date: str
@@ -509,22 +510,33 @@ def get_raw_stock_info(
         
         if symbol:
             params["symbol"] = symbol
-            where_clauses.append("symbol = :symbol")
+            where_clauses.append("s.symbol = :symbol")
         if industry:
             params["industry"] = industry
-            where_clauses.append("industry = :industry")
+            where_clauses.append("s.industry = :industry")
         if market:
             params["market"] = market.lower()
-            where_clauses.append("market = :market")
+            where_clauses.append("s.market = :market")
             
-        sql_text = "SELECT * FROM stock_info"
+        # 使用 LEFT JOIN 並透過 array_agg 合併標籤
+        sql_text = """
+            SELECT 
+                s.symbol, s.name, s.industry, s.market, s.listing_date,
+                array_agg(t.tag) FILTER (WHERE t.tag IS NOT NULL) as tags
+            FROM stock_info s
+            LEFT JOIN stock_tags t ON s.symbol = t.symbol
+        """
+        
         if where_clauses:
             sql_text += " WHERE " + " AND ".join(where_clauses)
-        sql_text += " ORDER BY symbol ASC LIMIT :limit OFFSET :offset"
+            
+        sql_text += " GROUP BY s.symbol, s.name, s.industry, s.market, s.listing_date"
+        sql_text += " ORDER BY s.symbol ASC LIMIT :limit OFFSET :offset"
         
         with engine.connect() as conn:
             df = pd.read_sql(text(sql_text), conn, params=params)
         
+        # 處理 DataFrame 中的 tags (SQL 回傳的是 list)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

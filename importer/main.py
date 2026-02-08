@@ -160,6 +160,25 @@ def import_data(engine):
                 print(f"Failed to import stock_info: {e}")
             continue
 
+        # --- 特別處理 stock_tags (股票標籤，無日期欄位) ---
+        if category == "stock_tags":
+            csv_file = os.path.join(cat_path, "all.csv")
+            if not os.path.exists(csv_file): continue
+            
+            print(f"Processing {category}...")
+            try:
+                df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                df.to_pandas().to_sql(
+                    name="stock_tags",
+                    con=engine,
+                    if_exists="replace",
+                    index=False
+                )
+                print(f"  -> Imported {df.height} mappings into stock_tags.")
+            except Exception as e:
+                print(f"Failed to import stock_tags: {e}")
+            continue
+
         # --- 特別處理 shareholding_div (集保股權分散表) ---
         if category == "shareholding_div":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
