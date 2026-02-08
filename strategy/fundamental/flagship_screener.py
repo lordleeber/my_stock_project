@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 
 # ---------------------------------------------------------
-# 基本面旗艦級選股系統 5.2 (完整歷史批次版)
+# 基本面旗艦級選股系統 5.3 (欄位順序最終修正版)
 # ---------------------------------------------------------
 
 API_BASE = "http://100.103.191.79:8000"
@@ -52,7 +52,7 @@ def get_config_for_quarter(q_str):
 
 def process_quarter(q_str):
     sim_date, rev_months = get_config_for_quarter(q_str)
-    print(f">>> 正在處理 {q_str} (公告模擬日: {sim_date})...")
+    print(f">>> 正在處理 {q_str}...")
     
     try:
         df_q = pd.DataFrame(requests.get(f"{API_BASE}/raw/quarterly-reports?start_date={q_str}&end_date={q_str}&limit=3000").json())
@@ -60,6 +60,7 @@ def process_quarter(q_str):
         df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={sim_date}&end_date={sim_date}&limit=5000").json())
         df_info = pd.DataFrame(requests.get(f"{API_BASE}/raw/stock-info?limit=5000").json())
         
+        actual_date = sim_date
         if df_p.empty:
             curr = datetime.strptime(sim_date, "%Y-%m-%d")
             for _ in range(5):
@@ -67,7 +68,7 @@ def process_quarter(q_str):
                 d_str = curr.strftime("%Y-%m-%d")
                 df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={d_str}&end_date={d_str}&limit=5000").json())
                 if not df_p.empty: 
-                    sim_date = d_str
+                    actual_date = d_str
                     break
 
         all_rev = []
@@ -77,7 +78,7 @@ def process_quarter(q_str):
         df_r = pd.DataFrame(all_rev)
 
         if df_q.empty or df_p.empty or df_r.empty:
-            print(f"  [跳過] 資料不足 (Q:{len(df_q)} P:{len(df_p)} R:{len(df_r)})")
+            print(f"  [跳過] 資料不足")
             return
 
         for d in [df_q, df_cf, df_p, df_r, df_info]: d['symbol'] = d['symbol'].astype(str)
@@ -117,11 +118,12 @@ def process_quarter(q_str):
                             (df['safety_score'] * 0.10) + (df['value_score'] * 0.10)
 
         df = df.rename(columns={'close': 'market_price', 'rev_avg_3m': 'avg_revenue_yoy_3m'})
-        df['price_date'] = sim_date
+        df['price_date'] = actual_date
         df['report_quarter'] = q_str
 
+        # 欄位順序對調：price_date 在前, market_price 在後
         final_cols = [
-            'symbol', 'name', 'industry', 'market_price', 'price_date', 'report_quarter',
+            'symbol', 'name', 'industry', 'price_date', 'market_price', 'report_quarter',
             'pe_ratio', 'value_score', 'eps_yoy', 'growth_score',
             'avg_revenue_yoy_3m', 'momentum_score', 'op_margin', 'profit_score',
             'cash_quality', 'quality_score', 'equity_to_assets_ratio', 'safety_score',
@@ -131,21 +133,14 @@ def process_quarter(q_str):
         final_df = df[final_cols].sort_values('total_score', ascending=False)
         output_path = os.path.join("strategy", "fundamental", f"fundamental_report_{q_str}.csv")
         final_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"  [成功] 已產生報告，決策日：{sim_date}")
+        print(f"  [完成] 報告儲存至 {output_path}")
 
     except Exception as e:
         print(f"  [失敗] {q_str} 異常: {e}")
 
 def main():
-    quarters = []
-    # 完整產生 2020Q1 到 2025Q3
-    for y in range(2020, 2026):
-        for q in ["Q1", "Q2", "Q3", "Q4"]:
-            qs = f"{y}{q}"
-            if y == 2025 and q == "Q4": break
-            quarters.append(qs)
-    
-    print(f"啟動 2020-2025 完整批次報告產生器...")
+    quarters = ["2024Q4", "2025Q1", "2025Q2", "2025Q3"]
+    print(f"啟動報告產生器 (修正欄位順序: price_date, market_price)...")
     for q in quarters:
         process_quarter(q)
         time.sleep(0.5)
