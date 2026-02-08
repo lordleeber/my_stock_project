@@ -342,6 +342,64 @@ class QuarterlyReportRaw(BaseModel):
     current_ratio: Optional[float] = None
     quick_ratio: Optional[float] = None
 
+class IncomeStatementRaw(BaseModel):
+    date: str
+    market: str
+    symbol: str
+    name: Optional[str] = None
+    statement_type: Optional[str] = None
+    revenue: Optional[float] = None
+    cost_of_revenue: Optional[float] = None
+    gross_profit: Optional[float] = None
+    operating_expense: Optional[float] = None
+    operating_income: Optional[float] = None
+    non_operating_income: Optional[float] = None
+    pretax_income: Optional[float] = None
+    tax_expense: Optional[float] = None
+    net_income: Optional[float] = None
+    other_comprehensive_income: Optional[float] = None
+    comprehensive_income: Optional[float] = None
+    eps: Optional[float] = None
+    net_interest_income: Optional[float] = None
+    non_interest_income: Optional[float] = None
+    net_revenue: Optional[float] = None
+    other_income_net: Optional[float] = None
+
+class BalanceSheetRaw(BaseModel):
+    date: str
+    market: str
+    symbol: str
+    name: Optional[str] = None
+    statement_type: Optional[str] = None
+    current_assets: Optional[float] = None
+    noncurrent_assets: Optional[float] = None
+    total_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+    noncurrent_liabilities: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    total_equity: Optional[float] = None
+    equity_parent: Optional[float] = None
+    share_capital: Optional[float] = None
+    capital_surplus: Optional[float] = None
+    retained_earnings: Optional[float] = None
+    other_equity: Optional[float] = None
+    treasury_shares: Optional[float] = None
+    nav_per_share: Optional[float] = None
+
+class CashFlowRaw(BaseModel):
+    date: str
+    market: str
+    symbol: str
+    name: Optional[str] = None
+    statement_type: Optional[str] = None
+    cash_flow_operating: Optional[float] = None
+    cash_flow_investing: Optional[float] = None
+    cash_flow_financing: Optional[float] = None
+    fx_effect: Optional[float] = None
+    net_cash_change: Optional[float] = None
+    cash_begin: Optional[float] = None
+    cash_end: Optional[float] = None
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
@@ -395,8 +453,9 @@ def get_raw_data(
             return []
         
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
-        # 註：季報 (quarterly_reports) 使用 YYYYQX 格式，應跳過轉換
-        if 'date' in df.columns and table != "quarterly_reports":
+        # 註：季報與財報使用 YYYYQX 格式，應跳過轉換
+        quarterly_tables = ["quarterly_reports", "income_statement", "balance_sheet", "cash_flow"]
+        if 'date' in df.columns and table not in quarterly_tables:
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
         
@@ -553,6 +612,48 @@ def get_raw_quarterly_reports(
             detail="Invalid date format. Quarterly reports require 'YYYYQX' format (e.g., 2025Q1)."
         )
     return get_raw_data("quarterly_reports", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/income-statements", response_model=List[IncomeStatementRaw])
+def get_raw_income_statements(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("income_statement", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/balance-sheets", response_model=List[BalanceSheetRaw])
+def get_raw_balance_sheets(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("balance_sheet", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/cash-flows", response_model=List[CashFlowRaw])
+def get_raw_cash_flows(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("cash_flow", start_date, end_date, symbol, market, limit, offset)
 
 import sys
 # 確保能 import strategy

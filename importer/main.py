@@ -302,19 +302,16 @@ def import_data(engine):
             # ... (現有邏輯保持不變)
             continue
 
-        # --- 特別處理 quarterly_reports (公司季報) ---
-        if category == "quarterly_reports":
+        # --- 特別處理季報與詳細財報 (YYYYQX 格式) ---
+        if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow"):
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
             start_env = os.getenv("START_DATE")
             end_env = os.getenv("END_DATE")
+            is_q_format = lambda s: s and len(s) == 6 and "Q" in s
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1] # YYYYQX
+                date_str = date_dir.split("=")[1]  # YYYYQX
 
-                # 季報日期過濾：優先使用 YYYYQX 字串比對 (最精確)
-                # 若環境變數不是 YYYYQX 格式，則 fallback 到 datetime 粗略轉換比對
-                is_q_format = lambda s: s and len(s) == 6 and 'Q' in s
-                
                 if is_q_format(start_env):
                     if date_str < start_env: continue
                 elif start_date:
@@ -330,14 +327,14 @@ def import_data(engine):
                 csv_file = os.path.join(date_dir, "all.csv")
                 if not os.path.exists(csv_file): continue
 
-                table_name = "quarterly_reports"
+                table_name = category
                 try:
                     if not force_reimport and date_exists_in_db(engine, table_name, date_str):
                         print(f"Skipping {table_name} - {date_str} (already in DB)")
                         continue
 
                     print(f"Processing {table_name} - {date_str}...")
-                    # 強制指定 date 和 symbol 為 Utf8，避免 Polars/Pandas 誤判日期格式
+                    # 強制指定 date 和 symbol 為 Utf8
                     df = pl.read_csv(csv_file, schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8})
                     if df.height == 0:
                         print("  -> Empty file, skipping.")
@@ -361,71 +358,6 @@ def import_data(engine):
                     print(f"  -> Imported {df.height} rows.")
 
                 except Exception as e:
-                    print(f"Failed to import {csv_file}")
-                    print(traceback.format_exc())
-            continue
-
-        # --- 特別處理 MOPS 季報三表 (income_statement / balance_sheet / cash_flow) ---
-        if category in ("income_statement", "balance_sheet", "cash_flow"):
-            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
-            start_env = os.getenv("START_DATE")
-            end_env = os.getenv("END_DATE")
-
-            is_q_format = lambda s: s and len(s) == 6 and "Q" in s
-
-            for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]  # YYYYQX
-
-                if is_q_format(start_env):
-                    if date_str < start_env:
-                        continue
-                elif start_date:
-                    year, q = int(date_str[:4]), int(date_str[5])
-                    if datetime.datetime(year, q * 3, 1) < start_date.replace(day=1):
-                        continue
-
-                if is_q_format(end_env):
-                    if date_str > end_env:
-                        continue
-                elif end_date:
-                    year, q = int(date_str[:4]), int(date_str[5])
-                    if datetime.datetime(year, q * 3, 1) > end_date.replace(day=1):
-                        continue
-
-                csv_file = os.path.join(date_dir, "all.csv")
-                if not os.path.exists(csv_file):
-                    continue
-
-                table_name = f"{category}_raw"
-                try:
-                    if not force_reimport and date_exists_in_db(engine, table_name, date_str):
-                        print(f"Skipping {table_name} - {date_str} (already in DB)")
-                        continue
-
-                    print(f"Processing {table_name} - {date_str}...")
-                    df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
-                    if df.height == 0:
-                        print("  -> Empty file, skipping.")
-                        continue
-
-                    df = filter_etf(df)
-                    if df.height == 0:
-                        print("  -> No data after filtering ETFs, skipping.")
-                        continue
-
-                    if force_reimport:
-                        delete_by_date(engine, table_name, date_str)
-
-                    df.to_pandas().to_sql(
-                        name=table_name,
-                        con=engine,
-                        if_exists="append",
-                        index=False,
-                        chunksize=2000
-                    )
-                    print(f"  -> Imported {df.height} rows.")
-
-                except Exception:
                     print(f"Failed to import {csv_file}")
                     print(traceback.format_exc())
             continue
