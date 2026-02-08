@@ -155,11 +155,15 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
 | `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` |
+| `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` |
+| `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` |
+| `/raw/cash-flows` | GET | Same as quarterly-reports | `List[CashFlowRaw]` |
 
 **Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
 - **Features:** Supports pagination via `limit` (max 5000) & `offset`. 
 - **Data Integrity:** Automatically handles non-JSON values (NaN/Inf) by converting them to `null`.
 - **Sorting:** Defaults to `date DESC` (and `symbol ASC` where applicable).
+- **Date Format:** Financial statements (`quarterly-reports`, `income-statements`, etc.) use **`YYYYQX`** string format (e.g., `2025Q3`). Backend logic is optimized to preserve this format without automatic date conversion.
 
 **Pagination Example:**
 To fetch the first 1000 records:
@@ -240,7 +244,10 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
 - **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct
 - **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
-- **QuarterlyReportRaw**: date (YYYYQX), symbol, market, revenue, operating_income, net_income, eps, total_assets, total_liabilities, current_assets, current_liabilities, operating_cash_flow, current_ratio, quick_ratio, debt_ratio, nav_per_share
+- **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue, revenue_ly, revenue_yoy, op_income, op_income_ly, op_income_yoy, non_op_income, pretax_income, net_income, eps, eps_ly, eps_yoy, capital, nav_per_share, equity_to_assets_ratio, current_ratio, quick_ratio
+- **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue, cost_of_revenue, gross_profit, operating_expense, operating_income, non_operating_income, pretax_income, tax_expense, net_income, eps, etc.
+- **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, noncurrent_assets, total_assets, current_liabilities, total_liabilities, total_equity, share_capital, nav_per_share, etc.
+- **CashFlowRaw**: date (YYYYQX), symbol, market, name, cash_flow_operating, cash_flow_investing, cash_flow_financing, net_cash_change, cash_begin, cash_end
 
 ## Database Tables Used
 
@@ -352,6 +359,12 @@ curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026-01-0
 
 # Get raw quarterly reports (Uses YYYYQX format)
 curl "http://localhost:8000/raw/quarterly-reports?symbol=2330&start_date=2024Q1&end_date=2025Q3"
+
+# Get raw income statements
+curl "http://localhost:8000/raw/income-statements?symbol=2330&start_date=2025Q3&end_date=2025Q3"
+
+# Get raw balance sheets
+curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end_date=2025Q3"
 ```
 
 ## Adding a New Endpoint

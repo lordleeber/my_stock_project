@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from main import app
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+Q_DATE_RE = re.compile(r"^\d{4}Q[1-4]$")
 
 
 @pytest.fixture(scope="session")
@@ -133,6 +134,46 @@ CASES = [
         "required_non_empty": ["date", "symbol"],
         "expected_fields": ["date", "symbol", "level", "level_name", "holders", "shares", "percentage"],
     },
+    {
+        "endpoint": "/raw/quarterly-reports",
+        "table": "quarterly_reports",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": [
+            "date", "symbol", "name", "market",
+            "revenue", "revenue_ly", "revenue_yoy",
+            "eps", "eps_ly", "eps_yoy"
+        ],
+        "is_q_format": True,
+    },
+    {
+        "endpoint": "/raw/income-statements",
+        "table": "income_statement",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": ["date", "symbol", "revenue", "net_income", "eps"],
+        "is_q_format": True,
+    },
+    {
+        "endpoint": "/raw/balance-sheets",
+        "table": "balance_sheet",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": ["date", "symbol", "total_assets", "total_equity", "nav_per_share"],
+        "is_q_format": True,
+    },
+    {
+        "endpoint": "/raw/cash-flows",
+        "table": "cash_flow",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": ["date", "symbol", "cash_flow_operating", "net_cash_change"],
+        "is_q_format": True,
+    },
 ]
 
 
@@ -156,7 +197,13 @@ def test_raw_endpoint_returns_data_for_latest_row(case, client, engine):
     assert isinstance(data, list)
     assert len(data) >= 1
     assert "date" in data[0]
-    assert DATE_RE.match(data[0]["date"])
+    
+    # Date format check based on case type
+    if case.get("is_q_format"):
+        assert Q_DATE_RE.match(data[0]["date"])
+    else:
+        assert DATE_RE.match(data[0]["date"])
+
     # Field completeness check (allow extra fields, but require expected ones)
     expected = set(case["expected_fields"])
     assert expected.issubset(set(data[0].keys()))
@@ -188,7 +235,10 @@ def test_raw_endpoint_field_types(case, client, engine):
 
         if field == "date":
             assert isinstance(val, str)
-            assert DATE_RE.match(val)
+            if case.get("is_q_format"):
+                assert Q_DATE_RE.match(val)
+            else:
+                assert DATE_RE.match(val)
             continue
 
         if field in ("symbol", "market", "name", "direction", "institution", "item", "level_name", "bid", "ask"):
@@ -235,9 +285,12 @@ def test_raw_endpoint_limit_behavior(case, client, engine):
 def test_raw_endpoint_offset_behavior(case, client, engine):
     """Verify that offset correctly shifts the result set."""
     # Fetch 2 rows with limit=2, offset=0
+    start_date = "2020Q1" if case.get("is_q_format") else "2020-01-01"
+    end_date = "2026Q4" if case.get("is_q_format") else "2026-12-31"
+    
     params = {
-        "start_date": "2020-01-01",
-        "end_date": "2026-12-31",
+        "start_date": start_date,
+        "end_date": end_date,
         "limit": 2,
         "offset": 0
     }
@@ -263,8 +316,8 @@ def test_raw_endpoint_offset_behavior(case, client, engine):
 @pytest.mark.parametrize("case", CASES)
 def test_raw_endpoint_no_data_returns_empty(case, client):
     params = {
-        "start_date": "2100-01-01",
-        "end_date": "2100-01-01",
+        "start_date": "2100Q1" if case.get("is_q_format") else "2100-01-01",
+        "end_date": "2100Q1" if case.get("is_q_format") else "2100-01-01",
         "limit": 5,
     }
     if "symbol" in case["params"]:
@@ -282,8 +335,8 @@ def test_raw_endpoint_no_data_returns_empty(case, client):
 @pytest.mark.parametrize("case", CASES)
 def test_raw_endpoint_start_date_after_end_date_returns_empty(case, client):
     params = {
-        "start_date": "2026-12-31",
-        "end_date": "2026-01-01",
+        "start_date": "2026Q4" if case.get("is_q_format") else "2026-12-31",
+        "end_date": "2026Q1" if case.get("is_q_format") else "2026-01-01",
         "limit": 5,
     }
     if "symbol" in case["params"]:
