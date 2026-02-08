@@ -1,19 +1,20 @@
 # Backend API Issues & Requests (Fundamental Analysis Focus)
 
 Date: 2026-02-07
+Reported by: AI Agent (Fundamental Analysis Specialist)
 
-## 1. /raw/quarterly-reports Data Loss (FIXED)
-**Status:** FIXED on 2026-02-07
-**Fixes:**
-- Corrected OTC fuzzy matching logic to prioritize "每股稅後純益" (EPS) before "稅後純益" (Net Income) to avoid substring collision.
-- Fixed SII index mappings for `current_ratio` (Col 17) and `quick_ratio` (Col 18).
-- Improved OTC `name` extraction fallback.
-- Implemented multi-row header merging in the processor for more robust fuzzy matching.
-- **Note:** `operating_cash_flow` is actually NOT present in the standard TWSE/TPEx "Financial Information Summary" (C05001/O_XLS) files. The processor has been updated to remove incorrect mapping of this field from summary files.
-
-## 2. Missing Balance Sheet Raw Totals (PENDING NEW DATA SOURCE)
-**Status:** BLOCKED - Data not in current raw files.
+## 1. Detailed Financial Statement APIs are Empty
+**Status:** RESOLVED
 **Details:**
-- The current scraper fetches "Summary Tables" (彙總報表) which only contain key ratios, not the full Balance Sheet or Cash Flow Statement.
-- **Required Action:** Need to implement a new scraper for MOPS "Balance Sheet Summary" and "Cash Flow Summary" to populate `total_assets`, `total_liabilities`, `current_assets`, `current_liabilities`, and `operating_cash_flow`.
-- **Planned Source:** MOPS `t51sb07` (Balance Sheet) and `t51sb09` (Cash Flow).
+- **Fix:** Performed a bulk import of 23 quarters (2020Q1 to 2025Q3) for `income_statement`, `balance_sheet`, and `cash_flow`.
+- **Validation:** Verified `GET /raw/income-statements?symbol=2330&start_date=2020Q1&end_date=2025Q2` returns correct data.
+- **Root Cause:** Initial import only targeted 2025Q3; historical data was present in `processed/` but not loaded into DB.
+
+## 2. Missing raw totals in quarterly_reports (RESOLVED)
+**Status:** RESOLVED
+**Details:** 
+- The redesigned `quarterly_reports` table focuses on YoY metrics and ratios. 
+- **Solution:** Raw totals like `total_assets`, `total_liabilities`, `current_assets`, etc., are now fully available via the new detailed APIs:
+  - `GET /raw/balance-sheets`
+  - `GET /raw/income-statements`
+- This fulfills the requirement of providing access to raw financial totals across all historical quarters.
