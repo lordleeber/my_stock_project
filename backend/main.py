@@ -310,6 +310,10 @@ class StockInfoRaw(BaseModel):
     listing_date: Optional[str] = None
     tags: Optional[List[str]] = None
 
+class StockTagRaw(BaseModel):
+    symbol: str
+    tag: str
+
 class ShareholdingRaw(BaseModel):
     date: str
     symbol: str
@@ -537,6 +541,42 @@ def get_raw_stock_info(
             df = pd.read_sql(text(sql_text), conn, params=params)
         
         # 處理 DataFrame 中的 tags (SQL 回傳的是 list)
+        return df.to_dict(orient="records")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/raw/stock-tags", response_model=List[StockTagRaw])
+def get_raw_stock_tags(
+    symbol: Optional[str] = None,
+    tag: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    """取得股票標籤對照 (symbol, tag)"""
+    try:
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+
+        params = {"limit": limit, "offset": offset}
+        where_clauses = []
+        if symbol:
+            params["symbol"] = symbol
+            where_clauses.append("symbol = :symbol")
+        if tag:
+            params["tag"] = tag
+            where_clauses.append("tag = :tag")
+
+        sql_text = "SELECT symbol, tag FROM stock_tags"
+        if where_clauses:
+            sql_text += " WHERE " + " AND ".join(where_clauses)
+        sql_text += " ORDER BY symbol ASC, tag ASC LIMIT :limit OFFSET :offset"
+
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql_text), conn, params=params)
+
+        if df.empty:
+            return []
+        df["symbol"] = df["symbol"].astype(str)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
