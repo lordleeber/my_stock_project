@@ -109,18 +109,36 @@ def read_raw_csv(file_path, category=None):
                     else:
                         merged_header.append(sub)
                 
-                # 使用合併後的標題重建資料
-                data_lines = lines[header_idx+1:]
-                content = ",".join(merged_header) + "\n" + "".join(data_lines)
-                data_lines = lines[header_idx+1:]
-                content = ",".join(merged_header) + "\n" + "".join(data_lines)
-            else:
-                content = "".join(lines[header_idx:])
-        else:
-            content = "".join(lines[header_idx:])
+        # 使用合併後的標題重建資料
+        # 關鍵修正: 處理每行逗號數量不一的問題 (Ragged lines) 並正確處理引號內的逗號
+        import csv
+        header_line = ",".join(merged_header if 'merged_header' in locals() else current_header)
+        expected_cols = len(header_line.split(","))
+        
+        cleaned_lines = [header_line]
+        for line in lines[header_idx+1:]:
+            if not line.strip() or line.strip().replace(",", "") == "":
+                continue
+            
+            # 使用 csv.reader 解析單行，正確處理 "公司,名稱" 這種格式
+            try:
+                reader = csv.reader([line.strip()])
+                parts = next(reader)
+            except:
+                parts = line.strip().split(",")
+                
+            if len(parts) > expected_cols:
+                parts = parts[:expected_cols]
+            elif len(parts) < expected_cols:
+                parts.extend([""] * (expected_cols - len(parts)))
+            
+            # 重新組合成標準 CSV 行 (不含引號以簡化後續處理)
+            cleaned_lines.append(",".join(['"' + p.replace('"', '""') + '"' for p in parts]))
+
+        content = "\n".join(cleaned_lines)
 
         df = pl.read_csv(BytesIO(content.encode('utf-8')), infer_schema_length=0, 
-                         ignore_errors=True, truncate_ragged_lines=True)
+                         ignore_errors=True)
         
         # 4. 執行清洗
         df = clean_dataframe(df)
