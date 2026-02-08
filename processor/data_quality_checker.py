@@ -340,18 +340,18 @@ def check_market_indices(date_str):
 def check_monthly_revenue(date_str):
     """Check monthly_revenue data quality
 
-    Note: Monthly revenue uses YYYY-MM directory format, not YYYYMMDD.
-    This check converts date_str to YYYY-MM format.
+    Note: Monthly revenue uses YYYYMXX directory format.
+    This check converts date_str to YYYYMXX format.
     """
     issues = []
 
     try:
-        # Convert YYYYMMDD to YYYY-MM
+        # Convert YYYYMMDD to YYYYMXX
         year = date_str[:4]
         month = date_str[4:6]
-        ym_str = f"{year}-{month}"
+        ym_q_str = f"{year}M{month}"
 
-        file_path = Path(f"data/processed/monthly_revenue/{ym_str}/revenue_{year}{month}.csv")
+        file_path = Path(f"data/processed/monthly_revenue/date={ym_q_str}/all.csv")
 
         if not file_path.exists():
             # Monthly revenue is optional (only available after 10th of each month)
@@ -361,8 +361,18 @@ def check_monthly_revenue(date_str):
         df = pd.read_csv(file_path)
 
         if len(df) == 0:
-            issues.append(f"monthly_revenue {ym_str}: File is empty (0 rows)")
+            issues.append(f"monthly_revenue {ym_q_str}: File is empty (0 rows)")
             return issues
+
+        # Check date format (should be YYYYMXX)
+        if 'date' in df.columns:
+            import re
+            invalid_dates = df[~df['date'].astype(str).str.match(r'^\d{4}M\d{2}$')]
+            if len(invalid_dates) > 0:
+                issues.append(
+                    f"monthly_revenue {ym_q_str}: Found {len(invalid_dates)} rows with invalid date format "
+                    f"(expected YYYYMXX, e.g., 2025M01)"
+                )
 
         # Key columns for revenue
         key_columns = [

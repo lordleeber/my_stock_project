@@ -13,6 +13,7 @@ from main import app
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 Q_DATE_RE = re.compile(r"^\d{4}Q[1-4]$")
+M_DATE_RE = re.compile(r"^\d{4}M\d{2}$")
 
 
 @pytest.fixture(scope="session")
@@ -125,6 +126,7 @@ CASES = [
             "mom_pct", "yoy_pct",
             "revenue_cumulative", "revenue_cumulative_last_year", "cumulative_yoy_pct"
         ],
+        "is_q_format": True,
     },
     {
         "endpoint": "/raw/shareholding",
@@ -200,7 +202,7 @@ def test_raw_endpoint_returns_data_for_latest_row(case, client, engine):
     
     # Date format check based on case type
     if case.get("is_q_format"):
-        assert Q_DATE_RE.match(data[0]["date"])
+        assert Q_DATE_RE.match(data[0]["date"]) or M_DATE_RE.match(data[0]["date"])
     else:
         assert DATE_RE.match(data[0]["date"])
 
@@ -236,7 +238,7 @@ def test_raw_endpoint_field_types(case, client, engine):
         if field == "date":
             assert isinstance(val, str)
             if case.get("is_q_format"):
-                assert Q_DATE_RE.match(val)
+                assert Q_DATE_RE.match(val) or M_DATE_RE.match(val)
             else:
                 assert DATE_RE.match(val)
             continue

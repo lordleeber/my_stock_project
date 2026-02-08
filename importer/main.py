@@ -140,62 +140,6 @@ def import_data(engine):
     for category in categories:
         cat_path = os.path.join(data_dir, category)
 
-        # --- 特別處理 monthly_revenue (月營收) ---
-        if category == "monthly_revenue":
-            subdirs = sorted([d for d in os.listdir(cat_path) if os.path.isdir(os.path.join(cat_path, d))])
-
-            for subdir in subdirs:
-                if len(subdir) != 7: continue
-
-                try:
-                    month_date = datetime.datetime.strptime(f"{subdir}-01", "%Y-%m-%d")
-                    if start_date:
-                        if month_date < start_date.replace(day=1): continue
-                    if end_date:
-                        if month_date > end_date.replace(day=1): continue
-                except ValueError:
-                    continue
-
-                csv_files = glob.glob(os.path.join(cat_path, subdir, "*.csv"))
-                for csv_file in csv_files:
-                    table_name = "monthly_revenue"
-                    try:
-                        target_date = f"{subdir}-01"
-
-                        # 檢查是否已存在
-                        if not force_reimport and date_exists_in_db(engine, table_name, target_date):
-                            print(f"Skipping {table_name} - {subdir} (already in DB)")
-                            continue
-
-                        print(f"Processing {table_name} - {subdir}...")
-                        df = pl.read_csv(csv_file)
-                        if df.height == 0:
-                            print("  -> Empty file, skipping.")
-                            continue
-
-                        df = filter_etf(df)
-                        if df.height == 0:
-                            print("  -> No data after filtering ETFs, skipping.")
-                            continue
-
-                        # 強制重新匯入時先刪除
-                        if force_reimport:
-                            delete_by_date(engine, table_name, target_date)
-
-                        df.to_pandas().to_sql(
-                            name=table_name,
-                            con=engine,
-                            if_exists="append",
-                            index=False,
-                            chunksize=2000
-                        )
-                        print(f"  -> Imported {df.height} rows.")
-
-                    except Exception as e:
-                        print(f"Failed to import {csv_file}")
-                        print(traceback.format_exc())
-            continue
-
         # --- 特別處理 shareholding_div (集保股權分散表) ---
         if category == "shareholding_div":
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
@@ -302,27 +246,45 @@ def import_data(engine):
             # ... (現有邏輯保持不變)
             continue
 
-        # --- 特別處理季報與詳細財報 (YYYYQX 格式) ---
-        if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow"):
+        # --- 特別處理季報、詳細財報與月營收 (YYYYQX / YYYYMXX 格式) ---
+        if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
             date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
             start_env = os.getenv("START_DATE")
             end_env = os.getenv("END_DATE")
-            is_q_format = lambda s: s and len(s) == 6 and "Q" in s
+            # 支援 2025Q3 或 2025M01 格式
+            is_period_format = lambda s: s and len(s) >= 6 and ("Q" in s or "M" in s)
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]  # YYYYQX
+                date_str = date_dir.split("=")[1]  # YYYYQX or YYYYMXX
 
-                if is_q_format(start_env):
+                if is_period_format(start_env):
                     if date_str < start_env: continue
                 elif start_date:
-                    year, q = int(date_str[:4]), int(date_str[5])
-                    if datetime.datetime(year, q * 3, 1) < start_date.replace(day=1): continue
+                    # Fallback 到 datetime 粗略比對
+                    try:
+                        if "Q" in date_str:
+                            year, q = int(date_str[:4]), int(date_str[5])
+                            compare_date = datetime.datetime(year, q * 3, 1)
+                        else:
+                            year, m = int(date_str[:4]), int(date_str[6:])
+                            compare_date = datetime.datetime(year, m, 1)
+                        
+                        if compare_date < start_date.replace(day=1): continue
+                    except: pass
 
-                if is_q_format(end_env):
+                if is_period_format(end_env):
                     if date_str > end_env: continue
                 elif end_date:
-                    year, q = int(date_str[:4]), int(date_str[5])
-                    if datetime.datetime(year, q * 3, 1) > end_date.replace(day=1): continue
+                    try:
+                        if "Q" in date_str:
+                            year, q = int(date_str[:4]), int(date_str[5])
+                            compare_date = datetime.datetime(year, q * 3, 1)
+                        else:
+                            year, m = int(date_str[:4]), int(date_str[6:])
+                            compare_date = datetime.datetime(year, m, 1)
+                        
+                        if compare_date > end_date.replace(day=1): continue
+                    except: pass
 
                 csv_file = os.path.join(date_dir, "all.csv")
                 if not os.path.exists(csv_file): continue

@@ -134,14 +134,15 @@ def process_monthly_revenue():
             if col in final_df.columns:
                 final_df[col] = final_df[col].apply(clean_number)
         
-        final_df['date'] = f"{year_str}-{month_str}-01"
+        # 使用 YYYYMXX 格式，例如 2025M01
+        final_df['date'] = f"{year_str}M{month_str}"
         
-        # 輸出路徑格式: data/processed/revenue/YYYY-MM/
-        subdir_name = f"{year_str}-{month_str}"
+        # 輸出路徑格式: data/processed/monthly_revenue/date=YYYYMXX/
+        subdir_name = f"date={year_str}M{month_str}"
         output_dir = os.path.join(PROCESSED_DIR, subdir_name)
         os.makedirs(output_dir, exist_ok=True)
         
-        output_file = os.path.join(output_dir, f"revenue_{ym_str}.csv")
+        output_file = os.path.join(output_dir, "all.csv")
         final_df.to_csv(output_file, index=False, encoding='utf-8')
         print(f"Saved {len(final_df)} records to {output_file}")
 

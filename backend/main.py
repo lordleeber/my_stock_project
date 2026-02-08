@@ -289,7 +289,7 @@ class MarketIndexRaw(BaseModel):
     change_pct: Optional[float] = None
 
 class MonthlyRevenueRaw(BaseModel):
-    date: str
+    date: str  # Format: YYYYMXX (e.g. 2025M01)
     symbol: str
     market: str
     name: Optional[str] = None
@@ -453,9 +453,9 @@ def get_raw_data(
             return []
         
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
-        # 註：季報與財報使用 YYYYQX 格式，應跳過轉換
-        quarterly_tables = ["quarterly_reports", "income_statement", "balance_sheet", "cash_flow"]
-        if 'date' in df.columns and table not in quarterly_tables:
+        # 註：季報、財報與月營收使用 YYYYQX/YYYYMXX 格式，應跳過轉換
+        periodic_tables = ["quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"]
+        if 'date' in df.columns and table not in periodic_tables:
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
         
@@ -572,13 +572,16 @@ def get_raw_market_indices(
 
 @app.get("/raw/monthly-revenue", response_model=List[MonthlyRevenueRaw])
 def get_raw_monthly_revenue(
-    start_date: str = Query(..., description="YYYY-MM-DD"),
-    end_date: str = Query(..., description="YYYY-MM-DD"),
+    start_date: str = Query(..., description="Format: YYYYMXX (e.g. 2025M01) or YYYY-MM-DD"),
+    end_date: str = Query(..., description="Format: YYYYMXX"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
+    import re
+    m_pattern = re.compile(r"^\d{4}M\d{2}$")
+    # 如果是 YYYYMXX 格式則直接傳入，否則保持原樣
     return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/shareholding", response_model=List[ShareholdingRaw])
