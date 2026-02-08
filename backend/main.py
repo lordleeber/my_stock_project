@@ -312,28 +312,35 @@ class ShareholdingRaw(BaseModel):
     percentage: Optional[float]
 
 class QuarterlyReportRaw(BaseModel):
-    date: str  # Format: YYYYQ1, YYYYQ2...
+    date: str  # Format: YYYYQX (e.g. 2025Q1)
     symbol: str
     market: str
     name: Optional[str] = None
-    # Income Statement
+    # Profitability (Current / Last Year / YoY)
     revenue: Optional[float] = None
-    operating_income: Optional[float] = None
-    non_operating_income: Optional[float] = None
+    revenue_ly: Optional[float] = None
+    revenue_yoy: Optional[float] = None
+    op_income: Optional[float] = None
+    op_income_ly: Optional[float] = None
+    op_income_yoy: Optional[float] = None
+    non_op_income: Optional[float] = None
+    non_op_income_ly: Optional[float] = None
+    non_op_income_yoy: Optional[float] = None
+    pretax_income: Optional[float] = None
+    pretax_income_ly: Optional[float] = None
+    pretax_income_yoy: Optional[float] = None
     net_income: Optional[float] = None
+    net_income_ly: Optional[float] = None
+    net_income_yoy: Optional[float] = None
     eps: Optional[float] = None
-    # Balance Sheet (Raw)
-    total_assets: Optional[float] = None
-    total_liabilities: Optional[float] = None
-    current_assets: Optional[float] = None
-    current_liabilities: Optional[float] = None
+    eps_ly: Optional[float] = None
+    eps_yoy: Optional[float] = None
+    # Financial Condition
+    capital: Optional[float] = None
     nav_per_share: Optional[float] = None
-    # Cash Flow
-    operating_cash_flow: Optional[float] = None
-    # Ratios (From Source)
+    equity_to_assets_ratio: Optional[float] = None
     current_ratio: Optional[float] = None
     quick_ratio: Optional[float] = None
-    debt_ratio: Optional[float] = None  # 100 - (NAV/Assets)
 
 @app.get("/")
 def read_root():
