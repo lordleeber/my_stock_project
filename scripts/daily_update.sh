@@ -4,6 +4,7 @@
 # 執行順序: scraper -> processor -> data_quality_checker -> importer -> calculator
 
 set -e  # 遇到錯誤立即停止
+set -o pipefail  # 確保管道指令中任何一段失敗都會回傳錯誤碼
 
 # 設定工作目錄
 cd "$(dirname "$0")/.."
@@ -57,12 +58,12 @@ fi
 # 4. Data Quality Checker (runs after all processor steps)
 echo "[4/6] Running data quality checker..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE processor python data_quality_checker.py 2>&1 | tee -a "$LOG_FILE"
-CHECKER_EXIT_CODE=$?
-if [ $CHECKER_EXIT_CODE -eq 0 ]; then
+if [ $? -eq 0 ]; then
     echo "✓ Data quality check passed" | tee -a "$LOG_FILE"
 else
-    echo "⚠ Data quality check found issues (see error.md)" | tee -a "$LOG_FILE"
-    echo "⚠ Continuing with import despite data quality issues..." | tee -a "$LOG_FILE"
+    echo "❌ Data quality check FAILED (see error_processor.md)" | tee -a "$LOG_FILE"
+    echo "❌ Stopping update to prevent database contamination." | tee -a "$LOG_FILE"
+    exit 1
 fi
 
 # 5. Importer

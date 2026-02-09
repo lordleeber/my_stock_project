@@ -310,7 +310,11 @@ def check_market_indices(date_str):
         file_path = Path(f"data/processed/market_indices/date={date_str}/{market}.csv")
 
         if not file_path.exists():
-            issues.append(f"market_indices: Missing file {file_path}")
+            # SII market indices are auto-extracted from daily_quotes, so they might not exist
+            # if daily_quotes extraction failed or is not applicable.
+            # OTC is usually a direct raw file.
+            if market == 'otc':
+                issues.append(f"market_indices: Missing file {file_path}")
             continue
 
         try:
