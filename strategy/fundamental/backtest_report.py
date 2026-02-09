@@ -1,38 +1,37 @@
 import pandas as pd
-import requests
 import sys
+import os
+
+# 加入專案根目錄到 path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from common.http_client import fetch_dataframe, fetch_json
+from common.constants import API_BASE
 
 # ---------------------------------------------------------
-# 基本面選股回測報告 (修正 Name 缺失問題)
+# 基本面選股回測報告 2.0 (共用模組 + 重試機制)
 # ---------------------------------------------------------
-
-API_BASE = "http://100.103.191.79:8000"
 
 if sys.stdout.encoding.lower() != 'utf-8':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def fetch_data_at_date(date):
-    try:
-        url = f"{API_BASE}/raw/daily-quotes?start_date={date}&end_date={date}&limit=5000"
-        resp = requests.get(url, timeout=40)
-        return pd.DataFrame(resp.json())
-    except:
-        return pd.DataFrame()
+    return fetch_dataframe("/raw/daily-quotes", {"start_date": date, "end_date": date, "limit": 5000})
 
 def run_backtest():
     BUY_DATE = "2025-11-17"
     CURRENT_DATE = "2026-02-06"
-    
+
     print(f"=== 基本面策略回測：{BUY_DATE} -> {CURRENT_DATE} ===")
-    
+
     try:
-        df_q = pd.DataFrame(requests.get(f"{API_BASE}/raw/quarterly-reports?start_date=2025Q3&end_date=2025Q3&limit=3000").json())
-        df_r = pd.DataFrame(requests.get(f"{API_BASE}/raw/monthly-revenue?start_date=2025-10-01&end_date=2025-10-01&limit=3000").json())
+        df_q = fetch_dataframe("/raw/quarterly-reports", {"start_date": "2025Q3", "end_date": "2025Q3", "limit": 3000})
+        df_r = fetch_dataframe("/raw/monthly-revenue", {"start_date": "2025-10-01", "end_date": "2025-10-01", "limit": 3000})
         df_p_buy = fetch_data_at_date(BUY_DATE)
         df_p_now = fetch_data_at_date(CURRENT_DATE)
-    except:
-        print("資料獲取失敗。")
+    except Exception as e:
+        print(f"資料獲取失敗: {e}")
         return
 
     if df_q.empty or df_p_buy.empty or df_p_now.empty:

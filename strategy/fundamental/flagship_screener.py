@@ -1,40 +1,39 @@
 import pandas as pd
-import requests
 import sys
 import numpy as np
 import os
-import time
 from datetime import datetime, timedelta
 
-# ---------------------------------------------------------
-# 基本面旗艦級選股系統 5.3 (欄位順序最終修正版)
-# ---------------------------------------------------------
+# 加入專案根目錄到 path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-API_BASE = "http://100.103.191.79:8000"
+from common.http_client import fetch_dataframe, fetch_json
+from common.constants import API_BASE
+
+# ---------------------------------------------------------
+# 基本面旗艦級選股系統 5.7 (共用模組 + 重試機制)
+# ---------------------------------------------------------
 
 def get_20th_business_day(year, month):
-    count = 0
-    curr = datetime(year, month, 1)
+    count = 0; curr = datetime(year, month, 1)
     while count < 20:
-        if curr.weekday() < 5:
-            count += 1
-        if count < 20:
-            curr += timedelta(days=1)
+        if curr.weekday() < 5: count += 1
+        if count < 20: curr += timedelta(days=1)
     return curr.strftime("%Y-%m-%d")
 
 def score_linear(val, min_val, max_val):
     if pd.isna(val): return 0
     if val <= min_val: return 0
     if val >= max_val: return 100
-    return (val - min_val) / (max_val - min_val) * 100
+    res = (val - min_val) / (max_val - min_val) * 100
+    return round(float(res), 2)
 
 def is_regular_stock(symbol):
     s = str(symbol).strip()
     return s.isdigit() and len(s) == 4 and not s.startswith(('00', '02', '91', '01'))
 
 def get_config_for_quarter(q_str):
-    year = int(q_str[:4])
-    q = q_str[4:]
+    year = int(q_str[:4]); q = q_str[4:]
     if q == "Q1":
         sim_date = get_20th_business_day(year, 6)
         rev_months = [f"{year}M03", f"{year}M04", f"{year}M05"]
@@ -52,34 +51,28 @@ def get_config_for_quarter(q_str):
 
 def process_quarter(q_str):
     sim_date, rev_months = get_config_for_quarter(q_str)
-    print(f">>> 正在處理 {q_str}...")
-    
+    print(f">>> 正在處理 {q_str} (共用模組 + 重試機制)...")
     try:
-        df_q = pd.DataFrame(requests.get(f"{API_BASE}/raw/quarterly-reports?start_date={q_str}&end_date={q_str}&limit=3000").json())
-        df_cf = pd.DataFrame(requests.get(f"{API_BASE}/raw/cash-flows?start_date={q_str}&end_date={q_str}&limit=3000").json())
-        df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={sim_date}&end_date={sim_date}&limit=5000").json())
-        df_info = pd.DataFrame(requests.get(f"{API_BASE}/raw/stock-info?limit=5000").json())
-        
+        df_q = fetch_dataframe("/raw/quarterly-reports", {"start_date": q_str, "end_date": q_str, "limit": 3000})
+        df_cf = fetch_dataframe("/raw/cash-flows", {"start_date": q_str, "end_date": q_str, "limit": 3000})
+        df_p = fetch_dataframe("/raw/daily-quotes", {"start_date": sim_date, "end_date": sim_date, "limit": 5000})
+        df_info = fetch_dataframe("/raw/stock-info", {"limit": 5000})
+
         actual_date = sim_date
         if df_p.empty:
             curr = datetime.strptime(sim_date, "%Y-%m-%d")
-            for _ in range(5):
-                curr += timedelta(days=1)
-                d_str = curr.strftime("%Y-%m-%d")
-                df_p = pd.DataFrame(requests.get(f"{API_BASE}/raw/daily-quotes?start_date={d_str}&end_date={d_str}&limit=5000").json())
-                if not df_p.empty: 
-                    actual_date = d_str
-                    break
+            for _ in range(10):
+                curr += timedelta(days=1); d_str = curr.strftime("%Y-%m-%d")
+                df_p = fetch_dataframe("/raw/daily-quotes", {"start_date": d_str, "end_date": d_str, "limit": 5000})
+                if not df_p.empty: actual_date = d_str; break
 
         all_rev = []
         for m in rev_months:
-            r = requests.get(f"{API_BASE}/raw/monthly-revenue?start_date={m}&end_date={m}&limit=3000").json()
+            r = fetch_json("/raw/monthly-revenue", {"start_date": m, "end_date": m, "limit": 3000})
             if r: all_rev.extend(r)
         df_r = pd.DataFrame(all_rev)
 
-        if df_q.empty or df_p.empty or df_r.empty:
-            print(f"  [跳過] 資料不足")
-            return
+        if df_q.empty or df_p.empty or df_r.empty: return
 
         for d in [df_q, df_cf, df_p, df_r, df_info]: d['symbol'] = d['symbol'].astype(str)
         df_p = df_p[df_p['symbol'].apply(is_regular_stock)]
@@ -92,7 +85,7 @@ def process_quarter(q_str):
         df = pd.merge(df, rev_trend, on='symbol', how='left')
         df = pd.merge(df, df_info[['symbol', 'industry']], on='symbol', how='left')
 
-        num_cols = ['revenue', 'op_income', 'net_income', 'eps_yoy', 'equity_to_assets_ratio', 'pe_ratio', 'rev_avg_3m', 'cash_flow_operating', 'close']
+        num_cols = ['revenue', 'op_income', 'net_income', 'eps', 'eps_yoy', 'equity_to_assets_ratio', 'pe_ratio', 'rev_avg_3m', 'cash_flow_operating', 'close']
         for c in num_cols: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
 
         df['op_margin'] = np.where(df['revenue'] > 0, (df['op_income'] / df['revenue']) * 100, 0)
@@ -100,13 +93,16 @@ def process_quarter(q_str):
 
         df_valid_pe = df[df['pe_ratio'] > 0].copy()
         ind_pe_map = df_valid_pe.groupby('industry')['pe_ratio'].median().to_dict()
-        def calc_v(row):
-            pe = row['pe_ratio']
-            if pe <= 0: return 0
-            base = ind_pe_map.get(row['industry'], 15)
-            return score_linear(1.5 - (pe/base), 0, 1.0)
+        
+        def calc_v_and_p(row):
+            pe = row['pe_ratio']; ind = str(row['industry'])
+            base_pe = ind_pe_map.get(ind, 12)
+            v_score = score_linear(1.5 - (pe/base_pe), 0, 1.0) if pe > 0 else 0
+            factor = 2 if ('建' in ind or '營造' in ind) else 4
+            p_price = (row['eps'] * factor) * base_pe * 0.8
+            return v_score, round(p_price, 2)
 
-        df['value_score'] = df.apply(calc_v, axis=1)
+        df[['value_score', 'predict_price']] = df.apply(lambda r: pd.Series(calc_v_and_p(r)), axis=1)
         df['growth_score'] = df['eps_yoy'].apply(lambda x: score_linear(x, 0, 50))
         df['momentum_score'] = df['rev_avg_3m'].apply(lambda x: score_linear(x, 0, 20))
         df['quality_score'] = df['cash_quality'].apply(lambda x: score_linear(x, 0.5, 1.2))
@@ -117,13 +113,15 @@ def process_quarter(q_str):
                             (df['quality_score'] * 0.20) + (df['profit_score'] * 0.15) + \
                             (df['safety_score'] * 0.10) + (df['value_score'] * 0.10)
 
-        df = df.rename(columns={'close': 'market_price', 'rev_avg_3m': 'avg_revenue_yoy_3m'})
-        df['price_date'] = actual_date
-        df['report_quarter'] = q_str
+        # 全域格式化至小數二位
+        float_cols = df.select_dtypes(include=[np.float64, np.float32]).columns
+        df[float_cols] = df[float_cols].round(2)
 
-        # 欄位順序對調：price_date 在前, market_price 在後
+        df = df.rename(columns={'close': 'market_price', 'rev_avg_3m': 'avg_revenue_yoy_3m'})
+        df['price_date'] = actual_date; df['report_quarter'] = q_str
+
         final_cols = [
-            'symbol', 'name', 'industry', 'price_date', 'market_price', 'report_quarter',
+            'symbol', 'name', 'industry', 'price_date', 'market_price', 'predict_price', 'report_quarter',
             'pe_ratio', 'value_score', 'eps_yoy', 'growth_score',
             'avg_revenue_yoy_3m', 'momentum_score', 'op_margin', 'profit_score',
             'cash_quality', 'quality_score', 'equity_to_assets_ratio', 'safety_score',
@@ -133,17 +131,10 @@ def process_quarter(q_str):
         final_df = df[final_cols].sort_values('total_score', ascending=False)
         output_path = os.path.join("strategy", "fundamental", f"fundamental_report_{q_str}.csv")
         final_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"  [完成] 報告儲存至 {output_path}")
+        print(f"  [完成] {output_path}")
 
     except Exception as e:
         print(f"  [失敗] {q_str} 異常: {e}")
 
-def main():
-    quarters = ["2024Q4", "2025Q1", "2025Q2", "2025Q3"]
-    print(f"啟動報告產生器 (修正欄位順序: price_date, market_price)...")
-    for q in quarters:
-        process_quarter(q)
-        time.sleep(0.5)
-
 if __name__ == "__main__":
-    main()
+    for q in ["2024Q4", "2025Q1", "2025Q2", "2025Q3"]: process_quarter(q)
