@@ -17,6 +17,7 @@ services:
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
       - FETCH_DELAY=${FETCH_DELAY:-3.0}
+      - TZ=Asia/Taipei
 
   # 集保股權分散表 (每週日執行)
   scraper-weekly:
@@ -31,6 +32,7 @@ services:
     command: sh -c "python scraper/generate_active_stocks.py --output /app/active_stocks.txt && if [ -z \"$$TDCC_DATE\" ]; then echo 'TDCC_DATE is required'; exit 1; fi && python scraper/fetch_tdcc_history.py -f /app/active_stocks.txt -d \"$$TDCC_DATE\" && python scraper/check_weekly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
+      - TZ=Asia/Taipei
 
   # 月營收 (每月 10 日後執行)
   scraper-monthly:
@@ -44,6 +46,7 @@ services:
     command: sh -c "python scraper/fetch_monthly_revenue.py --year ${REVENUE_YEAR:-} --month ${REVENUE_MONTH:-} && python scraper/check_monthly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
+      - TZ=Asia/Taipei
 
   # 季報 (每季結束後 45 日執行)
   scraper-quarterly:
@@ -57,6 +60,7 @@ services:
     command: sh -c "python scraper/fetch_quarterly_reports.py --year ${REPORT_YEAR:-} --quarter ${REPORT_QUARTER:-} && python scraper/check_quarterly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
+      - TZ=Asia/Taipei
 
   # ============================================
   # Scanner - 爆量翻多掃描器
@@ -74,6 +78,7 @@ services:
       - DB_USER=user
       - DB_PASSWORD=password
       - DB_NAME=stock_db
+      - TZ=Asia/Taipei
 
   # ============================================
   # Processor & Importer
@@ -85,9 +90,11 @@ services:
     volumes:
       - ./data:/app/data
       - ./error.md:/app/error.md
+      - ./error_processor.md:/app/error_processor.md
     environment:
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
+      - TZ=Asia/Taipei
 
   importer:
     build:
@@ -105,6 +112,7 @@ services:
       - DB_NAME=stock_db
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
+      - TZ=Asia/Taipei
 
   calculator:
     build: ./calculator
@@ -115,6 +123,7 @@ services:
       - DB_HOST=db
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
+      - TZ=Asia/Taipei
     volumes:
       - ./calculator:/app
     depends_on:
@@ -135,6 +144,7 @@ services:
       - HOLD_DAYS=${HOLD_DAYS:-3}
       - ALLOW_PYRAMIDING=${ALLOW_PYRAMIDING:-true}
       - ONLY_RED_CANDLE=${ONLY_RED_CANDLE:-false}
+      - TZ=Asia/Taipei
     # 移除 volumes: - ./backtester:/app，因為這會覆蓋掉 COPY 進去的 strategy
     # 如果要開發模式，需掛載兩個 volume
     volumes:
@@ -159,6 +169,7 @@ services:
       - DB_PASSWORD=password
       - DB_NAME=stock_db
       - DB_HOST=db
+      - TZ=Asia/Taipei
     # 同樣修正 volume 掛載
     volumes:
       - ./backend:/app
@@ -177,6 +188,7 @@ services:
       - backend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - TZ=Asia/Taipei
 
   db:
     image: postgres:15
@@ -185,6 +197,7 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: stock_db
+      TZ: Asia/Taipei
     ports:
       - "5432:5432"
     volumes:
@@ -200,6 +213,7 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: root
+      TZ: Asia/Taipei
     ports:
       - "5050:80"
     depends_on:
@@ -211,4 +225,7 @@ services:
       context: ./processor
     volumes:
       - ./data:/app/data
+      - ./error_processor.md:/app/error_processor.md
+    environment:
+      - TZ=Asia/Taipei
     command: ["python", "validator.py"]

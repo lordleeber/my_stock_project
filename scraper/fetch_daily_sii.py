@@ -35,6 +35,8 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
 def fetch_data(date_string, category, output_dir):
     url = CATEGORY_DIC[category].format(date=date_string)
     
@@ -47,8 +49,11 @@ def fetch_data(date_string, category, output_dir):
     dst_file_path = os.path.join(dst_folder, "sii.csv")
     
     if os.path.exists(dst_file_path):
-        print(f"[{date_string}] SII {eng_category} already exists, skip.")
-        return
+        if FORCE_REPROCESS:
+            print(f"[{date_string}] SII {eng_category} exists, reprocessing due to FORCE_REPROCESS=1.")
+        else:
+            print(f"[{date_string}] SII {eng_category} already exists, skip.")
+            return
 
     try:
         print(f"Fetching SII {eng_category} for {date_string}...")

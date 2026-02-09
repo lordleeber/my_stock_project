@@ -9,6 +9,8 @@ from io import StringIO
 
 import pandas as pd
 
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
 # URL Templates
 SII_URL = "https://www.twse.com.tw/staticFiles/inspection/inspection/05/001/{year}Q{quarter}_C05001.zip"
 OTC_URL = "https://www.tpex.org.tw/storage/statistic/financial/O_{year}Q{quarter}.xls"
@@ -24,6 +26,9 @@ def download_sii(year, quarter, target_dir):
     """下載並解壓上市公司季報 ZIP，確保存為 sii.xls"""
     url = SII_URL.format(year=year, quarter=quarter)
     target_file = os.path.join(target_dir, "sii.xls")
+    if os.path.exists(target_file) and not FORCE_REPROCESS:
+        print(f"[=] SII report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+        return True
     
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -51,6 +56,9 @@ def download_otc(year, quarter, target_dir):
     """直接下載上櫃公司季報 XLS，確保存為 otc.xls"""
     url = OTC_URL.format(year=year, quarter=quarter)
     target_file = os.path.join(target_dir, "otc.xls")
+    if os.path.exists(target_file) and not FORCE_REPROCESS:
+        print(f"[=] OTC report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+        return True
     
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -153,6 +161,9 @@ def _save_tables_as_csv(resp_text, target_dir, market):
         label_counts[label] = label_counts.get(label, 0) + 1
         suffix = f"{label}{label_counts[label]}" if label_counts[label] > 1 else label
         target_file = os.path.join(target_dir, f"{market}_{suffix}.csv")
+        if os.path.exists(target_file) and not FORCE_REPROCESS:
+            outputs.append(target_file)
+            continue
         df.to_csv(target_file, index=False, encoding="utf-8-sig")
         outputs.append(target_file)
     return outputs

@@ -7,6 +7,8 @@ from datetime import datetime
 from io import StringIO
 import time
 
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
 def fetch_market_revenue(year_roc, month, market_type):
     """
     Fetch monthly revenue from MOPS static HTML files.
@@ -210,6 +212,9 @@ def process_and_save(year, month):
     os.makedirs(output_dir, exist_ok=True)
     
     output_path = os.path.join(output_dir, "market.csv")
+    if os.path.exists(output_path) and not FORCE_REPROCESS:
+        print(f"\n⏭️  {output_path} already exists, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+        return
     full_df.to_csv(output_path, index=False)
     print(f"\n✅ Saved {len(full_df)} records to: {output_path}")
     print(f"Sample:\n{full_df[['symbol', 'name', 'revenue', 'yoy_pct']].head()}")

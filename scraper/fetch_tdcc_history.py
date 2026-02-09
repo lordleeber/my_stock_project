@@ -13,6 +13,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
 URL = "https://www.tdcc.com.tw/portal/zh/smWeb/qryStock"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -220,8 +222,11 @@ def main():
             output_path = os.path.join(output_dir, f"{stock_id}.csv")
             
             if os.path.exists(output_path):
-                logger.info(f"[{idx+1}/{len(stock_list)}] {stock_id} already exists for {date_str}. Skipping.")
-                continue
+                if FORCE_REPROCESS:
+                    logger.info(f"[{idx+1}/{len(stock_list)}] {stock_id} exists for {date_str}, reprocessing due to FORCE_REPROCESS=1.")
+                else:
+                    logger.info(f"[{idx+1}/{len(stock_list)}] {stock_id} already exists for {date_str}. Skipping.")
+                    continue
 
             logger.info(f"[{idx+1}/{len(stock_list)}] Fetching {stock_id} for {date_str}...")
             df = scraper.scrape_stock(stock_id, date_str)

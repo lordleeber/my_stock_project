@@ -42,6 +42,8 @@ COMMON_HEADERS = {
     'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
 def to_tw_date(date_str):
     year = int(date_str[0:4]) - 1911
     return f"{year}/{date_str[4:6]}/{date_str[6:8]}"
@@ -95,7 +97,11 @@ def fetch_data(date_string, category, output_dir):
     dst_file_path = os.path.join(dst_folder, "otc.csv")
     
     if os.path.exists(dst_file_path):
-        return
+        if FORCE_REPROCESS:
+            print(f"[{date_string}] OTC {eng_category} exists, reprocessing due to FORCE_REPROCESS=1.")
+        else:
+            print(f"[{date_string}] OTC {eng_category} already exists, skip.")
+            return
 
     if category == "指數行情":
         fetch_tpex_index_json(date_string, dst_file_path)

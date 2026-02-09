@@ -20,6 +20,23 @@ def _append_missing(missing, date_list, market_type):
     print(f"\n[WARN] Missing outputs detected. See: {error_md}")
 
 
+def _is_file_valid(path: Path, min_bytes: int, min_lines: int) -> bool:
+    if not path.exists():
+        return False
+    try:
+        if path.stat().st_size < min_bytes:
+            return False
+        with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
+            lines = 0
+            for _ in f:
+                lines += 1
+                if lines >= min_lines:
+                    return True
+        return False
+    except OSError:
+        return False
+
+
 def check_daily_outputs(date_list, output_dir, market_type):
     datasets = [
         "daily_quotes",
@@ -40,11 +57,13 @@ def check_daily_outputs(date_list, output_dir, market_type):
     base_dir = Path(output_dir).resolve()
 
     missing = []
+    min_bytes = int(os.getenv("MIN_BYTES", "10"))
+    min_lines = int(os.getenv("MIN_LINES", "2"))
     for date in date_list:
         for dataset in datasets:
             for market in markets:
                 path = base_dir / "raw" / dataset / f"date={date}" / f"{market}.csv"
-                if not path.exists() or path.stat().st_size == 0:
+                if not _is_file_valid(path, min_bytes, min_lines):
                     missing.append(str(path))
 
     _append_missing(missing, date_list, market_type)
