@@ -9,9 +9,8 @@ services:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
-      - ./data:/app/data
-      - ./common:/app/common
-      - ./scraper:/app/scraper
+      - ./:/app
+    command: python scraper/main.py
     environment:
       - OUTPUT_DIR=/app/data
       - MARKET_TYPE=${MARKET_TYPE:-ALL}
@@ -28,8 +27,8 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-      - ./active_stocks.txt:/app/active_stocks.txt:ro
-    command: python fetch_tdcc_history.py -f /app/active_stocks.txt -d ${TDCC_DATE:-}
+      - ./active_stocks.txt:/app/active_stocks.txt
+    command: sh -c "python scraper/generate_active_stocks.py --output /app/active_stocks.txt && if [ -z \"$$TDCC_DATE\" ]; then echo 'TDCC_DATE is required'; exit 1; fi && python scraper/fetch_tdcc_history.py -f /app/active_stocks.txt -d \"$$TDCC_DATE\" && python scraper/check_weekly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
 
@@ -42,7 +41,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: python fetch_monthly_revenue.py --year ${REVENUE_YEAR:-} --month ${REVENUE_MONTH:-}
+    command: sh -c "python scraper/fetch_monthly_revenue.py --year ${REVENUE_YEAR:-} --month ${REVENUE_MONTH:-} && python scraper/check_monthly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
 
@@ -55,7 +54,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: python fetch_quarterly_reports.py --year ${REPORT_YEAR:-} --quarter ${REPORT_QUARTER:-}
+    command: sh -c "python scraper/fetch_quarterly_reports.py --year ${REPORT_YEAR:-} --quarter ${REPORT_QUARTER:-} && python scraper/check_quarterly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
 

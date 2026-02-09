@@ -639,8 +639,10 @@ Both `convert_shareholding.py` and `convert_shareholding2.py` output to the same
 
 ### TDCC manual steps (if not using Docker)
 ```bash
-# Step 1: Generate active stock list from latest monthly revenue
+# Step 1: Generate active stock list from latest monthly revenue (data/raw/monthly_revenue)
 python scraper/generate_active_stocks.py  # outputs active_stocks.txt
+# Or pick a specific month (YYYYMMDD = 1st day of month dir)
+python scraper/generate_active_stocks.py --date 20251201
 
 # Step 2: Query available dates from TDCC
 python scraper/fetch_tdcc_history.py --list-dates
@@ -699,7 +701,7 @@ TDCC scraper features:
 | Service | Command | Purpose |
 |---------|---------|---------|
 | `scraper-daily` | `python main.py` | Fetch daily market data |
-| `scraper-weekly` | `python fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Fetch TDCC shareholding (fixed command, requires TDCC_DATE) |
+| `scraper-weekly` | `python scraper/generate_active_stocks.py ... && python scraper/fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Generate active stocks from monthly revenue, then fetch TDCC shareholding |
 | `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
 | `processor` | `python convert.py` | Process daily data |
 | `importer` | `python main.py` | Load CSVs into PostgreSQL |

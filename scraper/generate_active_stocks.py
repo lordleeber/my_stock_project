@@ -1,12 +1,9 @@
 import os
-import sys
 import argparse
-from datetime import datetime
 import pandas as pd
 import logging
-# Add parent directory to path to allow importing fetch_monthly_revenue
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from fetch_monthly_revenue import fetch_market_revenue
+from pathlib import Path
+import re
 
 # Setup basic logging
 logging.basicConfig(
@@ -15,53 +12,91 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def generate_stock_list(output_file="active_stocks.txt"):
+EXCLUDE_NAME_KEYWORDS = [
+    "ETF",
+    "ETN",
+    "槓桿",
+    "反向",
+    "權證",
+    "特別股",
+    "特別",
+    "債",
+    "存託",
+    "TDR",
+    "受益",
+    "期貨",
+    "選擇權",
+    "指數",
+    "REIT",
+    "REITs",
+]
+
+
+def _find_latest_date_dir(base_dir: Path) -> str | None:
+    if not base_dir.exists():
+        return None
+    dates = []
+    for child in base_dir.iterdir():
+        if not child.is_dir():
+            continue
+        name = child.name
+        if not name.startswith("date="):
+            continue
+        date_str = name.split("date=", 1)[1]
+        if re.match(r"^\d{8}$", date_str):
+            dates.append(date_str)
+    return max(dates) if dates else None
+
+
+def _load_monthly_revenue(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        logger.warning(f"File not found: {path}")
+        return pd.DataFrame()
+    return pd.read_csv(path, dtype=str)
+
+
+def _filter_common_stocks(df: pd.DataFrame) -> pd.Series:
+    code_col = None
+    if "symbol" in df.columns:
+        code_col = "symbol"
+    elif "公司代號" in df.columns:
+        code_col = "公司代號"
+    elif "證券代號" in df.columns:
+        code_col = "證券代號"
+
+    if not code_col:
+        return pd.Series([], dtype=str)
+
+    codes = df[code_col].astype(str).str.strip()
+    mask = codes.str.match(r"^\d{4}$", na=False)
+    mask &= ~codes.str.startswith("00")
+    return codes[mask]
+
+
+def generate_stock_list(output_file="active_stocks.txt", date_str: str | None = None, data_dir: str | None = None):
     """
-    Generates a list of active stocks by fetching the latest monthly revenue data.
-    Filters for 4-digit stock codes to exclude warrants/ETFs if they appear in this specific report
-    (though monthly revenue usually only contains companies).
+    Generates a list of active common stocks from monthly revenue.
+    Source: data/raw/monthly_revenue/date=YYYYMMDD/market.csv
     """
-    
-    # Determine the target month (last month)
-    today = datetime.now()
-    if today.month == 1:
-        target_year = today.year - 1
-        target_month = 12
-    else:
-        target_year = today.year
-        target_month = today.month - 1
-        
-    year_roc = target_year - 1911
-    
-    logger.info(f"Targeting revenue report for: {target_year}/{target_month} (ROC {year_roc}/{target_month})")
-    
-    # Fetch data
-    # Note: fetch_market_revenue returns a DataFrame with '公司代號', '公司名稱' etc.
-    df_sii = fetch_market_revenue(year_roc, target_month, 'sii')
-    df_otc = fetch_market_revenue(year_roc, target_month, 'otc')
-    
-    all_codes = set()
-    
-    for market_name, df in [('SII', df_sii), ('OTC', df_otc)]:
-        if df is not None and not df.empty:
-            # Column name is typically '公司代號' from the fetcher
-            if '公司代號' in df.columns:
-                codes = df['公司代號'].astype(str).tolist()
-                logger.info(f"Fetched {len(codes)} raw codes from {market_name}")
-                
-                # Filter logic
-                for code in codes:
-                    code = code.strip()
-                    # Basic filter: 4 digits implies common stock. 
-                    # ETFs are usually 5 digits or start with 00. 
-                    # Warrants are 6 digits.
-                    # We strictly keep only 4-digit numeric codes.
-                    if len(code) == 4 and code.isdigit():
-                         all_codes.add(code)
-            else:
-                logger.warning(f"Column '公司代號' not found in {market_name} dataframe.")
-        else:
-            logger.warning(f"No data fetched for {market_name}")
+
+    base_dir = Path(data_dir) if data_dir else Path(os.getenv("OUTPUT_DIR", "data"))
+    revenue_dir = base_dir / "raw" / "monthly_revenue"
+
+    if not date_str:
+        date_str = _find_latest_date_dir(revenue_dir)
+        if not date_str:
+            logger.error(f"No valid date directory found in {revenue_dir}")
+            return False
+
+    logger.info(f"Using monthly revenue date: {date_str}")
+
+    df = _load_monthly_revenue(revenue_dir / f"date={date_str}" / "market.csv")
+    if df is None or df.empty:
+        logger.error("No monthly revenue data found. Aborting.")
+        return False
+
+    codes = _filter_common_stocks(df)
+    all_codes = set(codes.tolist())
 
     if not all_codes:
         logger.error("No valid stock codes found. Aborting.")
@@ -78,8 +113,10 @@ def generate_stock_list(output_file="active_stocks.txt"):
     return True
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate active stock list from Monthly Revenue")
+    parser = argparse.ArgumentParser(description="Generate active stock list from monthly revenue")
     parser.add_argument("--output", "-o", default="active_stocks.txt", help="Output file path")
+    parser.add_argument("--date", "-d", help="Target date (YYYYMMDD). Default: latest in data/raw/daily_quotes")
+    parser.add_argument("--data-dir", help="Base data dir (default: OUTPUT_DIR or ./data)")
     args = parser.parse_args()
-    
-    generate_stock_list(args.output)
+
+    generate_stock_list(args.output, date_str=args.date, data_dir=args.data_dir)
