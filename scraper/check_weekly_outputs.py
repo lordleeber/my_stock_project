@@ -5,7 +5,7 @@ from pathlib import Path
 def _append_missing(title, context, missing):
     if not missing:
         return
-    error_md = Path("/app/scraper_error.md")
+    error_md = Path("/app/error_scraper_weekly")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(error_md, "a", encoding="utf-8") as f:
         f.write(f"\n[{timestamp}] {title}\n")

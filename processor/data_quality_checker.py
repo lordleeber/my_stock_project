@@ -508,11 +508,11 @@ def check_institutional_summary(date_str):
 
 
 def write_error_report(date_str, issues):
-    """Write error report to root error.md file"""
+    """Write error report to root error_processor.md file"""
     if not issues:
         return
 
-    error_file = Path("error.md")
+    error_file = Path("error_processor.md")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Build report
@@ -530,12 +530,12 @@ def write_error_report(date_str, issues):
     report += "4. Re-run processor: `START_DATE=" + date_str + " END_DATE=" + date_str + " docker compose run --rm processor`\n"
     report += "\n---\n"
 
-    # Append to error.md (create if not exists)
+    # Append to error_processor.md (create if not exists)
     with open(error_file, 'a', encoding='utf-8') as f:
         f.write(report)
 
     print(f"\n⚠️  Found {len(issues)} data quality issues for {date_str}")
-    print(f"📝 Report written to error.md")
+    print(f"📝 Report written to error_processor.md")
 
 
 def main():

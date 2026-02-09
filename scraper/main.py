@@ -1,9 +1,11 @@
 import os
 import datetime
 import sys
+from pathlib import Path
 import pandas_market_calendars as mcal
 import fetch_daily_sii
 import fetch_daily_otc
+from check_daily_outputs import check_daily_outputs
 
 def get_date_list():
     start_date_env = os.getenv("START_DATE")
@@ -36,6 +38,9 @@ def get_date_list():
         print(f"Error getting calendar: {e}")
         sys.exit(1)
 
+
+
+
 if __name__ == "__main__":
     # 設定參數
     output_dir = os.getenv("OUTPUT_DIR", "data")
@@ -60,5 +65,9 @@ if __name__ == "__main__":
     if market_type in ["OTC", "ALL"]:
         print("\n=== Starting OTC Scraper ===")
         fetch_daily_otc.run_scraper(date_list, output_dir, delay)
+
+    # Post-run integrity check
+    # Post-run integrity check (logs to /app/error_scraper_daily)
+    check_daily_outputs(date_list, output_dir, market_type)
     
     print("\nAll tasks completed.")

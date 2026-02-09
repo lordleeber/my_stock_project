@@ -9,12 +9,28 @@ import datetime
 import io
 import polars as pl
 import pandas as pd
+import traceback
+from pathlib import Path
 from schemas import SCHEMA_COLS, COLUMN_MAP, NUMERIC_COLS
 from utils import read_raw_csv, read_sii_indices
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
+
+def log_error(msg, date_str=None, category=None):
+    """將錯誤訊息記錄到專用的 error_processor.md 檔案"""
+    error_file = Path("/app/error_processor.md")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(error_file, 'a', encoding='utf-8') as f:
+        f.write(f"\n## Processor Runtime Error - {timestamp}\n")
+        if date_str: f.write(f"**Date:** {date_str}\n")
+        if category: f.write(f"**Category:** {category}\n")
+        f.write(f"**Message:** {msg}\n")
+        f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
+        f.write("---\n")
+    print(f"❌ Error logged to error_processor.md: {msg}")
 
 INSTITUTION_MAP = {
     "自營商(自行買賣)": "dealer_self", "自營商(避險)": "dealer_hedge",
@@ -70,7 +86,8 @@ def _handle_institutional_summary(date_str):
                     df = df.with_columns(pl.col(col).str.replace_all(",", "").cast(pl.Int64, strict=False))
             df = df.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit(market).alias("market")])
             all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net"]))
-        except: pass
+        except Exception as e:
+            log_error(f"Error in institutional_summary for {market}: {e}", date_str, "institutional_summary")
     return pl.concat(all_dfs) if all_dfs else None
 
 def _handle_margin_summary(date_str):
@@ -84,7 +101,8 @@ def _handle_margin_summary(date_str):
                 item = str(row['項目']).strip()
                 if "融資" in item or "融券" in item:
                     results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "SII", "item": item, "buy": int(str(row['買進']).replace(",", "")), "sell": int(str(row['賣出']).replace(",", "")), "cash_repay": int(str(row['現金(券)償還']).replace(",", "")), "prev_balance": int(str(row['前日餘額']).replace(",", "")), "today_balance": int(str(row['今日餘額']).replace(",", ""))})
-        except: pass
+        except Exception as e:
+            log_error(f"Error in margin_summary (SII): {e}", date_str, "margin_summary")
     otc_path = os.path.join(input_dir, "otc.csv")
     if os.path.exists(otc_path):
         try:
@@ -98,7 +116,8 @@ def _handle_margin_summary(date_str):
                         results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", ""))})
                     elif "融資金(仟元)" in item:
                         results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", ""))})
-        except: pass
+        except Exception as e:
+            log_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
     return pl.from_pandas(pd.DataFrame(results)) if results else None
 
 def process_date_category(category, date_str):
@@ -172,7 +191,9 @@ def main():
                 curr = datetime.datetime.strptime(date_str, "%Y%m%d")
                 if (not start_date or curr >= start_date) and (not end_date or curr <= end_date):
                     process_date_category(category, date_str)
-            except: continue
+            except Exception as e:
+                log_error(f"Error in main loop for {category} on {date_str}: {e}", date_str, category)
+                continue
 
 if __name__ == "__main__":
     main()
