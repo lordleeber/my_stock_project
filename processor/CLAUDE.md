@@ -1,0 +1,271 @@
+# Processor Module Guide (for AI Assistants)
+
+This guide covers the data processing component of the Taiwan stock market analysis pipeline.
+
+## Overview
+
+The processor cleans and standardizes raw CSV data from the scraper:
+- Converts Chinese column names to English
+- Handles multi-line headers
+- Normalizes numeric formats (removes commas, handles missing values)
+- Validates data integrity
+- Performs integrated quality checking
+
+**Input**: `data/raw/` (from scraper)
+**Output**: `data/processed/` (standardized CSVs ready for database import)
+
+## Architecture (v3.0)
+
+**Date-First Processing Loop**: Changed from category-first to date-first architecture. The processor now:
+1. Scans all category directories to collect unique dates
+2. Validates date format (YYYYMMDD) to prevent path traversal
+3. Sorts dates chronologically
+4. For each date:
+   - Processes all categories (daily_quotes, institutional_investors, etc.)
+   - Runs integrated quality check (data_quality_checker.main())
+   - Restores environment variables after QC
+   - Continues to next date (errors are logged but don't stop pipeline)
+
+**Incremental Support**: Checks for specific output files (`otc.csv`, `sii.csv`, `all.csv`) in the processed directory to skip already-complete date/category pairs, allowing for granular backfilling.
+
+**QC Integration**: Quality checks now run per-date instead of at the end of the entire pipeline, catching issues earlier.
+
+## Modules
+
+| Module | Purpose |
+|--------|---------|
+| `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
+| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
+| `convert_monthly_revenue.py` | Handles monthly revenue data processing. |
+| `convert_shareholding.py` | Handles per-stock TDCC shareholding format (2023/09~). |
+| `convert_shareholding2.py` | Handles all-in-one TDCC shareholding format (2020/01~2023/09). |
+| `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
+| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. **Now integrated into convert.py main loop**. |
+| `schemas.py` | Column mappings, numeric types, standard schema definitions. |
+| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. |
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `START_DATE` | today | YYYYMMDD format |
+| `END_DATE` | today | YYYYMMDD format |
+| `FORCE_REPROCESS` | 0 | Set to 1 to reprocess already-processed files |
+| `DEBUG` | 0 | Set to 1 to enable verbose logging (success messages, row mismatch warnings, skip notifications) |
+| `RAW_DIR` | /app/data/raw | Input directory path |
+| `PROCESSED_DIR` | /app/data/processed | Output directory path |
+
+## Docker Service
+
+```bash
+# Process daily data for a specific date
+START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
+
+# Enable debug mode for detailed output (useful for troubleshooting)
+DEBUG=1 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
+
+# Force reprocess existing files
+FORCE_REPROCESS=1 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
+```
+
+**Important**: Always rebuild after code changes:
+```bash
+docker compose build processor
+```
+
+## Advanced Processing Features
+
+### 1. Date-First Processing Loop (v3.0)
+Changed from category-first to date-first architecture. Processes all categories for each date, then immediately runs quality checks before moving to the next date. This ensures data integrity per-date rather than per-category.
+
+### 2. Integrated Quality Checking
+`data_quality_checker.main()` is now called automatically after processing each date. The environment variables `START_DATE` and `END_DATE` are temporarily set to the current date during QC execution, then restored to prevent side effects.
+
+### 3. Path Traversal Protection
+Date strings are validated with regex pattern `^\d{8}$` before being used in file paths, preventing malicious directory names like `date=../../etc/passwd`.
+
+### 4. Dual Error Logging System
+- `log_processing_error()`: Records ETL runtime errors (convert.py)
+- `log_parsing_error()`: Records CSV parsing errors (utils.py)
+- Both write to `/app/error_processor.md` with timestamps and context
+
+### 5. Debug Mode
+Set `DEBUG=1` to enable verbose output:
+- ✓ CSV parsing success messages with row counts
+- ⚠️ Row length mismatch statistics
+- ⚠️ Invalid date format warnings
+- Skip notifications for already-processed files
+
+### 6. Incremental Processing
+By default, skips files that already exist in the processed directory. Set `FORCE_REPROCESS=1` to force reprocessing.
+
+### 7. Multi-line Header Merging
+`utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
+
+Example:
+```
+Row 1: 融資,融資,融券,融券
+Row 2: 買進,賣出,買進,賣出
+```
+Merged to: `融資-買進`, `融資-賣出`, `融券-買進`, `融券-賣出`
+
+### 8. Encoding Fallback with Replace
+Attempts UTF-8-sig first, falls back to CP950 with `errors='replace'` (preserves decode failure markers `�` instead of silently discarding).
+
+### 9. Row Length Validation
+Tracks and reports mismatched row lengths during CSV parsing. In DEBUG mode, displays count of adjusted rows per file.
+
+### 10. Quarterly Report Parsing (SII)
+Handles complex multi-row headers (Rows 2-5) in 2025+ SII Excel files by locating the first row with a 4-digit numeric symbol and using fixed index-based mapping (Col 13: EPS, Col 20: Op Cash Flow).
+
+### 11. Market Index Extraction
+- **SII**: Extracted from `daily_quotes/sii.csv` via `utils.read_sii_indices`.
+- **OTC**: Fetched as a dedicated category using modernized TPEx JSON-to-CSV APIs.
+
+## Column Mapping
+
+The processor converts Chinese column names to English. Key mappings in `processor/schemas.py`:
+
+**Basic Fields:**
+- 證券代號 → symbol
+- 證券名稱 → name
+- 成交股數 → volume
+- 成交金額 → value
+- 成交筆數 → transactions
+
+**OHLC:**
+- 開盤價 → open
+- 收盤價 → close
+- 最高價 → high
+- 最低價 → low
+- 漲跌(+/-) → change
+- 漲跌價差 → change
+
+**Institutional:**
+- 外陸資買賣超股數 → foreign_net
+- 投信買賣超股數 → trust_net
+- 自營商買賣超股數(自行買賣) → dealer_net
+
+**Margin:**
+- 融資 → margin_long
+- 融券 → margin_short
+- 買進 → buy
+- 賣出 → sell
+
+## Validation & Quality Checking
+
+### Standalone Validator (Row Count Verification)
+```bash
+docker compose run --rm processor python validator.py
+```
+
+Compares row counts between raw and processed files to ensure no data loss.
+
+### Quality Checker (NULL Value Detection)
+```bash
+# Now runs automatically in convert.py, but can be run standalone
+START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python data_quality_checker.py
+```
+
+Checks for:
+- Missing output files
+- NULL values in critical columns
+- Writes findings to root `/app/error.md`
+
+## Error Handling & Debugging
+
+### Error Logs
+
+The processor writes detailed error logs to `/app/error_processor.md`:
+
+- **Processing Errors** (`log_processing_error`): ETL runtime errors, missing columns, invalid data
+- **Parsing Errors** (`log_parsing_error`): CSV format issues, encoding problems, header detection failures
+
+Each error entry includes:
+- Timestamp
+- Date being processed (YYYYMMDD)
+- Category (if applicable)
+- Error message and Python traceback
+
+### Debug Mode Usage
+
+Enable debug mode to see detailed processing information:
+
+```bash
+# Local debugging with verbose output
+DEBUG=1 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
+
+# Production mode (default) - minimal output
+START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
+```
+
+**Debug mode shows**:
+- ✓ Successful CSV parsing with row counts
+- ⚠️ Row length mismatches (e.g., "42 rows adjusted for length mismatch")
+- ⚠️ Invalid date format warnings (path traversal prevention)
+- ℹ️ Skip notifications for already-processed files
+
+### Troubleshooting Common Issues
+
+**Issue**: No data processed even though raw files exist
+- **Solution**: Check if processed files already exist. Set `FORCE_REPROCESS=1` to override.
+
+**Issue**: Quality check fails with exit code 1
+- **Solution**: Check `/app/error.md` (written by data_quality_checker). Common causes: NULL values in critical columns, missing output files.
+
+**Issue**: "Invalid date format ignored" warnings
+- **Solution**: Check raw data directories for malformed `date=` folders. Manually remove or rename invalid directories.
+
+**Issue**: Encoding errors or garbled Chinese characters
+- **Solution**: Verify scraper output is UTF-8-sig. Processor automatically falls back to CP950 with replacement markers.
+
+**Issue**: Row length mismatch warnings
+- **Solution**: Enable DEBUG mode to see which files have issues. Usually caused by inconsistent column counts in TWSE/TPEx CSVs. Processor auto-adjusts but may indicate upstream data quality issues.
+
+## Special Data Processing
+
+### Shareholding Data (TDCC)
+
+#### Per-Stock Format (2023/09~)
+```bash
+START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python convert_shareholding.py
+```
+
+#### All-in-One Format (2020/01~2023/09)
+```bash
+docker compose run --rm processor python convert_shareholding2.py
+# Or with date range:
+START_DATE=20200103 END_DATE=20230908 docker compose run --rm processor python convert_shareholding2.py
+```
+
+Both scripts output to the same `data/processed/shareholding_div/` directory.
+
+### Monthly Revenue
+```bash
+START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python convert_monthly_revenue.py
+```
+
+### Quarterly Reports
+```bash
+START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
+```
+
+## Known Data Gaps & Market Rules
+
+### OTC Index Holidays (Trading Closed)
+The following dates correctly return no data for OTC indices due to market closures:
+- **2022-02-04**: Lunar New Year Holiday
+- **2023-01-18**: Market Closing Day (Last trading day before Lunar New Year)
+- **2024-10-31**: Typhoon Kong-rey
+- **Weekends/National Holidays**: No data for any market category.
+
+### Important Pipeline Behaviors
+
+1. **Error resilience**: Pipeline continues processing remaining dates even if individual dates fail. All errors are logged to `/app/error_processor.md` with timestamps and context.
+2. **Environment variable isolation**: QC runs use temporary environment variable overrides that are automatically restored via finally blocks, preventing interference with the main processing loop.
+3. **market_indices extraction**: Processor auto-extracts market indices from daily_quotes during conversion.
+
+## Next Steps
+
+After processing, data flows to:
+- **Importer** (`importer/CLAUDE.md`) - Loads processed CSVs into PostgreSQL

@@ -416,20 +416,26 @@ For historical database issues and resolutions, see `backend/requests.md` → Da
 
 ---
 
-# Part 2: Data Pipeline
+# Part 2: Data Pipeline Overview
 
 The data pipeline fetches, processes, and loads Taiwan stock market data into PostgreSQL.
 
 ## Pipeline Architecture
 
 ```
-scraper/     → Fetch raw CSV from TWSE/TPEx/MOPS/TDCC
-processor/   → Clean & standardize (Chinese→English columns, numeric conversion)
-importer/    → Load into PostgreSQL (delete-before-insert, dedup by date+market)
-calculator/  → Compute technical indicators (MA, KD, RSI, MACD, Bollinger)
+scraper/     → Fetch raw CSV from TWSE/TPEx/MOPS/TDCC        [scraper/CLAUDE.md]
+processor/   → Clean & standardize (CSV→standardized CSVs)     [processor/CLAUDE.md]
+importer/    → Load into PostgreSQL (delete-before-insert)     [importer/CLAUDE.md]
+calculator/  → Compute technical indicators                     [calculator/CLAUDE.md]
 scripts/     → Orchestration (daily_update.sh)
 common/      → Shared constants (CATEGORY_MAP)
 ```
+
+**Module Documentation:**
+- **Scraper**: See `scraper/CLAUDE.md` for data sources, scheduling, and fetch logic
+- **Processor**: See `processor/CLAUDE.md` for v3.0 date-first architecture, error handling, and validation
+- **Importer**: See `importer/CLAUDE.md` for database import behavior and filtering rules
+- **Calculator**: See `calculator/CLAUDE.md` for technical indicator formulas and computation
 
 ## Daily Update Pipeline
 
@@ -441,35 +447,27 @@ docker compose build processor importer calculator
 # Manual steps (Use --rm for transient tasks):
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm scraper-daily
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
-START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python convert_institutional_summary.py
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm importer
-START_DATE=20260201 END_DATE=20260201 docker compose run --rm calculator
+docker compose run --rm calculator
 ```
 
-Pipeline order matters: scraper → processor → importer → calculator.
+**Pipeline order**: scraper → processor (with integrated QC) → importer → calculator
 
-## Known Data Gaps & Market Rules
-
-### OTC Index Holidays (Trading Closed)
-The following dates correctly return no data for OTC indices due to market closures:
-- **2022-02-04**: Lunar New Year Holiday
-- **2023-01-18**: Market Closing Day (Last trading day before Lunar New Year)
-- **2024-10-31**: Typhoon Kong-rey
-- **Weekends/National Holidays**: No data for any market category.
-
-### Unified Processing Logic
-- `processor/convert.py` is the **single entry point**.
-- It checks for specific output files (`otc.csv`, `sii.csv`, `all.csv`) in the processed directory to determine if a date/category is truly "complete", allowing for granular backfilling.
+**Important Notes**:
+- Processor v3.0 uses date-first architecture with integrated quality checking (see `processor/CLAUDE.md`)
+- Calculator processes all stocks, not just the specified date range (see `calculator/CLAUDE.md`)
+- For detailed module behavior, see individual CLAUDE.md files in each directory
 
 ## Data Sources & Update Frequency
 
-| Source | Service | What it fetches | Update Frequency |
-|--------|---------|----------------|------------------|
-| TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E, indices | Daily (after market close) |
-| TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks + Index Summary | Daily (after market close) |
-| MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
-| MOPS (mopsov.twse.com.tw) | `scraper-quarterly` | Quarterly financial reports (SII/OTC), income statement (t163sb04), balance sheet (t163sb05), cash flow (t163sb20) | Quarterly (approx. 45 days after Q-end) |
-| TDCC (tdcc.com.tw) | `scraper-weekly` | Shareholding dispersion per stock | Weekly (scraped on Sunday) |
+For detailed information about data sources, see `scraper/CLAUDE.md`.
+
+| Source | Service | Update Frequency |
+|--------|---------|------------------|
+| TWSE/TPEx | `scraper-daily` | Daily (after market close, 21:00) |
+| MOPS | `scraper-monthly` | Monthly (before 10th) |
+| MOPS | `scraper-quarterly` | Quarterly (approx. 45 days after Q-end) |
+| TDCC | `scraper-weekly` | Weekly (Sunday) |
 
 ## Directory Structure (Data)
 
@@ -496,97 +494,44 @@ data/
 
 ## Environment Variables (Data Pipeline)
 
-All pipeline services use these:
+**Common Variables** (used by most pipeline services):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `START_DATE` | today | YYYYMMDD format |
-| `END_DATE` | today | YYYYMMDD format |
-| `MARKET_TYPE` | ALL | SII, OTC, or ALL |
-| `FETCH_DELAY` | 3.0 | Seconds between scraper requests |
-| `FORCE_REPROCESS` | 0 | Set to 1 to reprocess already-processed files (processor) |
-| `FORCE_REIMPORT` | 0 | Set to 1 to overwrite existing DB data (importer) |
-| `IMPORT_CATEGORY` | (all) | Import only a specific category |
-| `REVENUE_YEAR` | - | For scraper-monthly (AD year) |
-| `REVENUE_MONTH` | - | For scraper-monthly |
-| `TDCC_DATE` | - | For scraper-weekly (YYYYMMDD) |
+| `START_DATE` | today | YYYYMMDD format (or YYYYQX for quarterly) |
+| `END_DATE` | today | YYYYMMDD format (or YYYYQX for quarterly) |
+| `DB_HOST` | db | PostgreSQL host |
+| `DB_USER` | user | Database user |
+| `DB_PASSWORD` | password | Database password |
+| `DB_NAME` | stock_db | Database name |
+| `DB_PORT` | 5432 | Database port |
 
-Database (shared with backend):
+**Module-Specific Variables**:
+- **Scraper**: `MARKET_TYPE`, `FETCH_DELAY`, `REVENUE_YEAR`, `REVENUE_MONTH`, `TDCC_DATE` (see `scraper/CLAUDE.md`)
+- **Processor**: `FORCE_REPROCESS`, `DEBUG` (see `processor/CLAUDE.md`)
+- **Importer**: `IMPORT_CATEGORY`, `FORCE_REIMPORT` (see `importer/CLAUDE.md`)
 
-| Variable | Default |
-|----------|---------|
-| `DB_HOST` | db |
-| `DB_USER` | user |
-| `DB_PASSWORD` | password |
-| `DB_NAME` | stock_db |
-| `DB_PORT` | 5432 |
+## Key Pipeline Behaviors
 
-## Processor Modules
+For detailed information, see individual module documentation:
 
-| Module | Purpose |
-|--------|---------|
-| `convert.py` | **Unified ETL entry point**: Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
-| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
-| `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. |
-| `schemas.py` | Column mappings, numeric types, standard schema definitions. |
-| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction. |
-
-### Advanced Processing Features (convert.py)
-
-1. **Unified Pipeline**: All categories (OHLCV, Institutional, Margin, etc.) are processed via `python convert.py`.
-2. **Incremental Processing**: By default, skips files that already exist in the processed directory. Set `FORCE_REPROCESS=1` to force reprocessing.
-3. **Multi-line Header Merging**: `utils.read_raw_csv` automatically detects and merges category-subheader rows (common in TWSE/TPEx CSVs).
-4. **Quarterly Report Parsing (SII)**: Handles complex multi-row headers (Rows 2-5) in 2025+ SII Excel files by locating the first row with a 4-digit numeric symbol and using fixed index-based mapping (Col 13: EPS, Col 20: Op Cash Flow).
-5. **Reference Category (ref_cat) Fallback**: Virtual categories (e.g., `margin_summary`) automatically scan the date directories of their source categories (e.g., `margin_trading`) to ensure processing even if the target raw directory is missing.
-6. **Market Index Extraction**:
-   - **SII**: Extracted from `daily_quotes/sii.csv` via `utils.read_sii_indices`.
-   - **OTC**: Fetched as a dedicated category using modernized TPEx JSON-to-CSV APIs.
-
-Run validation after processing:
-```bash
-docker compose run --rm processor python validator.py
-```
-
-## Processor Column Mapping
-
-The processor converts Chinese column names to English. Key mappings in `processor/schemas.py`:
-
-- 證券代號 → symbol
-- 成交股數 → volume
-- 開盤價 → open / 收盤價 → close / 最高價 → high / 最低價 → low
-- 外陸資買賣超股數 → foreign_net
-- 投信買賣超股數 → trust_net
-
-## Calculator: Technical Indicators
-
-Computed for every stock, stored in `technical_indicators` table.
-Uses Pandas vectorized operations with grouped apply (by symbol) for efficiency.
-
-- **MA**: 5, 10, 20, 60, 120, 240-day moving averages
-- **VMA**: Volume moving averages (same periods)
-- **KD**: Stochastic oscillator (9-period RSV, smoothing α=1/3)
-- **RSI**: 6-period and 12-period
-- **MACD**: DIF (EMA12-EMA26), DEA (EMA9 of DIF), histogram
-- **Bollinger Bands**: MA20 ± 2σ
-
-## Important Pipeline Behaviors
-
-1. **Incremental by default**: Each stage skips existing data. Use `FORCE_REIMPORT=1` for importer to delete and re-import (Delete-before-Insert).
-2. **Encoding**: Raw CSVs from TWSE/TPEx are Big5 → converted to UTF-8-sig by scraper.
-3. **ETF & preferred stock filtering**: Importer excludes symbols starting with "00" (ETFs) and symbols containing letters (preferred stocks like 1101B).
-4. **OHLCV validation**: Importer filters rows where all of open/high/low/close/volume are NULL or 0.
-5. **Rate limiting**: Scraper waits 3 seconds between requests. TDCC uses random 1-2s delays.
-6. **Taiwan calendar**: Uses `pandas_market_calendars` (XTAI) to determine trading days.
-7. **ROC year**: MOPS uses 民國 year (AD year - 1911). Scraper handles conversion.
-8. **Database wait**: Importer has built-in retry logic to wait for database availability.
-9. **market_indices extraction**: Processor auto-extracts market indices from daily_quotes during conversion.
+1. **Incremental by default**: Processor and importer skip existing data (override with FORCE flags)
+2. **Data filtering**: Importer excludes ETFs and preferred stocks (`importer/CLAUDE.md`)
+3. **Quality checks**: Integrated into processor v3.0 (`processor/CLAUDE.md`)
+4. **Technical indicators**: Calculator processes all stocks at once (`calculator/CLAUDE.md`)
+5. **Rate limiting**: Scraper enforces delays between requests (`scraper/CLAUDE.md`)
 
 ## Common Data Pipeline Tasks
 
-### Batch import historical data
+### Daily Update
 ```bash
-# Process + import a full year (uses unified convert.py)
+# Full pipeline for a specific date
+./scripts/daily_update.sh 20260201
+```
+
+### Batch Historical Import
+```bash
+# Process + import a full year
 for date in $(python3 -c "
 import pandas_market_calendars as mcal
 cal = mcal.get_calendar('XTAI')
@@ -596,116 +541,48 @@ for d in cal.schedule('2022-01-01','2022-12-31').index:
   START_DATE=$date END_DATE=$date docker compose run --rm processor
   START_DATE=$date END_DATE=$date docker compose run --rm importer
 done
-# Then recalculate all indicators
 docker compose run --rm calculator
 ```
 
-### Force recalculate all technical indicators
+### Monthly Revenue
+See `scraper/CLAUDE.md` for scraping, `processor/CLAUDE.md` for processing, `importer/CLAUDE.md` for importing.
+
+### Quarterly Reports
+See `scraper/CLAUDE.md` for scraping, `processor/CLAUDE.md` for processing, `importer/CLAUDE.md` for importing.
+
+### TDCC Shareholding Data
+See `scraper/CLAUDE.md` for detailed manual and automated steps.
+
+### Force Recalculate Indicators
 ```bash
 docker compose run --rm calculator
 ```
-
-### Import only one category
-```bash
-docker compose run --rm -e IMPORT_CATEGORY=monthly_revenue importer
-```
-
-Available `IMPORT_CATEGORY` values:
-- `daily_quotes` — Daily OHLCV data
-- `market_indices` — Market indices (auto-extracted from daily_quotes)
-- `institutional_investors` — Institutional buy/sell per stock
-- `institutional_summary` — Institutional buy/sell market-level summary
-- `foreign_holding` — Foreign shareholding ratio
-- `margin_trading` — Margin long/short balance
-- `margin_sbl` — Securities borrowing and lending
-- `margin_summary` — Market-level margin trading summary
-- `pe_ratio` — Price-to-earnings ratio
-- `monthly_revenue` — Monthly revenue
-- `shareholding_div` — TDCC shareholding dispersion
-
-### Force re-import (delete and re-import existing data)
-```bash
-docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding_div importer
-```
-Note: `FORCE_REIMPORT` must be passed via `-e` flag, not as a shell env var prefix.
-
-### Process shareholding_div2 (historical all-in-one TDCC format)
-```bash
-docker compose run --rm processor python convert_shareholding2.py
-# Or with date range:
-START_DATE=20200103 END_DATE=20230908 docker compose run --rm processor python convert_shareholding2.py
-```
-Both `convert_shareholding.py` and `convert_shareholding2.py` output to the same `data/processed/shareholding_div/` directory.
-
-### TDCC manual steps (if not using Docker)
-```bash
-# Step 1: Generate active stock list from latest monthly revenue (data/raw/monthly_revenue)
-python scraper/generate_active_stocks.py  # outputs active_stocks.txt
-# Or pick a specific month (YYYYMMDD = 1st day of month dir)
-python scraper/generate_active_stocks.py --date 20251201
-
-# Step 2: Query available dates from TDCC
-python scraper/fetch_tdcc_history.py --list-dates
-
-# Step 3: Fetch data for specific date
-python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
-```
-
-### Monthly revenue manual fetch
-```bash
-# Fetch a specific month (e.g. 2026/01)
-REVENUE_YEAR=2026 REVENUE_MONTH=1 docker compose run --rm scraper-monthly
-# Then process + import
-START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python convert_monthly_revenue.py
-docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 -e IMPORT_CATEGORY=monthly_revenue importer
-```
-Note: Monthly revenue is published before the 10th of each month. Fetching after the 11th ensures completeness.
-
-### Quarterly report manual fetch
-```bash
-# Fetch 2025 Q3
-REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
-# Process + Import (Use YYYYQX for start/end date for quarterly reports)
-START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=quarterly_reports importer
-```
-
-### Automation schedules (launchctl)
-
-| Schedule | Plist | Script | Time |
-|----------|-------|--------|------|
-| Daily quotes | `com.poyilee.stock-daily-update` | StockDailyUpdate.app | Every day 21:00 |
-| Weekly TDCC | `com.poyilee.stock-weekly-update` | `scripts/weekly_tdcc_update.sh` | Every Sunday 13:15 |
-| Monthly revenue | `com.poyilee.stock-monthly-update` | `scripts/monthly_revenue_update.sh` | Every 12th 17:00 |
-
-**Note on Daily Schedule Timing (21:00):**
-- TWSE publishes most data immediately after market close (~14:30)
-- **Foreign holding data (`foreign_holding`) is published with delay** - typically available after 20:00
-- Daily schedule set to 21:00 ensures all data (including foreign_holding) is available
-- If scraper runs too early, foreign_holding files will only contain headers (no data rows)
-
-All plist files are in `~/Library/LaunchAgents/`. Manage with:
-```bash
-launchctl load ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
-launchctl unload ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
-launchctl list | grep poyilee  # verify loaded
-```
-
-TDCC scraper features:
-- Auto CSRF token management (parses and renews session tokens)
-- Checkpoint resume (skips existing .csv files, safe to re-run on failure)
-- `--no-verify` flag for SSL certificate issues
+See `calculator/CLAUDE.md` for details.
 
 ## Docker Services Reference
 
-| Service | Command | Purpose |
-|---------|---------|---------|
-| `scraper-daily` | `python main.py` | Fetch daily market data |
-| `scraper-weekly` | `python scraper/generate_active_stocks.py ... && python scraper/fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Generate active stocks from monthly revenue, then fetch TDCC shareholding |
-| `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
-| `processor` | `python convert.py` | Process daily data |
-| `importer` | `python main.py` | Load CSVs into PostgreSQL |
-| `calculator` | `python main.py` | Compute technical indicators |
-| `db` | postgres:15 | PostgreSQL database |
-| `backend` | uvicorn | FastAPI server (port 8000) |
-| `frontend` | next start | Next.js UI (port 3000) |
+| Service | Purpose | Documentation |
+|---------|---------|---------------|
+| `scraper-daily` | Fetch daily market data from TWSE/TPEx | `scraper/CLAUDE.md` |
+| `scraper-weekly` | Fetch TDCC shareholding data | `scraper/CLAUDE.md` |
+| `scraper-monthly` | Fetch monthly revenue from MOPS | `scraper/CLAUDE.md` |
+| `scraper-quarterly` | Fetch quarterly reports from MOPS | `scraper/CLAUDE.md` |
+| `processor` | Clean & standardize raw CSVs | `processor/CLAUDE.md` |
+| `importer` | Load processed data into PostgreSQL | `importer/CLAUDE.md` |
+| `calculator` | Compute technical indicators | `calculator/CLAUDE.md` |
+| `backend` | FastAPI server (port 8000) | `backend/CLAUDE.md` (this file) |
+| `frontend` | Next.js UI (port 3000) | `frontend/CLAUDE.md` |
+| `db` | PostgreSQL database | N/A |
+
+---
+
+## Module Documentation Index
+
+For detailed information about each component:
+
+- **Backend API**: `backend/CLAUDE.md` (this file) - FastAPI endpoints, models, scanner logic
+- **Scraper**: `scraper/CLAUDE.md` - Data sources, scheduling, automation
+- **Processor**: `processor/CLAUDE.md` - v3.0 architecture, error handling, validation
+- **Importer**: `importer/CLAUDE.md` - Database import behavior, filtering rules
+- **Calculator**: `calculator/CLAUDE.md` - Technical indicator formulas, computation
+- **Frontend**: `frontend/CLAUDE.md` - React/Next.js UI components, charts
