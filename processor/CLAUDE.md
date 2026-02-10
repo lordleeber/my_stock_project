@@ -37,7 +37,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
 | `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. |
-| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/` (OpenData API) or `shareholding_div2/` (legacy). |
+| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/` (OpenData API). |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. **Now integrated into convert.py main loop**. |
@@ -110,7 +110,7 @@ Row 2: 買進,賣出,買進,賣出
 Merged to: `融資-買進`, `融資-賣出`, `融券-買進`, `融券-賣出`
 
 ### 8. Encoding Fallback with Replace
-Attempts UTF-8-sig first, falls back to CP950 with `errors='replace'` (preserves decode failure markers `�` instead of silently discarding).
+Attempts UTF-8-sig first, falls back to CP950 with `errors='replace'` (preserves decode failure markers `` instead of silently discarding).
 
 ### 9. Row Length Validation
 Tracks and reports mismatched row lengths during CSV parsing. In DEBUG mode, displays count of adjusted rows per file.
@@ -230,9 +230,6 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
 ```bash
 # Process data from shareholding/ directory (default)
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python convert_shareholding.py
-
-# Process legacy shareholding_div2/ directory
-INPUT_CATEGORY=shareholding_div2 docker compose run --rm processor python convert_shareholding.py
 ```
 
 #### Legacy: Per-Stock Format (2023/09~2026/02)

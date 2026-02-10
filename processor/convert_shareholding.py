@@ -1,8 +1,7 @@
 """
 集保股權分散表 ETL 處理模組 (all-in-one 格式)
 
-處理 data/raw/shareholding/ 或 shareholding_div2/ 下的單檔 CSV 資料，
-轉換為與 shareholding_div 相同的 processed 格式。
+處理 data/raw/shareholding/ 下的單檔 CSV 資料。
 
 raw 格式: TDCC_OD_1-5_YYYYMMDD.csv
   欄位: 資料日期, 證券代號, 持股分級, 人數, 股數, 占集保庫存數比例%
@@ -12,15 +11,12 @@ processed 格式: data/processed/shareholding_div/date=YYYYMMDD/all.csv
 
 使用方式:
     # 處理當前 shareholding 目錄（預設）
-    docker compose run --rm processor python convert_shareholding2.py
-
-    # 處理舊的 shareholding_div2 目錄
-    INPUT_CATEGORY=shareholding_div2 docker compose run --rm processor python convert_shareholding2.py
+    docker compose run --rm processor python convert_shareholding.py
 
 環境變數:
     START_DATE: 起始日期 (YYYYMMDD)
     END_DATE: 結束日期 (YYYYMMDD)
-    INPUT_CATEGORY: 輸入目錄名稱 (預設: shareholding，可選: shareholding_div2)
+    INPUT_CATEGORY: 輸入目錄名稱 (預設: shareholding)
 """
 
 import os
@@ -113,7 +109,7 @@ def process_file(file_path: str, date_str: str) -> bool:
             pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date")
         )
 
-        # 調整欄位順序 (與 convert_shareholding.py 一致)
+        # 調整欄位順序 (與 convert_shareholding_div.py 一致)
         df = df.select(["date", "symbol", "level", "level_name", "holders", "shares", "percentage"])
 
         # 依 symbol, level 排序

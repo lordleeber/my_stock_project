@@ -94,6 +94,8 @@ services:
     environment:
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
+      - FORCE_REPROCESS=${FORCE_REPROCESS:-0}
+      - DEBUG=${DEBUG:-0}
       - TZ=Asia/Taipei
 
   importer:

@@ -46,9 +46,9 @@ def clean_dataframe(df):
             eng_name = COLUMN_MAP[clean_col]
         elif norm_col in COLUMN_MAP:
             eng_name = COLUMN_MAP[norm_col]
-        elif "證券代號" in norm_col or norm_col == "代號":
+        elif any(k in norm_col for k in ["證券代號", "代號", "股票代號"]):
             eng_name = "symbol"
-        elif "證券名稱" in norm_col or norm_col == "名稱":
+        elif any(k in norm_col for k in ["證券名稱", "名稱", "股票名稱"]):
             eng_name = "name"
             
         if eng_name:
@@ -63,6 +63,8 @@ def clean_dataframe(df):
             matched_any = True
             
     if not matched_any:
+        if os.getenv("DEBUG", "0") == "1":
+            print(f"⚠️  clean_dataframe matched 0 columns. First 5 raw: {raw_columns[:5]}")
         return None
 
     df = df.rename(rename_dict)
@@ -119,18 +121,25 @@ def read_raw_csv(file_path, category=None):
         is_multi_row = False
         if header_idx > 0:
             prev_line = lines[header_idx-1].replace('"', '').strip()
-            if any(k in prev_line for k in ["融資", "融券", "借券"]): is_multi_row = True
+            # 偵測是否為分類行 (通常有分類字眼且包含大量逗號)
+            if any(k in prev_line for k in ["融資", "融券", "借券"]) and prev_line.count(",") >= 3:
+                is_multi_row = True
                 
         if is_multi_row:
-            header_csv = csv.reader(io.StringIO("\n".join([lines[header_idx-1], lines[header_idx]])))
-            cat_row = next(header_csv); sub_row = next(header_csv)
+            # 使用簡單的 split 代替 csv.reader 來解析標題，避免引號引發的問題
+            cat_row = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx-1])))]
+            sub_row = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx])))]
+            
             last_cat = ""
             for j, sub in enumerate(sub_row):
                 cat = cat_row[j].strip() if j < len(cat_row) else ""
                 if cat: last_cat = cat
                 header.append(f"{last_cat}-{sub}" if last_cat and sub else (sub or last_cat))
         else:
-            header = [c.strip() for c in next(csv.reader(io.StringIO(lines[header_idx])))]
+            header = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx])))]
+
+        if not header:
+            return None
 
         raw_data = []
         mismatched_rows = 0
@@ -157,10 +166,6 @@ def read_raw_csv(file_path, category=None):
         if not raw_data:
             return None
 
-        # 在 debug 模式下記錄行長度不一致的警告
-        if mismatched_rows > 0 and os.getenv("DEBUG", "0") == "1":
-            print(f"⚠️  {Path(file_path).name}: {mismatched_rows} rows adjusted for length mismatch")
-        
         unique_header = []
         h_counts = {}
         for h in header:
@@ -171,6 +176,11 @@ def read_raw_csv(file_path, category=None):
                 h_counts[h] = 0
                 unique_header.append(h)
 
+        if os.getenv("DEBUG", "0") == "1":
+            if mismatched_rows > 0:
+                print(f"⚠️  {Path(file_path).name}: {mismatched_rows} rows adjusted for length mismatch")
+            print(f"DEBUG: unique_header[:10] = {unique_header[:10]}")
+        
         df = pl.DataFrame(raw_data, schema=unique_header, orient="row")
         df_cleaned = clean_dataframe(df)
 
@@ -211,16 +221,33 @@ def read_sii_indices(file_path):
         
         # 使用 Pandas 處理重複標頭
         pdf = pd.read_csv(io.StringIO("".join(index_lines)))
+        
+        # 處理舊格式：將 "漲跌(+/-)" 和 "漲跌點數" 合併
+        if "漲跌(+/-)" in pdf.columns and "漲跌點數" in pdf.columns:
+            def combine_change(row):
+                sign = str(row["漲跌(+/-)"]).strip()
+                val = str(row["漲跌點數"]).replace(",", "")
+                if val == "--" or not val: return None
+                try:
+                    num = float(val)
+                    return -num if sign == "-" else num
+                except:
+                    return None
+            pdf["change_combined"] = pdf.apply(combine_change, axis=1)
+
         new_rename_map = {}
 
         for col in pdf.columns:
             c = str(col).strip().replace('"', '')
-            if c == "指數":
+            if c == "指數" or c == "報酬指數":
                 new_rename_map[col] = "symbol"
             elif c == "收盤指數":
                 new_rename_map[col] = "close"
-            elif "漲跌" in c and "漲跌幅" not in c and "change" not in new_rename_map.values():
+            elif c == "change_combined":
                 new_rename_map[col] = "change"
+            elif "漲跌" in c and "漲跌幅" not in c and "change" not in new_rename_map.values():
+                if "漲跌(+/-)" not in pdf.columns: # 只有在單一欄位時才直接對映
+                    new_rename_map[col] = "change"
 
         if "symbol" not in new_rename_map.values():
             return None
