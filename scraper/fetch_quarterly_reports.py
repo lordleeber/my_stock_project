@@ -76,8 +76,12 @@ def download_otc(year, quarter, target_dir):
         print(f"[!] OTC Error: {e}")
         return False
 
+def _year_quarter_dir(base_dir, year, quarter):
+    return os.path.join(base_dir, str(year), f"{year}Q{quarter}")
+
+
 def download_quarterly_report(year, quarter, output_base_dir):
-    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    target_dir = _year_quarter_dir(output_base_dir, year, quarter)
     os.makedirs(target_dir, exist_ok=True)
     
     s_ok = download_sii(year, quarter, target_dir)
@@ -171,7 +175,7 @@ def _save_tables_as_csv(resp_text, target_dir, market):
 
 def download_mops_income_statement(year, quarter, output_base_dir):
     """抓取 MOPS 綜合損益表 (t163sb04)，存成多個 CSV。"""
-    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    target_dir = _year_quarter_dir(output_base_dir, year, quarter)
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):
@@ -216,7 +220,7 @@ def download_mops_income_statement(year, quarter, output_base_dir):
 
 def download_mops_balance_sheet(year, quarter, output_base_dir):
     """抓取 MOPS 資產負債表 (t163sb05)，存成多個 CSV。"""
-    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    target_dir = _year_quarter_dir(output_base_dir, year, quarter)
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):
@@ -259,7 +263,7 @@ def download_mops_balance_sheet(year, quarter, output_base_dir):
 
 def download_mops_cash_flow(year, quarter, output_base_dir):
     """抓取 MOPS 現金流量表 (t163sb20)，存成多個 CSV。"""
-    target_dir = os.path.join(output_base_dir, f"date={year}Q{quarter}")
+    target_dir = _year_quarter_dir(output_base_dir, year, quarter)
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):

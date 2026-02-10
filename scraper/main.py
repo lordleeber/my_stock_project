@@ -5,6 +5,9 @@ from pathlib import Path
 import pandas_market_calendars as mcal
 import fetch_daily_sii
 import fetch_daily_otc
+import fetch_ex_dividend
+import fetch_capital_reduction
+import fetch_par_value_change
 from check_daily_outputs import check_daily_outputs
 
 def get_date_list():
@@ -46,6 +49,7 @@ if __name__ == "__main__":
     output_dir = os.getenv("OUTPUT_DIR", "data")
     market_type = os.getenv("MARKET_TYPE", "ALL").upper()  # SII, OTC, ALL
     delay = float(os.getenv("FETCH_DELAY", "3.0"))
+    end_date_env = os.getenv("END_DATE") or datetime.datetime.today().strftime("%Y%m%d")
     
     date_list = get_date_list()
     
@@ -65,6 +69,15 @@ if __name__ == "__main__":
     if market_type in ["OTC", "ALL"]:
         print("\n=== Starting OTC Scraper ===")
         fetch_daily_otc.run_scraper(date_list, output_dir, delay)
+
+    print("\n=== Starting EX_DIVIDEND Scraper ===")
+    fetch_ex_dividend.run_scraper(end_date_env, output_dir)
+
+    print("\n=== Starting CAPITAL_REDUCTION Scraper ===")
+    fetch_capital_reduction.run_scraper(end_date_env, output_dir)
+
+    print("\n=== Starting PAR_VALUE_CHANGE Scraper ===")
+    fetch_par_value_change.run_scraper(end_date_env, output_dir)
 
     # Post-run integrity check
     # Post-run integrity check (logs to /app/error_scraper_daily)

@@ -13,7 +13,7 @@ Examples:
     python merge_shareholding.py --all
 
 Output:
-    Merged files will be saved to data/raw/shareholding/TDCC_OD_1-5_YYYYMMDD.csv
+    Merged files will be saved to data/raw/shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv
 """
 
 import os
@@ -55,7 +55,9 @@ def merge_date(date_str):
     # Create output directory if not exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    output_file = f"{OUTPUT_DIR}/TDCC_OD_1-5_{date_str}.csv"
+    year_dir = Path(OUTPUT_DIR) / date_str[:4]
+    year_dir.mkdir(parents=True, exist_ok=True)
+    output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
 
     all_rows = []
     processed_stocks = 0

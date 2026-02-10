@@ -1,5 +1,6 @@
 import os
 import glob
+from pathlib import Path
 import polars as pl
 import pandas as pd
 from datetime import datetime
@@ -121,15 +122,15 @@ def process_file(file_path, date_str, market):
 
 def main():
     raw_path = os.path.join(RAW_DIR, CATEGORY)
-    date_dirs = sorted(glob.glob(os.path.join(raw_path, "date=*")))
-    
+    date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
+
     for date_dir in date_dirs:
-        date_str = os.path.basename(date_dir).split("=")[1]
+        date_str = date_dir.name
         print(f"Processing {date_str}...")
         
         all_dfs = []
         for market in ["sii", "otc"]:
-            xls_path = os.path.join(date_dir, f"{market}.xls")
+            xls_path = os.path.join(str(date_dir), f"{market}.xls")
             if os.path.exists(xls_path):
                 df = process_file(xls_path, date_str, market)
                 if df is not None: all_dfs.append(df)

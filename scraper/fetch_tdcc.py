@@ -3,7 +3,7 @@
 Fetch TDCC shareholding distribution data from OpenData API
 
 This script fetches the latest shareholding distribution data from TDCC's
-OpenData platform and saves it to data/raw/shareholding/ directory.
+OpenData platform and saves it to data/raw/shareholding/YYYY/ directory.
 
 API Endpoint: https://opendata.tdcc.com.tw/getOD.ashx?id=1-5
 
@@ -131,7 +131,9 @@ def save_data(data, date_str, output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
         # Generate output filename
-        output_file = os.path.join(output_dir, f"TDCC_OD_1-5_{date_str}.csv")
+        year_dir = Path(output_dir) / date_str[:4]
+        year_dir.mkdir(parents=True, exist_ok=True)
+        output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
 
         # Check if file already exists
         if os.path.exists(output_file):
@@ -174,7 +176,7 @@ def main():
     parser.add_argument(
         '--output-dir',
         default=OUTPUT_DIR,
-        help=f'Output directory (default: {OUTPUT_DIR})'
+        help=f'Output directory base (default: {OUTPUT_DIR}, year subfolder will be used)'
     )
     parser.add_argument(
         '--no-prompt',
@@ -208,8 +210,9 @@ def main():
     # Save data
     if args.no_prompt:
         # Auto-overwrite mode for automation
-        output_file = os.path.join(args.output_dir, f"TDCC_OD_1-5_{date_str}.csv")
-        os.makedirs(args.output_dir, exist_ok=True)
+        year_dir = Path(args.output_dir) / date_str[:4]
+        year_dir.mkdir(parents=True, exist_ok=True)
+        output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(data)
         file_size = os.path.getsize(output_file)

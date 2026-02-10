@@ -66,7 +66,7 @@ def _handle_generic_category(file_path, market, category, date_str):
     return df
 
 def _handle_institutional_summary(date_str):
-    input_dir = f"{RAW_DIR}/institutional_summary/date={date_str}"
+    input_dir = get_category_date_dir(RAW_DIR, "institutional_summary", date_str)
     all_dfs = []
     for market in ["sii", "otc"]:
         file_path = os.path.join(input_dir, f"{market}.csv")
@@ -100,7 +100,7 @@ def _handle_institutional_summary(date_str):
     return pl.concat(all_dfs) if all_dfs else None
 
 def _handle_margin_summary(date_str):
-    input_dir = f"{RAW_DIR}/margin_trading/date={date_str}"; results = []
+    input_dir = get_category_date_dir(RAW_DIR, "margin_trading", date_str); results = []
     sii_path = os.path.join(input_dir, "sii.csv")
     if os.path.exists(sii_path):
         try:
@@ -131,8 +131,22 @@ def _handle_margin_summary(date_str):
             log_processing_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
     return pl.from_pandas(pd.DataFrame(results)) if results else None
 
+def get_category_date_dir(base_dir, category, date_str):
+    """取得類別日期的目錄路徑，優先使用新結構 yyyy/yyyymmdd，若無則回退至 date=yyyymmdd"""
+    if category == "monthly_revenue":
+        return os.path.join(base_dir, category, f"date={date_str}")
+
+    new_path = os.path.join(base_dir, category, date_str[:4], date_str)
+    if os.path.exists(new_path):
+        return new_path
+    return os.path.join(base_dir, category, f"date={date_str}")
+
 def process_date_category(category, date_str):
-    output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+    # 輸出目錄統一改為新結構 (除了特定類別)
+    if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
+        output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+    else:
+        output_dir = f"{PROCESSED_DIR}/{category}/{date_str[:4]}/{date_str}"
     
     if category in ["institutional_summary", "margin_summary"]:
         output_file = f"{output_dir}/all.csv"
@@ -149,7 +163,8 @@ def process_date_category(category, date_str):
     if category == "market_indices":
         # OTC (Raw)
         otc_output = f"{output_dir}/otc.csv"
-        otc_raw = f"{RAW_DIR}/market_indices/date={date_str}/otc.csv"
+        otc_raw_dir = get_category_date_dir(RAW_DIR, "market_indices", date_str)
+        otc_raw = os.path.join(otc_raw_dir, "otc.csv")
         if os.path.exists(otc_raw) and (not os.path.exists(otc_output) or FORCE_REPROCESS):
             df = _handle_generic_category(otc_raw, "otc", category, date_str)
             if df is not None:
@@ -160,7 +175,8 @@ def process_date_category(category, date_str):
         
         # SII (Extract)
         sii_output = f"{output_dir}/sii.csv"
-        sii_quote = f"{RAW_DIR}/daily_quotes/date={date_str}/sii.csv"
+        dq_raw_dir = get_category_date_dir(RAW_DIR, "daily_quotes", date_str)
+        sii_quote = os.path.join(dq_raw_dir, "sii.csv")
         if os.path.exists(sii_quote) and (not os.path.exists(sii_output) or FORCE_REPROCESS):
             df_indices = read_sii_indices(sii_quote)
             if df_indices is not None:
@@ -170,7 +186,7 @@ def process_date_category(category, date_str):
                 print(f"Processed market_indices/{date_str}/sii (Extracted)")
         return
 
-    src_cat = category; cat_raw_path = f"{RAW_DIR}/{src_cat}/date={date_str}"
+    src_cat = category; cat_raw_path = get_category_date_dir(RAW_DIR, src_cat, date_str)
     if not os.path.exists(cat_raw_path): return
     for market_file in os.listdir(cat_raw_path):
         if not market_file.endswith(".csv"): continue
@@ -196,14 +212,20 @@ def main():
     for cat in all_categories:
         cat_path = os.path.join(RAW_DIR, cat)
         if os.path.exists(cat_path):
+            # Scan for date=YYYYMMDD (Old)
             for d in os.listdir(cat_path):
                 if d.startswith("date="):
                     date_part = d.split("=")[1]
-                    # 驗證日期格式以防止路徑遍歷攻擊
                     if date_pattern.match(date_part):
                         all_dates.add(date_part)
-                    else:
-                        print(f"⚠️  Invalid date format ignored: {d}")
+                
+                # Scan for YYYY/YYYYMMDD (New)
+                elif len(d) == 4 and d.isdigit():
+                    y_path = os.path.join(cat_path, d)
+                    if os.path.isdir(y_path):
+                        for sub_d in os.listdir(y_path):
+                            if date_pattern.match(sub_d):
+                                all_dates.add(sub_d)
 
     
     sorted_dates = sorted(list(all_dates))

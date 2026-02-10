@@ -15,6 +15,9 @@ The scraper fetches raw CSV data from Taiwan stock market sources:
 | Source | Service | What it fetches | Update Frequency |
 |--------|---------|----------------|------------------|
 | TWSE (twse.com.tw) | `scraper-daily` | Daily quotes, institutional investors, foreign holdings, margin, P/E, indices | Daily (after market close) |
+| TWSE (twse.com.tw) | `scraper-daily` | Ex-dividend/ex-right results (year-to-date) | Daily (after market close) |
+| TWSE (twse.com.tw) | `scraper-daily` | Capital reduction announcements (year-to-date) | Daily (after market close) |
+| TWSE (twse.com.tw) | `scraper-daily` | Par value change announcements (year-to-date) | Daily (after market close) |
 | TPEx (tpex.org.tw) | `scraper-daily` | Same categories for OTC-listed stocks + Index Summary | Daily (after market close) |
 | MOPS (mopsov.twse.com.tw) | `scraper-monthly` | Monthly revenue reports | Monthly (before 10th) |
 | MOPS (mopsov.twse.com.tw) | `scraper-quarterly` | Quarterly financial reports (SII/OTC), income statement (t163sb04), balance sheet (t163sb05), cash flow (t163sb20) | Quarterly (approx. 45 days after Q-end) |
@@ -31,11 +34,15 @@ data/raw/                          # Scraper output (original CSVs)
 ├── margin_trading/date=YYYYMMDD/{sii,otc}.csv
 ├── margin_sbl/date=YYYYMMDD/{sii,otc}.csv
 ├── pe_ratio/date=YYYYMMDD/{sii,otc}.csv
+├── ex_dividend/YYYY/{cp950.csv,all.csv}
+├── capital_reduction/YYYY/{cp950.csv,all.csv}
+├── par_value_change/YYYY/{cp950.csv,all.csv}
 ├── monthly_revenue/date=YYYYMM01/market.csv
-├── income_statement/date=YYYYQX/{sii,otc}_*.csv
-├── balance_sheet/date=YYYYQX/{sii,otc}_*.csv
-├── cash_flow/date=YYYYQX/{sii,otc}_*.csv
-├── shareholding/TDCC_OD_1-5_YYYYMMDD.csv        # Current: OpenData API (all-in-one)
+├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.xls
+├── income_statement/YYYY/YYYYQX/{sii,otc}_*.csv
+├── balance_sheet/YYYY/YYYYQX/{sii,otc}_*.csv
+├── cash_flow/YYYY/YYYYQX/{sii,otc}_*.csv
+├── shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv   # Current: OpenData API (all-in-one)
 ├── shareholding_div/date=YYYYMMDD/{symbol}.csv  # Legacy: Per-stock format (2023/09~)
 └── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # Legacy: All-in-one format (2020/01~2023/09)
 ```
@@ -57,7 +64,7 @@ data/raw/                          # Scraper output (original CSVs)
 
 | Service | Command | Purpose |
 |---------|---------|---------|
-| `scraper-daily` | `python main.py` | Fetch daily market data |
+| `scraper-daily` | `python main.py` | Fetch daily market data + ex-dividend/ex-right (YTD) + capital reduction (YTD) + par value change (YTD) |
 | `scraper-weekly` | `python scraper/fetch_tdcc.py --no-prompt --no-verify` | Fetch TDCC shareholding data from OpenData API |
 | `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
 | `scraper-quarterly` | `python fetch_quarterly_reports.py --year $REPORT_YEAR --quarter $REPORT_QUARTER` | Fetch quarterly financial reports |
@@ -120,6 +127,9 @@ python3 scraper/fetch_tdcc.py --no-prompt --no-verify
 ### Encoding
 - Raw CSVs from TWSE/TPEx are Big5 encoding
 - Scraper converts to **UTF-8-sig** for downstream processing
+- Ex-dividend/ex-right output keeps raw `cp950.csv` and a UTF-8 `all.csv`
+- Capital reduction output keeps raw `cp950.csv` and a UTF-8 `all.csv`
+- Par value change output keeps raw `cp950.csv` and a UTF-8 `all.csv`
 
 ### Taiwan Calendar
 - Uses `pandas_market_calendars` (XTAI) to determine trading days

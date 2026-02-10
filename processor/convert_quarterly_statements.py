@@ -1,5 +1,6 @@
 import os
 import glob
+from pathlib import Path
 import re
 import polars as pl
 import pandas as pd
@@ -163,15 +164,15 @@ def process_category(category):
         print(f"Raw dir not found: {raw_path}")
         return
 
-    date_dirs = sorted(glob.glob(os.path.join(raw_path, "date=*")))
+    date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
     for date_dir in date_dirs:
-        date_str = os.path.basename(date_dir).split("=")[1]
+        date_str = date_dir.name
         output_dir = os.path.join(PROCESSED_DIR, category, f"date={date_str}")
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, "all.csv")
 
         all_dfs = []
-        for csv_file in sorted(glob.glob(os.path.join(date_dir, "*.csv"))):
+        for csv_file in sorted(glob.glob(os.path.join(str(date_dir), "*.csv"))):
             market = os.path.basename(csv_file).split("_")[0]
             statement_type = detect_statement_type(market, os.path.basename(csv_file))
             try:

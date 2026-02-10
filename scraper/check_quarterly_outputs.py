@@ -41,7 +41,7 @@ def main():
 
     missing = []
     for dataset in datasets:
-        target_dir = base_dir / "raw" / dataset / f"date={date_str}"
+        target_dir = base_dir / "raw" / dataset / date_str[:4] / date_str
         if not target_dir.exists():
             missing.append(str(target_dir))
             continue

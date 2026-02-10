@@ -1,7 +1,7 @@
 """
 集保股權分散表 ETL 處理模組 (all-in-one 格式)
 
-處理 data/raw/shareholding/ 下的單檔 CSV 資料。
+處理 data/raw/shareholding/ 下的單檔 CSV 資料（可含年份子目錄）。
 
 raw 格式: TDCC_OD_1-5_YYYYMMDD.csv
   欄位: 資料日期, 證券代號, 持股分級, 人數, 股數, 占集保庫存數比例%
@@ -22,6 +22,7 @@ processed 格式: data/processed/shareholding_div/date=YYYYMMDD/all.csv
 import os
 import datetime
 import re
+from pathlib import Path
 import polars as pl
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
@@ -166,18 +167,18 @@ def main():
         print(f"Input directory not found: {input_dir}")
         return
 
-    # 找出所有 CSV 檔案並解析日期
-    pattern = re.compile(r"TDCC_OD_1-5_(\d{8})\.csv")
+    # 找出所有 CSV 檔案並解析日期（含子目錄）
+    pattern = re.compile(r"TDCC_OD_1-5_(\d{8})\.csv$")
     files = []
-    for filename in os.listdir(input_dir):
-        match = pattern.match(filename)
+    for path in Path(input_dir).rglob("TDCC_OD_1-5_*.csv"):
+        match = pattern.match(path.name)
         if match:
-            files.append((match.group(1), filename))
+            files.append((match.group(1), str(path)))
 
     files.sort()
 
     processed_count = 0
-    for date_str, filename in files:
+    for date_str, file_path in files:
         # 日期篩選
         try:
             current_date_obj = datetime.datetime.strptime(date_str, "%Y%m%d")
@@ -188,7 +189,6 @@ def main():
         except ValueError:
             continue
 
-        file_path = os.path.join(input_dir, filename)
         if process_file(file_path, date_str):
             processed_count += 1
 
