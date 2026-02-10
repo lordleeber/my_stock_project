@@ -32,6 +32,7 @@ Uses SQLAlchemy engine with psycopg2 driver.
 | `END_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
 | `IMPORT_CATEGORY` | (all) | Import only a specific category |
 | `FORCE_REIMPORT` | 0 | Set to 1 to delete and re-import existing data |
+| `ENABLE_FULL_DIFF` | 0 | Set to 1 to enable detailed row-by-row validation (slower) |
 | `DB_HOST` | db | PostgreSQL host |
 | `DB_USER` | user | Database user |
 | `DB_PASSWORD` | password | Database password |
@@ -196,6 +197,146 @@ docker compose run --rm backend python create_indexes.py
 
 ### Issue: ETF data (0050, 0056) not in database
 - **Expected behavior**: ETFs are intentionally filtered out. Importer only imports ordinary common stocks.
+
+## Validation System
+
+Importer automatically validates imported data to ensure database content matches CSV files.
+
+### Two Validation Levels
+
+#### 1. Statistical Validation (Always Enabled)
+Fast validation comparing aggregate statistics:
+- Row counts, unique dates/symbols
+- Sum/average of numeric fields (volume, value, PE ratio, etc.)
+- Allows 0.01% floating-point tolerance
+
+**Output**: `error_importer.md` (only created if validation fails)
+
+**Time**: 1-2 minutes
+
+#### 2. Full Diff Validation (Optional)
+Detailed row-by-row comparison:
+- Exports entire DB table to DataFrame
+- Loads all CSVs and merges
+- Identifies records only in CSV, only in DB, or with value differences
+- Samples up to 10,000 rows for value comparison
+
+**Output**: `error_importer_diff.md`
+
+**Time**: 5-10 minutes (memory intensive)
+
+**Enable with**: `ENABLE_FULL_DIFF=1`
+
+### Usage Examples
+
+```bash
+# Normal import with automatic statistical validation
+START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer
+
+# Enable full diff for detailed analysis
+START_DATE=20200210 END_DATE=20200210 ENABLE_FULL_DIFF=1 docker compose run --rm importer
+
+# Full diff for specific table only
+IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run --rm importer
+```
+
+### Interpreting Validation Reports
+
+#### error_importer.md (Statistical Report)
+```
+### daily_quotes
+- total_rows: CSV=3075602, DB=2666920
+- sum_volume: CSV=2009784413610.00, DB=1876122350426.00, 差異=6.6506%
+```
+
+**What to check**:
+- Row count differences > 10% → investigate
+- Numeric differences > 1% → investigate
+- Small differences (< 0.1%) → likely rounding/filtering, acceptable
+
+#### error_importer_diff.md (Detailed Report)
+```
+### 只在 CSV 存在（461,900 筆）
+2022-09-13|00865B  ← ETF filtered by importer
+2023-04-24|00700   ← ETF filtered by importer
+2022-07-29|9941A   ← Preferred stock filtered by importer
+
+### 只在 DB 存在（53,216 筆）
+2026-01-02|2611    ← Data outside date range
+2026-01-23|1310    ← Old data not in current CSV
+
+### 數值差異
+**2020-01-02|020000**
+- `volume`: CSV=`284000.0` vs DB=`284000`  ← Format difference (normal)
+```
+
+**What each section means**:
+- **Only in CSV**: Usually ETFs (00xxx) or preferred stocks (xxxA/B) filtered by importer → **Normal**
+- **Only in DB**: Records outside START_DATE/END_DATE range → **Normal** (unless using FORCE_REIMPORT)
+- **Value differences**: Check if format differences (`.0` suffix) or real data errors
+
+### Common Validation Scenarios
+
+#### Scenario 1: Large row count difference, mostly ETFs
+**Symptom**: CSV has 400k more rows, diff shows 00xxxx symbols
+
+**Cause**: ETF filtering is working as designed
+
+**Action**: No action needed
+
+#### Scenario 2: Recent dates only in DB
+**Symptom**: DB has 2026-02-xx records not in CSV
+
+**Cause**: CSV filtered by START_DATE/END_DATE, but DB has historical data
+
+**Action**: No action unless you want to clean old data with FORCE_REIMPORT
+
+#### Scenario 3: Many value differences with `.0` suffix
+**Symptom**: CSV=`123.0` vs DB=`123` for thousands of rows
+
+**Cause**: String representation of float vs numeric
+
+**Action**: No action (both values are equal)
+
+#### Scenario 4: Real numeric differences > 1%
+**Symptom**: sum_volume differs by 10%
+
+**Cause**: Processor error, importer bug, or corrupted data
+
+**Action**:
+1. Check processor logs
+2. Verify raw CSV files
+3. Use `FORCE_REIMPORT=1` to re-import
+4. If persists, investigate data source
+
+### When to Use Full Diff
+
+- Statistical validation shows large differences (> 1%)
+- Suspect data quality issues
+- After major processor changes
+- Debugging specific table problems
+- **Don't use** for routine imports (too slow)
+
+### Implementation Details
+
+**Files**:
+- `validator.py`: Statistical validation logic
+- `full_diff.py`: Detailed comparison logic
+- `main.py`: Orchestrates validation after import
+
+**Key Functions**:
+```python
+# Statistical validation
+from validator import validate_all_tables
+all_passed, all_errors = validate_all_tables(engine)
+
+# Full diff validation
+from full_diff import full_diff_validation, write_diff_report
+diff_reports = full_diff_validation(engine)
+write_diff_report(diff_reports, "/app/error_importer_diff.md")
+```
+
+**Validation runs automatically** - no need to manually invoke unless debugging.
 
 ## Next Steps
 

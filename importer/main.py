@@ -117,6 +117,33 @@ def filter_etf(df):
         print(f"  -> Filtered out {filtered_count} ETF/preferred stock records")
     return df
 
+def get_date_dirs(cat_path):
+    """取得類別路徑下的所有日期目錄，支援 date=yyyymmdd 和 yyyy/yyyymmdd 結構"""
+    date_dirs = []
+    if not os.path.exists(cat_path):
+        return date_dirs
+        
+    # Old structure: date=yyyymmdd
+    date_dirs.extend(glob.glob(os.path.join(cat_path, "date=*")))
+    
+    # New structure: yyyy/yyyymmdd
+    for y in os.listdir(cat_path):
+        if len(y) == 4 and y.isdigit():
+            y_path = os.path.join(cat_path, y)
+            if os.path.isdir(y_path):
+                # 這裡假設子目錄就是 yyyymmdd 格式
+                for d in os.listdir(y_path):
+                    if len(d) == 8 and d.isdigit():
+                        date_dirs.append(os.path.join(y_path, d))
+    return sorted(date_dirs)
+
+def get_date_from_dir(date_dir):
+    """從目錄路徑提取日期字串"""
+    base = os.path.basename(date_dir)
+    if base.startswith("date="):
+        return base.split("=")[1]
+    return base
+
 def import_data(engine):
     data_dir = "/app/data/processed"
     start_date, end_date = get_filter_dates()
@@ -181,10 +208,10 @@ def import_data(engine):
 
         # --- 特別處理 shareholding_div (集保股權分散表) ---
         if category == "shareholding_div":
-            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+            date_dirs = get_date_dirs(cat_path)
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]
+                date_str = get_date_from_dir(date_dir)
 
                 try:
                     current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
@@ -234,10 +261,10 @@ def import_data(engine):
 
         # --- 特別處理 institutional_summary (三大法人買賣超彙總) ---
         if category == "institutional_summary":
-            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+            date_dirs = get_date_dirs(cat_path)
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]
+                date_str = get_date_from_dir(date_dir)
 
                 try:
                     current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
@@ -364,10 +391,10 @@ def import_data(engine):
             continue
 
         # --- 一般處理 (daily_quotes, etc.) ---
-        date_dirs = glob.glob(os.path.join(cat_path, "date=*"))
+        date_dirs = get_date_dirs(cat_path)
 
-        for date_dir in sorted(date_dirs):
-            date_str = date_dir.split("=")[1]
+        for date_dir in date_dirs:
+            date_str = get_date_from_dir(date_dir)
 
             try:
                 current_date = datetime.datetime.strptime(date_str, "%Y%m%d")
@@ -441,3 +468,76 @@ if __name__ == "__main__":
     wait_for_db(engine)
     import_data(engine)
     print("All imports completed.")
+
+    # 執行驗證
+    print("\n" + "="*60)
+    print("開始驗證資料庫與 CSV 的一致性...")
+    print("="*60)
+
+    enable_full_diff = os.getenv("ENABLE_FULL_DIFF", "").lower() in ("1", "true", "yes")
+
+    try:
+        from validator import validate_all_tables
+        all_passed, all_errors = validate_all_tables(engine)
+
+        # 如果啟用完整 diff 比對
+        if enable_full_diff:
+            print("\n" + "="*60)
+            print("執行完整 diff 比對...")
+            print("="*60)
+
+            try:
+                from full_diff import full_diff_validation, write_diff_report
+                diff_reports = full_diff_validation(engine)
+
+                if diff_reports:
+                    write_diff_report(diff_reports, "/app/error_importer_diff.md")
+                    print("✅ 完整 diff 報告已生成")
+                else:
+                    print("⚠️  沒有生成 diff 報告")
+
+            except Exception as e:
+                print(f"❌ 完整 diff 比對時發生錯誤: {e}")
+                traceback.print_exc()
+
+        if not all_passed:
+            # 寫錯誤到 error_importer.md
+            error_file = "/app/error_importer.md"
+            with open(error_file, "w") as f:
+                f.write("# Importer 驗證錯誤報告\n\n")
+                f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write("## 驗證失敗的表格\n\n")
+
+                for table, errors in all_errors.items():
+                    f.write(f"### {table}\n\n")
+                    for error in errors:
+                        f.write(f"- {error}\n")
+                    f.write("\n")
+
+                f.write("## 建議處理方式\n\n")
+                f.write("1. 檢查 processor 是否正確處理了原始資料\n")
+                f.write("2. 檢查 importer 是否有正確的過濾邏輯（ETF、特別股過濾）\n")
+                f.write("3. 使用 `FORCE_REIMPORT=1` 重新匯入資料\n")
+                f.write("4. 檢查資料庫連線和權限設定\n")
+
+            print(f"\n❌ 驗證失敗！錯誤已寫入 {error_file}")
+        else:
+            # 刪除舊的錯誤檔案（如果存在）
+            error_file = "/app/error_importer.md"
+            if os.path.exists(error_file):
+                os.remove(error_file)
+                print(f"\n✅ 驗證通過，已清除舊的錯誤檔案")
+
+    except Exception as e:
+        print(f"\n❌ 驗證過程發生錯誤: {e}")
+        traceback.print_exc()
+
+        # 寫錯誤到檔案
+        error_file = "/app/error_importer.md"
+        with open(error_file, "w") as f:
+            f.write("# Importer 驗證錯誤報告\n\n")
+            f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("## 驗證過程發生錯誤\n\n")
+            f.write(f"```\n{traceback.format_exc()}\n```\n")
+
+        print(f"\n❌ 驗證過程錯誤已寫入 {error_file}")
