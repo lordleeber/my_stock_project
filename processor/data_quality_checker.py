@@ -533,7 +533,7 @@ def write_error_report(date_str, issues):
     if not issues:
         return
 
-    error_file = Path("error_processor.md")
+    error_file = Path("/app/error_processor.md")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Build report
