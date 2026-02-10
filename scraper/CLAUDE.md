@@ -35,8 +35,9 @@ data/raw/                          # Scraper output (original CSVs)
 ├── income_statement/date=YYYYQX/{sii,otc}_*.csv
 ├── balance_sheet/date=YYYYQX/{sii,otc}_*.csv
 ├── cash_flow/date=YYYYQX/{sii,otc}_*.csv
-├── shareholding_div/date=YYYYMMDD/{symbol}.csv   # Per-stock format (2023/09~)
-└── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # All-in-one format (2020/01~2023/09)
+├── shareholding/TDCC_OD_1-5_YYYYMMDD.csv        # Current: OpenData API (all-in-one)
+├── shareholding_div/date=YYYYMMDD/{symbol}.csv  # Legacy: Per-stock format (2023/09~)
+└── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # Legacy: All-in-one format (2020/01~2023/09)
 ```
 
 ## Environment Variables
@@ -49,15 +50,17 @@ data/raw/                          # Scraper output (original CSVs)
 | `FETCH_DELAY` | 3.0 | Seconds between scraper requests |
 | `REVENUE_YEAR` | - | For scraper-monthly (AD year) |
 | `REVENUE_MONTH` | - | For scraper-monthly |
-| `TDCC_DATE` | - | For scraper-weekly (YYYYMMDD) |
+| `REPORT_YEAR` | - | For scraper-quarterly (AD year) |
+| `REPORT_QUARTER` | - | For scraper-quarterly (1-4) |
 
 ## Docker Services
 
 | Service | Command | Purpose |
 |---------|---------|---------|
 | `scraper-daily` | `python main.py` | Fetch daily market data |
-| `scraper-weekly` | `python scraper/generate_active_stocks.py ... && python scraper/fetch_tdcc_history.py -f ... -d $TDCC_DATE` | Generate active stocks from monthly revenue, then fetch TDCC shareholding |
+| `scraper-weekly` | `python scraper/fetch_tdcc.py --no-prompt --no-verify` | Fetch TDCC shareholding data from OpenData API |
 | `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
+| `scraper-quarterly` | `python fetch_quarterly_reports.py --year $REPORT_YEAR --quarter $REPORT_QUARTER` | Fetch quarterly financial reports |
 
 ## Running the Scraper
 
@@ -87,21 +90,26 @@ REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
 ### TDCC Shareholding Data
 
 #### Using Docker (Recommended)
-The weekly update script is automated via launchctl (see Automation section below).
-
-#### Manual Steps (if not using Docker)
 ```bash
-# Step 1: Generate active stock list from latest monthly revenue (data/raw/monthly_revenue)
-python scraper/generate_active_stocks.py  # outputs active_stocks.txt
-# Or pick a specific month (YYYYMMDD = 1st day of month dir)
-python scraper/generate_active_stocks.py --date 20251201
-
-# Step 2: Query available dates from TDCC
-python scraper/fetch_tdcc_history.py --list-dates
-
-# Step 3: Fetch data for specific date
-python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
+# Fetch latest TDCC data from OpenData API
+docker compose run --rm scraper-weekly
 ```
+
+The weekly update script fetches data from TDCC's OpenData platform (https://opendata.tdcc.com.tw/getOD.ashx?id=1-5) and is automated via launchctl (see Automation section below).
+
+#### Manual Fetch
+```bash
+# Fetch latest data (date will be auto-detected from API)
+python3 scraper/fetch_tdcc.py --no-verify
+
+# Save to custom directory
+python3 scraper/fetch_tdcc.py --no-verify --output-dir /path/to/output
+
+# Auto-overwrite without prompt (for automation)
+python3 scraper/fetch_tdcc.py --no-prompt --no-verify
+```
+
+**Note**: The `--no-verify` flag is required to skip SSL certificate verification due to TDCC server configuration.
 
 ## Important Behaviors
 
@@ -127,10 +135,12 @@ python scraper/fetch_tdcc_history.py -f active_stocks.txt -d 20250321
 - Daily schedule set to 21:00 ensures all data (including foreign_holding) is available
 - If scraper runs too early, foreign_holding files will only contain headers (no data rows)
 
-### TDCC Scraper Features
-- **Auto CSRF token management**: Parses and renews session tokens automatically
-- **Checkpoint resume**: Skips existing .csv files, safe to re-run on failure
-- **`--no-verify` flag**: For SSL certificate issues
+### TDCC Scraper Features (fetch_tdcc.py)
+- **OpenData API**: Fetches from official TDCC OpenData platform (https://opendata.tdcc.com.tw)
+- **Auto-date detection**: Automatically extracts date from API response
+- **Complete data**: Includes all securities and 17 holding levels
+- **SSL handling**: Uses curl with `--no-verify` flag for SSL certificate issues
+- **Overwrite protection**: Prompts before overwriting (use `--no-prompt` for automation)
 
 ## Automation Schedules (launchctl)
 

@@ -37,8 +37,8 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
 | `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. |
-| `convert_shareholding.py` | Handles per-stock TDCC shareholding format (2023/09~). |
-| `convert_shareholding2.py` | Handles all-in-one TDCC shareholding format (2020/01~2023/09). |
+| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/` (OpenData API) or `shareholding_div2/` (legacy). |
+| `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. **Now integrated into convert.py main loop**. |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions. |
@@ -226,19 +226,21 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
 
 ### Shareholding Data (TDCC)
 
-#### Per-Stock Format (2023/09~)
+#### Current: All-in-One Format (from OpenData API)
 ```bash
+# Process data from shareholding/ directory (default)
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python convert_shareholding.py
+
+# Process legacy shareholding_div2/ directory
+INPUT_CATEGORY=shareholding_div2 docker compose run --rm processor python convert_shareholding.py
 ```
 
-#### All-in-One Format (2020/01~2023/09)
+#### Legacy: Per-Stock Format (2023/09~2026/02)
 ```bash
-docker compose run --rm processor python convert_shareholding2.py
-# Or with date range:
-START_DATE=20200103 END_DATE=20230908 docker compose run --rm processor python convert_shareholding2.py
+START_DATE=20230915 END_DATE=20260206 docker compose run --rm processor python convert_shareholding_div.py
 ```
 
-Both scripts output to the same `data/processed/shareholding_div/` directory.
+All scripts output to the same `data/processed/shareholding_div/` directory.
 
 ### Monthly Revenue
 ```bash

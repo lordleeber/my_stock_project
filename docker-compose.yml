@@ -28,10 +28,10 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-      - ./active_stocks.txt:/app/active_stocks.txt
-    command: sh -c "python scraper/generate_active_stocks.py --output /app/active_stocks.txt && if [ -z \"$$TDCC_DATE\" ]; then echo 'TDCC_DATE is required'; exit 1; fi && python scraper/fetch_tdcc_history.py -f /app/active_stocks.txt -d \"$$TDCC_DATE\" && python scraper/check_weekly_outputs.py"
+    command: sh -c "python scraper/fetch_tdcc.py --no-prompt --no-verify --output-dir /app/data/raw/shareholding && python scraper/check_weekly_outputs.py"
     environment:
       - OUTPUT_DIR=/app/data
+      - RAW_DIR=/app/data/raw
       - TZ=Asia/Taipei
 
   # 月營收 (每月 10 日後執行)
