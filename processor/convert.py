@@ -1,7 +1,8 @@
 """
-通用 ETL 處理進入點 (Finalized)
+通用 ETL 處理進入點 (Integrated with Data Quality Checker)
 
-整合所有類別的處理邏輯，包含個股、彙總表、大盤指數。
+1. 整合所有類別的處理邏輯 (個股、彙總表、大盤指數)。
+2. 採用「日期優先」循環：處理完每一天後，立刻執行品質稽核。
 """
 
 import os
@@ -10,16 +11,18 @@ import io
 import polars as pl
 import pandas as pd
 import traceback
+import re
 from pathlib import Path
 from schemas import SCHEMA_COLS, COLUMN_MAP, NUMERIC_COLS
 from utils import read_raw_csv, read_sii_indices
+import data_quality_checker
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
 
-def log_error(msg, date_str=None, category=None):
-    """將錯誤訊息記錄到專用的 error_processor.md 檔案"""
+def log_processing_error(msg, date_str=None, category=None):
+    """將處理階段的錯誤訊息記錄到專用的 error_processor.md 檔案"""
     error_file = Path("/app/error_processor.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -79,6 +82,12 @@ def _handle_institutional_summary(date_str):
                 elif "賣出" in c: rename_map[col] = "sell"
                 elif "差額" in c or "買賣超" in c: rename_map[col] = "net"
             df = df.select(list(rename_map.keys())).rename(rename_map)
+            
+            # Review fix: 明確檢查 institution 欄位是否存在
+            if "institution" not in df.columns:
+                log_processing_error(f"Missing 'institution' column in {market}.csv (cols: {df.columns})", date_str, "institutional_summary")
+                continue
+
             df = df.with_columns(pl.col("institution").str.strip_chars().replace(INSTITUTION_MAP))
             df = df.filter(pl.col("institution").is_in(KEEP_INSTITUTIONS))
             for col in ["buy", "sell", "net"]:
@@ -87,7 +96,7 @@ def _handle_institutional_summary(date_str):
             df = df.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit(market).alias("market")])
             all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net"]))
         except Exception as e:
-            log_error(f"Error in institutional_summary for {market}: {e}", date_str, "institutional_summary")
+            log_processing_error(f"Error in institutional_summary for {market}: {e}", date_str, "institutional_summary")
     return pl.concat(all_dfs) if all_dfs else None
 
 def _handle_margin_summary(date_str):
@@ -102,7 +111,7 @@ def _handle_margin_summary(date_str):
                 if "融資" in item or "融券" in item:
                     results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "SII", "item": item, "buy": int(str(row['買進']).replace(",", "")), "sell": int(str(row['賣出']).replace(",", "")), "cash_repay": int(str(row['現金(券)償還']).replace(",", "")), "prev_balance": int(str(row['前日餘額']).replace(",", "")), "today_balance": int(str(row['今日餘額']).replace(",", ""))})
         except Exception as e:
-            log_error(f"Error in margin_summary (SII): {e}", date_str, "margin_summary")
+            log_processing_error(f"Error in margin_summary (SII): {e}", date_str, "margin_summary")
     otc_path = os.path.join(input_dir, "otc.csv")
     if os.path.exists(otc_path):
         try:
@@ -110,14 +119,16 @@ def _handle_margin_summary(date_str):
             for line in lines[-5:]:
                 if "合計(張)" in line or "融資金(仟元)" in line:
                     parts = [p.strip().replace('"', '') for p in line.split('","')]
+                    if len(parts) < 7: continue # 基本長度檢查
+                    
                     item = parts[0].replace('"', '')
-                    if "合計(張)" in item:
+                    if "合計(張)" in item and len(parts) >= 15:
                         results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", ""))})
                         results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", ""))})
                     elif "融資金(仟元)" in item:
                         results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", ""))})
         except Exception as e:
-            log_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
+            log_processing_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
     return pl.from_pandas(pd.DataFrame(results)) if results else None
 
 def process_date_category(category, date_str):
@@ -126,7 +137,8 @@ def process_date_category(category, date_str):
     if category in ["institutional_summary", "margin_summary"]:
         output_file = f"{output_dir}/all.csv"
         if os.path.exists(output_file) and not FORCE_REPROCESS:
-            print(f"Skipping {category}/{date_str} (already exists)")
+            if os.getenv("DEBUG", "0") == "1":
+                print(f"Skipping {category}/{date_str} (already exists)")
             return
         df = _handle_institutional_summary(date_str) if category == "institutional_summary" else _handle_margin_summary(date_str)
         if df is not None:
@@ -175,25 +187,73 @@ def main():
     start_date = datetime.datetime.strptime(start_env, "%Y%m%d") if start_env else None
     end_date = datetime.datetime.strptime(end_env, "%Y%m%d") if end_env else None
     print("Starting Unified ETL Pipeline...")
-    # 定義所有要處理的類別 (包含虛擬類別)
+    
     all_categories = ["daily_quotes", "institutional_investors", "foreign_holding", "margin_trading", "margin_sbl", "pe_ratio", "market_indices", "institutional_summary", "margin_summary"]
-    for category in all_categories:
-        # 決定時間參考來源 (margin_summary 參考 margin_trading)
-        ref_cat = "margin_trading" if category == "margin_summary" else category
-        if category == "institutional_summary" and not os.path.exists(f"{RAW_DIR}/institutional_summary"): ref_cat = "institutional_investors"
-        
-        ref_path = os.path.join(RAW_DIR, ref_cat)
-        if not os.path.exists(ref_path): continue
-        for d_entry in os.listdir(ref_path):
-            if not d_entry.startswith("date="): continue
-            date_str = d_entry.split("=")[1]
+
+    # 1. 搜集所有需要處理的日期 (掃描所有類別的 Raw 資料並驗證格式)
+    date_pattern = re.compile(r'^\d{8}$')
+    all_dates = set()
+    for cat in all_categories:
+        cat_path = os.path.join(RAW_DIR, cat)
+        if os.path.exists(cat_path):
+            for d in os.listdir(cat_path):
+                if d.startswith("date="):
+                    date_part = d.split("=")[1]
+                    # 驗證日期格式以防止路徑遍歷攻擊
+                    if date_pattern.match(date_part):
+                        all_dates.add(date_part)
+                    else:
+                        print(f"⚠️  Invalid date format ignored: {d}")
+
+    
+    sorted_dates = sorted(list(all_dates))
+    
+    # 2. 依照日期順序執行
+    for date_str in sorted_dates:
+        try:
+            curr = datetime.datetime.strptime(date_str, "%Y%m%d")
+            # 日期範圍過濾
+            if start_date and curr < start_date: continue
+            if end_date and curr > end_date: continue
+            
+            # 2a. 處理當天所有類別
+            for category in all_categories:
+                process_date_category(category, date_str)
+            
+            # 2b. 當天處理完後，立刻執行資料品質稽核
+            print(f"Auditing data for {date_str}...")
+
+            # 暫存原始環境變數
+            original_start = os.environ.get("START_DATE")
+            original_end = os.environ.get("END_DATE")
+
             try:
-                curr = datetime.datetime.strptime(date_str, "%Y%m%d")
-                if (not start_date or curr >= start_date) and (not end_date or curr <= end_date):
-                    process_date_category(category, date_str)
-            except Exception as e:
-                log_error(f"Error in main loop for {category} on {date_str}: {e}", date_str, category)
-                continue
+                # 設定當天日期範圍供 QC 使用
+                os.environ["START_DATE"] = date_str
+                os.environ["END_DATE"] = date_str
+
+                data_quality_checker.main()
+            except SystemExit as e:
+                if e.code != 0:
+                    error_msg = f"Data quality check failed with exit code {e.code}"
+                    print(f"⚠️  {error_msg} for {date_str}")
+                    log_processing_error(error_msg, date_str, "quality_check")
+                    # 決策: 記錄錯誤但繼續處理下一個日期
+            finally:
+                # 還原環境變數
+                if original_start is not None:
+                    os.environ["START_DATE"] = original_start
+                else:
+                    os.environ.pop("START_DATE", None)
+
+                if original_end is not None:
+                    os.environ["END_DATE"] = original_end
+                else:
+                    os.environ.pop("END_DATE", None)
+
+        except Exception as e:
+            log_processing_error(f"Error in main loop for {date_str}: {e}", date_str)
+            continue
 
 if __name__ == "__main__":
     main()
