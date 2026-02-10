@@ -15,8 +15,16 @@ def log_parsing_error(file_path, msg, exception=None):
     date_str = "Unknown"
     
     # 嘗試從路徑提取日期
-    if "date=" in str(file_path):
-        date_str = str(file_path).split("date=")[1].split("/")[0]
+    path_str = str(file_path)
+    if "date=" in path_str:
+        date_str = path_str.split("date=")[1].split("/")[0]
+    else:
+        # 嘗試從 yyyy/yyyymmdd 結構提取 (最後兩層中的最後一層)
+        parts = Path(file_path).parts
+        if len(parts) >= 2:
+            potential_date = parts[-2]
+            if len(potential_date) == 8 and potential_date.isdigit():
+                date_str = potential_date
 
     with open(error_file, 'a', encoding='utf-8') as f:
         f.write(f"\n## Utils Parsing Error - {timestamp}\n")

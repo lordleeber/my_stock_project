@@ -20,7 +20,9 @@ def list_dates(start, end):
 
 
 def load_close_map(date_str, market):
-    path = os.path.join(RAW_DIR, f"date={date_str}", f"{market}.csv")
+    new_path = os.path.join(RAW_DIR, date_str[:4], date_str, f"{market}.csv")
+    old_path = os.path.join(RAW_DIR, f"date={date_str}", f"{market}.csv")
+    path = new_path if os.path.exists(new_path) else old_path
     if not os.path.exists(path):
         return {}
     close_map = {}

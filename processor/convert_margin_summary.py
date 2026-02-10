@@ -24,6 +24,13 @@ PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
 CATEGORY = "margin_summary"
 INPUT_CATEGORY = "margin_trading"
 
+def get_category_date_dir(base_dir, category, date_str):
+    """取得類別日期的目錄路徑，優先使用新結構 yyyy/yyyymmdd，若無則回退至 date=yyyymmdd"""
+    new_path = os.path.join(base_dir, category, date_str[:4], date_str)
+    if os.path.exists(new_path):
+        return new_path
+    return os.path.join(base_dir, category, f"date={date_str}")
+
 def process_sii(file_path: str, date_str: str):
     """處理 SII (證交所) 的彙總數據 (位於檔案前 4 行)"""
     try:
@@ -117,8 +124,8 @@ def process_otc(file_path: str, date_str: str):
         return None
 
 def process_date(date_str: str):
-    input_dir = f"{RAW_DIR}/{INPUT_CATEGORY}/date={date_str}"
-    output_dir = f"{PROCESSED_DIR}/{CATEGORY}/date={date_str}"
+    input_dir = get_category_date_dir(RAW_DIR, INPUT_CATEGORY, date_str)
+    output_dir = os.path.join(PROCESSED_DIR, CATEGORY, date_str[:4], date_str)
     
     if not os.path.exists(input_dir):
         return False
@@ -156,10 +163,19 @@ def main():
     if not os.path.exists(category_path):
         return
 
-    date_dirs = [d for d in os.listdir(category_path) if d.startswith("date=")]
+    # 找出所有需要處理的日期 (支援 date=yyyymmdd 和 yyyy/yyyymmdd 結構)
+    all_dates = set()
+    for d in os.listdir(category_path):
+        if d.startswith("date="):
+            all_dates.add(d.split("=")[1])
+        elif len(d) == 4 and d.isdigit():
+            y_path = os.path.join(category_path, d)
+            if os.path.isdir(y_path):
+                for sub_d in os.listdir(y_path):
+                    if len(sub_d) == 8 and sub_d.isdigit():
+                        all_dates.add(sub_d)
     
-    for date_entry in sorted(date_dirs):
-        date_str = date_entry.split("=")[1]
+    for date_str in sorted(list(all_dates)):
         if start_env and date_str < start_env: continue
         if end_env and date_str > end_env: continue
         process_date(date_str)

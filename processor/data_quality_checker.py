@@ -17,12 +17,29 @@ from datetime import datetime
 from pathlib import Path
 
 
+def get_processed_date_path(category, date_str, market=None):
+    """取得 Processed 資料的路徑，相容新舊結構"""
+    # 這些類別暫時保持 date= 結構
+    if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
+        if market:
+            return Path(f"data/processed/{category}/date={date_str}/{market}.csv")
+        return Path(f"data/processed/{category}/date={date_str}/all.csv")
+
+    new_dir = Path(f"data/processed/{category}/{date_str[:4]}/{date_str}")
+    old_dir = Path(f"data/processed/{category}/date={date_str}")
+    
+    base_dir = new_dir if new_dir.exists() else old_dir
+    if market:
+        return base_dir / f"{market}.csv"
+    return base_dir / "all.csv"
+
+
 def check_margin_trading(date_str):
     """Check margin_trading data quality - critical for trading analysis"""
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/margin_trading/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("margin_trading", date_str, market)
 
         if not file_path.exists():
             issues.append(f"margin_trading: Missing file {file_path}")
@@ -72,7 +89,7 @@ def check_margin_sbl(date_str):
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/margin_sbl/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("margin_sbl", date_str, market)
 
         if not file_path.exists():
             issues.append(f"margin_sbl: Missing file {file_path}")
@@ -122,7 +139,7 @@ def check_daily_quotes(date_str):
     issues = []
     
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/daily_quotes/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("daily_quotes", date_str, market)
 
         if not file_path.exists():
             issues.append(f"daily_quotes: Missing file {file_path}")
@@ -171,7 +188,7 @@ def check_institutional_investors(date_str):
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/institutional_investors/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("institutional_investors", date_str, market)
 
         if not file_path.exists():
             issues.append(f"institutional_investors: Missing file {file_path}")
@@ -212,7 +229,7 @@ def check_foreign_holding(date_str):
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/foreign_holding/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("foreign_holding", date_str, market)
 
         if not file_path.exists():
             issues.append(f"foreign_holding: Missing file {file_path}")
@@ -258,7 +275,7 @@ def check_pe_ratio(date_str):
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/pe_ratio/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("pe_ratio", date_str, market)
 
         if not file_path.exists():
             issues.append(f"pe_ratio: Missing file {file_path}")
@@ -307,7 +324,7 @@ def check_market_indices(date_str):
     issues = []
 
     for market in ['sii', 'otc']:
-        file_path = Path(f"data/processed/market_indices/date={date_str}/{market}.csv")
+        file_path = get_processed_date_path("market_indices", date_str, market)
 
         if not file_path.exists():
             # SII market indices are auto-extracted from daily_quotes, so they might not exist
@@ -417,7 +434,7 @@ def check_shareholding_div(date_str):
     """Check shareholding_div (TDCC) data quality"""
     issues = []
 
-    file_path = Path(f"data/processed/shareholding_div/date={date_str}/all.csv")
+    file_path = get_processed_date_path("shareholding_div", date_str)
 
     if not file_path.exists():
         # TDCC data is weekly, so it's normal for most dates to not have data
@@ -463,7 +480,7 @@ def check_institutional_summary(date_str):
     """Check institutional_summary data quality"""
     issues = []
 
-    file_path = Path(f"data/processed/institutional_summary/date={date_str}/all.csv")
+    file_path = get_processed_date_path("institutional_summary", date_str)
 
     if not file_path.exists():
         issues.append(f"institutional_summary: Missing file {file_path}")
@@ -528,7 +545,7 @@ def write_error_report(date_str, issues):
         report += f"- ❌ {issue}\n"
 
     report += "\n**Action required:**\n"
-    report += "1. Check raw data files in `data/raw/*/date=" + date_str + "/`\n"
+    report += "1. Check raw data files in `data/raw/*/`\n"
     report += "2. Review processor logs for errors\n"
     report += "3. Fix processor bugs if column mapping is incorrect\n"
     report += "4. Re-run processor: `START_DATE=" + date_str + " END_DATE=" + date_str + " docker compose run --rm processor`\n"

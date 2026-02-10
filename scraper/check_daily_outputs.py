@@ -7,7 +7,7 @@ def _append_missing(missing, date_list, market_type):
     if not missing:
         return
 
-    error_md = Path("/app/error_scraper_daily")
+    error_md = Path("/app/error_scraper_daily.md")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(error_md, "a", encoding="utf-8") as f:
         f.write(f"\n[{timestamp}] scraper-daily missing outputs\n")
@@ -62,7 +62,9 @@ def check_daily_outputs(date_list, output_dir, market_type):
     for date in date_list:
         for dataset in datasets:
             for market in markets:
-                path = base_dir / "raw" / dataset / f"date={date}" / f"{market}.csv"
+                new_path = base_dir / "raw" / dataset / date[:4] / date / f"{market}.csv"
+                old_path = base_dir / "raw" / dataset / f"date={date}" / f"{market}.csv"
+                path = new_path if new_path.exists() else old_path
                 if not _is_file_valid(path, min_bytes, min_lines):
                     missing.append(str(path))
 

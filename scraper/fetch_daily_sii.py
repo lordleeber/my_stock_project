@@ -41,8 +41,9 @@ def fetch_data(date_string, category, output_dir):
     url = CATEGORY_DIC[category].format(date=date_string)
     
     eng_category = CATEGORY_MAP.get(category, category)
-    # 結構變更: raw/{category}/date={date}/
-    dst_folder = os.path.join(output_dir, "raw", eng_category, f"date={date_string}")
+    # 結構變更: raw/{category}/yyyy/yyyymmdd/
+    year = date_string[:4]
+    dst_folder = os.path.join(output_dir, "raw", eng_category, year, date_string)
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     
     # 檔名變更: sii.csv

@@ -92,7 +92,9 @@ def fetch_tpex_index_json(date_string, dst_file_path):
 
 def fetch_data(date_string, category, output_dir):
     eng_category = CATEGORY_MAP.get(category, category)
-    dst_folder = os.path.join(output_dir, "raw", eng_category, f"date={date_string}")
+    # 結構變更: raw/{category}/yyyy/yyyymmdd/
+    year = date_string[:4]
+    dst_folder = os.path.join(output_dir, "raw", eng_category, year, date_string)
     pathlib.Path(dst_folder).mkdir(parents=True, exist_ok=True)
     dst_file_path = os.path.join(dst_folder, "otc.csv")
     
