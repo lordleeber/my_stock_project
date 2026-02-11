@@ -44,7 +44,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
 | `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Now injects lineage metadata** with index-based column mapping. SII has pretax columns (19-21), OTC calculates pretax from op_income + non_op_income. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Now injects lineage metadata** with strict column mapping validation. **Outputs to YYYY/YYYYMXX/all.csv**. |
-| `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income, balance, cashflow). **Outputs to YYYY/YYYYQX/all.csv**. |
+| `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Now injects lineage metadata**. Supports multiple statement types (general, bank, table, insurance) with flexible column mapping. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
