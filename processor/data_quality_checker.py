@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def verify_source_lineage(df, label, limit=20):
+def verify_source_lineage(df, label, limit=None):
     """
     驗證前 N 筆資料的來源追蹤資訊是否正確 (Lineage Verification)
     """
@@ -33,7 +33,7 @@ def verify_source_lineage(df, label, limit=20):
             issues.append(f"{label}: Found NULL values in lineage column '{col}'")
 
     # 2. 抽樣驗證 (前 N 筆)
-    check_limit = min(len(df), limit)
+    check_limit = len(df) if limit is None else min(len(df), limit)
     sample = df.head(check_limit)
 
     for idx, row in sample.iterrows():
