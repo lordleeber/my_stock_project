@@ -54,24 +54,58 @@ def process_monthly_revenue():
         print(f"Raw revenue directory not found: {RAW_DIR}")
         return
 
-    # 取得目錄列表，格式為 date=YYYYMMDD
-    date_dirs = sorted([d for d in os.listdir(RAW_DIR) if d.startswith("date=")])
+    # 取得所有可能的目錄，包含舊格式 date=YYYYMMDD 和新格式 YYYY/YYYYMXX
+    all_dirs = []
+    
+    # 掃描根目錄下的 date=...
+    for d in os.listdir(RAW_DIR):
+        if d.startswith("date="):
+            all_dirs.append(os.path.join(RAW_DIR, d))
+        # 掃描年分目錄 YYYY/
+        elif len(d) == 4 and d.isdigit():
+            year_path = os.path.join(RAW_DIR, d)
+            if os.path.isdir(year_path):
+                for sub_d in os.listdir(year_path):
+                    # 匹配 YYYYMXX 格式
+                    if len(sub_d) == 7 and "M" in sub_d:
+                        all_dirs.append(os.path.join(year_path, sub_d))
+    
+    all_dirs.sort()
     
     start_env = os.getenv("START_DATE")
     end_env = os.getenv("END_DATE")
 
-    for date_dir in date_dirs:
-        date_str = date_dir.split("=")[1]
-        ym_str = date_str[:6] # 202501
+    for dir_path in all_dirs:
+        dir_name = os.path.basename(dir_path)
         
-        if start_env and date_str < start_env: continue
-        if end_env and date_str > end_env: continue
+        # 提取日期字串用於比較
+        if dir_name.startswith("date="):
+            date_str = dir_name.split("=")[1] # YYYYMMDD
+            ym_comparable = date_str[:6]
+        else:
+            # YYYYMXX -> YYYYXX
+            ym_comparable = dir_name.replace("M", "")
+            date_str = dir_name # 保持原始格式用於顯示或後續
 
-        print(f"Processing revenue for {date_str}...")
+        # 過濾邏輯 (START_DATE/END_DATE 通常是 YYYYMMDD 或 YYYYMM)
+        if start_env:
+            start_cmp = start_env[:6]
+            if ym_comparable < start_cmp: continue
+        if end_env:
+            end_cmp = end_env[:6]
+            if ym_comparable > end_cmp: continue
+
+        print(f"Processing revenue for {dir_name}...")
         
-        year_str = date_str[:4]
-        month_str = date_str[4:6]
-        csv_files = glob.glob(os.path.join(RAW_DIR, date_dir, "*.csv"))
+        # 統一轉換為 YYYY 和 MM 用於後續路徑
+        if "M" in dir_name:
+            year_str = dir_name[:4]
+            month_str = dir_name[5:7]
+        else:
+            year_str = date_str[:4]
+            month_str = date_str[4:6]
+            
+        csv_files = glob.glob(os.path.join(dir_path, "*.csv"))
         
         dfs = []
         for file_path in csv_files:
@@ -137,9 +171,8 @@ def process_monthly_revenue():
         # 使用 YYYYMXX 格式，例如 2025M01
         final_df['date'] = f"{year_str}M{month_str}"
         
-        # 輸出路徑格式: data/processed/monthly_revenue/date=YYYYMXX/
-        subdir_name = f"date={year_str}M{month_str}"
-        output_dir = os.path.join(PROCESSED_DIR, subdir_name)
+        # 輸出路徑格式: data/processed/monthly_revenue/YYYY/YYYYMXX/
+        output_dir = os.path.join(PROCESSED_DIR, year_str, f"{year_str}M{month_str}")
         os.makedirs(output_dir, exist_ok=True)
         
         output_file = os.path.join(output_dir, "all.csv")

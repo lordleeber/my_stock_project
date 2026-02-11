@@ -43,8 +43,8 @@ The processor cleans and standardizes raw CSV data from the scraper:
 |--------|---------|
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
 | `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
-| `convert_monthly_revenue.py` | Handles monthly revenue data processing. |
-| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). |
+| `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Outputs to YYYY/YYYYMXX/all.csv**. |
+| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Includes Lineage Verification that validates ALL rows** (not sampling) by cross-referencing processed data with raw files. Writes findings to root `error_processor.md`. |

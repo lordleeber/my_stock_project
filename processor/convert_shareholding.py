@@ -63,8 +63,8 @@ def process_file(file_path: str, date_str: str) -> bool:
     Returns:
         是否成功處理
     """
-    output_dir = f"{PROCESSED_DIR}/{OUTPUT_CATEGORY}/{date_str[:4]}/{date_str}"
-    output_file = f"{output_dir}/all.csv"
+    output_dir = f"{PROCESSED_DIR}/{OUTPUT_CATEGORY}/{date_str[:4]}"
+    output_file = f"{output_dir}/{date_str}.csv"
 
     if os.path.exists(output_file) and not FORCE_REPROCESS:
         print(f"Skipping {date_str} (already exists)")

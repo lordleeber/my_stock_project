@@ -216,9 +216,15 @@ def get_category_date_dir(base_dir, category, date_str):
     return os.path.join(base_dir, category, f"date={date_str}")
 
 def process_date_category(category, date_str):
-    # 輸出目錄統一改為新結構 (除了特定類別)
-    if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
+    # 輸出目錄統一改為新結構
+    if category in ("income_statement", "balance_sheet", "cash_flow"):
         output_dir = f"{PROCESSED_DIR}/{category}/date={date_str}"
+    elif category == "monthly_revenue":
+        # YYYY/YYYYMXX
+        output_dir = f"{PROCESSED_DIR}/{category}/{date_str[:4]}/{date_str}"
+    elif category == "quarterly_reports":
+        # YYYY/YYYYQX
+        output_dir = f"{PROCESSED_DIR}/{category}/{date_str[:4]}/{date_str}"
     else:
         output_dir = f"{PROCESSED_DIR}/{category}/{date_str[:4]}/{date_str}"
     
