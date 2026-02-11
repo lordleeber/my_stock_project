@@ -1,11 +1,13 @@
 import os
 import glob
 import datetime
+import re
 import pandas as pd
 import numpy as np
 
 RAW_DIR = "/app/data/raw/monthly_revenue"
 PROCESSED_DIR = "/app/data/processed/monthly_revenue"
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
 # 欄位映射字典（中文列名）
 COL_MAPPING = {
@@ -19,7 +21,10 @@ COL_MAPPING = {
     "當月累計營收": "revenue_cumulative",
     "去年累計營收": "revenue_cumulative_last_year",
     "前期比較增減(%)": "cumulative_yoy_pct",
-    "備註": "comment"
+    "備註": "comment",
+    # Ignore columns (mapped to None)
+    "出表日期": None,
+    "資料年月": None,
 }
 
 # 英文列名映射（用於已經處理過的原始數據）
@@ -34,7 +39,9 @@ COL_MAPPING_EN = {
     "revenue_acc": "revenue_cumulative",
     "revenue_acc_last_year": "revenue_cumulative_last_year",
     "acc_yoy_pct": "cumulative_yoy_pct",
-    "comment": "comment"
+    "comment": "comment",
+    # Known columns to ignore (internal use)
+    "market": None,  # Handled separately
 }
 
 def clean_number(x):
@@ -48,6 +55,55 @@ def clean_number(x):
         return float(val_str)
     except:
         return None
+
+
+def normalize_column_name(col: str) -> str:
+    """Normalize column name for matching: lowercase, remove spaces/punctuation."""
+    col = col.strip().replace("\n", "").replace(" ", "")
+    col = re.sub(r'[（）()]', '', col)  # Remove parentheses
+    return col.lower()
+
+
+def validate_and_map_columns(df_columns: list, use_mapping: dict, is_english: bool, file_path: str) -> dict:
+    """
+    Validate all columns have mappings and return column index map.
+
+    Returns:
+        dict: {target_column: (source_column_name, 1-based_column_index)}
+
+    Raises:
+        ValueError: If unknown column found without mapping
+    """
+    column_map = {}  # target -> (source_col, 1-based index)
+
+    for idx, col in enumerate(df_columns):
+        col_clean = col.strip().replace("\n", "")
+        matched = False
+
+        for key, target in use_mapping.items():
+            # English uses exact match, Chinese uses contains match
+            if is_english:
+                match_found = (col_clean == key)
+            else:
+                match_found = (key in col_clean)
+
+            if match_found:
+                matched = True
+                if target is not None and target not in column_map:
+                    column_map[target] = (col_clean, idx + 1)  # 1-based index
+                break
+
+        if not matched:
+            # Check if it's a known ignored column
+            norm_col = normalize_column_name(col_clean)
+            if norm_col in ['market']:  # market is handled separately
+                continue
+            raise ValueError(
+                f"Unknown column '{col_clean}' at index {idx + 1} in {file_path}. "
+                f"Please add mapping to COL_MAPPING or COL_MAPPING_EN in convert_monthly_revenue.py"
+            )
+
+    return column_map
 
 def process_monthly_revenue():
     if not os.path.exists(RAW_DIR):
@@ -106,20 +162,20 @@ def process_monthly_revenue():
             month_str = date_str[4:6]
             
         csv_files = glob.glob(os.path.join(dir_path, "*.csv"))
-        
+
         dfs = []
         for file_path in csv_files:
             try:
                 # 嘗試判斷 header 位置
                 with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     lines = [f.readline() for _ in range(5)]
-                
+
                 header_row = 0
                 for i, line in enumerate(lines):
-                    if "公司代號" in line:
+                    if "公司代號" in line or "symbol" in line.lower():
                         header_row = i
                         break
-                
+
                 df = pd.read_csv(file_path, header=header_row, encoding='utf-8', thousands=',')
                 df.columns = [c.strip().replace("\n", "") for c in df.columns]
 
@@ -127,28 +183,59 @@ def process_monthly_revenue():
                 is_english = "symbol" in df.columns
                 use_mapping = COL_MAPPING_EN if is_english else COL_MAPPING
 
-                new_df = pd.DataFrame()
-                for col in df.columns:
-                    for key, target in use_mapping.items():
-                        # 英文列名使用精確匹配，中文列名使用包含匹配
-                        matched = (col == key) if is_english else (key in col)
-                        if matched:
-                            if target not in new_df.columns:
-                                new_df[target] = df[col]
-                            break
+                # Validate columns and get mapping with indices
+                column_map = validate_and_map_columns(
+                    df.columns.tolist(), use_mapping, is_english, file_path
+                )
 
-                for target in use_mapping.values():
-                    if target not in new_df.columns:
-                        new_df[target] = None
+                # Calculate relative path for src_file
+                # Convert absolute path to relative path from /app/data/raw
+                rel_path = file_path.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
+
+                # Build new dataframe with lineage tracking
+                new_df = pd.DataFrame()
+
+                # Track column indices for src_col - order must match output column order
+                # Output order: date, market, symbol, name, revenue_current, ...
+                col_indices = ["x"]  # date is added during processing
 
                 # 處理 market 欄位：如果原始資料已經有 market 欄位，使用它；否則從檔名判斷
                 if 'market' in df.columns:
                     new_df['market'] = df['market'].str.upper()
+                    market_idx = df.columns.tolist().index('market') + 1
+                    col_indices.append(str(market_idx))
                 else:
                     market = "SII" if "sii" in file_path.lower() else "OTC" if "otc" in file_path.lower() else "UNKNOWN"
                     new_df['market'] = market
+                    col_indices.append("x")  # Market derived from filename
+
+                # Add data columns in order
+                for target in ["symbol", "name", "revenue_current", "revenue_last_month",
+                               "revenue_last_year", "mom_pct", "yoy_pct", "revenue_cumulative",
+                               "revenue_cumulative_last_year", "cumulative_yoy_pct", "comment"]:
+                    if target in column_map:
+                        src_col, src_idx = column_map[target]
+                        new_df[target] = df[src_col]
+                        col_indices.append(str(src_idx))
+                    else:
+                        new_df[target] = None
+                        col_indices.append("x")  # Missing column marked as 'x'
+
+                # Add lineage columns
+                # src_row: 1-based line number (header_row + 1 for header, then data rows)
+                # The first data row is at line header_row + 2 (1-indexed)
+                new_df['src_file'] = rel_path
+                new_df['src_row'] = range(header_row + 2, header_row + 2 + len(df))
+                new_df['src_col'] = "#".join(col_indices)
+
+                if DEBUG:
+                    print(f"  ✓ Parsed {file_path}: {len(df)} rows, src_col={new_df['src_col'].iloc[0] if len(new_df) > 0 else 'N/A'}")
+
                 dfs.append(new_df)
-                
+
+            except ValueError as e:
+                # Re-raise validation errors
+                raise
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
                 continue
@@ -156,25 +243,32 @@ def process_monthly_revenue():
         if not dfs:
             print(f"No valid data found for {date_str}")
             continue
-            
+
         final_df = pd.concat(dfs, ignore_index=True)
         final_df = final_df[final_df['symbol'].notna()]
         final_df = final_df[final_df['symbol'].astype(str).str.match(r'^\d+$')]
-        
-        num_cols = ["revenue_current", "revenue_last_month", "revenue_last_year", "mom_pct", "yoy_pct", 
+
+        num_cols = ["revenue_current", "revenue_last_month", "revenue_last_year", "mom_pct", "yoy_pct",
                     "revenue_cumulative", "revenue_cumulative_last_year", "cumulative_yoy_pct"]
-        
+
         for col in num_cols:
             if col in final_df.columns:
                 final_df[col] = final_df[col].apply(clean_number)
-        
+
         # 使用 YYYYMXX 格式，例如 2025M01
         final_df['date'] = f"{year_str}M{month_str}"
-        
+
+        # Reorder columns: date first, then data columns, then lineage columns at the end
+        col_order = ['date', 'market', 'symbol', 'name', 'revenue_current', 'revenue_last_month',
+                     'revenue_last_year', 'mom_pct', 'yoy_pct', 'revenue_cumulative',
+                     'revenue_cumulative_last_year', 'cumulative_yoy_pct', 'comment',
+                     'src_file', 'src_row', 'src_col']
+        final_df = final_df[[c for c in col_order if c in final_df.columns]]
+
         # 輸出路徑格式: data/processed/monthly_revenue/YYYY/YYYYMXX/
         output_dir = os.path.join(PROCESSED_DIR, year_str, f"{year_str}M{month_str}")
         os.makedirs(output_dir, exist_ok=True)
-        
+
         output_file = os.path.join(output_dir, "all.csv")
         final_df.to_csv(output_file, index=False, encoding='utf-8')
         print(f"Saved {len(final_df)} records to {output_file}")
