@@ -6,6 +6,7 @@
 """
 
 import os
+import sys
 import datetime
 import io
 import polars as pl
@@ -297,7 +298,9 @@ def process_date_category(category, date_str):
             df_indices, sii_col_mapping = read_sii_indices(sii_quote, return_col_mapping=True)
             if df_indices is not None:
                 df_indices = df_indices.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit("sii").alias("market")])
-                # symbol 從 index_name 來
+                # symbol 從 index_name 來 (需要同時更新 DataFrame 和 col_mapping)
+                if "index_name" in df_indices.columns:
+                    df_indices = df_indices.with_columns(pl.col("index_name").alias("symbol"))
                 if "index_name" in sii_col_mapping:
                     sii_col_mapping["symbol"] = sii_col_mapping["index_name"]
                 df_indices = enforce_schema(df_indices, "market_indices")
@@ -385,9 +388,20 @@ def main():
             except SystemExit as e:
                 if e.code != 0:
                     error_msg = f"Data quality check failed with exit code {e.code}"
-                    print(f"⚠️  {error_msg} for {date_str}")
+                    print(f"❌ {error_msg} for {date_str}")
                     log_processing_error(error_msg, date_str, "quality_check")
-                    # 決策: 記錄錯誤但繼續處理下一個日期
+                    # 立即停止處理，不再處理後續日期
+                    print(f"❌ Processing stopped due to data quality error. Fix the issue and re-run.")
+                    # 還原環境變數後退出
+                    if original_start is not None:
+                        os.environ["START_DATE"] = original_start
+                    else:
+                        os.environ.pop("START_DATE", None)
+                    if original_end is not None:
+                        os.environ["END_DATE"] = original_end
+                    else:
+                        os.environ.pop("END_DATE", None)
+                    sys.exit(1)
             finally:
                 # 還原環境變數
                 if original_start is not None:

@@ -328,6 +328,9 @@ def read_sii_indices(file_path, return_col_mapping=False):
         # 使用 Pandas 處理重複標頭
         pdf = pd.read_csv(io.StringIO("".join(index_lines)))
 
+        # 記錄原始欄位 (在添加計算欄位之前)
+        original_columns = list(pdf.columns)
+
         # 處理舊格式：將 "漲跌(+/-)" 和 "漲跌點數" 合併
         if "漲跌(+/-)" in pdf.columns and "漲跌點數" in pdf.columns:
             def combine_change(row):
@@ -342,7 +345,6 @@ def read_sii_indices(file_path, return_col_mapping=False):
             pdf["change_combined"] = pdf.apply(combine_change, axis=1)
 
         new_rename_map = {}
-        original_columns = list(pdf.columns)
 
         for col in pdf.columns:
             c = str(col).strip().replace('"', '')
@@ -387,6 +389,12 @@ def read_sii_indices(file_path, return_col_mapping=False):
                     .str.replace_all("--", "")
                     .cast(pl.Float64, strict=False)
                 )
+
+        # 過濾掉內部重複的標題行 (index_name = "指數" 或 index_close 為 null)
+        if "index_name" in df.columns:
+            df = df.filter(pl.col("index_name") != "指數")
+        if "index_close" in df.columns:
+            df = df.filter(pl.col("index_close").is_not_null())
 
         # 在 debug 模式下顯示成功訊息
         if os.getenv("DEBUG", "0") == "1":
