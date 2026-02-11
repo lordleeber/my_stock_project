@@ -39,6 +39,7 @@ data/raw/                          # Scraper output (original CSVs)
 ├── par_value_change/YYYY/{cp950.csv,all.csv}
 ├── monthly_revenue/date=YYYYMM01/market.csv
 ├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.xls
+├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.csv  # Raw XLS converted directly to CSV (no schema normalization)
 ├── income_statement/YYYY/YYYYQX/{sii,otc}_*.csv
 ├── balance_sheet/YYYY/YYYYQX/{sii,otc}_*.csv
 ├── cash_flow/YYYY/YYYYQX/{sii,otc}_*.csv
@@ -67,7 +68,7 @@ data/raw/                          # Scraper output (original CSVs)
 | `scraper-daily` | `python main.py` | Fetch daily market data + ex-dividend/ex-right (YTD) + capital reduction (YTD) + par value change (YTD) |
 | `scraper-weekly` | `python scraper/fetch_tdcc.py --no-prompt --no-verify` | Fetch TDCC shareholding data from OpenData API |
 | `scraper-monthly` | `python fetch_monthly_revenue.py --year $REVENUE_YEAR --month $REVENUE_MONTH` | Fetch monthly revenue (requires REVENUE_YEAR, REVENUE_MONTH) |
-| `scraper-quarterly` | `python fetch_quarterly_reports.py --year $REPORT_YEAR --quarter $REPORT_QUARTER` | Fetch quarterly financial reports |
+| `scraper-quarterly` | `python fetch_quarterly_reports.py --year $REPORT_YEAR --quarter $REPORT_QUARTER` | Fetch quarterly financial reports and generate raw CSV from quarterly_reports XLS |
 
 ## Running the Scraper
 
