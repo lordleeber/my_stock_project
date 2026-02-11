@@ -464,7 +464,7 @@ For detailed information about data sources, see `scraper/CLAUDE.md`.
 
 | Source | Service | Update Frequency |
 |--------|---------|------------------|
-| TWSE/TPEx | `scraper-daily` | Daily (after market close, 21:00) |
+| TWSE/TPEx | `scraper-daily` | Daily (after market close, 22:00) |
 | MOPS | `scraper-monthly` | Monthly (before 10th) |
 | MOPS | `scraper-quarterly` | Quarterly (approx. 45 days after Q-end) |
 | TDCC | `scraper-weekly` | Weekly (Sunday) |
