@@ -42,8 +42,9 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | Module | Purpose |
 |--------|---------|
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
-| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
+| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Outputs to YYYY/YYYYMXX/all.csv**. |
+| `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income, balance, cashflow). **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
@@ -262,7 +263,9 @@ START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python c
 
 ### Quarterly Reports
 ```bash
+# Processes SII/OTC reports and MOPS statements
 START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
+START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_statements.py --category income_statement
 ```
 
 ## Column-Level Lineage Tracking (v3.1)

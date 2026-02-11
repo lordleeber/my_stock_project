@@ -124,8 +124,15 @@ def main():
     raw_path = os.path.join(RAW_DIR, CATEGORY)
     date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
 
+    start_env = os.getenv("START_DATE")
+    end_env = os.getenv("END_DATE")
+
     for date_dir in date_dirs:
-        date_str = date_dir.name
+        date_str = date_dir.name # YYYYQX
+        
+        if start_env and date_str < start_env: continue
+        if end_env and date_str > end_env: continue
+
         print(f"Processing {date_str}...")
         
         all_dfs = []
@@ -139,11 +146,14 @@ def main():
             final_df = pl.concat(all_dfs).unique(subset=["symbol"])
             # 強制統一欄位順序，確保匯入穩定
             final_df = final_df.select(FINAL_FIELDS)
-            output_dir = os.path.join(PROCESSED_DIR, CATEGORY, f"date={date_str}")
+            
+            # 輸出路徑格式: data/processed/quarterly_reports/YYYY/YYYYQX/
+            year_str = date_str[:4]
+            output_dir = os.path.join(PROCESSED_DIR, CATEGORY, year_str, date_str)
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(output_dir, "all.csv")
             final_df.write_csv(output_path)
-            print(f"  [+] Saved {final_df.height} records")
+            print(f"  [+] Saved {final_df.height} records to {output_path}")
             
             # 簡易資料品質檢查 (Post-processing check)
             if final_df.is_empty():

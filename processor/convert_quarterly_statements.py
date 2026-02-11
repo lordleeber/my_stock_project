@@ -165,9 +165,19 @@ def process_category(category):
         return
 
     date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
+    
+    start_env = os.getenv("START_DATE")
+    end_env = os.getenv("END_DATE")
+
     for date_dir in date_dirs:
-        date_str = date_dir.name
-        output_dir = os.path.join(PROCESSED_DIR, category, f"date={date_str}")
+        date_str = date_dir.name # YYYYQX
+        
+        if start_env and date_str < start_env: continue
+        if end_env and date_str > end_env: continue
+
+        # 輸出路徑格式: data/processed/category/YYYY/YYYYQX/
+        year_str = date_str[:4]
+        output_dir = os.path.join(PROCESSED_DIR, category, year_str, date_str)
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, "all.csv")
 
