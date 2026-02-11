@@ -53,30 +53,64 @@ def enforce_schema(df, category):
         df = df.with_columns([pl.lit(None).alias(col) for col in missing_cols])
     return df.select(required_cols)
 
+def generate_src_col(schema_cols, col_mapping):
+    """根據 SCHEMA_COLS 順序和欄位映射生成 src_col 字串
+
+    Args:
+        schema_cols: SCHEMA_COLS[category] 定義的最終欄位順序
+        col_mapping: {英文欄位名: 原始欄位索引(1-based)} 映射
+
+    Returns:
+        src_col 字串，格式如 "x#x#1#2#3#4#..."
+    """
+    src_col_parts = []
+    for col in schema_cols:
+        # 跳過 lineage 追蹤欄位本身
+        if col in ["src_file", "src_row", "src_col"]:
+            continue
+        if col in col_mapping:
+            src_col_parts.append(str(col_mapping[col]))
+        else:
+            # 處理時添加的欄位 (如 date, market) 或 schema 中存在但 raw 沒有的欄位
+            src_col_parts.append("x")
+    return "#".join(src_col_parts)
+
 def _handle_generic_category(file_path, market, category, date_str):
-    df = read_raw_csv(file_path, category=category)
-    if df is None or df.is_empty(): return None
+    """處理通用類別的 CSV 檔案
+
+    Returns:
+        (df, col_mapping) 或 (None, {}) 如果無法處理
+        col_mapping: {英文欄位名: 原始欄位索引(1-based)}
+    """
+    result = read_raw_csv(file_path, category=category, return_col_mapping=True)
+    df, col_mapping = result
+    if df is None or df.is_empty():
+        return None, {}
+
+    # 添加 date 和 market 欄位 (這些欄位不在 raw CSV 中，所以不加入 col_mapping)
     df = df.with_columns([
         pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
         pl.lit(market).alias("market")
     ])
-    # 更新 src_col：在前面添加 "x#x#" (對應 date 和 market 這兩個處理時添加的欄位)
-    if "src_col" in df.columns:
-        df = df.with_columns([
-            pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
-        ])
 
     # 為 market_indices 重命名欄位（必須在此處進行，因為 enforce_schema 會過濾未定義的列）
     if category == "market_indices":
         if "index_name" in df.columns and ("symbol" not in df.columns or df["symbol"].null_count() == len(df)):
             df = df.with_columns(pl.col("index_name").alias("symbol"))
+            # symbol 從 index_name 來，使用相同的 raw index
+            if "index_name" in col_mapping:
+                col_mapping["symbol"] = col_mapping["index_name"]
         if "change" in df.columns and "index_change_points" not in df.columns:
             df = df.with_columns(pl.col("change").alias("index_change_points"))
+            # index_change_points 從 change 來
+            if "change" in col_mapping:
+                col_mapping["index_change_points"] = col_mapping["change"]
 
     if "symbol" in df.columns:
         df = df.filter((pl.col("symbol").is_not_null()) & (pl.col("symbol") != ""))
         df = df.filter(pl.col("symbol").str.len_chars().is_between(2, 10))
-    return df
+
+    return df, col_mapping
 
 def _handle_institutional_summary(date_str):
     input_dir = get_category_date_dir(RAW_DIR, "institutional_summary", date_str)
@@ -246,26 +280,30 @@ def process_date_category(category, date_str):
         otc_raw_dir = get_category_date_dir(RAW_DIR, "market_indices", date_str)
         otc_raw = os.path.join(otc_raw_dir, "otc.csv")
         if os.path.exists(otc_raw) and (not os.path.exists(otc_output) or FORCE_REPROCESS):
-            df = _handle_generic_category(otc_raw, "otc", category, date_str)
+            df, col_mapping = _handle_generic_category(otc_raw, "otc", category, date_str)
             if df is not None:
                 df = enforce_schema(df, "market_indices")
+                # 根據 SCHEMA_COLS 順序生成 src_col
+                src_col_str = generate_src_col(SCHEMA_COLS["market_indices"], col_mapping)
+                df = df.with_columns(pl.lit(src_col_str).alias("src_col"))
                 os.makedirs(output_dir, exist_ok=True); df.write_csv(otc_output)
                 print(f"Processed market_indices/{date_str}/otc")
-        
+
         # SII (Extract)
         sii_output = f"{output_dir}/sii.csv"
         dq_raw_dir = get_category_date_dir(RAW_DIR, "daily_quotes", date_str)
         sii_quote = os.path.join(dq_raw_dir, "sii.csv")
         if os.path.exists(sii_quote) and (not os.path.exists(sii_output) or FORCE_REPROCESS):
-            df_indices = read_sii_indices(sii_quote)
+            df_indices, sii_col_mapping = read_sii_indices(sii_quote, return_col_mapping=True)
             if df_indices is not None:
                 df_indices = df_indices.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit("sii").alias("market")])
-                # 更新 src_col：在前面添加 "x#x#" (對應 date 和 market)
-                if "src_col" in df_indices.columns:
-                    df_indices = df_indices.with_columns([
-                        pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
-                    ])
+                # symbol 從 index_name 來
+                if "index_name" in sii_col_mapping:
+                    sii_col_mapping["symbol"] = sii_col_mapping["index_name"]
                 df_indices = enforce_schema(df_indices, "market_indices")
+                # 根據 SCHEMA_COLS 順序生成 src_col
+                src_col_str = generate_src_col(SCHEMA_COLS["market_indices"], sii_col_mapping)
+                df_indices = df_indices.with_columns(pl.lit(src_col_str).alias("src_col"))
                 os.makedirs(output_dir, exist_ok=True); df_indices.write_csv(sii_output)
                 print(f"Processed market_indices/{date_str}/sii (Extracted)")
         return
@@ -277,9 +315,14 @@ def process_date_category(category, date_str):
         market = market_file.split(".")[0]; output_file = f"{output_dir}/{market}.csv"
         if os.path.exists(output_file) and not FORCE_REPROCESS:
             continue
-        df = _handle_generic_category(os.path.join(cat_raw_path, market_file), market, category, date_str)
+        df, col_mapping = _handle_generic_category(os.path.join(cat_raw_path, market_file), market, category, date_str)
         if df is not None:
-            df = enforce_schema(df, category); os.makedirs(output_dir, exist_ok=True); df.write_csv(output_file)
+            df = enforce_schema(df, category)
+            # 根據 SCHEMA_COLS 順序生成 src_col
+            if category in SCHEMA_COLS:
+                src_col_str = generate_src_col(SCHEMA_COLS[category], col_mapping)
+                df = df.with_columns(pl.lit(src_col_str).alias("src_col"))
+            os.makedirs(output_dir, exist_ok=True); df.write_csv(output_file)
             print(f"Processed {category}/{date_str}/{market}")
 
 def main():

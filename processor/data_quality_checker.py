@@ -12,12 +12,42 @@ Usage:
 
 import os
 import sys
+import csv
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
-def verify_source_lineage(df, label, limit=None):
+
+def parse_csv_line(line):
+    """Parse a CSV line handling quoted fields with commas."""
+    try:
+        # Use csv module to properly parse quoted fields
+        reader = csv.reader([line])
+        return next(reader)
+    except Exception:
+        # Fallback to simple split if csv parsing fails
+        return line.strip().split(',')
+
+
+def clean_value_for_comparison(val):
+    """Clean a value for comparison: remove quotes, whitespace, commas in numbers."""
+    if val is None:
+        return ""
+    s = str(val).strip()
+    # Remove surrounding quotes
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1]
+    # Remove commas (number formatting)
+    s = s.replace(',', '')
+    # Handle special markers
+    if s in ('--', 'nan', 'None', ''):
+        return ""
+    return s
+
+
+def verify_source_lineage(df, label, limit=None, schema_cols=None):
     """
     驗證資料的來源追蹤資訊是否正確 (Lineage Verification)
 
@@ -25,6 +55,7 @@ def verify_source_lineage(df, label, limit=None):
         df: DataFrame to verify
         label: Label for error messages
         limit: Optional limit for number of rows to check (None = check all rows)
+        schema_cols: Optional list of column names in order (for src_col validation)
     """
     issues = []
     if len(df) == 0:
@@ -41,60 +72,99 @@ def verify_source_lineage(df, label, limit=None):
     check_limit = len(df) if limit is None else min(len(df), limit)
     sample = df.head(check_limit)
 
+    # Get column order for src_col validation (exclude lineage columns)
+    if schema_cols is None:
+        schema_cols = [c for c in df.columns if c not in ('src_file', 'src_row', 'src_col')]
+
+    # Cache for raw file contents (avoid re-reading same file)
+    raw_file_cache = {}
+
     for idx, row in sample.iterrows():
         src_file = str(row['src_file'])
+        src_col = str(row['src_col'])
+
         try:
             src_row = int(float(row['src_row']))
         except (ValueError, TypeError):
             issues.append(f"{label} row {idx}: Invalid src_row value '{row['src_row']}'")
             continue
 
-        # 處理路徑：如果是在 Docker 內，路徑可能是絕對路徑 /app/data/...
-        # 如果是本地，可能需要調整
+        # 處理路徑
         full_path = Path(src_file)
         if not full_path.exists():
             alt_path = None
-            # 嘗試補上當前目錄前綴或是 /app/
             if not src_file.startswith("/"):
-                # 嘗試相對路徑
                 cwd = Path.cwd()
                 p1 = cwd / src_file
                 p2 = cwd.parent / src_file
                 alt_path = p1 if p1.exists() else (p2 if p2.exists() else None)
-            
+
             if alt_path is None or not alt_path.exists():
                 issues.append(f"{label} row {idx}: Source file not found: {src_file}")
                 continue
             full_path = alt_path
 
-        # 取得識別資訊 (symbol 或 name)
-        identity = str(row.get('symbol', row.get('name', row.get('institution', ''))))
-        if not identity or identity == 'nan':
+        # 讀取原始檔案 (使用快取)
+        cache_key = str(full_path)
+        if cache_key not in raw_file_cache:
+            try:
+                with open(full_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+                    raw_file_cache[cache_key] = f.readlines()
+            except Exception as e:
+                issues.append(f"{label} row {idx}: Error reading source file: {str(e)}")
+                continue
+
+        raw_lines = raw_file_cache[cache_key]
+
+        # 檢查 src_row 是否存在
+        if src_row < 1 or src_row > len(raw_lines):
+            issues.append(f"{label} row {idx}: Row {src_row} does not exist in source {full_path.name} (has {len(raw_lines)} lines)")
             continue
 
-        try:
-            with open(full_path, 'r', encoding='utf-8-sig', errors='replace') as f:
-                # 讀取到指定行 (src_row 是 1-based)
-                line_content = None
-                for i, line in enumerate(f):
-                    if i == src_row - 1:
-                        line_content = line
-                        break
-                
-                if line_content is None:
-                    issues.append(f"{label} row {idx}: Row {src_row} does not exist in source {full_path.name}")
-                else:
-                    # 簡單驗證：識別資訊應出現在原始行中
-                    # 注意：原始行可能有引號、逗號等
-                    clean_identity = identity.replace('=', '').replace('"', '').strip()
-                    if clean_identity not in line_content:
-                        issues.append(
-                            f"{label} row {idx}: Lineage mismatch! "
-                            f"Expected '{clean_identity}' to be in raw row {src_row}, "
-                            f"but raw content was: {line_content.strip()[:100]}..."
-                        )
-        except Exception as e:
-            issues.append(f"{label} row {idx}: Error accessing source file: {str(e)}")
+        raw_line = raw_lines[src_row - 1]
+        raw_fields = parse_csv_line(raw_line)
+
+        # 解析 src_col: "x#x#1#2#3#4#5" (按 SCHEMA_COLS 順序)
+        col_indices = src_col.split('#')
+
+        # 長度檢查：src_col 應該與 schema_cols 長度一致 (排除 lineage 欄位後)
+        if len(col_indices) != len(schema_cols):
+            if DEBUG:
+                print(f"    [DEBUG] {label} row {idx}: src_col length ({len(col_indices)}) != schema_cols length ({len(schema_cols)})")
+
+        # 3. 完整欄位值驗證：根據 src_col 對應的索引，驗證 identity 欄位值
+        # src_col 現在已按 SCHEMA_COLS 順序生成，可進行完整驗證
+        for col_idx, (col_name, src_idx_str) in enumerate(zip(schema_cols, col_indices)):
+            # 跳過處理時添加的欄位 (x)
+            if src_idx_str == 'x':
+                continue
+
+            try:
+                src_idx = int(src_idx_str) - 1  # 轉為 0-based
+            except ValueError:
+                issues.append(f"{label} row {idx} col '{col_name}': Invalid src_col index '{src_idx_str}'")
+                continue
+
+            # 只驗證識別欄位 (symbol, name, index_name, institution)
+            if col_name not in ('symbol', 'name', 'index_name', 'institution'):
+                continue
+
+            if src_idx >= len(raw_fields):
+                issues.append(f"{label} row {idx} col '{col_name}': src_col index {src_idx + 1} out of range (raw has {len(raw_fields)} fields)")
+                continue
+
+            processed_val = clean_value_for_comparison(row.get(col_name, ''))
+            raw_val = clean_value_for_comparison(raw_fields[src_idx])
+
+            # 只檢查識別欄位的值是否匹配 (處理 symbol 格式如 ="0050")
+            if processed_val and raw_val and processed_val not in raw_val and raw_val not in processed_val:
+                issues.append(
+                    f"{label} row {idx} col '{col_name}': Lineage mismatch! "
+                    f"Processed='{processed_val}', Raw[{src_idx + 1}]='{raw_val}'"
+                )
+
+        if DEBUG and idx % 100 == 0:
+            print(f"    Verified {idx + 1}/{check_limit} rows...")
 
     return issues
 
