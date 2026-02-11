@@ -19,7 +19,12 @@ from pathlib import Path
 
 def verify_source_lineage(df, label, limit=None):
     """
-    驗證前 N 筆資料的來源追蹤資訊是否正確 (Lineage Verification)
+    驗證資料的來源追蹤資訊是否正確 (Lineage Verification)
+
+    Args:
+        df: DataFrame to verify
+        label: Label for error messages
+        limit: Optional limit for number of rows to check (None = check all rows)
     """
     issues = []
     if len(df) == 0:
@@ -32,7 +37,7 @@ def verify_source_lineage(df, label, limit=None):
         if df[col].isna().any():
             issues.append(f"{label}: Found NULL values in lineage column '{col}'")
 
-    # 2. 抽樣驗證 (前 N 筆)
+    # 2. 逐行驗證 (預設檢查全部，可選擇性限制數量)
     check_limit = len(df) if limit is None else min(len(df), limit)
     sample = df.head(check_limit)
 
@@ -437,7 +442,7 @@ def check_market_indices(date_str):
                 continue
 
             # Key columns for market indices
-            key_columns = ['close', 'change']
+            key_columns = ['index_close', 'index_change_points']
 
             for col in key_columns:
                 if col not in df.columns:
@@ -528,11 +533,11 @@ def check_monthly_revenue(date_str):
     return issues
 
 
-def check_shareholding_div(date_str):
-    """Check shareholding_div (TDCC) data quality"""
+def check_shareholding(date_str):
+    """Check shareholding (TDCC) data quality"""
     issues = []
 
-    file_path = get_processed_date_path("shareholding_div", date_str)
+    file_path = get_processed_date_path("shareholding", date_str)
 
     if not file_path.exists():
         # TDCC data is weekly, so it's normal for most dates to not have data
@@ -543,7 +548,7 @@ def check_shareholding_div(date_str):
         df = pd.read_csv(file_path)
 
         if len(df) == 0:
-            issues.append(f"shareholding_div: File is empty (0 rows)")
+            issues.append(f"shareholding: File is empty (0 rows)")
             return issues
 
         # Key columns for shareholding dispersion
@@ -555,7 +560,7 @@ def check_shareholding_div(date_str):
 
         for col in key_columns:
             if col not in df.columns:
-                issues.append(f"shareholding_div: Missing column '{col}'")
+                issues.append(f"shareholding: Missing column '{col}'")
                 continue
 
             null_count = df[col].isna().sum()
@@ -564,12 +569,15 @@ def check_shareholding_div(date_str):
             # Shareholding data should have low NULL rate
             if null_pct > 50:
                 issues.append(
-                    f"shareholding_div: Column '{col}' has {null_pct:.1f}% NULL values "
+                    f"shareholding: Column '{col}' has {null_pct:.1f}% NULL values "
                     f"({null_count}/{len(df)} rows)"
                 )
 
+        # --- 新增: Lineage 驗證 ---
+        issues.extend(verify_source_lineage(df, "shareholding"))
+
     except Exception as e:
-        issues.append(f"shareholding_div: Error reading file - {str(e)}")
+        issues.append(f"shareholding: Error reading file - {str(e)}")
 
     return issues
 
@@ -708,8 +716,8 @@ def main():
     print("Checking monthly_revenue...")
     all_issues.extend(check_monthly_revenue(date_str))
 
-    print("Checking shareholding_div...")
-    all_issues.extend(check_shareholding_div(date_str))
+    print("Checking shareholding...")
+    all_issues.extend(check_shareholding(date_str))
 
     print("Checking institutional_summary...")
     all_issues.extend(check_institutional_summary(date_str))

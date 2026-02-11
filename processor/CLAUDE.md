@@ -24,14 +24,18 @@ The processor cleans and standardizes raw CSV data from the scraper:
    - Processes all categories (daily_quotes, institutional_investors, etc.)
    - **Injects Data Lineage**: Adds `src_file`, `src_row`, `src_col` to every row.
    - Runs integrated quality check (data_quality_checker.main())
-   - **Lineage Verification**: QC samples first 20 rows to verify raw source matching.
+   - **Lineage Verification**: QC verifies all rows by cross-referencing processed data with raw source files.
    - Restores environment variables after QC
    - Continues to next date (errors are logged but don't stop pipeline)
 
-**Data Lineage & Traceability**: Every processed row now contains audit columns:
-- `src_file`: Relative path to the raw source file.
-- `src_row`: 1-based line number in the original raw file.
-- `src_col`: Original column index/identifier for the start of the data mapping.
+**Data Lineage & Traceability (Column-level)**: Every processed row contains audit columns for full traceability:
+- `src_file`: Relative path to the raw source file (e.g., `data/raw/daily_quotes/2020/20200102/sii.csv`)
+- `src_row`: 1-based line number in the original raw file (e.g., `186`)
+- `src_col`: **Column-level lineage mapping** in format `x#x#1#2#3#4#...` where:
+  - `x` = Column added during processing (e.g., `date`, `market`)
+  - Numbers = 1-based column indices from raw CSV (e.g., `1` = first column, `2` = second column)
+  - `#` = Delimiter separating each field's source column
+  - Example: `x#x#1#2#3#4#5` means: date(x), market(x), symbol(col 1), name(col 2), open(col 3), high(col 4), low(col 5)
 
 ## Modules
 
@@ -43,9 +47,9 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Now includes Lineage Verification (cross-referencing processed rows with raw files).** Writes findings to root `error_processor.md`. |
-| `schemas.py` | Column mappings, numeric types, standard schema definitions. **Includes src_file, src_row, src_col in all schemas.** |
-| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` handles lineage tracking.** |
+| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Includes Lineage Verification that validates ALL rows** (not sampling) by cross-referencing processed data with raw files. Writes findings to root `error_processor.md`. |
+| `schemas.py` | Column mappings, numeric types, standard schema definitions. **All columns must have mappings** (unknown columns cause errors). **Includes index-specific fields** (index_name, index_close, index_change_points) separate from stock fields. All schemas include src_file, src_row, src_col. |
+| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` generates column-level lineage** (src_col format: "1#2#3#..."). **`clean_dataframe` enforces strict column mapping** (raises error on unknown columns). |
 
 ## Environment Variables
 
@@ -127,7 +131,16 @@ Handles complex multi-row headers (Rows 2-5) in 2025+ SII Excel files by locatin
 
 ## Column Mapping
 
-The processor converts Chinese column names to English. Key mappings in `processor/schemas.py`:
+The processor converts Chinese column names to English using `processor/schemas.py`:
+
+**Mapping Policy (v3.1):**
+- ✅ **Strict Mapping Required**: All columns must have a mapping in COLUMN_MAP. Unknown columns will cause processing to fail with an error message asking you to add the mapping.
+- ✅ **Index-Specific Fields**: Market indices use separate field names to avoid conflicts with stock data:
+  - `index_name`, `index_close`, `index_change_points` (for indices)
+  - `symbol`, `name`, `close`, `change` (for stocks)
+- ✅ **SII/OTC Variants**: Different column names from SII and OTC markets can map to the same standard field (e.g., "證券代號" and "代號" both map to "symbol")
+
+**Key mappings:**
 
 **Basic Fields:**
 - 證券代號 → symbol
@@ -251,6 +264,59 @@ START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python c
 ```bash
 START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
 ```
+
+## Column-Level Lineage Tracking (v3.1)
+
+### Overview
+Every processed row includes precise traceability to the raw source file, allowing you to trace each field back to its original location.
+
+### How It Works
+
+**1. During CSV Reading (`utils.read_raw_csv`):**
+```python
+# For each data row, record its source columns (1-based)
+# Example raw CSV: 證券代號,證券名稱,成交股數,成交金額,開盤價
+# Generated src_col: "1#2#3#4#5"
+```
+
+**2. During Processing (`convert.py`):**
+```python
+# Add processing-time columns (date, market)
+# Update src_col to reflect these additions
+# Final src_col: "x#x#1#2#3#4#5"
+#                ^^^  Added columns
+#                    ^^^^^^^^^ Original columns
+```
+
+**3. Example Lineage Record:**
+```csv
+date,market,symbol,name,volume,value,open,src_file,src_row,src_col
+2020-01-02,sii,0050,元大台灣50,1000000,100000000,97.05,data/raw/daily_quotes/2020/20200102/sii.csv,186,x#x#1#2#3#4#5
+```
+
+**Decoding src_col `x#x#1#2#3#4#5`:**
+- Position 1 (`date`): `x` → Added during processing
+- Position 2 (`market`): `x` → Added during processing
+- Position 3 (`symbol`): `1` → Column 1 in raw CSV (證券代號)
+- Position 4 (`name`): `2` → Column 2 in raw CSV (證券名稱)
+- Position 5 (`volume`): `3` → Column 3 in raw CSV (成交股數)
+- Position 6 (`value`): `4` → Column 4 in raw CSV (成交金額)
+- Position 7 (`open`): `5` → Column 5 in raw CSV (開盤價)
+
+### Quality Verification
+
+**Lineage Verification (data_quality_checker.py):**
+- Verifies **all rows** (not just a sample)
+- Cross-references processed data with raw files using src_file, src_row
+- Validates that the identifier (symbol/name) appears in the expected raw line
+- Reports any mismatches in `error_processor.md`
+
+### Benefits
+
+✅ **Complete Audit Trail**: Know exactly where each data point came from
+✅ **Data Quality**: Verify processing accuracy by tracing back to source
+✅ **Debugging**: Quickly identify which raw file/column caused issues
+✅ **Compliance**: Full lineage for regulatory requirements
 
 ## Known Data Gaps & Market Rules
 

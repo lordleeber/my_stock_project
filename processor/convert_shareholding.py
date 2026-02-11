@@ -27,8 +27,9 @@ import polars as pl
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
+FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
 INPUT_CATEGORY = os.getenv("INPUT_CATEGORY", "shareholding")  # 預設使用新的 shareholding 目錄
-OUTPUT_CATEGORY = "shareholding_div"
+OUTPUT_CATEGORY = "shareholding"
 
 LEVEL_NAME_MAP = {
     1: "1-999",
@@ -62,10 +63,10 @@ def process_file(file_path: str, date_str: str) -> bool:
     Returns:
         是否成功處理
     """
-    output_dir = f"{PROCESSED_DIR}/{OUTPUT_CATEGORY}/date={date_str}"
+    output_dir = f"{PROCESSED_DIR}/{OUTPUT_CATEGORY}/{date_str[:4]}/{date_str}"
     output_file = f"{output_dir}/all.csv"
 
-    if os.path.exists(output_file):
+    if os.path.exists(output_file) and not FORCE_REPROCESS:
         print(f"Skipping {date_str} (already exists)")
         return True
 
@@ -86,6 +87,14 @@ def process_file(file_path: str, date_str: str) -> bool:
             "占集保庫存數比例%": "percentage",
         }
 
+        # 記錄選擇的列在原始 DataFrame 中的索引（1-based）
+        original_columns = df.columns
+        col_indices = []
+        for col_name in column_map.keys():
+            if col_name in original_columns:
+                col_idx = list(original_columns).index(col_name) + 1  # 1-based
+                col_indices.append(str(col_idx))
+
         df = df.select([col for col in column_map.keys() if col in df.columns])
         df = df.rename({k: v for k, v in column_map.items() if k in df.columns})
 
@@ -97,7 +106,20 @@ def process_file(file_path: str, date_str: str) -> bool:
             pl.col("percentage").cast(pl.Float64),
         ])
 
-        # 只保留 level 1~15
+        # 重要：先加入追蹤資訊（在過濾 level 16, 17 之前）
+        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+
+        # 生成 src_col 字串（目前欄位：symbol, level, holders, shares, percentage）
+        src_col_str = "#".join(col_indices)
+
+        # 資料從第 2 行開始 (1-based, index 0 is header)
+        df = df.with_columns([
+            pl.lit(rel_path).alias("src_file"),
+            (pl.arange(0, df.height) + 2).alias("src_row"),
+            pl.lit(src_col_str).alias("src_col")
+        ])
+
+        # 之後再進行過濾，這樣留下來的 src_row 才會是正確的原始行號
         df = df.filter(pl.col("level") <= 15)
 
         # 加入 level_name
@@ -110,8 +132,14 @@ def process_file(file_path: str, date_str: str) -> bool:
             pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date")
         )
 
-        # 調整欄位順序 (與 convert_shareholding_div.py 一致)
-        df = df.select(["date", "symbol", "level", "level_name", "holders", "shares", "percentage"])
+        # 更新 src_col：在前面添加 "x#" (對應 date 這個處理時添加的欄位)
+        if "src_col" in df.columns:
+            df = df.with_columns([
+                pl.concat_str([pl.lit("x#"), pl.col("src_col")]).alias("src_col")
+            ])
+
+        # 調整欄位順序 (與 convert_shareholding_div.py 一致，並包含追蹤欄位)
+        df = df.select(["date", "symbol", "level", "level_name", "holders", "shares", "percentage", "src_file", "src_row", "src_col"])
 
         # 依 symbol, level 排序
         df = df.sort(["symbol", "level"])

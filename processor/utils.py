@@ -46,9 +46,13 @@ def clean_dataframe(df):
     matched_any = False
     
     for i, col in enumerate(raw_columns):
+        # 跳過 lineage 追蹤欄位，這些欄位保持原名
+        if col in ["src_file", "src_row", "src_col"]:
+            continue
+
         clean_col = col.strip().replace('"', '').replace('\ufeff', '')
         norm_col = clean_col.replace(" ", "").replace("\u3000", "").replace("\t", "")
-        
+
         eng_name = None
         if clean_col in COLUMN_MAP:
             eng_name = COLUMN_MAP[clean_col]
@@ -58,7 +62,14 @@ def clean_dataframe(df):
             eng_name = "symbol"
         elif any(k in norm_col for k in ["證券名稱", "名稱", "股票名稱"]):
             eng_name = "name"
-            
+
+        # 強制要求所有欄位都有映射
+        if eng_name is None:
+            raise ValueError(
+                f"Unknown column '{clean_col}' (normalized: '{norm_col}') at index {i}. "
+                f"Please add mapping to COLUMN_MAP in processor/schemas.py"
+            )
+
         if eng_name:
             if eng_name in used_names:
                 used_names[eng_name] += 1
@@ -66,7 +77,7 @@ def clean_dataframe(df):
             else:
                 used_names[eng_name] = 1
                 unique_name = eng_name
-            
+
             rename_dict[col] = unique_name
             matched_any = True
             
@@ -209,9 +220,14 @@ def read_raw_csv(file_path, category=None):
             actual_src_row = row_with_lineage[-1]
             # 原始資料列 (除去最後一欄 actual_src_row)
             original_row = row_with_lineage[:-1]
-            
+
+            # 生成欄位級別的列索引字串（1-based）
+            # 例如：如果有 5 個欄位，生成 "1#2#3#4#5"
+            num_cols = len(original_row)
+            col_indices = "#".join(str(i + 1) for i in range(num_cols))
+
             # 加入追蹤資訊到每一列
-            new_row = original_row + [rel_path, actual_src_row, "0"]
+            new_row = original_row + [rel_path, actual_src_row, col_indices]
             final_data.append(new_row)
 
         if os.getenv("DEBUG", "0") == "1":
@@ -278,33 +294,43 @@ def read_sii_indices(file_path):
         for col in pdf.columns:
             c = str(col).strip().replace('"', '')
             if c == "指數" or c == "報酬指數":
-                new_rename_map[col] = "symbol"
+                new_rename_map[col] = "index_name"
             elif c == "收盤指數":
-                new_rename_map[col] = "close"
+                new_rename_map[col] = "index_close"
             elif c == "change_combined":
-                new_rename_map[col] = "change"
-            elif "漲跌" in c and "漲跌幅" not in c and "change" not in new_rename_map.values():
+                new_rename_map[col] = "index_change_points"
+            elif "漲跌" in c and "漲跌幅" not in c and "index_change_points" not in new_rename_map.values():
                 if "漲跌(+/-)" not in pdf.columns: # 只有在單一欄位時才直接對映
-                    new_rename_map[col] = "change"
+                    new_rename_map[col] = "index_change_points"
 
-        if "symbol" not in new_rename_map.values():
+        if "index_name" not in new_rename_map.values():
             return None
 
         # 取得相對路徑
         rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
-        
+
+        # 記錄選擇的列在原始 DataFrame 中的索引（1-based）
+        original_columns = list(pdf.columns)
+        selected_col_indices = []
+        for col_name in new_rename_map.keys():
+            if col_name in original_columns:
+                # 找到這個列在原始 DataFrame 中的位置（1-based）
+                col_idx = original_columns.index(col_name) + 1
+                selected_col_indices.append(str(col_idx))
+
         pdf = pdf[list(new_rename_map.keys())].rename(columns=new_rename_map)
-        
+
         # 加入追蹤資訊
         # 這裡 pdf 的 index 是 0-based，實體行號為 start_idx + 1 (Header) + 1 (Data) + index
         pdf["src_file"] = rel_path
         pdf["src_row"] = start_idx + 2 + pdf.index
-        pdf["src_col"] = "0"
+        # 生成欄位級別的列索引字串
+        pdf["src_col"] = "#".join(selected_col_indices)
 
         df = pl.from_pandas(pdf)
 
         # 清洗數值欄位
-        for col in ["close", "change"]:
+        for col in ["index_close", "index_change_points"]:
             if col in df.columns:
                 df = df.with_columns(
                     pl.col(col).cast(pl.Utf8)

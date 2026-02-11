@@ -60,6 +60,19 @@ def _handle_generic_category(file_path, market, category, date_str):
         pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
         pl.lit(market).alias("market")
     ])
+    # 更新 src_col：在前面添加 "x#x#" (對應 date 和 market 這兩個處理時添加的欄位)
+    if "src_col" in df.columns:
+        df = df.with_columns([
+            pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
+        ])
+
+    # 為 market_indices 重命名欄位（必須在此處進行，因為 enforce_schema 會過濾未定義的列）
+    if category == "market_indices":
+        if "index_name" in df.columns and ("symbol" not in df.columns or df["symbol"].null_count() == len(df)):
+            df = df.with_columns(pl.col("index_name").alias("symbol"))
+        if "change" in df.columns and "index_change_points" not in df.columns:
+            df = df.with_columns(pl.col("change").alias("index_change_points"))
+
     if "symbol" in df.columns:
         df = df.filter((pl.col("symbol").is_not_null()) & (pl.col("symbol") != ""))
         df = df.filter(pl.col("symbol").str.len_chars().is_between(2, 10))
@@ -74,25 +87,43 @@ def _handle_institutional_summary(date_str):
         try:
             df = pl.read_csv(file_path, encoding="utf-8-sig", infer_schema_length=0)
             if df.is_empty(): continue
+
+            # 記錄原始列索引（1-based）
+            original_columns = df.columns
             rename_map = {}
-            for col in df.columns:
+            col_indices = []  # 記錄選擇的列索引
+
+            for idx, col in enumerate(original_columns):
                 c = col.strip()
-                if c == "單位名稱": rename_map[col] = "institution"
-                elif "買進" in c: rename_map[col] = "buy"
-                elif "賣出" in c: rename_map[col] = "sell"
-                elif "差額" in c or "買賣超" in c: rename_map[col] = "net"
+                if c == "單位名稱":
+                    rename_map[col] = "institution"
+                    col_indices.append(str(idx + 1))  # 1-based
+                elif "買進" in c:
+                    rename_map[col] = "buy"
+                    col_indices.append(str(idx + 1))
+                elif "賣出" in c:
+                    rename_map[col] = "sell"
+                    col_indices.append(str(idx + 1))
+                elif "差額" in c or "買賣超" in c:
+                    rename_map[col] = "net"
+                    col_indices.append(str(idx + 1))
+
             df = df.select(list(rename_map.keys())).rename(rename_map)
-            
+
             # Review fix: 明確檢查 institution 欄位是否存在
             if "institution" not in df.columns:
                 log_processing_error(f"Missing 'institution' column in {market}.csv (cols: {df.columns})", date_str, "institutional_summary")
                 continue
 
             rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+
+            # 生成 src_col 字串
+            src_col_str = "#".join(col_indices)
+
             df = df.with_columns([
                 pl.lit(rel_path).alias("src_file"),
                 (pl.arange(0, df.height) + 2).alias("src_row"), # CSV 通常 1 行標題，資料從第 2 行開始
-                pl.lit("0").alias("src_col")
+                pl.lit(src_col_str).alias("src_col")
             ])
 
             df = df.with_columns(pl.col("institution").str.strip_chars().replace(INSTITUTION_MAP))
@@ -101,6 +132,11 @@ def _handle_institutional_summary(date_str):
                 if col in df.columns:
                     df = df.with_columns(pl.col(col).str.replace_all(",", "").cast(pl.Int64, strict=False))
             df = df.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit(market).alias("market")])
+            # 更新 src_col：在前面添加 "x#x#" (對應 date 和 market)
+            if "src_col" in df.columns:
+                df = df.with_columns([
+                    pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
+                ])
             all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net", "src_file", "src_row", "src_col"]))
         except Exception as e:
             log_processing_error(f"Error in institutional_summary for {market}: {e}", date_str, "institutional_summary")
@@ -114,21 +150,33 @@ def _handle_margin_summary(date_str):
             rel_path = str(sii_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(sii_path) else str(sii_path)
             with open(sii_path, 'r', encoding='utf-8-sig') as f: lines = [f.readline() for _ in range(4)]
             df = pd.read_csv(io.StringIO("".join(lines))); df.columns = [c.strip() for c in df.columns]
+
+            # 記錄需要的列在原始 DataFrame 中的索引（1-based）
+            # 輸出順序：date, market, item, buy, sell, cash_repay, prev_balance, today_balance
+            needed_cols_ordered = ['項目', '買進', '賣出', '現金(券)償還', '前日餘額', '今日餘額']
+            col_indices = ["x", "x"]  # date 和 market 是處理時添加的
+            for col_name in needed_cols_ordered:
+                if col_name in df.columns:
+                    col_idx = list(df.columns).index(col_name) + 1  # 1-based
+                    col_indices.append(str(col_idx))
+
+            src_col_str = "#".join(col_indices)
+
             for idx, row in df.iterrows():
                 item = str(row['項目']).strip()
                 if "融資" in item or "融券" in item:
                     results.append({
-                        "date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), 
-                        "market": "SII", 
-                        "item": item, 
-                        "buy": int(str(row['買進']).replace(",", "")), 
-                        "sell": int(str(row['賣出']).replace(",", "")), 
-                        "cash_repay": int(str(row['現金(券)償還']).replace(",", "")), 
-                        "prev_balance": int(str(row['前日餘額']).replace(",", "")), 
+                        "date": datetime.datetime.strptime(date_str, "%Y%m%d").date(),
+                        "market": "SII",
+                        "item": item,
+                        "buy": int(str(row['買進']).replace(",", "")),
+                        "sell": int(str(row['賣出']).replace(",", "")),
+                        "cash_repay": int(str(row['現金(券)償還']).replace(",", "")),
+                        "prev_balance": int(str(row['前日餘額']).replace(",", "")),
                         "today_balance": int(str(row['今日餘額']).replace(",", "")),
                         "src_file": rel_path,
                         "src_row": idx + 2, # 1-based header is at 1, data starts at 2
-                        "src_col": "0"
+                        "src_col": src_col_str
                     })
         except Exception as e:
             log_processing_error(f"Error in margin_summary (SII): {e}", date_str, "margin_summary")
@@ -146,10 +194,13 @@ def _handle_margin_summary(date_str):
                     item = parts[0].replace('"', '')
                     src_row = i + 1
                     if "合計(張)" in item and len(parts) >= 15:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "0"})
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "10"})
+                        # 融資(交易單位)：date(x)#market(x)#item(1)#buy(4)#sell(5)#cash_repay(6)#prev_balance(3)#today_balance(7)
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#4#5#6#3#7"})
+                        # 融券(交易單位)：date(x)#market(x)#item(1)#buy(13)#sell(12)#cash_repay(14)#prev_balance(11)#today_balance(15)
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#13#12#14#11#15"})
                     elif "融資金(仟元)" in item:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "0"})
+                        # 融資金額(仟元)：date(x)#market(x)#item(1)#buy(4)#sell(5)#cash_repay(6)#prev_balance(3)#today_balance(7)
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#4#5#6#3#7"})
         except Exception as e:
             log_processing_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
     return pl.from_pandas(pd.DataFrame(results)) if results else None
@@ -191,7 +242,6 @@ def process_date_category(category, date_str):
         if os.path.exists(otc_raw) and (not os.path.exists(otc_output) or FORCE_REPROCESS):
             df = _handle_generic_category(otc_raw, "otc", category, date_str)
             if df is not None:
-                if "symbol" not in df.columns or df["symbol"].null_count() == len(df): df = df.with_columns(pl.col("name").alias("symbol"))
                 df = enforce_schema(df, "market_indices")
                 os.makedirs(output_dir, exist_ok=True); df.write_csv(otc_output)
                 print(f"Processed market_indices/{date_str}/otc")
@@ -204,6 +254,11 @@ def process_date_category(category, date_str):
             df_indices = read_sii_indices(sii_quote)
             if df_indices is not None:
                 df_indices = df_indices.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit("sii").alias("market")])
+                # 更新 src_col：在前面添加 "x#x#" (對應 date 和 market)
+                if "src_col" in df_indices.columns:
+                    df_indices = df_indices.with_columns([
+                        pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
+                    ])
                 df_indices = enforce_schema(df_indices, "market_indices")
                 os.makedirs(output_dir, exist_ok=True); df_indices.write_csv(sii_output)
                 print(f"Processed market_indices/{date_str}/sii (Extracted)")
