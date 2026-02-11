@@ -149,11 +149,22 @@ def read_raw_csv(file_path, category=None):
         if not header:
             return None
 
-        raw_data = []
+        raw_data_with_lineage = []
         mismatched_rows = 0
-        csv_reader = csv.reader(io.StringIO("\n".join(lines[header_idx+1:])))
+        
+        # 直接迭代原始行索引
+        for line_idx in range(header_idx + 1, len(lines)):
+            line = lines[line_idx]
+            # 使用 csv.reader 解析單行
+            row_reader = csv.reader(io.StringIO(line))
+            try:
+                row = next(row_reader)
+            except StopIteration:
+                continue
 
-        for row in csv_reader:
+            # 原始檔案行號 (1-based)
+            actual_src_row = line_idx + 1
+            
             if not row or not row[0]:
                 continue
 
@@ -169,9 +180,10 @@ def read_raw_csv(file_path, category=None):
                 elif len(row) > len(header):
                     row = row[:len(header)]
 
-            raw_data.append(row)
+            # 儲存資料與精確的原始行號
+            raw_data_with_lineage.append(list(row) + [actual_src_row])
 
-        if not raw_data:
+        if not raw_data_with_lineage:
             return None
 
         unique_header = []
@@ -192,11 +204,14 @@ def read_raw_csv(file_path, category=None):
         # 取得相對路徑以便儲存
         rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
 
-        for i, row in enumerate(raw_data):
-            # 行號：header_idx + 1 (標頭行) + 1 (資料起始) + i (目前位移)
-            src_row = header_idx + 2 + i
+        for row_with_lineage in raw_data_with_lineage:
+            # 最後一欄是我們剛剛暫存的 actual_src_row
+            actual_src_row = row_with_lineage[-1]
+            # 原始資料列 (除去最後一欄 actual_src_row)
+            original_row = row_with_lineage[:-1]
+            
             # 加入追蹤資訊到每一列
-            new_row = list(row) + [rel_path, src_row, "0"]
+            new_row = original_row + [rel_path, actual_src_row, "0"]
             final_data.append(new_row)
 
         if os.getenv("DEBUG", "0") == "1":

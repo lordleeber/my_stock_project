@@ -41,11 +41,20 @@ def migrate_dir(base_dir):
                 new_dst = new_parent / date_str
                 
                 if new_dst.exists():
-                    print(f"    ⚠️ Destination already exists: {new_dst}, merging...")
+                    print(f"    ⚠️ Destination already exists: {new_dst}, merging files...")
                     # Merge files if destination exists
                     for item in date_dir.iterdir():
-                        shutil.move(str(item), str(new_dst / item.name))
-                    date_dir.rmdir()
+                        target_file = new_dst / item.name
+                        if target_file.exists():
+                            print(f"      ⚠️ File already exists, skipping: {item.name}")
+                        else:
+                            shutil.move(str(item), str(target_file))
+                    
+                    # If directory is now empty, remove it
+                    if not any(date_dir.iterdir()):
+                        date_dir.rmdir()
+                    else:
+                        print(f"      ⚠️ Source directory {date_dir.name} not empty after merge, keeping it.")
                 else:
                     print(f"    Moving {date_dir.name} -> {year}/{date_str}")
                     shutil.move(str(date_dir), str(new_dst))

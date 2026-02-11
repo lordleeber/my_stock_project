@@ -48,17 +48,16 @@ def verify_source_lineage(df, label, limit=20):
         # 如果是本地，可能需要調整
         full_path = Path(src_file)
         if not full_path.exists():
+            alt_path = None
             # 嘗試補上當前目錄前綴或是 /app/
             if not src_file.startswith("/"):
                 # 嘗試相對路徑
                 cwd = Path.cwd()
-                alt_path = cwd / src_file
-                if not alt_path.exists():
-                    # 嘗試從 my_stock_project 根目錄找
-                    # 假設 data_quality_checker 在 processor/ 下
-                    alt_path = cwd.parent / src_file
+                p1 = cwd / src_file
+                p2 = cwd.parent / src_file
+                alt_path = p1 if p1.exists() else (p2 if p2.exists() else None)
             
-            if not alt_path.exists():
+            if alt_path is None or not alt_path.exists():
                 issues.append(f"{label} row {idx}: Source file not found: {src_file}")
                 continue
             full_path = alt_path
