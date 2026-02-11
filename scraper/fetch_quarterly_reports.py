@@ -22,13 +22,33 @@ INCOME_STATEMENT_DIR = "data/raw/income_statement"
 BALANCE_SHEET_DIR = "data/raw/balance_sheet"
 CASH_FLOW_DIR = "data/raw/cash_flow"
 
+
+def _convert_xls_to_raw_csv(xls_path, csv_path):
+    """
+    將 XLS 原始內容直接轉成 CSV（不做欄位標準化）。
+    """
+    try:
+        df = pd.read_excel(xls_path, engine="xlrd", header=None)
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        return True
+    except Exception as e:
+        print(f"[!] Convert XLS->CSV failed ({xls_path}): {e}")
+        return False
+
+
 def download_sii(year, quarter, target_dir):
     """下載並解壓上市公司季報 ZIP，確保存為 sii.xls"""
     url = SII_URL.format(year=year, quarter=quarter)
     target_file = os.path.join(target_dir, "sii.xls")
+    target_csv = os.path.join(target_dir, "sii.csv")
     if os.path.exists(target_file) and not FORCE_REPROCESS:
-        print(f"[=] SII report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
-        return True
+        if os.path.exists(target_csv):
+            print(f"[=] SII report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+            return True
+        ok = _convert_xls_to_raw_csv(target_file, target_csv)
+        if ok:
+            print(f"[+] SII raw CSV saved to {target_csv}")
+        return ok
     
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -44,7 +64,10 @@ def download_sii(year, quarter, target_dir):
                         with open(target_file, "wb") as f:
                             f.write(content)
             print(f"[+] SII report saved to {target_file}")
-            return True
+            ok = _convert_xls_to_raw_csv(target_file, target_csv)
+            if ok:
+                print(f"[+] SII raw CSV saved to {target_csv}")
+            return ok
         else:
             print(f"[-] SII not found (Status {resp.status_code})")
             return False
@@ -56,9 +79,15 @@ def download_otc(year, quarter, target_dir):
     """直接下載上櫃公司季報 XLS，確保存為 otc.xls"""
     url = OTC_URL.format(year=year, quarter=quarter)
     target_file = os.path.join(target_dir, "otc.xls")
+    target_csv = os.path.join(target_dir, "otc.csv")
     if os.path.exists(target_file) and not FORCE_REPROCESS:
-        print(f"[=] OTC report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
-        return True
+        if os.path.exists(target_csv):
+            print(f"[=] OTC report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+            return True
+        ok = _convert_xls_to_raw_csv(target_file, target_csv)
+        if ok:
+            print(f"[+] OTC raw CSV saved to {target_csv}")
+        return ok
     
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -68,7 +97,10 @@ def download_otc(year, quarter, target_dir):
             with open(target_file, "wb") as f:
                 f.write(resp.content)
             print(f"[+] OTC report saved to {target_file}")
-            return True
+            ok = _convert_xls_to_raw_csv(target_file, target_csv)
+            if ok:
+                print(f"[+] OTC raw CSV saved to {target_csv}")
+            return ok
         else:
             print(f"[-] OTC not found (Status {resp.status_code})")
             return False
