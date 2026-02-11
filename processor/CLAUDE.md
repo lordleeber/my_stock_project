@@ -22,27 +22,30 @@ The processor cleans and standardizes raw CSV data from the scraper:
 3. Sorts dates chronologically
 4. For each date:
    - Processes all categories (daily_quotes, institutional_investors, etc.)
+   - **Injects Data Lineage**: Adds `src_file`, `src_row`, `src_col` to every row.
    - Runs integrated quality check (data_quality_checker.main())
+   - **Lineage Verification**: QC samples first 20 rows to verify raw source matching.
    - Restores environment variables after QC
    - Continues to next date (errors are logged but don't stop pipeline)
 
-**Incremental Support**: Checks for specific output files (`otc.csv`, `sii.csv`, `all.csv`) in the processed directory to skip already-complete date/category pairs, allowing for granular backfilling.
-
-**QC Integration**: Quality checks now run per-date instead of at the end of the entire pipeline, catching issues earlier.
+**Data Lineage & Traceability**: Every processed row now contains audit columns:
+- `src_file`: Relative path to the raw source file.
+- `src_row`: 1-based line number in the original raw file.
+- `src_col`: Original column index/identifier for the start of the data mapping.
 
 ## Modules
 
 | Module | Purpose |
 |--------|---------|
-| `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. |
+| `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
 | `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. |
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Writes findings to root `error.md`**. **Now integrated into convert.py main loop**. |
-| `schemas.py` | Column mappings, numeric types, standard schema definitions. |
-| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. |
+| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Now includes Lineage Verification (cross-referencing processed rows with raw files).** Writes findings to root `error_processor.md`. |
+| `schemas.py` | Column mappings, numeric types, standard schema definitions. **Includes src_file, src_row, src_col in all schemas.** |
+| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` handles lineage tracking.** |
 
 ## Environment Variables
 

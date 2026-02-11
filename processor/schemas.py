@@ -183,7 +183,8 @@ SCHEMA_COLS = {
     "daily_quotes": [
         "date", "market", "symbol", "name", 
         "open", "high", "low", "close", "volume", "value", 
-        "transactions", "change", "direction", "bid", "ask", "pe_ratio"
+        "transactions", "change", "direction", "bid", "ask", "pe_ratio",
+        "src_file", "src_row", "src_col"
     ],
     "institutional_investors": [
         "date", "market", "symbol", "name",
@@ -192,12 +193,14 @@ SCHEMA_COLS = {
         "trust_buy", "trust_sell", "trust_net",
         "dealer_self_buy", "dealer_self_sell", "dealer_self_net",
         "dealer_hedge_buy", "dealer_hedge_sell", "dealer_hedge_net",
-        "dealer_net", "total_net"
+        "dealer_net", "total_net",
+        "src_file", "src_row", "src_col"
     ],
     "foreign_holding": [
         "date", "market", "symbol", "name",
         "issued_shares", "foreign_investable_shares", "foreign_held_shares",
-        "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio"
+        "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio",
+        "src_file", "src_row", "src_col"
     ],
     "margin_trading": [
         "date", "market", "symbol", "name",
@@ -205,30 +208,36 @@ SCHEMA_COLS = {
         "margin_long_prev_balance", "margin_long_balance", "margin_long_limit",
         "margin_short_buy", "margin_short_sell", "margin_short_cash_repay",
         "margin_short_prev_balance", "margin_short_balance", "margin_short_limit",
-        "offset_balance"
+        "offset_balance",
+        "src_file", "src_row", "src_col"
     ],
     "margin_sbl": [
         "date", "market", "symbol", "name",
         "margin_short_prev_balance", "margin_short_balance",
         "margin_short_buy", "margin_short_sell",
-        "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance"
+        "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance",
+        "src_file", "src_row", "src_col"
     ],
     "pe_ratio": [
         "date", "market", "symbol", "name",
-        "pe_ratio" # 其他如殖利率、PB 尚未加入映射，暫時只取這個
+        "pe_ratio",
+        "src_file", "src_row", "src_col"
     ],
     "market_indices": [
-        "date", "market", "symbol", "name", "close", "change"
+        "date", "market", "symbol", "name", "close", "change",
+        "src_file", "src_row", "src_col"
     ],
     "shareholding_div": [
-        "date", "symbol", "level", "level_name", "holders", "shares", "percentage"
+        "date", "symbol", "level", "level_name", "holders", "shares", "percentage",
+        "src_file", "src_row", "src_col"
     ],
     "income_statement": [
         "date", "market", "symbol", "name", "statement_type",
         "revenue", "cost_of_revenue", "gross_profit", "operating_expense",
         "operating_income", "non_operating_income", "pretax_income", "tax_expense",
         "net_income", "other_comprehensive_income", "comprehensive_income", "eps",
-        "net_interest_income", "non_interest_income", "net_revenue", "other_income_net"
+        "net_interest_income", "non_interest_income", "net_revenue", "other_income_net",
+        "src_file", "src_row", "src_col"
     ],
     "balance_sheet": [
         "date", "market", "symbol", "name", "statement_type",
@@ -236,12 +245,14 @@ SCHEMA_COLS = {
         "current_liabilities", "noncurrent_liabilities", "total_liabilities",
         "total_equity", "equity_parent",
         "share_capital", "capital_surplus", "retained_earnings",
-        "other_equity", "treasury_shares", "nav_per_share"
+        "other_equity", "treasury_shares", "nav_per_share",
+        "src_file", "src_row", "src_col"
     ],
     "cash_flow": [
         "date", "market", "symbol", "name", "statement_type",
         "cash_flow_operating", "cash_flow_investing", "cash_flow_financing",
-        "fx_effect", "net_cash_change", "cash_begin", "cash_end"
+        "fx_effect", "net_cash_change", "cash_begin", "cash_end",
+        "src_file", "src_row", "src_col"
     ],
     "quarterly_reports": [
         "date", "symbol", "name", "market",
@@ -252,12 +263,15 @@ SCHEMA_COLS = {
         "net_income", "net_income_ly", "net_income_yoy",
         "eps", "eps_ly", "eps_yoy",
         "capital", "nav_per_share", "equity_to_assets_ratio",
-        "current_ratio", "quick_ratio"
+        "current_ratio", "quick_ratio",
+        "src_file", "src_row", "src_col"
     ],
     "stock_info": [
-        "symbol", "name", "industry", "market", "listing_date"
+        "symbol", "name", "industry", "market", "listing_date",
+        "src_file", "src_row", "src_col"
     ],
     "stock_tags": [
-        "symbol", "tag"
+        "symbol", "tag",
+        "src_file", "src_row", "src_col"
     ]
 }

@@ -17,6 +17,84 @@ from datetime import datetime
 from pathlib import Path
 
 
+def verify_source_lineage(df, label, limit=20):
+    """
+    驗證前 N 筆資料的來源追蹤資訊是否正確 (Lineage Verification)
+    """
+    issues = []
+    if len(df) == 0:
+        return issues
+
+    # 1. 基礎欄位檢查
+    for col in ["src_file", "src_row", "src_col"]:
+        if col not in df.columns:
+            return [f"{label}: Missing lineage column '{col}'"]
+        if df[col].isna().any():
+            issues.append(f"{label}: Found NULL values in lineage column '{col}'")
+
+    # 2. 抽樣驗證 (前 N 筆)
+    check_limit = min(len(df), limit)
+    sample = df.head(check_limit)
+
+    for idx, row in sample.iterrows():
+        src_file = str(row['src_file'])
+        try:
+            src_row = int(float(row['src_row']))
+        except (ValueError, TypeError):
+            issues.append(f"{label} row {idx}: Invalid src_row value '{row['src_row']}'")
+            continue
+
+        # 處理路徑：如果是在 Docker 內，路徑可能是絕對路徑 /app/data/...
+        # 如果是本地，可能需要調整
+        full_path = Path(src_file)
+        if not full_path.exists():
+            # 嘗試補上當前目錄前綴或是 /app/
+            if not src_file.startswith("/"):
+                # 嘗試相對路徑
+                cwd = Path.cwd()
+                alt_path = cwd / src_file
+                if not alt_path.exists():
+                    # 嘗試從 my_stock_project 根目錄找
+                    # 假設 data_quality_checker 在 processor/ 下
+                    alt_path = cwd.parent / src_file
+            
+            if not alt_path.exists():
+                issues.append(f"{label} row {idx}: Source file not found: {src_file}")
+                continue
+            full_path = alt_path
+
+        # 取得識別資訊 (symbol 或 name)
+        identity = str(row.get('symbol', row.get('name', row.get('institution', ''))))
+        if not identity or identity == 'nan':
+            continue
+
+        try:
+            with open(full_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+                # 讀取到指定行 (src_row 是 1-based)
+                line_content = None
+                for i, line in enumerate(f):
+                    if i == src_row - 1:
+                        line_content = line
+                        break
+                
+                if line_content is None:
+                    issues.append(f"{label} row {idx}: Row {src_row} does not exist in source {full_path.name}")
+                else:
+                    # 簡單驗證：識別資訊應出現在原始行中
+                    # 注意：原始行可能有引號、逗號等
+                    clean_identity = identity.replace('=', '').replace('"', '').strip()
+                    if clean_identity not in line_content:
+                        issues.append(
+                            f"{label} row {idx}: Lineage mismatch! "
+                            f"Expected '{clean_identity}' to be in raw row {src_row}, "
+                            f"but raw content was: {line_content.strip()[:100]}..."
+                        )
+        except Exception as e:
+            issues.append(f"{label} row {idx}: Error accessing source file: {str(e)}")
+
+    return issues
+
+
 def get_processed_date_path(category, date_str, market=None):
     """取得 Processed 資料的路徑，相容新舊結構"""
     # 這些類別暫時保持 date= 結構
@@ -78,6 +156,9 @@ def check_margin_trading(date_str):
                         f"({null_count}/{len(df)} rows) - likely processor bug"
                     )
 
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"margin_trading {market}"))
+
         except Exception as e:
             issues.append(f"margin_trading {market}: Error reading file - {str(e)}")
 
@@ -128,6 +209,9 @@ def check_margin_sbl(date_str):
                         f"({empty_count}/{len(df)} rows) - likely processor bug"
                     )
 
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"margin_sbl {market}"))
+
         except Exception as e:
             issues.append(f"margin_sbl {market}: Error reading file - {str(e)}")
 
@@ -177,6 +261,9 @@ def check_daily_quotes(date_str):
                     f"(e.g., high < close). This strongly suggests column shifting in raw CSV."
                 )
 
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"daily_quotes {market}"))
+
         except Exception as e:
             issues.append(f"daily_quotes {market}: Error reading file - {str(e)}")
 
@@ -217,6 +304,9 @@ def check_institutional_investors(date_str):
                         f"institutional_investors {market}: Column '{col}' has {null_pct:.1f}% NULL values "
                         f"({null_count}/{len(df)} rows)"
                     )
+
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"institutional_investors {market}"))
 
         except Exception as e:
             issues.append(f"institutional_investors {market}: Error reading file - {str(e)}")
@@ -263,6 +353,9 @@ def check_foreign_holding(date_str):
                         f"foreign_holding {market}: Column '{col}' has {null_pct:.1f}% NULL values "
                         f"({null_count}/{len(df)} rows)"
                     )
+
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"foreign_holding {market}"))
 
         except Exception as e:
             issues.append(f"foreign_holding {market}: Error reading file - {str(e)}")
@@ -313,6 +406,9 @@ def check_pe_ratio(date_str):
                         "(PE ratio should be positive or NULL)"
                     )
 
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"pe_ratio {market}"))
+
         except Exception as e:
             issues.append(f"pe_ratio {market}: Error reading file - {str(e)}")
 
@@ -358,6 +454,9 @@ def check_market_indices(date_str):
                         f"market_indices {market}: Column '{col}' has {null_pct:.1f}% NULL values "
                         f"({null_count}/{len(df)} rows)"
                     )
+
+            # --- 新增: Lineage 驗證 ---
+            issues.extend(verify_source_lineage(df, f"market_indices {market}"))
 
         except Exception as e:
             issues.append(f"market_indices {market}: Error reading file - {str(e)}")

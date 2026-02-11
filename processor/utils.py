@@ -184,12 +184,27 @@ def read_raw_csv(file_path, category=None):
                 h_counts[h] = 0
                 unique_header.append(h)
 
+        # 加入追蹤欄位標頭
+        unique_header.extend(["src_file", "src_row", "src_col"])
+
+        # 準備資料與追蹤資訊
+        final_data = []
+        # 取得相對路徑以便儲存
+        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+
+        for i, row in enumerate(raw_data):
+            # 行號：header_idx + 1 (標頭行) + 1 (資料起始) + i (目前位移)
+            src_row = header_idx + 2 + i
+            # 加入追蹤資訊到每一列
+            new_row = list(row) + [rel_path, src_row, "0"]
+            final_data.append(new_row)
+
         if os.getenv("DEBUG", "0") == "1":
             if mismatched_rows > 0:
                 print(f"⚠️  {Path(file_path).name}: {mismatched_rows} rows adjusted for length mismatch")
             print(f"DEBUG: unique_header[:10] = {unique_header[:10]}")
         
-        df = pl.DataFrame(raw_data, schema=unique_header, orient="row")
+        df = pl.DataFrame(final_data, schema=unique_header, orient="row")
         df_cleaned = clean_dataframe(df)
 
         # 在 debug 模式下顯示成功訊息
@@ -260,7 +275,17 @@ def read_sii_indices(file_path):
         if "symbol" not in new_rename_map.values():
             return None
 
+        # 取得相對路徑
+        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+        
         pdf = pdf[list(new_rename_map.keys())].rename(columns=new_rename_map)
+        
+        # 加入追蹤資訊
+        # 這裡 pdf 的 index 是 0-based，實體行號為 start_idx + 1 (Header) + 1 (Data) + index
+        pdf["src_file"] = rel_path
+        pdf["src_row"] = start_idx + 2 + pdf.index
+        pdf["src_col"] = "0"
+
         df = pl.from_pandas(pdf)
 
         # 清洗數值欄位

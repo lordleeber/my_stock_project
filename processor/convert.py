@@ -88,13 +88,20 @@ def _handle_institutional_summary(date_str):
                 log_processing_error(f"Missing 'institution' column in {market}.csv (cols: {df.columns})", date_str, "institutional_summary")
                 continue
 
+            rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+            df = df.with_columns([
+                pl.lit(rel_path).alias("src_file"),
+                (pl.arange(0, df.height) + 2).alias("src_row"), # CSV 通常 1 行標題，資料從第 2 行開始
+                pl.lit("0").alias("src_col")
+            ])
+
             df = df.with_columns(pl.col("institution").str.strip_chars().replace(INSTITUTION_MAP))
             df = df.filter(pl.col("institution").is_in(KEEP_INSTITUTIONS))
             for col in ["buy", "sell", "net"]:
                 if col in df.columns:
                     df = df.with_columns(pl.col(col).str.replace_all(",", "").cast(pl.Int64, strict=False))
             df = df.with_columns([pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"), pl.lit(market).alias("market")])
-            all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net"]))
+            all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net", "src_file", "src_row", "src_col"]))
         except Exception as e:
             log_processing_error(f"Error in institutional_summary for {market}: {e}", date_str, "institutional_summary")
     return pl.concat(all_dfs) if all_dfs else None
@@ -104,29 +111,45 @@ def _handle_margin_summary(date_str):
     sii_path = os.path.join(input_dir, "sii.csv")
     if os.path.exists(sii_path):
         try:
+            rel_path = str(sii_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(sii_path) else str(sii_path)
             with open(sii_path, 'r', encoding='utf-8-sig') as f: lines = [f.readline() for _ in range(4)]
             df = pd.read_csv(io.StringIO("".join(lines))); df.columns = [c.strip() for c in df.columns]
-            for _, row in df.iterrows():
+            for idx, row in df.iterrows():
                 item = str(row['項目']).strip()
                 if "融資" in item or "融券" in item:
-                    results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "SII", "item": item, "buy": int(str(row['買進']).replace(",", "")), "sell": int(str(row['賣出']).replace(",", "")), "cash_repay": int(str(row['現金(券)償還']).replace(",", "")), "prev_balance": int(str(row['前日餘額']).replace(",", "")), "today_balance": int(str(row['今日餘額']).replace(",", ""))})
+                    results.append({
+                        "date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), 
+                        "market": "SII", 
+                        "item": item, 
+                        "buy": int(str(row['買進']).replace(",", "")), 
+                        "sell": int(str(row['賣出']).replace(",", "")), 
+                        "cash_repay": int(str(row['現金(券)償還']).replace(",", "")), 
+                        "prev_balance": int(str(row['前日餘額']).replace(",", "")), 
+                        "today_balance": int(str(row['今日餘額']).replace(",", "")),
+                        "src_file": rel_path,
+                        "src_row": idx + 2, # 1-based header is at 1, data starts at 2
+                        "src_col": "0"
+                    })
         except Exception as e:
             log_processing_error(f"Error in margin_summary (SII): {e}", date_str, "margin_summary")
     otc_path = os.path.join(input_dir, "otc.csv")
     if os.path.exists(otc_path):
         try:
+            rel_path = str(otc_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(otc_path) else str(otc_path)
             with open(otc_path, 'r', encoding='utf-8-sig') as f: lines = f.readlines()
-            for line in lines[-5:]:
+            for i, line in enumerate(lines):
+                if i < len(lines) - 5: continue # 只要最後幾行
                 if "合計(張)" in line or "融資金(仟元)" in line:
                     parts = [p.strip().replace('"', '') for p in line.split('","')]
                     if len(parts) < 7: continue # 基本長度檢查
                     
                     item = parts[0].replace('"', '')
+                    src_row = i + 1
                     if "合計(張)" in item and len(parts) >= 15:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", ""))})
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", ""))})
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "0"})
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "10"})
                     elif "融資金(仟元)" in item:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", ""))})
+                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "0"})
         except Exception as e:
             log_processing_error(f"Error in margin_summary (OTC): {e}", date_str, "margin_summary")
     return pl.from_pandas(pd.DataFrame(results)) if results else None
