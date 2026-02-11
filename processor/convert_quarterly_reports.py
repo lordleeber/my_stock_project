@@ -1,17 +1,16 @@
 import os
-import glob
+import csv
 from pathlib import Path
 import polars as pl
-import pandas as pd
 from datetime import datetime
-import numpy as np
 
 # 環境變數設定
 RAW_DIR = os.environ.get("RAW_DIR", "data/raw")
 PROCESSED_DIR = os.environ.get("PROCESSED_DIR", "data/processed")
 CATEGORY = "quarterly_reports"
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
-# 定義最終統一的欄位順序
+# 定義最終統一的欄位順序 (含 lineage)
 FINAL_FIELDS = [
     "date", "symbol", "name", "market",
     "revenue", "revenue_ly", "revenue_yoy",
@@ -21,12 +20,41 @@ FINAL_FIELDS = [
     "net_income", "net_income_ly", "net_income_yoy",
     "eps", "eps_ly", "eps_yoy",
     "capital", "nav_per_share", "equity_to_assets_ratio",
-    "current_ratio", "quick_ratio"
+    "current_ratio", "quick_ratio",
+    "src_file", "src_row", "src_col"
 ]
+
+# SII 欄位映射 (0-based column index)
+SII_MAPPING = {
+    "symbol": 0, "name": 1,
+    "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
+    "op_income": 5, "op_income_ly": 6,
+    "non_op_income": 7, "non_op_income_ly": 8,
+    "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
+    "capital": 12,
+    "eps": 13, "eps_ly": 14,
+    "nav_per_share": 15, "equity_to_assets_ratio": 16,
+    "current_ratio": 17, "quick_ratio": 18,
+    "pretax_income": 19, "pretax_income_ly": 20, "pretax_income_yoy": 21
+}
+
+# OTC 欄位映射 (0-based column index) - 沒有 pretax 欄位
+OTC_MAPPING = {
+    "symbol": 0, "name": 1,
+    "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
+    "op_income": 5, "op_income_ly": 6,
+    "non_op_income": 7, "non_op_income_ly": 8,
+    "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
+    "capital": 12,
+    "eps": 13, "eps_ly": 14,
+    "nav_per_share": 15, "equity_to_assets_ratio": 16,
+    "current_ratio": 17, "quick_ratio": 18
+}
+
 
 def clean_numeric(val):
     """清理數值，處理 --, null, nan, (123)"""
-    if pd.isna(val) or val == "--" or str(val).strip() == "":
+    if val is None or val == "--" or str(val).strip() == "":
         return None
     try:
         s = str(val).replace(",", "").strip()
@@ -36,75 +64,128 @@ def clean_numeric(val):
     except (ValueError, TypeError):
         return None
 
+
 def calculate_yoy(current, ly):
     """手動計算 YoY %"""
     if current is None or ly is None or ly == 0:
         return None
     return round((current - ly) / abs(ly) * 100, 2)
 
-def process_file(file_path, date_str, market):
+
+def find_header_row(rows, max_rows=15):
+    """找到含有 'Code' 或 '代號' 的 header 行"""
+    for idx, row in enumerate(rows[:max_rows]):
+        row_str = "".join(str(cell) for cell in row)
+        if "Code" in row_str or "代號" in row_str:
+            return idx
+    return -1
+
+
+def generate_src_col(mapping, market):
     """
-    處理單一季報 XLS 檔案，提取本期、去年同期與 YoY
+    生成 src_col 字串，格式: "x#x#x#1#2#3#4#..."
+
+    Output column order (from FINAL_FIELDS):
+    date, symbol, name, market, revenue, revenue_ly, revenue_yoy, ...
+
+    x = column added during processing
+    number = 1-based column index from raw CSV
+    """
+    # 需要映射的欄位順序 (排除 lineage 欄位)
+    output_fields = [
+        "date", "symbol", "name", "market",
+        "revenue", "revenue_ly", "revenue_yoy",
+        "op_income", "op_income_ly", "op_income_yoy",
+        "non_op_income", "non_op_income_ly", "non_op_income_yoy",
+        "pretax_income", "pretax_income_ly", "pretax_income_yoy",
+        "net_income", "net_income_ly", "net_income_yoy",
+        "eps", "eps_ly", "eps_yoy",
+        "capital", "nav_per_share", "equity_to_assets_ratio",
+        "current_ratio", "quick_ratio"
+    ]
+
+    col_indices = []
+    for field in output_fields:
+        if field in ["date", "market"]:
+            # Added during processing
+            col_indices.append("x")
+        elif field in mapping:
+            # From raw CSV (convert to 1-based)
+            col_indices.append(str(mapping[field] + 1))
+        else:
+            # Calculated field (e.g., OTC pretax_income)
+            col_indices.append("x")
+
+    return "#".join(col_indices)
+
+
+def process_csv_file(file_path, date_str, market):
+    """
+    處理單一季報 CSV 檔案，提取本期、去年同期與 YoY
     """
     try:
-        df_raw = pd.read_excel(file_path, engine='xlrd', header=None)
-        header_idx = -1
-        for idx, row in df_raw.head(15).iterrows():
-            row_str = "".join(row.astype(str).tolist())
-            if "Code" in row_str or "代號" in row_str:
-                header_idx = idx
-                break
-        
-        if header_idx == -1: return None
+        # 讀取 CSV (處理 BOM)
+        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
 
-        if market == 'sii':
-            mapping = {
-                "symbol": 0, "name": 1,
-                "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
-                "op_income": 5, "op_income_ly": 6,
-                "non_op_income": 7, "non_op_income_ly": 8,
-                "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
-                "pretax_income": 19, "pretax_income_ly": 20, "pretax_income_yoy": 21,
-                "eps": 13, "eps_ly": 14,
-                "capital": 12, "nav_per_share": 15, "equity_to_assets_ratio": 16,
-                "current_ratio": 17, "quick_ratio": 18
-            }
-        else:
-            mapping = {
-                "symbol": 0, "name": 1,
-                "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
-                "op_income": 5, "op_income_ly": 6,
-                "non_op_income": 7, "non_op_income_ly": 8,
-                "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
-                "eps": 13, "eps_ly": 14,
-                "capital": 12, "nav_per_share": 15, "equity_to_assets_ratio": 16,
-                "current_ratio": 17, "quick_ratio": 18
-            }
+        if not rows:
+            print(f"  [!] Empty file: {file_path}")
+            return None
+
+        # 找到 header 行
+        header_idx = find_header_row(rows)
+        if header_idx == -1:
+            print(f"  [!] Cannot find header row in {file_path}")
+            return None
+
+        # 選擇映射
+        mapping = SII_MAPPING if market == 'sii' else OTC_MAPPING
+
+        # 生成 src_col 字串
+        src_col_str = generate_src_col(mapping, market)
+
+        # 計算相對路徑
+        rel_path = file_path.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
 
         records = []
-        for i in range(header_idx + 1, len(df_raw)):
-            row = df_raw.iloc[i]
+        for row_idx in range(header_idx + 1, len(rows)):
+            row = rows[row_idx]
+            if len(row) < 2:
+                continue
+
+            # 取得 symbol
             raw_symbol = str(row[mapping["symbol"]]).strip()
-            if raw_symbol.endswith(".0"): raw_symbol = raw_symbol[:-2]
-            
-            if len(raw_symbol) != 4 or not raw_symbol.isdigit(): continue
-            
+            if raw_symbol.endswith(".0"):
+                raw_symbol = raw_symbol[:-2]
+
+            # 只處理 4 位數字的股票代碼
+            if len(raw_symbol) != 4 or not raw_symbol.isdigit():
+                continue
+
+            # 初始化資料字典
             data = {f: None for f in FINAL_FIELDS}
-            data.update({"date": date_str, "symbol": raw_symbol, "market": market, "name": str(row[mapping["name"]]).strip()})
-            
+            data["date"] = date_str
+            data["market"] = market
+            data["symbol"] = raw_symbol
+            data["name"] = str(row[mapping["name"]]).strip() if mapping["name"] < len(row) else ""
+
+            # 提取數值欄位
             for field, idx in mapping.items():
-                if field in ["date", "symbol", "market", "name"]: continue
-                data[field] = clean_numeric(row[idx]) if idx < len(row) else None
-            
-            # 補齊 YoY
+                if field in ["symbol", "name"]:
+                    continue
+                if idx < len(row):
+                    data[field] = clean_numeric(row[idx])
+
+            # 補齊 YoY (如果原始資料沒有)
             if data["op_income_yoy"] is None:
                 data["op_income_yoy"] = calculate_yoy(data["op_income"], data["op_income_ly"])
             if data["non_op_income_yoy"] is None:
                 data["non_op_income_yoy"] = calculate_yoy(data["non_op_income"], data["non_op_income_ly"])
             if data["eps_yoy"] is None:
                 data["eps_yoy"] = calculate_yoy(data["eps"], data["eps_ly"])
-            
-            # OTC 手動計算稅前
+
+            # OTC 手動計算稅前 (OTC CSV 沒有 pretax 欄位)
             if market == 'otc':
                 if data["op_income"] is not None and data["non_op_income"] is not None:
                     data["pretax_income"] = data["op_income"] + data["non_op_income"]
@@ -112,13 +193,24 @@ def process_file(file_path, date_str, market):
                     data["pretax_income_ly"] = data["op_income_ly"] + data["non_op_income_ly"]
                 data["pretax_income_yoy"] = calculate_yoy(data["pretax_income"], data["pretax_income_ly"])
 
+            # 加入 lineage 欄位
+            data["src_file"] = rel_path
+            data["src_row"] = row_idx + 1  # 1-based line number
+            data["src_col"] = src_col_str
+
             records.append(data)
-            
+
+        if DEBUG:
+            print(f"  ✓ Parsed {file_path}: {len(records)} records, src_col={src_col_str}")
+
         return pl.DataFrame(records) if records else None
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
+
 
 def main():
     raw_path = os.path.join(RAW_DIR, CATEGORY)
@@ -128,25 +220,32 @@ def main():
     end_env = os.getenv("END_DATE")
 
     for date_dir in date_dirs:
-        date_str = date_dir.name # YYYYQX
-        
-        if start_env and date_str < start_env: continue
-        if end_env and date_str > end_env: continue
+        date_str = date_dir.name  # YYYYQX
+
+        if start_env and date_str < start_env:
+            continue
+        if end_env and date_str > end_env:
+            continue
 
         print(f"Processing {date_str}...")
-        
+
         all_dfs = []
         for market in ["sii", "otc"]:
-            xls_path = os.path.join(str(date_dir), f"{market}.xls")
-            if os.path.exists(xls_path):
-                df = process_file(xls_path, date_str, market)
-                if df is not None: all_dfs.append(df)
-        
+            # 優先使用 CSV，如果不存在則嘗試 XLS
+            csv_path = os.path.join(str(date_dir), f"{market}.csv")
+
+            if os.path.exists(csv_path):
+                df = process_csv_file(csv_path, date_str, market)
+                if df is not None:
+                    all_dfs.append(df)
+            else:
+                print(f"  [!] CSV not found: {csv_path}")
+
         if all_dfs:
             final_df = pl.concat(all_dfs).unique(subset=["symbol"])
             # 強制統一欄位順序，確保匯入穩定
             final_df = final_df.select(FINAL_FIELDS)
-            
+
             # 輸出路徑格式: data/processed/quarterly_reports/YYYY/YYYYQX/
             year_str = date_str[:4]
             output_dir = os.path.join(PROCESSED_DIR, CATEGORY, year_str, date_str)
@@ -154,7 +253,7 @@ def main():
             output_path = os.path.join(output_dir, "all.csv")
             final_df.write_csv(output_path)
             print(f"  [+] Saved {final_df.height} records to {output_path}")
-            
+
             # 簡易資料品質檢查 (Post-processing check)
             if final_df.is_empty():
                 print(f"  [!] Warning: {date_str} generated an empty CSV.")
@@ -165,6 +264,7 @@ def main():
                         null_count = final_df.select(pl.col(col).null_count()).item()
                         if null_count == final_df.height:
                             print(f"  [!] CRITICAL: Column '{col}' is entirely NULL in {date_str}. Check mapping logic.")
+
 
 if __name__ == "__main__":
     main()

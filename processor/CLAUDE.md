@@ -42,7 +42,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | Module | Purpose |
 |--------|---------|
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
-| `convert_quarterly_reports.py` | Specifically handles SII/OTC quarterly reports (Excel parsing). **Outputs to YYYY/YYYYQX/all.csv**. |
+| `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Now injects lineage metadata** with index-based column mapping. SII has pretax columns (19-21), OTC calculates pretax from op_income + non_op_income. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Now injects lineage metadata** with strict column mapping validation. **Outputs to YYYY/YYYYMXX/all.csv**. |
 | `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income, balance, cashflow). **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
