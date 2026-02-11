@@ -28,6 +28,8 @@ COLUMN_MAP = {
     "漲跌價差": "change",
     "最後買價": "bid",
     "最後賣價": "ask",
+    "最後買量(千股)": "bid_volume",  # OTC format (in thousands)
+    "最後賣量(千股)": "ask_volume",  # OTC format (in thousands)
     "最後揭示買價": "last_disclosed_bid",
     "最後揭示賣價": "last_disclosed_ask",
     "最後揭示買量": "last_disclosed_bid_volume",
