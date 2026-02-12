@@ -45,6 +45,11 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
 
     df_all = pl.concat(dfs)
 
+    # Drop lineage columns (added by processor for QC, not imported to DB)
+    lineage_cols = [c for c in ["src_file", "src_row", "src_col"] if c in df_all.columns]
+    if lineage_cols:
+        df_all = df_all.drop(lineage_cols)
+
     # 計算基本統計值
     stats = {
         'total_rows': df_all.height,

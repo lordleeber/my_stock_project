@@ -6,6 +6,47 @@ import datetime
 import polars as pl
 from sqlalchemy import create_engine, text
 
+LINEAGE_COLS = ["src_file", "src_row", "src_col"]
+
+def drop_lineage_columns(df):
+    """Drop lineage columns before importing to DB."""
+    cols_to_drop = [c for c in LINEAGE_COLS if c in df.columns]
+    if cols_to_drop:
+        return df.drop(cols_to_drop)
+    return df
+
+def verify_row_count(engine, table_name, expected_count, date_filter, market_filter=None):
+    """Compare expected row count against DB COUNT(*) for the imported date/market."""
+    with engine.connect() as conn:
+        if market_filter:
+            result = conn.execute(
+                text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date AND market = :market"),
+                {"date": date_filter, "market": market_filter}
+            ).scalar()
+        else:
+            result = conn.execute(
+                text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
+                {"date": date_filter}
+            ).scalar()
+
+    if result != expected_count:
+        print(f"  ❌ Row count mismatch: CSV={expected_count}, DB={result}")
+        return False
+    return True
+
+def abort_with_error(message, exception=None):
+    """Write error to error_importer.md and exit immediately."""
+    error_file = "/app/error_importer.md"
+    with open(error_file, "w") as f:
+        f.write("# Importer 錯誤報告\n\n")
+        f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"## 錯誤訊息\n\n{message}\n\n")
+        if exception:
+            f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
+    print(f"\n❌ {message}")
+    print(f"錯誤已寫入 {error_file}")
+    raise SystemExit(1)
+
 def get_db_url():
     user = os.getenv("DB_USER", "user")
     password = os.getenv("DB_PASSWORD", "password")
@@ -175,6 +216,7 @@ def import_data(engine):
             print(f"Processing {category}...")
             try:
                 df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                df = drop_lineage_columns(df)
                 # 直接覆蓋整張表
                 df.to_pandas().to_sql(
                     name="stock_info",
@@ -184,7 +226,7 @@ def import_data(engine):
                 )
                 print(f"  -> Imported {df.height} stocks into stock_info.")
             except Exception as e:
-                print(f"Failed to import stock_info: {e}")
+                abort_with_error(f"Failed to import stock_info: {e}", e)
             continue
 
         # --- 特別處理 stock_tags (股票標籤，無日期欄位) ---
@@ -195,6 +237,7 @@ def import_data(engine):
             print(f"Processing {category}...")
             try:
                 df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
+                df = drop_lineage_columns(df)
                 df.to_pandas().to_sql(
                     name="stock_tags",
                     con=engine,
@@ -203,11 +246,11 @@ def import_data(engine):
                 )
                 print(f"  -> Imported {df.height} mappings into stock_tags.")
             except Exception as e:
-                print(f"Failed to import stock_tags: {e}")
+                abort_with_error(f"Failed to import stock_tags: {e}", e)
             continue
 
-        # --- 特別處理 shareholding_div (集保股權分散表) ---
-        if category == "shareholding_div":
+        # --- 特別處理 shareholding (集保股權分散表) ---
+        if category == "shareholding":
             date_dirs = get_date_dirs(cat_path)
 
             for date_dir in date_dirs:
@@ -223,7 +266,7 @@ def import_data(engine):
                 csv_file = os.path.join(date_dir, "all.csv")
                 if not os.path.exists(csv_file): continue
 
-                table_name = "shareholding_div"
+                table_name = "shareholding"
                 try:
                     target_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
 
@@ -245,6 +288,8 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date)
 
+                    df = drop_lineage_columns(df)
+                    expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
@@ -252,11 +297,11 @@ def import_data(engine):
                         index=False,
                         chunksize=5000
                     )
-                    print(f"  -> Imported {df.height} rows.")
+                    print(f"  -> Imported {expected_count} rows.")
+                    verify_row_count(engine, table_name, expected_count, target_date)
 
                 except Exception as e:
-                    print(f"Failed to import {csv_file}")
-                    print(traceback.format_exc())
+                    abort_with_error(f"Failed to import {csv_file}: {e}", e)
             continue
 
         # --- 特別處理 institutional_summary (三大法人買賣超彙總) ---
@@ -293,6 +338,8 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date)
 
+                    df = drop_lineage_columns(df)
+                    expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
@@ -300,11 +347,11 @@ def import_data(engine):
                         index=False,
                         chunksize=5000
                     )
-                    print(f"  -> Imported {df.height} rows.")
+                    print(f"  -> Imported {expected_count} rows.")
+                    verify_row_count(engine, table_name, expected_count, target_date)
 
                 except Exception as e:
-                    print(f"Failed to import {csv_file}")
-                    print(traceback.format_exc())
+                    abort_with_error(f"Failed to import {csv_file}: {e}", e)
             continue
 
         # --- 特別處理 margin_summary (市場信用交易彙總) ---
@@ -376,6 +423,8 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, date_str)
 
+                    df = drop_lineage_columns(df)
+                    expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
@@ -383,11 +432,11 @@ def import_data(engine):
                         index=False,
                         chunksize=2000
                     )
-                    print(f"  -> Imported {df.height} rows.")
+                    print(f"  -> Imported {expected_count} rows.")
+                    verify_row_count(engine, table_name, expected_count, date_str)
 
                 except Exception as e:
-                    print(f"Failed to import {csv_file}")
-                    print(traceback.format_exc())
+                    abort_with_error(f"Failed to import {csv_file}: {e}", e)
             continue
 
         # --- 一般處理 (daily_quotes, etc.) ---
@@ -447,6 +496,8 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date, market=market)
 
+                    df = drop_lineage_columns(df)
+                    expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
                         con=engine,
@@ -454,11 +505,11 @@ def import_data(engine):
                         index=False,
                         chunksize=2000
                     )
-                    print(f"  -> Imported {df.height} rows.")
+                    print(f"  -> Imported {expected_count} rows.")
+                    verify_row_count(engine, table_name, expected_count, target_date, market_filter=market)
 
                 except Exception as e:
-                    print(f"Failed to import {csv_file}")
-                    print(traceback.format_exc())
+                    abort_with_error(f"Failed to import {csv_file}: {e}", e)
 
 if __name__ == "__main__":
     print("Starting Importer...")

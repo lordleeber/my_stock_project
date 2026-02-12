@@ -5,10 +5,13 @@ This guide covers the database import component of the Taiwan stock market analy
 ## Overview
 
 The importer loads processed CSV data into PostgreSQL database:
+- Strips lineage columns (`src_file`, `src_row`, `src_col`) before import — these are added by the processor for QC and should not reach the DB
 - Validates and filters data before import
+- Verifies row counts after each import (CSV rows vs DB `COUNT(*)`)
 - Uses delete-before-insert strategy for data updates
 - Supports incremental and full refresh modes
 - Handles deduplication by date+market or date+symbol
+- **Fail-fast**: any import error writes to `error_importer.md` and exits immediately (`SystemExit(1)`)
 
 **Input**: `data/processed/` (from processor)
 **Output**: PostgreSQL tables in `stock_db`
@@ -49,7 +52,7 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm importer
 docker compose run --rm -e IMPORT_CATEGORY=monthly_revenue importer
 
 # Force re-import (delete and re-import existing data)
-docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding_div importer
+docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding importer
 ```
 
 **Important Notes**:
@@ -72,7 +75,7 @@ Available `IMPORT_CATEGORY` values:
 | `margin_summary` | `margin_summary` | Market-level margin trading summary |
 | `pe_ratio` | `pe_ratio` | Price-to-earnings ratio |
 | `monthly_revenue` | `monthly_revenue` | Monthly revenue |
-| `shareholding_div` | `shareholding_div` | TDCC shareholding dispersion |
+| `shareholding` | `shareholding` | TDCC shareholding dispersion |
 | `quarterly_reports` | `quarterly_reports` | Quarterly financial summary |
 | `income_statements` | `income_statements` | Quarterly income statements |
 | `balance_sheets` | `balance_sheets` | Quarterly balance sheets |
@@ -108,7 +111,16 @@ Filters rows where all of the following are NULL or 0:
 
 This removes invalid trading day records.
 
-### 4. Database Wait Logic
+### 4. Lineage Column Stripping
+The processor adds `src_file`, `src_row`, `src_col` columns to processed CSVs for data quality tracing. The importer automatically drops these columns before writing to the DB via `drop_lineage_columns()`. The validator also strips them when reading CSVs for statistical comparison.
+
+### 5. Row Count Verification
+After each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
+
+### 6. Fail-Fast Error Handling
+Any import error immediately writes the error and traceback to `/app/error_importer.md` and exits with `SystemExit(1)`. The importer does **not** silently skip failed imports.
+
+### 7. Database Wait Logic
 Importer has built-in retry logic (up to 30 seconds) to wait for database availability. This is useful when starting services with `docker compose up`.
 
 ## Common Import Tasks
@@ -145,7 +157,7 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGO
 ### Force Reimport TDCC Data
 ```bash
 # Delete existing data and reimport
-docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding_div importer
+docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding importer
 ```
 
 ## Database Schema Notes
