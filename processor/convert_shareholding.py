@@ -25,6 +25,8 @@ import datetime
 import re
 from pathlib import Path
 import polars as pl
+from data_quality_checker_shareholding import ShareholdingChecker
+from data_quality_checker_base import DataQualityError
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
@@ -238,6 +240,20 @@ def main():
 
         if process_file(file_path, date_str):
             processed_count += 1
+
+            # 處理完後立即執行資料品質稽核（只檢查 shareholding）
+            print(f"Auditing shareholding data for {date_str}...")
+
+            try:
+                checker = ShareholdingChecker(date_str)
+                checker.check()
+                print(f"✅ Shareholding data quality check passed for {date_str}")
+            except DataQualityError as e:
+                error_msg = f"Shareholding data quality check failed: {str(e)}"
+                print(f"❌ {error_msg}")
+                # 立即停止處理，不再處理後續日期
+                print(f"❌ Processing stopped due to data quality error. Fix the issue and re-run.")
+                sys.exit(1)
 
     print(f"ETL completed. Processed {processed_count} dates.")
 
