@@ -35,6 +35,7 @@ from data_quality_checker_foreign_holding import ForeignHoldingChecker
 from data_quality_checker_market_indices import MarketIndicesChecker
 from data_quality_checker_institutional_summary import InstitutionalSummaryChecker
 from data_quality_checker_margin_summary import MarginSummaryChecker
+from data_quality_checker_monthly_revenue import MonthlyRevenueChecker
 
 
 def main():
@@ -73,6 +74,7 @@ def main():
         MarketIndicesChecker,
         InstitutionalSummaryChecker,
         MarginSummaryChecker,
+        MonthlyRevenueChecker,
     ]
 
     try:
