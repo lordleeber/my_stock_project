@@ -129,7 +129,9 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
             except:
                 pass
 
+        # 更新過濾後的統計值
         stats.update({
+            'total_rows': df_all.height,  # 更新為過濾後的行數
             'sum_volume': float(df_all['volume'].sum()),
             'sum_value': float(df_all['value'].sum()),
             'avg_close': float(df_all['close'].mean()),
@@ -262,15 +264,13 @@ def get_db_stats(engine, table_name):
                     stats['sum_trust_buy'] = float(result[1]) if result[1] else 0
                     stats['sum_dealer_net'] = float(result[2]) if result[2] else 0
             elif table_name == 'margin_trading':
-                # margin_long_balance 和 margin_short_balance 可能是 double precision 或 text 型別
-                # 直接使用 SUM，NULL 會被自動忽略
+                # margin_long_balance 和 margin_short_balance 是 double precision 型別
+                # SUM() 會自動忽略 NULL 值，不需要 WHERE 條件
                 result = conn.execute(text(f"""
                     SELECT
                         SUM(margin_long_balance),
                         SUM(margin_short_balance)
                     FROM {table_name}
-                    WHERE margin_long_balance IS NOT NULL
-                      AND margin_short_balance IS NOT NULL
                 """)).fetchone()
                 if result:
                     stats['sum_margin_long_balance'] = float(result[0]) if result[0] else 0
