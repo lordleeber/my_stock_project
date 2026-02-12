@@ -511,6 +511,21 @@ def import_data(engine):
                 except Exception as e:
                     abort_with_error(f"Failed to import {csv_file}: {e}", e)
 
+            # 在處理完一個日期的所有市場資料後，立刻驗證這個日期
+            # 只在成功匯入後才驗證（如果有任何錯誤，上面的 abort_with_error 會中斷）
+            if csv_files:  # 確保有檔案被處理
+                try:
+                    from validator import validate_single_date
+                    passed, errors = validate_single_date(engine, table_name, target_date)
+                    if not passed:
+                        error_msg = f"Validation failed for {table_name} {date_str}: {'; '.join(errors)}"
+                        abort_with_error(error_msg, None)
+                except ImportError:
+                    pass  # 驗證器不存在時跳過
+                except Exception as e:
+                    print(f"⚠️  Validation warning for {table_name} {date_str}: {e}")
+                    # 驗證失敗不中斷匯入（因為可能只是統計差異）
+
 if __name__ == "__main__":
     print("Starting Importer...")
     db_url = get_db_url()

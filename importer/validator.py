@@ -350,6 +350,38 @@ def compare_stats(csv_stats, db_stats, table_name):
     return all_match, errors
 
 
+def validate_single_date(engine, table_name, target_date):
+    """驗證單一表格的單一日期資料
+
+    Args:
+        engine: SQLAlchemy engine
+        table_name: 表格名稱
+        target_date: YYYY-MM-DD 格式的日期字串
+
+    Returns:
+        tuple: (passed: bool, errors: list)
+    """
+    from sqlalchemy import text
+
+    # 查詢 DB 中這個日期的資料
+    with engine.connect() as conn:
+        try:
+            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
+                                {"date": target_date}).fetchone()
+            db_count = result[0]
+
+            if db_count == 0:
+                return True, []  # 沒有資料不算錯誤（可能是假日或資料不存在）
+
+            print(f"  ✓ {table_name} {target_date}: {db_count} rows in DB")
+            return True, []
+
+        except Exception as e:
+            error_msg = f"{table_name} {target_date}: 驗證失敗 - {str(e)}"
+            print(f"  ✗ {error_msg}")
+            return False, [error_msg]
+
+
 def validate_all_tables(engine):
     """驗證所有表格"""
     print("\n" + "="*60)
