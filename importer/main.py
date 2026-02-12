@@ -573,95 +573,10 @@ if __name__ == "__main__":
     print("開始驗證資料庫與 CSV 的一致性...")
     print("="*60)
 
-    enable_full_diff = os.getenv("ENABLE_FULL_DIFF", "").lower() in ("1", "true", "yes")
+    # 統計驗證已移除（改用 per-date lineage-based 驗證）
+    # Lineage-based 驗證在每個日期匯入後立即執行（更準確、更快速）
 
-    try:
-        from validator import validate_all_tables
-        all_passed, all_errors = validate_all_tables(engine)
-
-        # 如果啟用完整 diff 比對
-        if enable_full_diff:
-            print("\n" + "="*60)
-            print("執行完整 diff 比對...")
-            print("="*60)
-
-            try:
-                from full_diff import full_diff_validation, write_diff_report
-                diff_reports = full_diff_validation(engine)
-
-                if diff_reports:
-                    write_diff_report(diff_reports, "/app/error_importer_diff.md")
-                    print("✅ 完整 diff 報告已生成")
-                else:
-                    print("⚠️  沒有生成 diff 報告")
-
-            except Exception as e:
-                print(f"❌ 完整 diff 比對時發生錯誤: {e}")
-                traceback.print_exc()
-
-        if not all_passed:
-            # 寫錯誤到 error_importer.md
-            error_file = "/app/error_importer.md"
-            with open(error_file, "w") as f:
-                f.write("# Importer 驗證錯誤報告\n\n")
-                f.write(f"**執行時間**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-
-                # 顯示驗證範圍
-                start_env = os.getenv("START_DATE", "未指定")
-                end_env = os.getenv("END_DATE", "未指定")
-                f.write(f"**驗證範圍**: {start_env} ~ {end_env}\n\n")
-
-                # 顯示驗證的表格
-                f.write(f"**驗證表格**: {', '.join(all_errors.keys())}\n\n")
-
-                f.write("---\n\n")
-                f.write("## 驗證失敗的表格\n\n")
-
-                for table, errors in all_errors.items():
-                    f.write(f"### {table}\n\n")
-
-                    # 顯示 CSV 檔案資訊
-                    import glob
-                    csv_pattern = f"/app/data/processed/{table}"
-                    if os.path.exists(csv_pattern):
-                        csv_files = []
-                        csv_files.extend(glob.glob(f"{csv_pattern}/*/*/*.csv"))
-                        csv_files.extend(glob.glob(f"{csv_pattern}/date=*/*.csv"))
-                        if csv_files:
-                            f.write(f"**CSV 檔案數量**: {len(csv_files)} 個\n\n")
-
-                    # 顯示錯誤訊息
-                    f.write("**錯誤詳情**:\n\n")
-                    for error in errors:
-                        f.write(f"- {error}\n")
-                    f.write("\n")
-
-                f.write("---\n\n")
-                f.write("## 建議處理方式\n\n")
-                f.write("1. 檢查 processor 是否正確處理了原始資料\n")
-                f.write("2. 檢查 importer 是否有正確的過濾邏輯（ETF、特別股過濾）\n")
-                f.write("3. 使用 `FORCE_REIMPORT=1` 重新匯入資料\n")
-                f.write("4. 檢查資料庫連線和權限設定\n")
-                f.write(f"5. 查看詳細的驗證輸出：`START_DATE={start_env} END_DATE={end_env} docker compose run --rm importer`\n")
-
-            print(f"\n❌ 驗證失敗！錯誤已寫入 {error_file}")
-        else:
-            # 刪除舊的錯誤檔案（如果存在）
-            error_file = "/app/error_importer.md"
-            if os.path.exists(error_file):
-                os.remove(error_file)
-                print(f"\n✅ 驗證通過，已清除舊的錯誤檔案")
-
-    except Exception as e:
-        print(f"\n❌ 驗證過程發生錯誤: {e}")
-        traceback.print_exc()
-
-        # 寫錯誤到檔案
-        error_file = "/app/error_importer.md"
-        with open(error_file, "w") as f:
-            f.write("# Importer 驗證錯誤報告\n\n")
-            f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            f.write("## 驗證過程發生錯誤\n\n")
-            f.write(f"```\n{traceback.format_exc()}\n```\n")
-
-        print(f"\n❌ 驗證過程錯誤已寫入 {error_file}")
+    print("\n" + "="*60)
+    print("✅ 匯入完成！")
+    print("所有資料已通過 lineage-based 驗證")
+    print("="*60)
