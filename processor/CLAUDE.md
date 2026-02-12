@@ -14,7 +14,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 **Input**: `data/raw/` (from scraper)
 **Output**: `data/processed/` (standardized CSVs ready for database import)
 
-## Architecture (v3.0)
+## Architecture (v3.2)
 
 **Date-First Processing Loop**: Changed from category-first to date-first architecture. The processor now:
 1. Scans all category directories to collect unique dates
@@ -24,9 +24,9 @@ The processor cleans and standardizes raw CSV data from the scraper:
    - Processes all categories (daily_quotes, institutional_investors, etc.)
    - **Injects Data Lineage**: Adds `src_file`, `src_row`, `src_col` to every row.
    - Runs integrated quality check (data_quality_checker.main())
-   - **Lineage Verification**: QC verifies all rows by cross-referencing processed data with raw source files.
+   - **Full Column-Level Verification**: QC verifies ALL columns (not just identity columns) by cross-referencing processed data with raw source files.
+   - **Immediate Stop on Error**: If any verification fails, processing stops immediately. Subsequent dates are NOT processed.
    - Restores environment variables after QC
-   - Continues to next date (errors are logged but don't stop pipeline)
 
 **Data Lineage & Traceability (Column-level)**: Every processed row contains audit columns for full traceability:
 - `src_file`: Relative path to the raw source file (e.g., `data/raw/daily_quotes/2020/20200102/sii.csv`)
@@ -48,9 +48,11 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
-| `data_quality_checker.py` | Post-ETL verification script to catch NULL values or missing files. **Includes Lineage Verification that validates ALL rows** (not sampling) by cross-referencing processed data with raw files. Writes findings to root `error_processor.md`. |
+| `data_quality_checker.py` | **Main QC orchestrator** that runs category-specific checkers. Stops immediately on first error. |
+| `data_quality_checker_base.py` | **Base class** for all category checkers. Provides shared lineage verification, value comparison, and error handling. |
+| `data_quality_checker_*.py` | **Category-specific checkers** (10 files): `daily_quotes`, `institutional_investors`, `margin_trading`, `margin_sbl`, `pe_ratio`, `foreign_holding`, `market_indices`, `institutional_summary`, `margin_summary`, `monthly_revenue`. Each handles type-specific comparison (int/float conversion, string matching, transformation mapping). |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions. **All columns must have mappings** (unknown columns cause errors). **Includes index-specific fields** (index_name, index_close, index_change_points) separate from stock fields. All schemas include src_file, src_row, src_col. |
-| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` generates column-level lineage** (src_col format: "1#2#3#..."). **`clean_dataframe` enforces strict column mapping** (raises error on unknown columns). |
+| `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` returns column mapping** for accurate src_col generation after schema enforcement. **`clean_dataframe` enforces strict column mapping** (raises error on unknown columns). |
 
 ## Environment Variables
 
@@ -178,16 +180,34 @@ docker compose run --rm processor python validator.py
 
 Compares row counts between raw and processed files to ensure no data loss.
 
-### Quality Checker (NULL Value Detection)
+### Quality Checker (Full Column-Level Verification)
 ```bash
 # Now runs automatically in convert.py, but can be run standalone
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python data_quality_checker.py
 ```
 
-Checks for:
-- Missing output files
-- NULL values in critical columns
-- Writes findings to root `/app/error.md`
+**Architecture (v3.2)**: Refactored into category-specific checker classes:
+
+| Checker | Category | Special Handling |
+|---------|----------|------------------|
+| `DailyQuotesChecker` | daily_quotes | OHLCV int→float conversion, OHLC logic validation |
+| `InstitutionalInvestorsChecker` | institutional_investors | Buy/sell/net integer columns |
+| `MarginTradingChecker` | margin_trading | Margin long/short integers |
+| `MarginSblChecker` | margin_sbl | Securities borrowing/lending |
+| `PeRatioChecker` | pe_ratio | Float PE values, negative check |
+| `ForeignHoldingChecker` | foreign_holding | Shares (int), ratios (float) |
+| `MarketIndicesChecker` | market_indices | Index values (float), optional SII |
+| `InstitutionalSummaryChecker` | institutional_summary | Chinese→English institution mapping |
+| `MarginSummaryChecker` | margin_summary | Derived item names |
+| `MonthlyRevenueChecker` | monthly_revenue | YYYYMXX date format, parentheses for negatives |
+
+**Verification Features:**
+- ✅ **Full column-level verification**: ALL columns verified, not just identity columns
+- ✅ **Type-aware comparison**: Integer columns (volume, transactions) convert float→int; Float columns use tolerance
+- ✅ **Transformation handling**: Institution names (Chinese→English), derived columns marked appropriately
+- ✅ **Immediate stop on error**: First error stops processing, no subsequent dates processed
+- ✅ **Empty marker handling**: Supports `--`, `----`, `除權`, `除息`, `N/A`, etc.
+- Writes findings to root `/app/error_processor.md`
 
 ## Error Handling & Debugging
 
@@ -308,10 +328,15 @@ date,market,symbol,name,volume,value,open,src_file,src_row,src_col
 
 ### Quality Verification
 
-**Lineage Verification (data_quality_checker.py):**
-- Verifies **all rows** (not just a sample)
-- Cross-references processed data with raw files using src_file, src_row
-- Validates that the identifier (symbol/name) appears in the expected raw line
+**Lineage Verification (data_quality_checker_*.py):**
+- Verifies **all rows** and **all columns** (not just identity columns)
+- Cross-references processed data with raw files using src_file, src_row, src_col
+- **Type-aware comparison**:
+  - Integer columns (volume, transactions, shares): float→int conversion before comparison
+  - Float columns (prices, ratios): tolerance-based comparison (0.0001 for prices, 0.01% for percentages)
+  - String columns: direct comparison with quote/whitespace normalization
+- **Transformation tracking**: Columns that undergo mapping (institution names) or derivation (item names) are handled specially
+- **Immediate termination**: Any mismatch stops processing immediately
 - Reports any mismatches in `error_processor.md`
 
 ### Benefits
@@ -332,9 +357,10 @@ The following dates correctly return no data for OTC indices due to market closu
 
 ### Important Pipeline Behaviors
 
-1. **Error resilience**: Pipeline continues processing remaining dates even if individual dates fail. All errors are logged to `/app/error_processor.md` with timestamps and context.
+1. **Fail-fast on QC errors**: If any data quality check fails, processing stops immediately. Subsequent dates are NOT processed. This ensures data integrity issues are caught and fixed before continuing.
 2. **Environment variable isolation**: QC runs use temporary environment variable overrides that are automatically restored via finally blocks, preventing interference with the main processing loop.
 3. **market_indices extraction**: Processor auto-extracts market indices from daily_quotes during conversion.
+4. **src_col generation**: The `src_col` is generated AFTER `enforce_schema()` reorders columns, ensuring indices match the final SCHEMA_COLS order (not the raw CSV order).
 
 ## Next Steps
 
