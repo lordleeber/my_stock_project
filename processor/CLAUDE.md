@@ -191,7 +191,7 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python d
 | Checker | Category | Special Handling |
 |---------|----------|------------------|
 | `DailyQuotesChecker` | daily_quotes | OHLCV int→float conversion, OHLC logic validation |
-| `InstitutionalInvestorsChecker` | institutional_investors | Buy/sell/net integer columns |
+| `InstitutionalInvestorsChecker` | institutional_investors | Buy/sell/net integer columns, ETF/special securities handling (17 vs 20 fields), debug mode available |
 | `MarginTradingChecker` | margin_trading | Margin long/short integers |
 | `MarginSblChecker` | margin_sbl | Securities borrowing/lending |
 | `PeRatioChecker` | pe_ratio | Float PE values, negative check |
@@ -346,6 +346,44 @@ date,market,symbol,name,volume,value,open,src_file,src_row,src_col
 ✅ **Data Quality**: Verify processing accuracy by tracing back to source
 ✅ **Debugging**: Quickly identify which raw file/column caused issues
 ✅ **Compliance**: Full lineage for regulatory requirements
+
+## Special Data Handling
+
+### ETFs and Special Securities in Institutional Investors
+
+Some securities (e.g., ETFs like 00851 台新全球AI) have **fewer columns** in the raw `institutional_investors` CSV:
+- **Normal stocks**: 20 columns (full dealer breakdown with self/hedge subcategories)
+- **ETFs/Special securities**: 17 columns (missing fields 18-20)
+
+**Missing columns** in ETFs:
+- Field 18: `dealer_hedge_net` (自營商買賣超股數(避險))
+- Field 19: `total_net` (三大法人買賣超股數)
+- Field 20: empty
+
+**Handling in processor (`utils.py`)**:
+- Pads short rows with empty strings to match header length (20 columns)
+- All rows in processed DataFrame have the same structure
+
+**Handling in QC checker (`data_quality_checker_institutional_investors.py`)**:
+- Detects special securities by checking `raw_field_count < 20`
+- Defines `OPTIONAL_DEALER_COLUMNS = {'dealer_hedge_net', 'total_net'}`
+- When src_col index is out of range:
+  - For optional columns: verifies processed value is 0/NULL, skips raw verification
+  - For non-optional columns: raises error
+
+**Debug mode** (set `DEBUG_COLUMN_VERIFICATION = True` in checker):
+- Prints detailed column-by-column verification for every 100th row
+- Shows: column name, src_col index, processed value, raw value, match status
+- Useful for debugging src_col mapping issues
+
+Example output:
+```
+🔍 Detailed verification for row 102 (symbol: 00851):
+   raw_field_count: 17
+   is_special_security: True
+   [18] dealer_hedge_net <- [18] OUT OF RANGE (optional, padded) processed=nan
+   [20] total_net        <- [19] OUT OF RANGE (optional, padded) processed=nan
+```
 
 ## Known Data Gaps & Market Rules
 

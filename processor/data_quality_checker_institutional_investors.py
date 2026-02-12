@@ -79,6 +79,9 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
         """
         from data_quality_checker_base import parse_csv_line, DEBUG
 
+        # 🔧 Local debug switch - set to True to see detailed column verification
+        DEBUG_COLUMN_VERIFICATION = False
+
         label = f"{self.category} {market}"
 
         # Check lineage columns exist
@@ -148,9 +151,21 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                 )
 
             # Verify ALL columns
+            # Print every 100 rows, or specific interesting rows (e.g., ETF at row 102)
+            should_debug_print = DEBUG_COLUMN_VERIFICATION and (idx % 100 == 0 or idx == 102)
+            if should_debug_print:
+                print(f"\n🔍 Detailed verification for row {idx} (symbol: {row.get('symbol', 'N/A')}):")
+                print(f"   src_file: {src_file}")
+                print(f"   src_row: {src_row}")
+                print(f"   src_col: {src_col}")
+                print(f"   raw_field_count: {raw_field_count}")
+                print(f"   is_special_security: {is_special_security}")
+
             for col_idx, (col_name, src_idx_str) in enumerate(zip(schema_cols, col_indices)):
                 # Skip processing-added columns (x)
                 if src_idx_str == 'x':
+                    if should_debug_print:
+                        print(f"   [{col_idx:2d}] {col_name:25s} <- 'x' (processing-added, skipped)")
                     continue
 
                 try:
@@ -165,6 +180,8 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                     if col_name in OPTIONAL_DEALER_COLUMNS:
                         # Verify that the processed value is 0 or NULL (padded column)
                         processed_val = row.get(col_name, None)
+                        if should_debug_print:
+                            print(f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx+1:2d}] OUT OF RANGE (optional, padded) processed={processed_val}")
                         if pd.notna(processed_val) and float(processed_val) != 0.0:
                             self._raise_error(
                                 f"{label} row {idx} col '{col_name}': Special security with {raw_field_count} fields "
@@ -187,6 +204,10 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                 # Get values for comparison
                 processed_val = row.get(col_name, '')
                 raw_val = raw_fields[src_idx]
+
+                if should_debug_print:
+                    match_result = "✓" if self._compare_values(processed_val, raw_val, col_name) else "✗"
+                    print(f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx+1:2d}] {match_result} processed='{processed_val}' raw='{raw_val}'")
 
                 # Compare values using category-specific logic
                 if not self._compare_values(processed_val, raw_val, col_name):
