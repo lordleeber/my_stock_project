@@ -45,6 +45,7 @@ def clean_value_for_comparison(val):
         '--', '---', '----', 'nan', 'None', '', 'NaN', 'N/A', 'n/a',
         '除權', '除息', '除權息',  # Ex-rights, ex-dividend markers
         'X', 'x',  # Common placeholder
+        'null', 'NULL',  # JSON-style null markers
     }
     if s in empty_markers:
         return ""
