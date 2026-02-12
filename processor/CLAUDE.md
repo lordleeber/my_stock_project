@@ -45,12 +45,12 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern (1-based indices). SII has pretax columns, OTC calculates pretax from op_income + non_op_income. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern. Returns `(rename_map, col_mapping)` from column validation. Fail-fast on validation errors. **Outputs to YYYY/YYYYMXX/all.csv**. |
 | `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Lineage metadata** with per-category `*_SCHEMA_COLS` + `generate_src_col()` pattern. Uses `SYMBOL_COLS`/`NAME_COLS` constants. `build_col_mapping()` replaces old `build_column_index_map()`. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
-| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
+| `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern. Fail-fast on validation errors. **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
 | `data_quality_checker.py` | **Main QC orchestrator** that runs category-specific checkers. Stops immediately on first error. |
 | `data_quality_checker_base.py` | **Base class** for all category checkers. Provides shared lineage verification, value comparison, and error handling. |
-| `data_quality_checker_*.py` | **Category-specific checkers** (10 files): `daily_quotes`, `institutional_investors`, `margin_trading`, `margin_sbl`, `pe_ratio`, `foreign_holding`, `market_indices`, `institutional_summary`, `margin_summary`, `monthly_revenue`. Each handles type-specific comparison (int/float conversion, string matching, transformation mapping). |
+| `data_quality_checker_*.py` | **Category-specific checkers** (11 files): `daily_quotes`, `institutional_investors`, `margin_trading`, `margin_sbl`, `pe_ratio`, `foreign_holding`, `market_indices`, `institutional_summary`, `margin_summary`, `monthly_revenue`, `shareholding`. Each handles type-specific comparison (int/float conversion, string matching, transformation mapping). |
 | `schemas.py` | Column mappings, numeric types, standard schema definitions. **All columns must have mappings** (unknown columns cause errors). **Includes index-specific fields** (index_name, index_close, index_change_points) separate from stock fields. All schemas include src_file, src_row, src_col. |
 | `utils.py` | Shared helpers: **Header merging for multi-line CSVs**, index extraction, CSV parsing with encoding fallback. **`read_raw_csv` returns column mapping** for accurate src_col generation after schema enforcement. **`clean_dataframe` enforces strict column mapping** (raises error on unknown columns). |
 
@@ -200,6 +200,7 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python d
 | `InstitutionalSummaryChecker` | institutional_summary | Chinese→English institution mapping |
 | `MarginSummaryChecker` | margin_summary | Derived item names |
 | `MonthlyRevenueChecker` | monthly_revenue | YYYYMXX date format, parentheses for negatives |
+| `ShareholdingChecker` | shareholding | Weekly (Fridays), single file, level 1-15 validation, 15 rows per symbol |
 
 **Verification Features:**
 - ✅ **Full column-level verification**: ALL columns verified, not just identity columns

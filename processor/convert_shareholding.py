@@ -6,7 +6,7 @@
 raw 格式: TDCC_OD_1-5_YYYYMMDD.csv
   欄位: 資料日期, 證券代號, 持股分級, 人數, 股數, 占集保庫存數比例%
 
-processed 格式: data/processed/shareholding_div/date=YYYYMMDD/all.csv
+processed 格式: data/processed/shareholding/YYYY/YYYYMMDD.csv
   欄位: date, symbol, level, level_name, holders, shares, percentage
 
 使用方式:
@@ -20,6 +20,7 @@ processed 格式: data/processed/shareholding_div/date=YYYYMMDD/all.csv
 """
 
 import os
+import sys
 import datetime
 import re
 from pathlib import Path
@@ -50,6 +51,28 @@ LEVEL_NAME_MAP = {
     16: "400萬以上(含)",  # OpenData API 新增
     17: "總計",           # OpenData API 新增
 }
+
+# Final output column order (schema) - src_col is generated based on this order
+SCHEMA_COLS = ['date', 'symbol', 'level', 'level_name', 'holders', 'shares', 'percentage']
+
+
+def generate_src_col(schema_cols, col_mapping):
+    """Generate src_col string based on schema column order and column mapping.
+
+    Args:
+        schema_cols: Final output column order (excluding lineage columns)
+        col_mapping: {english_col_name: 1-based_raw_column_index}
+
+    Returns:
+        src_col string in format "x#2#3#x#4#5#6"
+    """
+    src_col_parts = []
+    for col in schema_cols:
+        if col in col_mapping:
+            src_col_parts.append(str(col_mapping[col]))
+        else:
+            src_col_parts.append("x")
+    return "#".join(src_col_parts)
 
 
 def process_file(file_path: str, date_str: str) -> bool:
@@ -87,13 +110,15 @@ def process_file(file_path: str, date_str: str) -> bool:
             "占集保庫存數比例%": "percentage",
         }
 
-        # 記錄選擇的列在原始 DataFrame 中的索引（1-based）
+        # Build col_mapping dict {english_col_name: 1-based_raw_column_index}
         original_columns = df.columns
-        col_indices = []
-        for col_name in column_map.keys():
-            if col_name in original_columns:
-                col_idx = list(original_columns).index(col_name) + 1  # 1-based
-                col_indices.append(str(col_idx))
+        col_mapping = {}
+        for cn_name, en_name in column_map.items():
+            if cn_name in original_columns:
+                col_mapping[en_name] = list(original_columns).index(cn_name) + 1  # 1-based
+
+        # Generate src_col using unified pattern (date=x, level_name=x, rest from raw)
+        src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
 
         df = df.select([col for col in column_map.keys() if col in df.columns])
         df = df.rename({k: v for k, v in column_map.items() if k in df.columns})
@@ -109,9 +134,6 @@ def process_file(file_path: str, date_str: str) -> bool:
         # 重要：先加入追蹤資訊（在過濾 level 16, 17 之前）
         rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
 
-        # 生成 src_col 字串（目前欄位：symbol, level, holders, shares, percentage）
-        src_col_str = "#".join(col_indices)
-
         # 資料從第 2 行開始 (1-based, index 0 is header)
         df = df.with_columns([
             pl.lit(rel_path).alias("src_file"),
@@ -122,21 +144,15 @@ def process_file(file_path: str, date_str: str) -> bool:
         # 之後再進行過濾，這樣留下來的 src_row 才會是正確的原始行號
         df = df.filter(pl.col("level") <= 15)
 
-        # 加入 level_name
+        # 加入 level_name (derived from LEVEL_NAME_MAP, not from raw — marked as 'x' in src_col)
         df = df.with_columns(
             pl.col("level").replace_strict(LEVEL_NAME_MAP).alias("level_name")
         )
 
-        # 加入日期
+        # 加入日期 (processing-added — marked as 'x' in src_col)
         df = df.with_columns(
             pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date")
         )
-
-        # 更新 src_col：在前面添加 "x#" (對應 date 這個處理時添加的欄位)
-        if "src_col" in df.columns:
-            df = df.with_columns([
-                pl.concat_str([pl.lit("x#"), pl.col("src_col")]).alias("src_col")
-            ])
 
         # 調整欄位順序 (與 convert_shareholding_div.py 一致，並包含追蹤欄位)
         df = df.select(["date", "symbol", "level", "level_name", "holders", "shares", "percentage", "src_file", "src_row", "src_col"])
@@ -152,6 +168,9 @@ def process_file(file_path: str, date_str: str) -> bool:
         print(f"Processed {date_str} ({stock_count} stocks, {df.height} rows)")
         return True
 
+    except ValueError as e:
+        print(f"Failed to process {file_path}: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
         return False

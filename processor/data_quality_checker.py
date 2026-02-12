@@ -19,6 +19,7 @@ This module coordinates category-specific checkers:
     - data_quality_checker_market_indices.py
     - data_quality_checker_institutional_summary.py
     - data_quality_checker_margin_summary.py
+    - data_quality_checker_shareholding.py
 """
 
 import os
@@ -36,6 +37,7 @@ from data_quality_checker_market_indices import MarketIndicesChecker
 from data_quality_checker_institutional_summary import InstitutionalSummaryChecker
 from data_quality_checker_margin_summary import MarginSummaryChecker
 from data_quality_checker_monthly_revenue import MonthlyRevenueChecker
+from data_quality_checker_shareholding import ShareholdingChecker
 
 
 def main():
@@ -75,6 +77,7 @@ def main():
         InstitutionalSummaryChecker,
         MarginSummaryChecker,
         MonthlyRevenueChecker,
+        ShareholdingChecker,
     ]
 
     try:
