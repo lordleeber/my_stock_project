@@ -19,7 +19,7 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/*/*/sii.csv"))
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/*/*/otc.csv"))
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/*/*/all.csv"))
-    
+
     # 支援舊結構 date=yyyymmdd/*.csv
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/date=*/sii.csv"))
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/date=*/otc.csv"))
@@ -29,13 +29,20 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
         print(f"⚠️  找不到 CSV 檔案")
         return None
 
+    # 顯示 CSV 檔案的日期範圍
+    csv_files_sorted = sorted(csv_files)
+    first_file = csv_files_sorted[0]
+    last_file = csv_files_sorted[-1]
     print(f"找到 {len(csv_files)} 個 CSV 檔案")
+    print(f"日期範圍: {first_file.split('/')[-2]} ~ {last_file.split('/')[-2]}")
 
     # 讀取所有 CSV 並合併
     dfs = []
     for csv_file in sorted(csv_files):
         try:
-            df = pl.read_csv(csv_file)
+            # 使用 infer_schema_length=0 讓 Polars 掃描所有行來推斷型態
+            # 這樣可以避免不同檔案間型態不一致的問題
+            df = pl.read_csv(csv_file, infer_schema_length=0)
             dfs.append(df)
         except Exception as e:
             print(f"⚠️  讀取失敗: {csv_file} - {e}")
@@ -43,12 +50,37 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
     if not dfs:
         return None
 
-    df_all = pl.concat(dfs)
+    # 使用 diagonal 模式來處理不同 schema 的 DataFrame
+    # 這樣即使欄位型態不完全一致也能合併
+    try:
+        df_all = pl.concat(dfs, how="diagonal")
+    except Exception as e:
+        print(f"⚠️  合併 CSV 時發生錯誤: {e}")
+        print(f"   嘗試使用寬鬆模式合併...")
+        # 如果 diagonal 也失敗，嘗試將所有欄位轉成字串再合併
+        dfs_str = []
+        for df in dfs:
+            df_str = df.with_columns([pl.col(c).cast(pl.Utf8) for c in df.columns])
+            dfs_str.append(df_str)
+        df_all = pl.concat(dfs_str, how="diagonal")
 
     # Drop lineage columns (added by processor for QC, not imported to DB)
     lineage_cols = [c for c in ["src_file", "src_row", "src_col"] if c in df_all.columns]
     if lineage_cols:
         df_all = df_all.drop(lineage_cols)
+
+    # 過濾 ETF 和特別股（與 importer 的過濾邏輯一致）
+    # 這樣 CSV 統計值才能與資料庫統計值正確比對
+    if 'symbol' in df_all.columns:
+        original_count = df_all.height
+        # 過濾 ETF（代號開頭是 00）和特別股（代號包含英文字母）
+        df_all = df_all.filter(
+            ~pl.col('symbol').str.starts_with('00') &
+            ~pl.col('symbol').str.contains(r'[A-Za-z]')
+        )
+        filtered_count = original_count - df_all.height
+        if filtered_count > 0:
+            print(f"已過濾 {filtered_count} 筆 ETF/特別股記錄（與資料庫過濾邏輯一致）")
 
     # 計算基本統計值
     stats = {
@@ -67,6 +99,36 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
 
     # 針對不同表格計算特定統計值
     if table_name == 'daily_quotes':
+        # 先將數值欄位轉換為正確的型態，這樣 OHLCV 過濾才能正確比較數值
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in numeric_cols:
+            if col in df_all.columns:
+                try:
+                    df_all = df_all.with_columns(pl.col(col).cast(pl.Float64, strict=False))
+                except:
+                    pass
+
+        # 過濾掉 OHLCV 全為 0 或 NULL 的記錄（與 importer 邏輯完全一致）
+        original_count = df_all.height
+        ohlcv_cols = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c in df_all.columns]
+        if ohlcv_cols:
+            # 使用與 importer 相同的邏輯：~pl.all_horizontal(...)
+            df_all = df_all.filter(
+                ~pl.all_horizontal(
+                    (pl.col(c).is_null() | (pl.col(c) == 0)) for c in ohlcv_cols
+                )
+            )
+            filtered_ohlcv = original_count - df_all.height
+            if filtered_ohlcv > 0:
+                print(f"已過濾 {filtered_ohlcv} 筆 OHLCV 全為 0/NULL 的記錄（與資料庫過濾邏輯一致）")
+
+        # 確保 value 欄位也是數值型態
+        if 'value' in df_all.columns:
+            try:
+                df_all = df_all.with_columns(pl.col('value').cast(pl.Float64, strict=False))
+            except:
+                pass
+
         stats.update({
             'sum_volume': float(df_all['volume'].sum()),
             'sum_value': float(df_all['value'].sum()),
@@ -75,6 +137,15 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
             'max_close': float(df_all['close'].max()),
         })
     elif table_name == 'institutional_investors':
+        # 確保數值欄位是正確的型態
+        numeric_cols = ['foreign_buy', 'trust_buy', 'dealer_net']
+        for col in numeric_cols:
+            if col in df_all.columns:
+                try:
+                    df_all = df_all.with_columns(pl.col(col).cast(pl.Float64, strict=False))
+                except:
+                    pass
+
         if 'foreign_buy' in df_all.columns:
             stats['sum_foreign_buy'] = float(df_all['foreign_buy'].sum())
         if 'trust_buy' in df_all.columns:
@@ -83,18 +154,32 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
             stats['sum_dealer_net'] = float(df_all['dealer_net'].sum())
     elif table_name == 'margin_trading':
         if 'margin_long_balance' in df_all.columns:
-            # 先轉成數值型別（可能是 text）
+            # 先轉成數值型別（可能是 text），使用 strict=False 忽略無效值
             try:
-                stats['sum_margin_long_balance'] = float(df_all['margin_long_balance'].cast(pl.Float64).sum())
-            except:
+                df_all = df_all.with_columns(
+                    pl.col('margin_long_balance').cast(pl.Float64, strict=False).alias('margin_long_balance')
+                )
                 stats['sum_margin_long_balance'] = float(df_all['margin_long_balance'].sum())
+            except Exception as e:
+                print(f"⚠️  計算 margin_long_balance 時發生錯誤: {e}")
+                stats['sum_margin_long_balance'] = 0
         if 'margin_short_balance' in df_all.columns:
             try:
-                stats['sum_margin_short_balance'] = float(df_all['margin_short_balance'].cast(pl.Float64).sum())
-            except:
+                df_all = df_all.with_columns(
+                    pl.col('margin_short_balance').cast(pl.Float64, strict=False).alias('margin_short_balance')
+                )
                 stats['sum_margin_short_balance'] = float(df_all['margin_short_balance'].sum())
+            except Exception as e:
+                print(f"⚠️  計算 margin_short_balance 時發生錯誤: {e}")
+                stats['sum_margin_short_balance'] = 0
     elif table_name == 'pe_ratio':
         if 'pe_ratio' in df_all.columns:
+            # 確保 pe_ratio 是數值型態
+            try:
+                df_all = df_all.with_columns(pl.col('pe_ratio').cast(pl.Float64, strict=False))
+            except:
+                pass
+
             # 過濾掉 0 和 null 的 PE ratio
             valid_pe = df_all.filter((pl.col('pe_ratio') > 0) & (pl.col('pe_ratio').is_not_null()))
             if valid_pe.height > 0:
@@ -177,16 +262,15 @@ def get_db_stats(engine, table_name):
                     stats['sum_trust_buy'] = float(result[1]) if result[1] else 0
                     stats['sum_dealer_net'] = float(result[2]) if result[2] else 0
             elif table_name == 'margin_trading':
-                # margin_long_balance 和 margin_short_balance 是 text 型別
+                # margin_long_balance 和 margin_short_balance 可能是 double precision 或 text 型別
+                # 直接使用 SUM，NULL 會被自動忽略
                 result = conn.execute(text(f"""
                     SELECT
-                        SUM(margin_long_balance::numeric),
-                        SUM(margin_short_balance::numeric)
+                        SUM(margin_long_balance),
+                        SUM(margin_short_balance)
                     FROM {table_name}
                     WHERE margin_long_balance IS NOT NULL
-                      AND margin_long_balance != ''
                       AND margin_short_balance IS NOT NULL
-                      AND margin_short_balance != ''
                 """)).fetchone()
                 if result:
                     stats['sum_margin_long_balance'] = float(result[0]) if result[0] else 0

@@ -556,20 +556,45 @@ if __name__ == "__main__":
             error_file = "/app/error_importer.md"
             with open(error_file, "w") as f:
                 f.write("# Importer 驗證錯誤報告\n\n")
-                f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write(f"**執行時間**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+                # 顯示驗證範圍
+                start_env = os.getenv("START_DATE", "未指定")
+                end_env = os.getenv("END_DATE", "未指定")
+                f.write(f"**驗證範圍**: {start_env} ~ {end_env}\n\n")
+
+                # 顯示驗證的表格
+                f.write(f"**驗證表格**: {', '.join(all_errors.keys())}\n\n")
+
+                f.write("---\n\n")
                 f.write("## 驗證失敗的表格\n\n")
 
                 for table, errors in all_errors.items():
                     f.write(f"### {table}\n\n")
+
+                    # 顯示 CSV 檔案資訊
+                    import glob
+                    csv_pattern = f"/app/data/processed/{table}"
+                    if os.path.exists(csv_pattern):
+                        csv_files = []
+                        csv_files.extend(glob.glob(f"{csv_pattern}/*/*/*.csv"))
+                        csv_files.extend(glob.glob(f"{csv_pattern}/date=*/*.csv"))
+                        if csv_files:
+                            f.write(f"**CSV 檔案數量**: {len(csv_files)} 個\n\n")
+
+                    # 顯示錯誤訊息
+                    f.write("**錯誤詳情**:\n\n")
                     for error in errors:
                         f.write(f"- {error}\n")
                     f.write("\n")
 
+                f.write("---\n\n")
                 f.write("## 建議處理方式\n\n")
                 f.write("1. 檢查 processor 是否正確處理了原始資料\n")
                 f.write("2. 檢查 importer 是否有正確的過濾邏輯（ETF、特別股過濾）\n")
                 f.write("3. 使用 `FORCE_REIMPORT=1` 重新匯入資料\n")
                 f.write("4. 檢查資料庫連線和權限設定\n")
+                f.write(f"5. 查看詳細的驗證輸出：`START_DATE={start_env} END_DATE={end_env} docker compose run --rm importer`\n")
 
             print(f"\n❌ 驗證失敗！錯誤已寫入 {error_file}")
         else:
