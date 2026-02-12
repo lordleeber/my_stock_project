@@ -5,9 +5,10 @@ This guide covers the database import component of the Taiwan stock market analy
 ## Overview
 
 The importer loads processed CSV data into PostgreSQL database:
-- Strips lineage columns (`src_file`, `src_row`, `src_col`) before import — these are added by the processor for QC and should not reach the DB
-- Validates and filters data before import
-- Verifies row counts after each import (CSV rows vs DB `COUNT(*)`)
+- Recalculates lineage columns (`src_file`, `src_row`, `src_col` → `pced_file`, `pced_row`, `pced_col`) to point to processed CSV positions
+- Validates and filters data before import (ETF/preferred stocks, OHLCV validation)
+- Preserves lineage metadata in database for traceability
+- Performs per-date lineage-based validation after import
 - Uses delete-before-insert strategy for data updates
 - Supports incremental and full refresh modes
 - Handles deduplication by date+market or date+symbol
@@ -111,8 +112,25 @@ Filters rows where all of the following are NULL or 0:
 
 This removes invalid trading day records.
 
-### 4. Lineage Column Stripping
-The processor adds `src_file`, `src_row`, `src_col` columns to processed CSVs for data quality tracing. The importer automatically drops these columns before writing to the DB via `drop_lineage_columns()`. The validator also strips them when reading CSVs for statistical comparison.
+### 4. Lineage Tracking (Data Traceability)
+The processor adds `src_file`, `src_row`, `src_col` columns to processed CSVs pointing to raw data sources. The importer **recalculates** these columns to point to processed CSV positions before storing them in the database as `pced_file`, `pced_row`, `pced_col`.
+
+**Lineage Calculation (in `recalculate_lineage()`):**
+- Executed **BEFORE** ETF/OHLCV filtering to record original CSV positions
+- **pced_file**: Path to the processed CSV file (e.g., `/app/data/processed/foreign_holding/2020/20200102/sii.csv`)
+- **pced_row**: 1-based line number in processed CSV (row 1 = header, row 2 = first data row)
+- **pced_col**: Column position mapping (format: `1#2#3#4#...` for each column)
+
+**Why recalculate?**
+- Processor's `src_*` points to raw CSV (for QC purposes)
+- Importer reads from processed CSV, so lineage should reflect the actual import source
+- Enables accurate validation by comparing DB data against processed CSV at exact positions
+
+**Validation Usage:**
+- Reads processed CSV without filtering
+- Uses `pced_row` to locate exact row in original CSV
+- Performs column-by-column value comparison
+- Reports any discrepancies (type-aware: int/float/string)
 
 ### 5. Row Count Verification
 After each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
@@ -214,10 +232,41 @@ docker compose run --rm backend python create_indexes.py
 
 Importer automatically validates imported data to ensure database content matches CSV files.
 
-### Two Validation Levels
+### Lineage-Based Validation (Per-Date, Always Enabled)
 
-#### 1. Statistical Validation (Always Enabled)
-Fast validation comparing aggregate statistics:
+After importing each date, the importer performs **lineage-based validation** using the `pced_*` columns stored in the database:
+
+**How it works:**
+1. Queries all rows for the imported date from database (includes `pced_file`, `pced_row`, `pced_col`)
+2. Groups by `pced_file` to minimize file I/O
+3. For each file:
+   - Reads the processed CSV **without filtering** (preserves original row positions)
+   - For each DB row:
+     - Locates the source row using `pced_row` (CSV row index = `pced_row - 2`, since row 1 = header)
+     - Compares column values with type-aware logic:
+       - **Integers** (volume, shares): Exact match after float→int conversion
+       - **Floats** (prices, ratios): Tolerance-based (0.0001 for prices, 0.01% for percentages)
+       - **Strings** (symbol, name): Exact match after trimming whitespace
+     - Reports any mismatches
+
+**Output**: Immediate failure on first error with details in `error_importer.md`
+
+**Benefits:**
+- ✅ **Column-level accuracy**: Verifies every field, not just aggregates
+- ✅ **Early detection**: Catches import bugs before data corruption spreads
+- ✅ **Full traceability**: Know exactly which CSV row produced each DB record
+- ✅ **Fast**: Only reads relevant CSV files for the imported date
+
+**Example output:**
+```
+→ foreign_holding 2020-01-02: 驗證 1685 rows with lineage...
+✓ foreign_holding 2020-01-02: 1685 rows verified from 2 files
+```
+
+### Additional Validation Levels (Optional)
+
+#### 1. Statistical Validation (Legacy, for Full Date Range)
+Fast validation comparing aggregate statistics across all imported dates:
 - Row counts, unique dates/symbols
 - Sum/average of numeric fields (volume, value, PE ratio, etc.)
 - Allows 0.01% floating-point tolerance
@@ -226,7 +275,9 @@ Fast validation comparing aggregate statistics:
 
 **Time**: 1-2 minutes
 
-#### 2. Full Diff Validation (Optional)
+**Note**: With lineage-based validation enabled per-date, statistical validation is primarily useful for verifying entire date ranges after bulk imports.
+
+#### 2. Full Diff Validation (Deep Analysis)
 Detailed row-by-row comparison:
 - Exports entire DB table to DataFrame
 - Loads all CSVs and merges
