@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 from pathlib import Path
 import polars as pl
@@ -10,8 +11,8 @@ PROCESSED_DIR = os.environ.get("PROCESSED_DIR", "data/processed")
 CATEGORY = "quarterly_reports"
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
-# 定義最終統一的欄位順序 (含 lineage)
-FINAL_FIELDS = [
+# Final output column order (schema) - src_col is generated based on this order
+SCHEMA_COLS = [
     "date", "symbol", "name", "market",
     "revenue", "revenue_ly", "revenue_yoy",
     "op_income", "op_income_ly", "op_income_yoy",
@@ -20,35 +21,36 @@ FINAL_FIELDS = [
     "net_income", "net_income_ly", "net_income_yoy",
     "eps", "eps_ly", "eps_yoy",
     "capital", "nav_per_share", "equity_to_assets_ratio",
-    "current_ratio", "quick_ratio",
-    "src_file", "src_row", "src_col"
+    "current_ratio", "quick_ratio"
 ]
 
-# SII 欄位映射 (0-based column index)
+FINAL_FIELDS = SCHEMA_COLS + ["src_file", "src_row", "src_col"]
+
+# SII 欄位映射 (1-based column index for src_col generation)
 SII_MAPPING = {
-    "symbol": 0, "name": 1,
-    "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
-    "op_income": 5, "op_income_ly": 6,
-    "non_op_income": 7, "non_op_income_ly": 8,
-    "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
-    "capital": 12,
-    "eps": 13, "eps_ly": 14,
-    "nav_per_share": 15, "equity_to_assets_ratio": 16,
-    "current_ratio": 17, "quick_ratio": 18,
-    "pretax_income": 19, "pretax_income_ly": 20, "pretax_income_yoy": 21
+    "symbol": 1, "name": 2,
+    "revenue": 3, "revenue_ly": 4, "revenue_yoy": 5,
+    "op_income": 6, "op_income_ly": 7,
+    "non_op_income": 8, "non_op_income_ly": 9,
+    "net_income": 10, "net_income_ly": 11, "net_income_yoy": 12,
+    "capital": 13,
+    "eps": 14, "eps_ly": 15,
+    "nav_per_share": 16, "equity_to_assets_ratio": 17,
+    "current_ratio": 18, "quick_ratio": 19,
+    "pretax_income": 20, "pretax_income_ly": 21, "pretax_income_yoy": 22
 }
 
-# OTC 欄位映射 (0-based column index) - 沒有 pretax 欄位
+# OTC 欄位映射 (1-based column index) - 沒有 pretax 欄位
 OTC_MAPPING = {
-    "symbol": 0, "name": 1,
-    "revenue": 2, "revenue_ly": 3, "revenue_yoy": 4,
-    "op_income": 5, "op_income_ly": 6,
-    "non_op_income": 7, "non_op_income_ly": 8,
-    "net_income": 9, "net_income_ly": 10, "net_income_yoy": 11,
-    "capital": 12,
-    "eps": 13, "eps_ly": 14,
-    "nav_per_share": 15, "equity_to_assets_ratio": 16,
-    "current_ratio": 17, "quick_ratio": 18
+    "symbol": 1, "name": 2,
+    "revenue": 3, "revenue_ly": 4, "revenue_yoy": 5,
+    "op_income": 6, "op_income_ly": 7,
+    "non_op_income": 8, "non_op_income_ly": 9,
+    "net_income": 10, "net_income_ly": 11, "net_income_yoy": 12,
+    "capital": 13,
+    "eps": 14, "eps_ly": 15,
+    "nav_per_share": 16, "equity_to_assets_ratio": 17,
+    "current_ratio": 18, "quick_ratio": 19
 }
 
 
@@ -81,42 +83,23 @@ def find_header_row(rows, max_rows=15):
     return -1
 
 
-def generate_src_col(mapping, market):
+def generate_src_col(schema_cols, col_mapping):
+    """Generate src_col string based on schema column order and column mapping.
+
+    Args:
+        schema_cols: Final output column order (excluding lineage columns)
+        col_mapping: {english_col_name: 1-based_raw_column_index}
+
+    Returns:
+        src_col string in format "x#x#1#2#3#4#..."
     """
-    生成 src_col 字串，格式: "x#x#x#1#2#3#4#..."
-
-    Output column order (from FINAL_FIELDS):
-    date, symbol, name, market, revenue, revenue_ly, revenue_yoy, ...
-
-    x = column added during processing
-    number = 1-based column index from raw CSV
-    """
-    # 需要映射的欄位順序 (排除 lineage 欄位)
-    output_fields = [
-        "date", "symbol", "name", "market",
-        "revenue", "revenue_ly", "revenue_yoy",
-        "op_income", "op_income_ly", "op_income_yoy",
-        "non_op_income", "non_op_income_ly", "non_op_income_yoy",
-        "pretax_income", "pretax_income_ly", "pretax_income_yoy",
-        "net_income", "net_income_ly", "net_income_yoy",
-        "eps", "eps_ly", "eps_yoy",
-        "capital", "nav_per_share", "equity_to_assets_ratio",
-        "current_ratio", "quick_ratio"
-    ]
-
-    col_indices = []
-    for field in output_fields:
-        if field in ["date", "market"]:
-            # Added during processing
-            col_indices.append("x")
-        elif field in mapping:
-            # From raw CSV (convert to 1-based)
-            col_indices.append(str(mapping[field] + 1))
+    src_col_parts = []
+    for col in schema_cols:
+        if col in col_mapping:
+            src_col_parts.append(str(col_mapping[col]))
         else:
-            # Calculated field (e.g., OTC pretax_income)
-            col_indices.append("x")
-
-    return "#".join(col_indices)
+            src_col_parts.append("x")
+    return "#".join(src_col_parts)
 
 
 def process_csv_file(file_path, date_str, market):
@@ -139,11 +122,11 @@ def process_csv_file(file_path, date_str, market):
             print(f"  [!] Cannot find header row in {file_path}")
             return None
 
-        # 選擇映射
-        mapping = SII_MAPPING if market == 'sii' else OTC_MAPPING
+        # 選擇映射 (1-based column indices)
+        col_mapping = SII_MAPPING if market == 'sii' else OTC_MAPPING
 
-        # 生成 src_col 字串
-        src_col_str = generate_src_col(mapping, market)
+        # 生成 src_col 字串 based on SCHEMA_COLS order
+        src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
 
         # 計算相對路徑
         rel_path = file_path.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
@@ -154,8 +137,8 @@ def process_csv_file(file_path, date_str, market):
             if len(row) < 2:
                 continue
 
-            # 取得 symbol
-            raw_symbol = str(row[mapping["symbol"]]).strip()
+            # 取得 symbol (convert 1-based to 0-based for row access)
+            raw_symbol = str(row[col_mapping["symbol"] - 1]).strip()
             if raw_symbol.endswith(".0"):
                 raw_symbol = raw_symbol[:-2]
 
@@ -168,12 +151,13 @@ def process_csv_file(file_path, date_str, market):
             data["date"] = date_str
             data["market"] = market
             data["symbol"] = raw_symbol
-            data["name"] = str(row[mapping["name"]]).strip() if mapping["name"] < len(row) else ""
+            data["name"] = str(row[col_mapping["name"] - 1]).strip() if (col_mapping["name"] - 1) < len(row) else ""
 
-            # 提取數值欄位
-            for field, idx in mapping.items():
+            # 提取數值欄位 (convert 1-based to 0-based for row access)
+            for field, idx_1based in col_mapping.items():
                 if field in ["symbol", "name"]:
                     continue
+                idx = idx_1based - 1  # convert to 0-based
                 if idx < len(row):
                     data[field] = clean_numeric(row[idx])
 
@@ -205,6 +189,10 @@ def process_csv_file(file_path, date_str, market):
 
         return pl.DataFrame(records) if records else None
 
+    except ValueError as e:
+        # Fail-fast on validation errors
+        print(f"❌ Validation error: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
         import traceback

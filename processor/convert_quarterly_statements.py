@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import csv
 from pathlib import Path
@@ -70,36 +71,42 @@ CASHFLOW_MAP = {
     "期末現金及約當現金餘額": "cash_end",
 }
 
-# Schema definitions with lineage columns
-INCOME_SCHEMA = [
+# Final output column order (schema) - src_col is generated based on this order
+INCOME_SCHEMA_COLS = [
     "date", "market", "symbol", "name", "statement_type",
     "revenue", "cost_of_revenue", "gross_profit", "operating_expense",
     "operating_income", "non_operating_income", "pretax_income", "tax_expense",
     "net_income", "other_comprehensive_income", "comprehensive_income", "eps",
     "net_interest_income", "non_interest_income", "net_revenue", "other_income_net",
-    "src_file", "src_row", "src_col",
 ]
 
-BALANCE_SCHEMA = [
+BALANCE_SCHEMA_COLS = [
     "date", "market", "symbol", "name", "statement_type",
     "current_assets", "noncurrent_assets", "total_assets",
     "current_liabilities", "noncurrent_liabilities", "total_liabilities",
     "total_equity", "equity_parent",
     "share_capital", "capital_surplus", "retained_earnings",
     "other_equity", "treasury_shares", "nav_per_share",
-    "src_file", "src_row", "src_col",
 ]
 
-CASHFLOW_SCHEMA = [
+CASHFLOW_SCHEMA_COLS = [
     "date", "market", "symbol", "name", "statement_type",
     "cash_flow_operating", "cash_flow_investing", "cash_flow_financing",
     "fx_effect", "net_cash_change", "cash_begin", "cash_end",
-    "src_file", "src_row", "src_col",
 ]
 
-NUMERIC_COLS = set(INCOME_SCHEMA + BALANCE_SCHEMA + CASHFLOW_SCHEMA) - {
-    "date", "market", "symbol", "name", "statement_type", "src_file", "src_row", "src_col"
+# Full schemas with lineage columns
+INCOME_SCHEMA = INCOME_SCHEMA_COLS + ["src_file", "src_row", "src_col"]
+BALANCE_SCHEMA = BALANCE_SCHEMA_COLS + ["src_file", "src_row", "src_col"]
+CASHFLOW_SCHEMA = CASHFLOW_SCHEMA_COLS + ["src_file", "src_row", "src_col"]
+
+NUMERIC_COLS = set(INCOME_SCHEMA_COLS + BALANCE_SCHEMA_COLS + CASHFLOW_SCHEMA_COLS) - {
+    "date", "market", "symbol", "name", "statement_type"
 }
+
+# Known symbol/name column variants in MOPS data
+SYMBOL_COLS = ("公司 代號", "公司代號", "代號", "證券代號")
+NAME_COLS = ("公司名稱", "名稱", "證券名稱")
 
 
 def clean_numeric(val):
@@ -124,55 +131,53 @@ def detect_statement_type(market, filename):
     return base or "unknown"
 
 
-def build_column_index_map(headers):
-    """Build a map of column name to 1-based index."""
-    return {col.strip(): idx + 1 for idx, col in enumerate(headers)}
+def build_col_mapping(headers, mapping):
+    """Build col_mapping {english_target: 1-based_raw_column_index} from headers and mapping dict.
 
+    Args:
+        headers: Raw CSV column headers (stripped)
+        mapping: Chinese-to-English field mapping dict (e.g., BALANCE_MAP)
 
-def generate_src_col(schema, col_index_map, mapping, target_sources):
+    Returns:
+        col_mapping: {english_col_name: 1-based_column_index}
     """
-    Generate src_col string for a row.
+    col_mapping = {}
 
-    For each field in schema (excluding lineage fields):
-    - 'x' if it's a processing-added field (date, market, statement_type)
-    - 1-based column index if it comes from raw CSV
-    - 'x' if the field wasn't found in this file
+    for idx, col in enumerate(headers):
+        col_clean = col.strip()
+        # Check symbol/name variants
+        if col_clean in SYMBOL_COLS:
+            col_mapping.setdefault("symbol", idx + 1)
+        elif col_clean in NAME_COLS:
+            col_mapping.setdefault("name", idx + 1)
+        # Check category-specific mapping
+        elif col_clean in mapping:
+            target = mapping[col_clean]
+            col_mapping.setdefault(target, idx + 1)
+
+    return col_mapping
+
+
+def generate_src_col(schema_cols, col_mapping):
+    """Generate src_col string based on schema column order and column mapping.
+
+    Args:
+        schema_cols: Final output column order (excluding lineage columns)
+        col_mapping: {english_col_name: 1-based_raw_column_index}
+
+    Returns:
+        src_col string in format "x#x#1#2#3#4#..."
     """
-    col_indices = []
-    schema_fields = [f for f in schema if f not in ("src_file", "src_row", "src_col")]
-
-    for field in schema_fields:
-        if field in ("date", "market", "statement_type"):
-            # Added during processing
-            col_indices.append("x")
-        elif field in target_sources:
-            # Get the first source column that exists
-            sources = target_sources[field]
-            found_idx = None
-            for src in sources:
-                if src in col_index_map:
-                    found_idx = col_index_map[src]
-                    break
-            col_indices.append(str(found_idx) if found_idx else "x")
-        elif field in ("symbol", "name"):
-            # These may have been renamed
-            for orig, renamed in [
-                ("公司 代號", "symbol"), ("公司代號", "symbol"),
-                ("代號", "symbol"), ("證券代號", "symbol"),
-                ("公司名稱", "name"), ("名稱", "name"), ("證券名稱", "name"),
-            ]:
-                if renamed == field and orig in col_index_map:
-                    col_indices.append(str(col_index_map[orig]))
-                    break
-            else:
-                col_indices.append("x")
+    src_col_parts = []
+    for col in schema_cols:
+        if col in col_mapping:
+            src_col_parts.append(str(col_mapping[col]))
         else:
-            col_indices.append("x")
+            src_col_parts.append("x")
+    return "#".join(src_col_parts)
 
-    return "#".join(col_indices)
 
-
-def process_csv_file(csv_file, date_str, market, category, mapping, schema):
+def process_csv_file(csv_file, date_str, market, category, mapping, schema, schema_cols):
     """Process a single CSV file with lineage tracking."""
     try:
         # Read CSV with standard library to get headers and row numbers
@@ -184,23 +189,17 @@ def process_csv_file(csv_file, date_str, market, category, mapping, schema):
             return None
 
         headers = [h.strip() for h in rows[0]]
-        col_index_map = build_column_index_map(headers)
 
-        # Build target -> sources mapping
-        target_sources = {}
-        for col in headers:
-            col_clean = col.strip()
-            if col_clean in mapping:
-                target = mapping[col_clean]
-                target_sources.setdefault(target, []).append(col_clean)
+        # Build col_mapping {english_target: 1-based_index}
+        col_mapping = build_col_mapping(headers, mapping)
 
         # Calculate relative path
         rel_path = csv_file.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
 
         statement_type = detect_statement_type(market, os.path.basename(csv_file))
 
-        # Generate src_col template
-        src_col_str = generate_src_col(schema, col_index_map, mapping, target_sources)
+        # Generate src_col based on SCHEMA_COLS order
+        src_col_str = generate_src_col(schema_cols, col_mapping)
 
         # Read with polars for actual data processing
         df = pl.read_csv(csv_file, encoding="utf-8-sig", infer_schema_length=0)
@@ -211,7 +210,7 @@ def process_csv_file(csv_file, date_str, market, category, mapping, schema):
         symbol_col = None
         for col in df.columns:
             c = col.strip()
-            if c in ("公司 代號", "公司代號", "代號", "證券代號"):
+            if c in SYMBOL_COLS:
                 symbol_col = col
                 break
         if symbol_col is None:
@@ -221,9 +220,9 @@ def process_csv_file(csv_file, date_str, market, category, mapping, schema):
         rename = {}
         for col in df.columns:
             c = col.strip()
-            if c in ("公司 代號", "公司代號", "代號", "證券代號"):
+            if c in SYMBOL_COLS:
                 rename[col] = "symbol"
-            elif c in ("公司名稱", "名稱", "證券名稱"):
+            elif c in NAME_COLS:
                 rename[col] = "name"
         if rename:
             df = df.rename(rename)
@@ -277,6 +276,10 @@ def process_csv_file(csv_file, date_str, market, category, mapping, schema):
 
         return df
 
+    except ValueError as e:
+        # Fail-fast on validation errors
+        print(f"❌ Validation error: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"Error processing {csv_file}: {e}")
         import traceback
@@ -290,16 +293,19 @@ def process_category(category):
         print(f"Raw dir not found: {raw_path}")
         return
 
-    # Select mapping and schema based on category
+    # Select mapping, schema, and schema_cols based on category
     if category == "income_statement":
         mapping = INCOME_MAP
         schema = INCOME_SCHEMA
+        schema_cols = INCOME_SCHEMA_COLS
     elif category == "balance_sheet":
         mapping = BALANCE_MAP
         schema = BALANCE_SCHEMA
+        schema_cols = BALANCE_SCHEMA_COLS
     else:  # cash_flow
         mapping = CASHFLOW_MAP
         schema = CASHFLOW_SCHEMA
+        schema_cols = CASHFLOW_SCHEMA_COLS
 
     date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
 
@@ -325,7 +331,7 @@ def process_category(category):
         all_dfs = []
         for csv_file in sorted(glob.glob(os.path.join(str(date_dir), "*.csv"))):
             market = os.path.basename(csv_file).split("_")[0]
-            df = process_csv_file(csv_file, date_str, market, category, mapping, schema)
+            df = process_csv_file(csv_file, date_str, market, category, mapping, schema, schema_cols)
             if df is not None and not df.is_empty():
                 all_dfs.append(df)
 

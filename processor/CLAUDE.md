@@ -42,9 +42,9 @@ The processor cleans and standardizes raw CSV data from the scraper:
 | Module | Purpose |
 |--------|---------|
 | `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
-| `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Now injects lineage metadata** with index-based column mapping. SII has pretax columns (19-21), OTC calculates pretax from op_income + non_op_income. **Outputs to YYYY/YYYYQX/all.csv**. |
-| `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Now injects lineage metadata** with strict column mapping validation. **Outputs to YYYY/YYYYMXX/all.csv**. |
-| `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Now injects lineage metadata**. Supports multiple statement types (general, bank, table, insurance) with flexible column mapping. **Outputs to YYYY/YYYYQX/all.csv**. |
+| `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern (1-based indices). SII has pretax columns, OTC calculates pretax from op_income + non_op_income. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
+| `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern. Returns `(rename_map, col_mapping)` from column validation. Fail-fast on validation errors. **Outputs to YYYY/YYYYMXX/all.csv**. |
+| `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Lineage metadata** with per-category `*_SCHEMA_COLS` + `generate_src_col()` pattern. Uses `SYMBOL_COLS`/`NAME_COLS` constants. `build_col_mapping()` replaces old `build_column_index_map()`. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_shareholding.py` | **Current**: Handles all-in-one TDCC shareholding format from `shareholding/YYYY/` (OpenData API). **Outputs to YYYY/YYYYMMDD.csv**. |
 | `convert_shareholding_div.py` | **Legacy**: Handles per-stock TDCC shareholding format from `shareholding_div/` (2023/09~2026/02). |
 | `validator.py` | Validates row counts and numeric accuracy (Raw vs Processed) |
@@ -274,7 +274,7 @@ START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python c
 START_DATE=20230915 END_DATE=20260206 docker compose run --rm processor python convert_shareholding_div.py
 ```
 
-All scripts output to the same `data/processed/shareholding_div/` directory.
+All scripts output to `data/processed/shareholding/` directory.
 
 ### Monthly Revenue
 ```bash
@@ -360,7 +360,8 @@ The following dates correctly return no data for OTC indices due to market closu
 1. **Fail-fast on QC errors**: If any data quality check fails, processing stops immediately. Subsequent dates are NOT processed. This ensures data integrity issues are caught and fixed before continuing.
 2. **Environment variable isolation**: QC runs use temporary environment variable overrides that are automatically restored via finally blocks, preventing interference with the main processing loop.
 3. **market_indices extraction**: Processor auto-extracts market indices from daily_quotes during conversion.
-4. **src_col generation**: The `src_col` is generated AFTER `enforce_schema()` reorders columns, ensuring indices match the final SCHEMA_COLS order (not the raw CSV order).
+4. **src_col generation**: All modules use a consistent `generate_src_col(schema_cols, col_mapping)` pattern. Each module defines a `SCHEMA_COLS` constant (the output column order excluding lineage columns) and a `col_mapping` dict (`{english_col_name: 1-based_raw_column_index}`). The src_col string is generated based on SCHEMA_COLS order, ensuring indices match the final output order.
+5. **Fail-fast on validation errors**: All converter modules (`convert_monthly_revenue.py`, `convert_quarterly_reports.py`, `convert_quarterly_statements.py`) call `sys.exit(1)` on `ValueError` to stop immediately when column validation fails.
 
 ## Next Steps
 

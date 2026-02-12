@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import datetime
 import re
@@ -8,6 +9,30 @@ import numpy as np
 RAW_DIR = "/app/data/raw/monthly_revenue"
 PROCESSED_DIR = "/app/data/processed/monthly_revenue"
 DEBUG = os.getenv("DEBUG", "0") == "1"
+
+# Final output column order (schema) - src_col is generated based on this order
+SCHEMA_COLS = ['date', 'market', 'symbol', 'name', 'revenue_current', 'revenue_last_month',
+               'revenue_last_year', 'mom_pct', 'yoy_pct', 'revenue_cumulative',
+               'revenue_cumulative_last_year', 'cumulative_yoy_pct', 'comment']
+
+
+def generate_src_col(schema_cols, col_mapping):
+    """Generate src_col string based on schema column order and column mapping.
+
+    Args:
+        schema_cols: Final output column order (excluding lineage columns)
+        col_mapping: {english_col_name: 1-based_raw_column_index}
+
+    Returns:
+        src_col string in format "x#x#1#2#3#4#..."
+    """
+    src_col_parts = []
+    for col in schema_cols:
+        if col in col_mapping:
+            src_col_parts.append(str(col_mapping[col]))
+        else:
+            src_col_parts.append("x")
+    return "#".join(src_col_parts)
 
 # 欄位映射字典（中文列名）
 COL_MAPPING = {
@@ -64,17 +89,20 @@ def normalize_column_name(col: str) -> str:
     return col.lower()
 
 
-def validate_and_map_columns(df_columns: list, use_mapping: dict, is_english: bool, file_path: str) -> dict:
+def validate_and_map_columns(df_columns: list, use_mapping: dict, is_english: bool, file_path: str) -> tuple:
     """
-    Validate all columns have mappings and return column index map.
+    Validate all columns have mappings and return column maps.
 
     Returns:
-        dict: {target_column: (source_column_name, 1-based_column_index)}
+        tuple: (rename_map, col_mapping)
+            - rename_map: {source_column_name: target_column_name} for renaming
+            - col_mapping: {target_column_name: 1-based_column_index} for src_col generation
 
     Raises:
         ValueError: If unknown column found without mapping
     """
-    column_map = {}  # target -> (source_col, 1-based index)
+    rename_map = {}  # source_col -> target_col (for renaming)
+    col_mapping = {}  # target_col -> 1-based index (for src_col)
 
     for idx, col in enumerate(df_columns):
         col_clean = col.strip().replace("\n", "")
@@ -89,8 +117,9 @@ def validate_and_map_columns(df_columns: list, use_mapping: dict, is_english: bo
 
             if match_found:
                 matched = True
-                if target is not None and target not in column_map:
-                    column_map[target] = (col_clean, idx + 1)  # 1-based index
+                if target is not None and target not in col_mapping:
+                    rename_map[col_clean] = target
+                    col_mapping[target] = idx + 1  # 1-based index
                 break
 
         if not matched:
@@ -103,7 +132,7 @@ def validate_and_map_columns(df_columns: list, use_mapping: dict, is_english: bo
                 f"Please add mapping to COL_MAPPING or COL_MAPPING_EN in convert_monthly_revenue.py"
             )
 
-    return column_map
+    return rename_map, col_mapping
 
 def process_monthly_revenue():
     if not os.path.exists(RAW_DIR):
@@ -184,7 +213,7 @@ def process_monthly_revenue():
                 use_mapping = COL_MAPPING_EN if is_english else COL_MAPPING
 
                 # Validate columns and get mapping with indices
-                column_map = validate_and_map_columns(
+                rename_map, col_mapping = validate_and_map_columns(
                     df.columns.tolist(), use_mapping, is_english, file_path
                 )
 
@@ -195,38 +224,35 @@ def process_monthly_revenue():
                 # Build new dataframe with lineage tracking
                 new_df = pd.DataFrame()
 
-                # Track column indices for src_col - order must match output column order
-                # Output order: date, market, symbol, name, revenue_current, ...
-                col_indices = ["x"]  # date is added during processing
-
                 # 處理 market 欄位：如果原始資料已經有 market 欄位，使用它；否則從檔名判斷
                 if 'market' in df.columns:
                     new_df['market'] = df['market'].str.upper()
                     market_idx = df.columns.tolist().index('market') + 1
-                    col_indices.append(str(market_idx))
+                    col_mapping['market'] = market_idx
                 else:
                     market = "SII" if "sii" in file_path.lower() else "OTC" if "otc" in file_path.lower() else "UNKNOWN"
                     new_df['market'] = market
-                    col_indices.append("x")  # Market derived from filename
+                    # market derived from filename, not in col_mapping (will be 'x')
 
-                # Add data columns in order
-                for target in ["symbol", "name", "revenue_current", "revenue_last_month",
-                               "revenue_last_year", "mom_pct", "yoy_pct", "revenue_cumulative",
-                               "revenue_cumulative_last_year", "cumulative_yoy_pct", "comment"]:
-                    if target in column_map:
-                        src_col, src_idx = column_map[target]
-                        new_df[target] = df[src_col]
-                        col_indices.append(str(src_idx))
-                    else:
-                        new_df[target] = None
-                        col_indices.append("x")  # Missing column marked as 'x'
+                # Add data columns using rename_map
+                for src_col_name, target in rename_map.items():
+                    if target != 'market':  # market already handled above
+                        new_df[target] = df[src_col_name]
+
+                # Add missing columns as None
+                for col in SCHEMA_COLS:
+                    if col not in new_df.columns and col != 'date':
+                        new_df[col] = None
+
+                # Generate src_col based on SCHEMA_COLS order
+                src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
 
                 # Add lineage columns
                 # src_row: 1-based line number (header_row + 1 for header, then data rows)
                 # The first data row is at line header_row + 2 (1-indexed)
                 new_df['src_file'] = rel_path
                 new_df['src_row'] = range(header_row + 2, header_row + 2 + len(df))
-                new_df['src_col'] = "#".join(col_indices)
+                new_df['src_col'] = src_col_str
 
                 if DEBUG:
                     print(f"  ✓ Parsed {file_path}: {len(df)} rows, src_col={new_df['src_col'].iloc[0] if len(new_df) > 0 else 'N/A'}")
@@ -234,8 +260,9 @@ def process_monthly_revenue():
                 dfs.append(new_df)
 
             except ValueError as e:
-                # Re-raise validation errors
-                raise
+                # Fail-fast on validation errors
+                print(f"❌ Validation error: {e}")
+                sys.exit(1)
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
                 continue
@@ -258,11 +285,8 @@ def process_monthly_revenue():
         # 使用 YYYYMXX 格式，例如 2025M01
         final_df['date'] = f"{year_str}M{month_str}"
 
-        # Reorder columns: date first, then data columns, then lineage columns at the end
-        col_order = ['date', 'market', 'symbol', 'name', 'revenue_current', 'revenue_last_month',
-                     'revenue_last_year', 'mom_pct', 'yoy_pct', 'revenue_cumulative',
-                     'revenue_cumulative_last_year', 'cumulative_yoy_pct', 'comment',
-                     'src_file', 'src_row', 'src_col']
+        # Reorder columns: schema columns + lineage columns
+        col_order = SCHEMA_COLS + ['src_file', 'src_row', 'src_col']
         final_df = final_df[[c for c in col_order if c in final_df.columns]]
 
         # 輸出路徑格式: data/processed/monthly_revenue/YYYY/YYYYMXX/
