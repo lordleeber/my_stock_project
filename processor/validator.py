@@ -29,7 +29,7 @@ def verify_file(category, date_str, market):
         
         # 3. 比對筆數
         # 注意: 我們的 read_raw_csv 已經做過初步清洗，所以理論上筆數應接近
-        # 但 enforce_schema 可能會濾掉完全不符合 schema 的行? (目前 convert.py 沒做行過濾)
+        # 但 enforce_schema 可能會濾掉完全不符合 schema 的行? (目前 convert_daily.py 沒做行過濾)
         # 唯一可能的差異是 df_raw 可能包含一些全 null 的行
         
         # 過濾掉 symbol 為空的行 (這是最基本的有效資料判斷)

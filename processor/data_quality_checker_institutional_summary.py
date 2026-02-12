@@ -7,7 +7,7 @@ from data_quality_checker_base import DataQualityCheckerBase, clean_value_for_co
 import pandas as pd
 
 
-# Institution name mapping (Chinese -> English, matching convert.py)
+# Institution name mapping (Chinese -> English, matching convert_daily.py)
 INSTITUTION_MAP = {
     "自營商(自行買賣)": "dealer_self",
     "自營商(避險)": "dealer_hedge",

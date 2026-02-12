@@ -41,7 +41,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 
 | Module | Purpose |
 |--------|---------|
-| `convert.py` | **Unified ETL entry point with integrated QC**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles stocks, summaries, and indices. **Now injects lineage metadata.** |
+| `convert_daily.py` | **Unified ETL entry point with integrated QC for daily data**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles daily quotes, institutional investors, foreign holding, margin trading, margin sbl, pe ratio, market indices, and summaries. **Now injects lineage metadata.** |
 | `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern (1-based indices). SII has pretax columns, OTC calculates pretax from op_income + non_op_income. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern. Returns `(rename_map, col_mapping)` from column validation. Fail-fast on validation errors. **Outputs to YYYY/YYYYMXX/all.csv**. |
 | `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Lineage metadata** with per-category `*_SCHEMA_COLS` + `generate_src_col()` pattern. Uses `SYMBOL_COLS`/`NAME_COLS` constants. `build_col_mapping()` replaces old `build_column_index_map()`. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
@@ -95,7 +95,7 @@ Changed from category-first to date-first architecture. Processes all categories
 Date strings are validated with regex pattern `^\d{8}$` before being used in file paths, preventing malicious directory names like `date=../../etc/passwd`.
 
 ### 4. Dual Error Logging System
-- `log_processing_error()`: Records ETL runtime errors (convert.py)
+- `log_processing_error()`: Records ETL runtime errors (convert_daily.py)
 - `log_parsing_error()`: Records CSV parsing errors (utils.py)
 - Both write to `/app/error_processor.md` with timestamps and context
 
@@ -182,7 +182,7 @@ Compares row counts between raw and processed files to ensure no data loss.
 
 ### Quality Checker (Full Column-Level Verification)
 ```bash
-# Now runs automatically in convert.py, but can be run standalone
+# Now runs automatically in convert_daily.py, but can be run standalone
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor python data_quality_checker.py
 ```
 
@@ -303,7 +303,7 @@ Every processed row includes precise traceability to the raw source file, allowi
 # Generated src_col: "1#2#3#4#5"
 ```
 
-**2. During Processing (`convert.py`):**
+**2. During Processing (`convert_daily.py`):**
 ```python
 # Add processing-time columns (date, market)
 # Update src_col to reflect these additions

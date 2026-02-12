@@ -115,7 +115,7 @@ Then: `docker compose up -d --build backend`
 
 **2. Fix Data Quality Issue**:
 - Check raw CSV in `data/raw/[date]/`
-- Debug processor logic in `processor/convert.py`
+- Debug processor logic in `processor/convert_daily.py`
 - Force reimport: `FORCE_REIMPORT=1 docker compose run --rm importer`
 - Recalculate: `docker compose run --rm calculator`
 

@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 預設執行轉換腳本
-CMD ["python", "convert.py"]
+CMD ["python", "convert_daily.py"]
