@@ -107,6 +107,17 @@ def _handle_generic_category(file_path, market, category, date_str):
             if "change" in col_mapping:
                 col_mapping["index_change_points"] = col_mapping["change"]
 
+        # 清理數字欄位中的逗號（如 "6,312.83" -> "6312.83"）
+        # 只對 String 類型的 column 處理，因為 Polars 可能已經自動推斷了某些數字
+        numeric_cols = ["index_close", "index_change_points"]
+        for col in numeric_cols:
+            if col in df.columns:
+                col_dtype = df[col].dtype
+                if col_dtype == pl.Utf8:  # 只處理字串類型
+                    df = df.with_columns(
+                        pl.col(col).str.replace_all(",", "").alias(col)
+                    )
+
     if "symbol" in df.columns:
         df = df.filter((pl.col("symbol").is_not_null()) & (pl.col("symbol") != ""))
         df = df.filter(pl.col("symbol").str.len_chars().is_between(2, 10))
