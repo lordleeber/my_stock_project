@@ -41,7 +41,7 @@ The processor cleans and standardizes raw CSV data from the scraper:
 
 | Module | Purpose |
 |--------|---------|
-| `convert_daily.py` | **Unified ETL entry point with integrated QC for daily data**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles daily quotes, institutional investors, foreign holding, margin trading, margin sbl, pe ratio, market indices, and summaries. **Now injects lineage metadata.** |
+| `convert_daily.py` | **Unified ETL entry point with integrated QC for daily data**: Date-first processing loop that runs quality checks after each date. Auto-dispatches to correct handler based on category. Handles daily quotes, institutional investors, foreign holding, margin trading, margin sbl, pe ratio, market indices (with comma cleaning), and summaries. **Now injects lineage metadata.** |
 | `convert_quarterly_reports.py` | Handles SII/OTC quarterly reports from CSV files (switched from XLS). **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern (1-based indices). SII has pretax columns, OTC calculates pretax from op_income + non_op_income. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
 | `convert_monthly_revenue.py` | Handles monthly revenue data processing. **Lineage metadata** with `SCHEMA_COLS` + `generate_src_col()` pattern. Returns `(rename_map, col_mapping)` from column validation. Fail-fast on validation errors. **Outputs to YYYY/YYYYMXX/all.csv**. |
 | `convert_quarterly_statements.py` | Handles MOPS quarterly statements (income_statement, balance_sheet, cash_flow). **Lineage metadata** with per-category `*_SCHEMA_COLS` + `generate_src_col()` pattern. Uses `SYMBOL_COLS`/`NAME_COLS` constants. `build_col_mapping()` replaces old `build_column_index_map()`. Fail-fast on validation errors. **Outputs to YYYY/YYYYQX/all.csv**. |
@@ -288,6 +288,23 @@ START_DATE=20260101 END_DATE=20260101 docker compose run --rm processor python c
 START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_reports.py
 START_DATE=2025Q3 END_DATE=2025Q3 docker compose run --rm processor python convert_quarterly_statements.py --category income_statement
 ```
+
+### Market Indices
+
+**Special Handling**: OTC market indices data contains **thousand separators (commas)** in numeric fields that must be cleaned before database import.
+
+**Issue**: Raw data from TWSE/TPEx contains values like `"6,312.83"` which causes PostgreSQL double precision type errors.
+
+**Solution**: In `convert_daily.py`, the `_handle_generic_category()` function automatically:
+1. Detects String-type numeric columns (`index_close`, `index_change_points`)
+2. Removes commas using `str.replace_all(",", "")`
+3. Preserves String type for downstream processing
+
+**Example**:
+- Raw: `"富櫃200指數","6,312.83","83.78"`
+- Processed: `富櫃200指數,6312.83,83.78`
+
+**Note**: Only applies to String columns to avoid type errors when Polars has already inferred numeric types.
 
 ## Column-Level Lineage Tracking (v3.1)
 
