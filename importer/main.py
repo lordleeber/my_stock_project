@@ -7,12 +7,41 @@ import polars as pl
 from sqlalchemy import create_engine, text
 
 LINEAGE_COLS = ["src_file", "src_row", "src_col"]
+LINEAGE_COLS_DB = ["pced_file", "pced_row", "pced_col"]  # 資料庫中的欄位名稱
 
-def drop_lineage_columns(df):
-    """Drop lineage columns before importing to DB."""
-    cols_to_drop = [c for c in LINEAGE_COLS if c in df.columns]
-    if cols_to_drop:
-        return df.drop(cols_to_drop)
+def recalculate_lineage(df, csv_file_path):
+    """Recalculate lineage information based on the processed CSV being imported.
+
+    Args:
+        df: Polars DataFrame read from processed CSV
+        csv_file_path: Path to the processed CSV file
+
+    Returns:
+        DataFrame with pced_file, pced_row, pced_col columns
+
+    The importer reads from processed CSV, so lineage should reflect processed file positions:
+    - pced_file: Path to the processed CSV file
+    - pced_row: Row number in processed CSV (1-based, row 1 = header, row 2 = first data row)
+    - pced_col: Column mapping (position-based, format: "1#2#3#...")
+    """
+    # Drop old lineage columns if they exist (from processor)
+    lineage_cols_to_drop = [c for c in ["src_file", "src_row", "src_col"] if c in df.columns]
+    if lineage_cols_to_drop:
+        df = df.drop(lineage_cols_to_drop)
+
+    # Add new lineage columns
+    # pced_file: path to processed CSV
+    # pced_row: 1-based row number (header=1, first data row=2, ...)
+    # pced_col: column indices (1-based) for all non-lineage columns
+    num_data_cols = len([c for c in df.columns if c not in LINEAGE_COLS_DB])
+    pced_col_str = "#".join(str(i+1) for i in range(num_data_cols))
+
+    df = df.with_columns([
+        pl.lit(csv_file_path).alias("pced_file"),
+        (pl.arange(0, df.height) + 2).alias("pced_row"),  # row 2 = first data row (after header)
+        pl.lit(pced_col_str).alias("pced_col")
+    ])
+
     return df
 
 def verify_row_count(engine, table_name, expected_count, date_filter, market_filter=None):
@@ -216,7 +245,7 @@ def import_data(engine):
             print(f"Processing {category}...")
             try:
                 df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
-                df = drop_lineage_columns(df)
+                df = recalculate_lineage(df, csv_file)
                 # 直接覆蓋整張表
                 df.to_pandas().to_sql(
                     name="stock_info",
@@ -237,7 +266,7 @@ def import_data(engine):
             print(f"Processing {category}...")
             try:
                 df = pl.read_csv(csv_file, schema_overrides={"symbol": pl.Utf8})
-                df = drop_lineage_columns(df)
+                df = recalculate_lineage(df, csv_file)
                 df.to_pandas().to_sql(
                     name="stock_tags",
                     con=engine,
@@ -280,6 +309,9 @@ def import_data(engine):
                         print("  -> Empty file, skipping.")
                         continue
 
+                    # 先計算 lineage（在過濾之前）
+                    df = recalculate_lineage(df, csv_file)
+
                     df = filter_etf(df)
                     if df.height == 0:
                         print("  -> No data after filtering ETFs, skipping.")
@@ -287,8 +319,6 @@ def import_data(engine):
 
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date)
-
-                    df = drop_lineage_columns(df)
                     expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
@@ -338,7 +368,7 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date)
 
-                    df = drop_lineage_columns(df)
+                    df = recalculate_lineage(df, csv_file)
                     expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
@@ -415,6 +445,9 @@ def import_data(engine):
                         print("  -> Empty file, skipping.")
                         continue
 
+                    # 先計算 lineage（在過濾之前）
+                    df = recalculate_lineage(df, csv_file)
+
                     df = filter_etf(df)
                     if df.height == 0:
                         print("  -> No data after filtering ETFs, skipping.")
@@ -422,8 +455,6 @@ def import_data(engine):
 
                     if force_reimport:
                         delete_by_date(engine, table_name, date_str)
-
-                    df = drop_lineage_columns(df)
                     expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,
@@ -471,6 +502,9 @@ def import_data(engine):
                         print("  -> Empty file, skipping.")
                         continue
 
+                    # 先計算 lineage（在過濾之前，記錄原始 CSV 位置）
+                    df = recalculate_lineage(df, csv_file)
+
                     df = filter_etf(df)
                     if df.height == 0:
                         print("  -> No data after filtering ETFs, skipping.")
@@ -496,7 +530,6 @@ def import_data(engine):
                     if force_reimport:
                         delete_by_date(engine, table_name, target_date, market=market)
 
-                    df = drop_lineage_columns(df)
                     expected_count = df.height
                     df.to_pandas().to_sql(
                         name=table_name,

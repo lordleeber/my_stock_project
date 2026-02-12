@@ -351,7 +351,7 @@ def compare_stats(csv_stats, db_stats, table_name):
 
 
 def validate_single_date(engine, table_name, target_date):
-    """驗證單一表格的單一日期資料
+    """驗證單一表格的單一日期資料（使用 lineage 資訊逐行驗證）
 
     Args:
         engine: SQLAlchemy engine
@@ -362,23 +362,121 @@ def validate_single_date(engine, table_name, target_date):
         tuple: (passed: bool, errors: list)
     """
     from sqlalchemy import text
+    import pandas as pd
 
-    # 查詢 DB 中這個日期的資料
     with engine.connect() as conn:
         try:
-            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
-                                {"date": target_date}).fetchone()
-            db_count = result[0]
+            # 1. 檢查是否有 pced_* 欄位
+            schema_check = conn.execute(text(f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :table
+                AND column_name IN ('pced_file', 'pced_row', 'pced_col')
+            """), {"table": table_name}).fetchall()
 
-            if db_count == 0:
-                return True, []  # 沒有資料不算錯誤（可能是假日或資料不存在）
+            has_lineage = len(schema_check) == 3
 
-            print(f"  ✓ {table_name} {target_date}: {db_count} rows in DB")
+            if not has_lineage:
+                # 如果沒有 lineage 欄位，使用簡單的 row count 驗證
+                result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
+                                    {"date": target_date}).fetchone()
+                db_count = result[0]
+                if db_count == 0:
+                    return True, []
+                print(f"  ✓ {table_name} {target_date}: {db_count} rows in DB (no lineage)")
+                return True, []
+
+            # 2. 查詢該日期的所有資料（包含 lineage 欄位）
+            query = text(f"SELECT * FROM {table_name} WHERE date = :date")
+            result = conn.execute(query, {"date": target_date})
+            df_db = pd.DataFrame(result.fetchall(), columns=result.keys())
+
+            if len(df_db) == 0:
+                return True, []  # 沒有資料不算錯誤
+
+            print(f"  → {table_name} {target_date}: 驗證 {len(df_db)} rows with lineage...")
+
+            # 3. 按 pced_file 分組（減少檔案讀取次數）
+            errors = []
+            files_checked = set()
+
+            for pced_file in df_db['pced_file'].unique():
+                if pd.isna(pced_file):
+                    continue
+
+                # 讀取 processed CSV（不過濾，pced_row 記錄的是原始位置）
+                try:
+                    df_csv = pl.read_csv(pced_file)
+                    files_checked.add(pced_file)
+                except Exception as e:
+                    errors.append(f"無法讀取 {pced_file}: {e}")
+                    continue
+
+                # 驗證來自這個檔案的所有 DB rows
+                db_rows_from_file = df_db[df_db['pced_file'] == pced_file]
+
+                for _, db_row in db_rows_from_file.iterrows():
+                    pced_row = int(db_row['pced_row'])
+
+                    # pced_row 是檔案的絕對行號（1-based，包含 header）
+                    # Row 1 = header（Polars 自動跳過）
+                    # Row 2 = DataFrame index 0（第一筆資料）
+                    # Row n = DataFrame index n-2
+                    csv_row_idx = pced_row - 2
+
+                    if csv_row_idx < 0 or csv_row_idx >= df_csv.height:
+                        errors.append(f"pced_row {pced_row} 超出 CSV 範圍 (header + 1-{df_csv.height})")
+                        continue
+
+                    # 比對欄位值（排除 lineage 欄位和 date）
+                    csv_row = df_csv[csv_row_idx]
+                    for col in df_db.columns:
+                        if col in ['pced_file', 'pced_row', 'pced_col', 'date']:
+                            continue
+
+                        if col not in df_csv.columns:
+                            continue
+
+                        db_val = db_row[col]
+                        csv_val = csv_row[col][0] if hasattr(csv_row[col], '__getitem__') else csv_row[col]
+
+                        # 類型感知比對
+                        if pd.isna(db_val) and (csv_val is None or (hasattr(csv_val, '__len__') and len(str(csv_val).strip()) == 0)):
+                            continue  # 都是 NULL/空值
+
+                        if pd.isna(db_val) or csv_val is None:
+                            if not pd.isna(db_val) or csv_val is not None:
+                                errors.append(f"Row {pced_row}, {col}: DB={db_val}, CSV={csv_val} (NULL mismatch)")
+                            continue
+
+                        # 數值比對（容許浮點誤差）
+                        try:
+                            db_num = float(db_val)
+                            csv_num = float(csv_val)
+                            if abs(db_num - csv_num) > 0.0001:
+                                errors.append(f"Row {pced_row}, {col}: DB={db_num}, CSV={csv_num}")
+                        except (ValueError, TypeError):
+                            # 字串比對
+                            if str(db_val).strip() != str(csv_val).strip():
+                                errors.append(f"Row {pced_row}, {col}: DB='{db_val}', CSV='{csv_val}'")
+
+            if errors:
+                print(f"  ✗ {table_name} {target_date}: {len(errors)} errors found")
+                # 只顯示前 5 個錯誤
+                for err in errors[:5]:
+                    print(f"     - {err}")
+                if len(errors) > 5:
+                    print(f"     ... and {len(errors) - 5} more errors")
+                return False, errors
+
+            print(f"  ✓ {table_name} {target_date}: {len(df_db)} rows verified from {len(files_checked)} files")
             return True, []
 
         except Exception as e:
             error_msg = f"{table_name} {target_date}: 驗證失敗 - {str(e)}"
             print(f"  ✗ {error_msg}")
+            import traceback
+            traceback.print_exc()
             return False, [error_msg]
 
 
