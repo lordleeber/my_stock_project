@@ -76,7 +76,11 @@ def write_error_report(date_str, category, issue):
 
 
 def get_processed_date_path(category, date_str, market=None):
-    """Get path to processed data file, compatible with old/new directory structures"""
+    """Get path to processed data file, compatible with old/new directory structures
+
+    Checks both new (YYYY/YYYYMMDD) and old (date=YYYYMMDD) structures.
+    Returns existing path if found, otherwise returns new path format for clearer error messages.
+    """
     if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
         if market:
             return Path(f"data/processed/{category}/date={date_str}/{market}.csv")
@@ -85,7 +89,15 @@ def get_processed_date_path(category, date_str, market=None):
     new_dir = Path(f"data/processed/{category}/{date_str[:4]}/{date_str}")
     old_dir = Path(f"data/processed/{category}/date={date_str}")
 
-    base_dir = new_dir if new_dir.exists() else old_dir
+    # Check both paths and return the one that exists
+    # If neither exists, prefer new format for error messages
+    if new_dir.exists():
+        base_dir = new_dir
+    elif old_dir.exists():
+        base_dir = old_dir
+    else:
+        base_dir = new_dir  # Prefer new format in error messages
+
     if market:
         return base_dir / f"{market}.csv"
     return base_dir / "all.csv"
