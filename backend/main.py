@@ -689,7 +689,7 @@ def get_raw_shareholding(
     limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
-    return get_raw_data("shareholding_div", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_data("shareholding", start_date, end_date, symbol, None, limit, offset)
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(

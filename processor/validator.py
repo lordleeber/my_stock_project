@@ -7,8 +7,8 @@ RAW_DIR = "/app/data/raw"
 PROCESSED_DIR = "/app/data/processed"
 
 def verify_file(category, date_str, market):
-    raw_path = f"{RAW_DIR}/{category}/date={date_str}/{market}.csv"
-    proc_path = f"{PROCESSED_DIR}/{category}/date={date_str}/{market}.parquet"
+    raw_path = f"{RAW_DIR}/{category}/{date_str[:4]}/{date_str}/{market}.csv"
+    proc_path = f"{PROCESSED_DIR}/{category}/{date_str[:4]}/{date_str}/{market}.csv"
     
     if not os.path.exists(raw_path):
         return # Raw 檔不存在 (可能被刪了?)
@@ -25,7 +25,7 @@ def verify_file(category, date_str, market):
             return
 
         # 2. 讀取 Processed
-        df_proc = pl.read_parquet(proc_path)
+        df_proc = pl.read_csv(proc_path)
         
         # 3. 比對筆數
         # 注意: 我們的 read_raw_csv 已經做過初步清洗，所以理論上筆數應接近
@@ -63,22 +63,28 @@ def verify_file(category, date_str, market):
 def main():
     print("Starting Data Validation...")
     
-    # 遍歷 Processed 目錄結構
-    # processed/{category}/date={date}/{market}.parquet
+    # 遍歷 Processed 目錄結構 (新制)
+    # processed/{category}/YYYY/YYYYMMDD/{market}.csv
     categories = [d for d in os.listdir(PROCESSED_DIR) if os.path.isdir(os.path.join(PROCESSED_DIR, d))]
     
     for category in categories:
         cat_path = os.path.join(PROCESSED_DIR, category)
-        dates = [d for d in os.listdir(cat_path) if d.startswith("date=")]
-        
-        for date_entry in dates:
-            date_str = date_entry.split("=")[1]
-            date_path = os.path.join(cat_path, date_entry)
-            
-            for f in os.listdir(date_path):
-                if f.endswith(".parquet"):
-                    market = f.split(".")[0]
-                    verify_file(category, date_str, market)
+        for y in os.listdir(cat_path):
+            if not (len(y) == 4 and y.isdigit()):
+                continue
+            year_path = os.path.join(cat_path, y)
+            if not os.path.isdir(year_path):
+                continue
+            for date_str in os.listdir(year_path):
+                if not (len(date_str) == 8 and date_str.isdigit()):
+                    continue
+                date_path = os.path.join(year_path, date_str)
+                if not os.path.isdir(date_path):
+                    continue
+                for f in os.listdir(date_path):
+                    if f.endswith(".csv"):
+                        market = f.split(".")[0]
+                        verify_file(category, date_str, market)
     
     print("Validation Completed.")
 

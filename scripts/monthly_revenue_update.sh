@@ -48,7 +48,7 @@ fi
 
 # 2. Processor
 echo "[2/3] Running processor for monthly revenue..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE processor python convert_monthly_revenue.py 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE processor python convert_monthly.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Processor completed" | tee -a "$LOG_FILE"
 else

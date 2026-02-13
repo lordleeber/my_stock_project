@@ -38,9 +38,9 @@ while curr <= end_date:
     
     # 只針對交易日（週一至週五）進行檢查，且目錄必須存在
     # 如果您希望檢查缺失檔案，可以移除 os.path.exists 判斷
-    if os.path.exists(f'data/processed/daily_quotes/date={d_str}'):
+    if os.path.exists(f'data/processed/daily_quotes/{d_str[:4]}/{d_str}'):
         print(f'Checking {d_str}...')
-        res = subprocess.run(['python3', 'data_quality_checker.py'], env={**os.environ, 'START_DATE': d_str})
+        res = subprocess.run(['python3', 'audit.py'], env={**os.environ, 'START_DATE': d_str, 'END_DATE': d_str})
         if res.returncode != 0:
             print(f'❌ Issues found in {d_str}')
     

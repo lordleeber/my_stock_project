@@ -130,7 +130,7 @@ CASES = [
     },
     {
         "endpoint": "/raw/shareholding",
-        "table": "shareholding_div",
+        "table": "shareholding",
         "columns": ["date", "symbol"],
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol"],

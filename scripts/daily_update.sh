@@ -45,19 +45,9 @@ else
     exit 1
 fi
 
-# 3. Processor (institutional_summary)
-echo "[3/6] Running institutional_summary processor..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor python convert_institutional_summary.py 2>&1 | tee -a "$LOG_FILE"
-if [ $? -eq 0 ]; then
-    echo "✓ Institutional summary processor completed" | tee -a "$LOG_FILE"
-else
-    echo "✗ Institutional summary processor failed" | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-# 4. Data Quality Checker (runs after all processor steps)
-echo "[4/6] Running data quality checker..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE processor python data_quality_checker.py 2>&1 | tee -a "$LOG_FILE"
+# 3. Data Quality Checker (runs after processor)
+echo "[3/5] Running data quality checker..." | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor python audit.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Data quality check passed" | tee -a "$LOG_FILE"
 else
@@ -66,8 +56,8 @@ else
     exit 1
 fi
 
-# 5. Importer
-echo "[5/6] Running importer..." | tee -a "$LOG_FILE"
+# 4. Importer
+echo "[4/5] Running importer..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
@@ -76,8 +66,8 @@ else
     exit 1
 fi
 
-# 6. Calculator
-echo "[6/6] Running calculator..." | tee -a "$LOG_FILE"
+# 5. Calculator
+echo "[5/5] Running calculator..." | tee -a "$LOG_FILE"
 docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE calculator 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Calculator completed" | tee -a "$LOG_FILE"

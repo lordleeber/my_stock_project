@@ -28,7 +28,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: sh -c "python scraper/fetch_tdcc.py --no-prompt --no-verify --output-dir /app/data/raw/shareholding && python scraper/check_weekly_outputs.py"
+    command: sh -c "python scraper/fetch_tdcc.py --no-prompt --no-verify --output-dir /app/data/raw/shareholding"
     environment:
       - OUTPUT_DIR=/app/data
       - RAW_DIR=/app/data/raw

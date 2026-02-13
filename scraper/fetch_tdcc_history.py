@@ -159,7 +159,7 @@ def main():
     parser.add_argument("--stock", "-s", type=str, help="Single stock ID to fetch")
     parser.add_argument("--file", "-f", type=str, help="File containing list of stock IDs (one per line)")
     parser.add_argument("--date", "-d", type=str, help="Date to fetch (YYYYMMDD) or file containing list of dates")
-    parser.add_argument("--output", "-o", type=str, default="data/raw/shareholding_div", help="Output directory")
+    parser.add_argument("--output", "-o", type=str, default="data/raw/shareholding", help="Output directory")
     parser.add_argument("--list-dates", action="store_true", help="List all available dates from TDCC website")
     parser.add_argument("--no-verify", action="store_true", help="Disable SSL certificate verification")
 
