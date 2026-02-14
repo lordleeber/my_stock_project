@@ -4,7 +4,17 @@ This guide covers the technical indicator calculation component of the Taiwan st
 
 ## Overview
 
-The calculator computes technical indicators for all stocks and stores them in the `technical_indicators` table:
+The calculator computes technical indicators from `daily_quotes` and stores results in `technical_indicators`.
+Entry point:
+- `calculate_daily.py`
+
+Error handling is fail-fast:
+- Any runtime error writes to `/error_calculator.log`
+- Then exits immediately with non-zero status
+
+The core calculation logic is integrated in `calculate_daily.py`.
+
+Indicators:
 - Moving averages (MA, VMA)
 - Momentum indicators (KD, RSI)
 - Trend indicators (MACD)
@@ -22,18 +32,22 @@ The calculator computes technical indicators for all stocks and stores them in t
 | `DB_PASSWORD` | password | Database password |
 | `DB_NAME` | stock_db | Database name |
 | `DB_PORT` | 5432 | Database port |
+| `START_DATE` | - | Incremental start date (`YYYYMMDD` or `YYYY-MM-DD`) |
+| `END_DATE` | - | Incremental end date (`YYYYMMDD` or `YYYY-MM-DD`) |
 
 ## Docker Service
 
 ```bash
-# Calculate all technical indicators for all stocks
+# Daily entry (default for calculator service)
 docker compose run --rm calculator
+docker compose run --rm calculator python calculate_daily.py
 
 # Rebuild after code changes
 docker compose build calculator
 ```
 
-**Important**: The calculator processes ALL stocks in the database, not a specific date range. It recalculates indicators from the beginning of available data.
+**Important**:
+- `calculate_daily.py` supports full mode (no `START_DATE`) and incremental mode (with `START_DATE`).
 
 ## Technical Indicators
 
@@ -45,9 +59,9 @@ Computed for every stock, stored in `technical_indicators` table.
 - **Columns**: `ma5`, `ma10`, `ma20`, `ma60`, `ma120`, `ma240`
 
 ### Volume Moving Averages (VMA)
-- **Periods**: 5, 10, 20, 60 days
+- **Periods**: 5, 10, 20, 60, 120, 240 days
 - **Formula**: Simple Moving Average (SMA) of volume
-- **Columns**: `vma5`, `vma10`, `vma20`, `vma60`
+- **Columns**: `vma5`, `vma10`, `vma20`, `vma60`, `vma120`, `vma240`
 
 ### KD Stochastic Oscillator
 - **Period**: 9 days
@@ -113,11 +127,10 @@ This approach:
 - Leverages Pandas' optimized C extensions
 
 ### Database Strategy
-1. **Fetch**: Load all `daily_quotes` data from PostgreSQL
-2. **Calculate**: Compute all indicators using Pandas
-3. **Replace**: Truncate `technical_indicators` table and insert all new data
-
-**Note**: This is a full refresh operation, not incremental.
+1. Fetch `daily_quotes` (with buffer window in incremental mode)
+2. Calculate indicators grouped by `symbol`
+3. Write to `technical_indicators`
+4. Incremental mode deletes target date range first, then inserts recalculated rows
 
 ## Database Table Schema
 
@@ -130,7 +143,7 @@ CREATE TABLE technical_indicators (
     -- Moving Averages
     ma5 REAL, ma10 REAL, ma20 REAL, ma60 REAL, ma120 REAL, ma240 REAL,
     -- Volume Moving Averages
-    vma5 REAL, vma10 REAL, vma20 REAL, vma60 REAL,
+    vma5 REAL, vma10 REAL, vma20 REAL, vma60 REAL, vma120 REAL, vma240 REAL,
     -- KD Oscillator
     k REAL, d REAL,
     -- RSI
@@ -143,6 +156,26 @@ CREATE TABLE technical_indicators (
 );
 
 CREATE INDEX idx_tech_symbol_date ON technical_indicators(symbol, date);
+```
+
+### Date Type Requirement (Important)
+- `technical_indicators.date` must use `TEXT` type (not `DATE`).
+- This keeps join/type behavior consistent with `daily_quotes.date` and other core tables, which also store date as text.
+
+Quick checks:
+```sql
+SELECT data_type
+FROM information_schema.columns
+WHERE table_schema='public'
+  AND table_name='technical_indicators'
+  AND column_name='date';
+```
+
+If it is not `text`, convert it:
+```sql
+ALTER TABLE technical_indicators
+ALTER COLUMN date TYPE text
+USING date::text;
 ```
 
 ## Running the Calculator
@@ -206,6 +239,10 @@ docker compose run --rm calculator
 
 ### Issue: Calculator fails with "table does not exist"
 - **Solution**: Ensure `daily_quotes` table exists and has data. Run importer first.
+
+### Issue: Calculator exits immediately with error log
+- **Expected behavior**: fail-fast mode is enabled.
+- Check `error_calculator.log` for root cause and traceback.
 
 ### Issue: Indicators seem incorrect or inconsistent
 - **Solution**: Recalculate from scratch: `docker compose run --rm calculator`
