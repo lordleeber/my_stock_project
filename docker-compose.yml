@@ -10,7 +10,7 @@ services:
       dockerfile: scraper/Dockerfile
     volumes:
       - ./:/app
-    command: python scraper/main.py
+    command: python scraper/scraper_daily.py
     environment:
       - OUTPUT_DIR=/app/data
       - MARKET_TYPE=${MARKET_TYPE:-ALL}
@@ -28,7 +28,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: sh -c "python scraper/fetch_tdcc.py --no-prompt --no-verify --output-dir /app/data/raw/shareholding"
+    command: python scraper/scraper_weekly.py
     environment:
       - OUTPUT_DIR=/app/data
       - RAW_DIR=/app/data/raw
@@ -43,9 +43,11 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: sh -c "python scraper/fetch_monthly_revenue.py --year ${REVENUE_YEAR:-} --month ${REVENUE_MONTH:-} && python scraper/check_monthly_outputs.py"
+    command: python scraper/scraper_monthly.py
     environment:
       - OUTPUT_DIR=/app/data
+      - REVENUE_YEAR=${REVENUE_YEAR:-}
+      - REVENUE_MONTH=${REVENUE_MONTH:-}
       - TZ=Asia/Taipei
 
   # 季報 (每季結束後 45 日執行)
@@ -57,7 +59,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
-    command: sh -c "python scraper/fetch_quarterly_reports.py --year ${REPORT_YEAR:-} --quarter ${REPORT_QUARTER:-} && python scraper/check_quarterly_outputs.py"
+    command: python scraper/scraper_quarterly.py
     environment:
       - OUTPUT_DIR=/app/data
       - TZ=Asia/Taipei
@@ -89,7 +91,7 @@ services:
       context: ./processor
     volumes:
       - ./data:/app/data
-      - ./error_processor.md:/app/error_processor.md
+      - ./error_processor.log:/app/error_processor.log
     environment:
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
@@ -102,8 +104,7 @@ services:
       context: ./importer
     volumes:
       - ./data:/app/data
-      - ./error_importer.md:/app/error_importer.md
-      - ./error_importer_diff.md:/app/error_importer_diff.md
+      - ./error_importer.log:/app/error_importer.log
     depends_on:
       db:
         condition: service_healthy
@@ -115,7 +116,6 @@ services:
       - DB_NAME=stock_db
       - START_DATE=${START_DATE:-}
       - END_DATE=${END_DATE:-}
-      - ENABLE_FULL_DIFF=${ENABLE_FULL_DIFF:-0}
       - TZ=Asia/Taipei
 
   calculator:
@@ -229,7 +229,7 @@ services:
       context: ./processor
     volumes:
       - ./data:/app/data
-      - ./error_processor.md:/app/error_processor.md
+      - ./error_processor.log:/app/error_processor.log
     environment:
       - TZ=Asia/Taipei
     command: ["python", "validator.py"]

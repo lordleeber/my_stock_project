@@ -298,7 +298,7 @@ def full_diff_validation(engine):
     return all_reports
 
 
-def write_diff_report(reports, output_file="/app/error_importer_diff.md"):
+def write_diff_report(reports, output_file="/app/error_importer.log"):
     """寫入 diff 報告"""
     import datetime
 

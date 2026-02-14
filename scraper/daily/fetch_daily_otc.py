@@ -55,7 +55,7 @@ def to_tw_date(date_str):
 
 def fetch_tpex_index_json(date_string, dst_file_path):
     """
-    實作與 scripts/fetch_tpex_index_summary.py 相同的抓取邏輯
+    實作與舊版 fetch_tpex_index_summary.py 類似的抓取邏輯
     """
     url_base = CATEGORY_DIC["指數行情"]
     # 嘗試多種日期格式

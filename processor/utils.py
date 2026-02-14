@@ -8,9 +8,9 @@ from schemas import COLUMN_MAP, NUMERIC_COLS
 
 def log_parsing_error(file_path, msg, exception=None):
     """
-    將 CSV 解析階段的錯誤訊息記錄到專用的 error_processor.md 檔案
+    將 CSV 解析階段的錯誤訊息記錄到專用的 error_processor.log 檔案
     """
-    error_file = Path("/app/error_processor.md")
+    error_file = Path("/app/error_processor.log")
     timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
     date_str = "Unknown"
     

@@ -159,7 +159,7 @@ docker compose run --rm calculator
 ### After Daily Updates
 ```bash
 # Daily pipeline
-./scripts/daily_update.sh 20260201
+./schedules/daily_update.sh 20260201
 
 # Or manually
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm scraper-daily

@@ -205,12 +205,12 @@ def process_and_save(year, month):
             full_df[col] = pd.to_numeric(full_df[col].astype(str).str.replace(',', ''), errors='coerce')
 
     # Save
-    # Construct date partition: YYYYMM01 (The first day of the report month)
-    # e.g. Data for 2023-03 is saved under date=20230301
-    date_str = f"{year}{month:02d}01"
-    output_dir = f"data/raw/monthly_revenue/date={date_str}"
+    # New raw path format: data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv
+    year_str = str(year)
+    month_key = f"{year}M{month:02d}"
+    output_dir = f"data/raw/monthly_revenue/{year_str}/{month_key}"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     output_path = os.path.join(output_dir, "market.csv")
     if os.path.exists(output_path) and not FORCE_REPROCESS:
         print(f"\n⏭️  {output_path} already exists, skip. (Set FORCE_REPROCESS=1 to overwrite)")

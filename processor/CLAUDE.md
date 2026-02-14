@@ -8,7 +8,7 @@ Processor 會把 `data/raw` 轉成 `data/processed`，並在轉換後立即進�
 
 - Input: `data/raw/...`
 - Output: `data/processed/...`
-- Error log: `/app/error_processor.md`
+- Error log: `/app/error_processor.log`
 
 ## Entry Points
 
@@ -19,6 +19,9 @@ Processor 會把 `data/raw` 轉成 `data/processed`，並在轉換後立即進�
 - `convert_monthly.py`
 - `convert_quarterly.py`
 - `audit.py`（可獨立執行稽核）
+
+Docker `processor` service 預設 command 為：
+- `python convert_daily.py`
 
 ## Folder Structure
 
@@ -116,7 +119,7 @@ START_DATE=20240102 END_DATE=20240102 docker compose run --rm processor python a
 - `src_row`: raw 檔案行號（1-based）
 - `src_col`: 欄位來源映射（例如 `x#x#1#2#...`）
 
-`audit_*` 會依 `src_file/src_row/src_col` 做欄位級比對，發現 mismatch 即停止流程並寫入 `/app/error_processor.md`。
+`audit_*` 會依 `src_file/src_row/src_col` 做欄位級比對，發現 mismatch 即停止流程並寫入 `/app/error_processor.log`。
 
 ## Runtime Behavior
 
@@ -132,5 +135,7 @@ docker compose build processor
 
 - 舊制檔名（如 `data_quality_checker*.py`, `convert_shareholding_div.py`, `convert_quarterly_statements.py`）不再使用。
 - Shell 腳本目前已對齊新入口：
-  - `scripts/daily_update.sh`
-  - `scripts/monthly_revenue_update.sh`
+  - `schedules/daily_update.sh`
+  - `schedules/weekly_update.sh`
+  - `schedules/monthly_update.sh`
+  - `schedules/quarterly_update.sh`

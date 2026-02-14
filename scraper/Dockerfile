@@ -2,6 +2,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+# 系統相依套件
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # 安裝相依套件 (路徑相對於根目錄)
 COPY scraper/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -29,4 +33,4 @@ ENV FETCH_DELAY=3.0
 ENV MARKET_TYPE=ALL
 
 # 執行腳本
-CMD ["python", "main.py"]
+CMD ["python", "scraper_daily.py"]

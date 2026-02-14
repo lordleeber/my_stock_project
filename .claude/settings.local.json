@@ -99,7 +99,18 @@
       "Bash(START_DATE=$date END_DATE=$date docker compose run --rm scraper-daily)",
       "Bash(bash:*)",
       "Bash(START_DATE=20260202 docker compose run:*)",
-      "Bash(START_DATE=20260206 docker compose run:*)"
+      "Bash(START_DATE=20260206 docker compose run:*)",
+      "Bash(START_DATE=20200210 END_DATE=20200210 docker compose run:*)",
+      "Bash(START_DATE=20200210 END_DATE=20200210 IMPORT_CATEGORY=daily_quotes docker compose run:*)",
+      "Bash(START_DATE=20200210 END_DATE=20200210 IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run:*)",
+      "Bash(FORCE_REPROCESS=1 START_DATE=20200102 END_DATE=20200102 docker compose run:*)",
+      "Bash(FORCE_REPROCESS=1 START_DATE=20200430 END_DATE=20200430 docker compose run:*)",
+      "Bash(FORCE_REPROCESS=1 START_DATE=20200102 END_DATE=20200104 docker compose run:*)",
+      "Bash(START_DATE=20200101 docker compose run:*)",
+      "Bash(START_DATE=20200102 docker compose run:*)",
+      "Bash(START_DATE=20200102 END_DATE=20200102 IMPORT_CATEGORY=pe_ratio docker compose:*)",
+      "Bash(wc:*)",
+      "Bash(START_DATE=20200102 END_DATE=20200102 docker compose run:*)"
     ]
   }
 }

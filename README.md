@@ -18,12 +18,12 @@
 ### 使用方式
 1. **更新今天 (預設)**:
    ```bash
-   ./scripts/daily_update.sh
+   ./schedules/daily_update.sh
    ```
 
 2. **更新特定日期**:
    ```bash
-   ./scripts/daily_update.sh 20260121
+   ./schedules/daily_update.sh 20260121
    ```
 
 ## 🛠️ 模組介紹
@@ -123,7 +123,7 @@ docker compose up -d backend frontend
 ## 目錄結構
 ```
 root/
-├── scripts/            # 自動化腳本
+├── schedules/            # 自動化腳本
 ├── scraper/            # 爬蟲 (Extract)
 ├── processor/          # 資料清洗 (Transform)
 ├── importer/           # 資料匯入 (Load)

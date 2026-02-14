@@ -51,7 +51,7 @@ docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processo
 if [ $? -eq 0 ]; then
     echo "✓ Data quality check passed" | tee -a "$LOG_FILE"
 else
-    echo "❌ Data quality check FAILED (see error_processor.md)" | tee -a "$LOG_FILE"
+    echo "❌ Data quality check FAILED (see error_processor.log)" | tee -a "$LOG_FILE"
     echo "❌ Stopping update to prevent database contamination." | tee -a "$LOG_FILE"
     exit 1
 fi

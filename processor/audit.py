@@ -2,7 +2,7 @@
 """
 Data Quality Checker for Processed Data
 
-Checks processed CSV files for data quality issues and writes findings to error_processor.md
+Checks processed CSV files for data quality issues and writes findings to error_processor.log
 Run after processor to catch issues before importing to database.
 
 Usage:

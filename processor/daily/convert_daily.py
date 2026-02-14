@@ -60,8 +60,8 @@ CATEGORY_CHECKERS = {
 }
 
 def log_processing_error(msg, date_str=None, category=None):
-    """將處理階段的錯誤訊息記錄到專用的 error_processor.md 檔案"""
-    error_file = Path("/app/error_processor.md")
+    """將處理階段的錯誤訊息記錄到專用的 error_processor.log 檔案"""
+    error_file = Path("/app/error_processor.log")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     with open(error_file, 'a', encoding='utf-8') as f:
@@ -71,7 +71,7 @@ def log_processing_error(msg, date_str=None, category=None):
         f.write(f"**Message:** {msg}\n")
         f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
         f.write("---\n")
-    print(f"❌ Error logged to error_processor.md: {msg}")
+    print(f"❌ Error logged to error_processor.log: {msg}")
 
 def process_date_category(category, date_str):
     if category in CATEGORY_PROCESSORS:

@@ -59,13 +59,15 @@ def verify_row_count(engine, table_name, expected_count, date_filter, market_fil
             ).scalar()
 
     if result != expected_count:
-        print(f"  ❌ Row count mismatch: CSV={expected_count}, DB={result}")
-        return False
+        scope = f"{table_name} date={date_filter}"
+        if market_filter:
+            scope += f" market={market_filter}"
+        raise RuntimeError(f"Row count mismatch for {scope}: CSV={expected_count}, DB={result}")
     return True
 
 def abort_with_error(message, exception=None):
-    """Write error to error_importer.md and exit immediately."""
-    error_file = "/app/error_importer.md"
+    """Write error to error_importer.log and exit immediately."""
+    error_file = "/app/error_importer.log"
     with open(error_file, "w") as f:
         f.write("# Importer 錯誤報告\n\n")
         f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -207,6 +209,28 @@ def get_date_dirs(cat_path):
                         date_dirs.append(os.path.join(y_path, d))
     return sorted(date_dirs)
 
+def get_period_dirs(cat_path):
+    """取得期間型目錄，支援 old(date=YYYYQX|YYYYMXX) 與 new(YYYY/YYYYQX|YYYYMXX)"""
+    period_dirs = []
+    if not os.path.exists(cat_path):
+        return period_dirs
+
+    # Old structure: date=YYYYQX or date=YYYYMXX
+    period_dirs.extend(glob.glob(os.path.join(cat_path, "date=*")))
+
+    # New structure: YYYY/YYYYQX or YYYY/YYYYMXX
+    for y in os.listdir(cat_path):
+        if len(y) == 4 and y.isdigit():
+            y_path = os.path.join(cat_path, y)
+            if os.path.isdir(y_path):
+                for p in os.listdir(y_path):
+                    if (
+                        (len(p) == 6 and "Q" in p and p[:4].isdigit()) or
+                        (len(p) == 7 and "M" in p and p[:4].isdigit())
+                    ):
+                        period_dirs.append(os.path.join(y_path, p))
+    return sorted(period_dirs)
+
 def get_date_from_dir(date_dir):
     """從目錄路徑提取日期字串"""
     base = os.path.basename(date_dir)
@@ -234,6 +258,8 @@ def import_data(engine):
     else:
         categories = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
 
+    imported_any = False
+
     for category in categories:
         cat_path = os.path.join(data_dir, category)
 
@@ -254,6 +280,7 @@ def import_data(engine):
                     index=False
                 )
                 print(f"  -> Imported {df.height} stocks into stock_info.")
+                imported_any = True
             except Exception as e:
                 abort_with_error(f"Failed to import stock_info: {e}", e)
             continue
@@ -274,6 +301,7 @@ def import_data(engine):
                     index=False
                 )
                 print(f"  -> Imported {df.height} mappings into stock_tags.")
+                imported_any = True
             except Exception as e:
                 abort_with_error(f"Failed to import stock_tags: {e}", e)
             continue
@@ -329,6 +357,7 @@ def import_data(engine):
                     )
                     print(f"  -> Imported {expected_count} rows.")
                     verify_row_count(engine, table_name, expected_count, target_date)
+                    imported_any = True
 
                 except Exception as e:
                     abort_with_error(f"Failed to import {csv_file}: {e}", e)
@@ -379,6 +408,7 @@ def import_data(engine):
                     )
                     print(f"  -> Imported {expected_count} rows.")
                     verify_row_count(engine, table_name, expected_count, target_date)
+                    imported_any = True
 
                 except Exception as e:
                     abort_with_error(f"Failed to import {csv_file}: {e}", e)
@@ -391,14 +421,14 @@ def import_data(engine):
 
         # --- 特別處理季報、詳細財報與月營收 (YYYYQX / YYYYMXX 格式) ---
         if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
-            date_dirs = sorted(glob.glob(os.path.join(cat_path, "date=*")))
+            date_dirs = get_period_dirs(cat_path)
             start_env = os.getenv("START_DATE")
             end_env = os.getenv("END_DATE")
             # 支援 2025Q3 或 2025M01 格式
             is_period_format = lambda s: s and len(s) >= 6 and ("Q" in s or "M" in s)
 
             for date_dir in date_dirs:
-                date_str = date_dir.split("=")[1]  # YYYYQX or YYYYMXX
+                date_str = get_date_from_dir(date_dir)  # YYYYQX or YYYYMXX
 
                 if is_period_format(start_env):
                     if date_str < start_env: continue
@@ -465,6 +495,7 @@ def import_data(engine):
                     )
                     print(f"  -> Imported {expected_count} rows.")
                     verify_row_count(engine, table_name, expected_count, date_str)
+                    imported_any = True
 
                 except Exception as e:
                     abort_with_error(f"Failed to import {csv_file}: {e}", e)
@@ -540,6 +571,7 @@ def import_data(engine):
                     )
                     print(f"  -> Imported {expected_count} rows.")
                     verify_row_count(engine, table_name, expected_count, target_date, market_filter=market)
+                    imported_any = True
 
                 except Exception as e:
                     abort_with_error(f"Failed to import {csv_file}: {e}", e)
@@ -556,16 +588,27 @@ def import_data(engine):
                 except ImportError:
                     pass  # 驗證器不存在時跳過
                 except Exception as e:
-                    print(f"⚠️  Validation warning for {table_name} {date_str}: {e}")
-                    # 驗證失敗不中斷匯入（因為可能只是統計差異）
+                    abort_with_error(f"Validation failed for {table_name} {date_str}: {e}", e)
+
+    if import_category and not imported_any:
+        abort_with_error(
+            f"No data imported for category '{import_category}'. "
+            f"Please check processed path/date filters and whether files exist."
+        )
 
 if __name__ == "__main__":
     print("Starting Importer...")
     db_url = get_db_url()
     engine = create_engine(db_url)
 
-    wait_for_db(engine)
-    import_data(engine)
+    try:
+        wait_for_db(engine)
+        import_data(engine)
+    except SystemExit:
+        raise
+    except Exception as e:
+        abort_with_error(f"Unhandled importer error: {e}", e)
+
     print("All imports completed.")
 
     # 執行驗證

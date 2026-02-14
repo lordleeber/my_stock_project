@@ -1,20 +1,13 @@
-import datetime
 import os
+import sys
 from pathlib import Path
 
-def _append_missing(title, context, missing):
-    if not missing:
-        return
-    error_md = Path("/app/error_scraper_monthly")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_md, "a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] {title}\n")
-        for line in context:
-            f.write(f"{line}\n")
-        f.write("Missing files:\n")
-        for path in missing:
-            f.write(f"- {path}\n")
-    print(f"\n[WARN] Missing outputs detected. See: {error_md}")
+# Backward-compatible wrapper:
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
+from monthly.check_outputs import check_monthly_outputs
 
 
 def main():
@@ -27,24 +20,9 @@ def main():
         return
 
     try:
-        month_int = int(month)
+        check_monthly_outputs(output_dir, year, month)
     except ValueError:
         print(f"[WARN] Invalid REVENUE_MONTH: {month}. Skip monthly output check.")
-        return
-
-    date_str = f"{year}{month_int:02d}01"
-    base_dir = Path(output_dir).resolve()
-    target_path = base_dir / "raw" / "monthly_revenue" / f"date={date_str}" / "market.csv"
-
-    missing = []
-    if not target_path.exists() or target_path.stat().st_size == 0:
-        missing.append(str(target_path))
-
-    _append_missing(
-        title="scraper-monthly missing outputs",
-        context=[f"Date: {date_str}"],
-        missing=missing,
-    )
 
 
 if __name__ == "__main__":

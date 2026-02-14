@@ -12,7 +12,7 @@ The importer loads processed CSV data into PostgreSQL database:
 - Uses delete-before-insert strategy for data updates
 - Supports incremental and full refresh modes
 - Handles deduplication by date+market or date+symbol
-- **Fail-fast**: any import error writes to `error_importer.md` and exits immediately (`SystemExit(1)`)
+- **Fail-fast**: any import error writes to `error_importer.log` and exits immediately (`SystemExit(1)`)
 
 **Input**: `data/processed/` (from processor)
 **Output**: PostgreSQL tables in `stock_db`
@@ -36,7 +36,6 @@ Uses SQLAlchemy engine with psycopg2 driver.
 | `END_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
 | `IMPORT_CATEGORY` | (all) | Import only a specific category |
 | `FORCE_REIMPORT` | 0 | Set to 1 to delete and re-import existing data |
-| `ENABLE_FULL_DIFF` | 0 | Set to 1 to enable detailed row-by-row validation (slower) |
 | `DB_HOST` | db | PostgreSQL host |
 | `DB_USER` | user | Database user |
 | `DB_PASSWORD` | password | Database password |
@@ -136,7 +135,7 @@ The processor adds `src_file`, `src_row`, `src_col` columns to processed CSVs po
 After each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
 
 ### 6. Fail-Fast Error Handling
-Any import error immediately writes the error and traceback to `/app/error_importer.md` and exits with `SystemExit(1)`. The importer does **not** silently skip failed imports.
+Any import error immediately writes the error and traceback to `/app/error_importer.log` and exits with `SystemExit(1)`. The importer does **not** silently skip failed imports.
 
 ### 7. Database Wait Logic
 Importer has built-in retry logic (up to 30 seconds) to wait for database availability. This is useful when starting services with `docker compose up`.
@@ -249,7 +248,7 @@ After importing each date, the importer performs **lineage-based validation** us
        - **Strings** (symbol, name): Exact match after trimming whitespace
      - Reports any mismatches
 
-**Output**: Immediate failure on first error with details in `error_importer.md`
+**Output**: Immediate failure on first error with details in `error_importer.log`
 
 **Benefits:**
 - ✅ **Column-level accuracy**: Verifies every field, not just aggregates
@@ -271,41 +270,22 @@ Fast validation comparing aggregate statistics across all imported dates:
 - Sum/average of numeric fields (volume, value, PE ratio, etc.)
 - Allows 0.01% floating-point tolerance
 
-**Output**: `error_importer.md` (only created if validation fails)
+**Output**: `error_importer.log` (only created if validation fails)
 
 **Time**: 1-2 minutes
 
 **Note**: With lineage-based validation enabled per-date, statistical validation is primarily useful for verifying entire date ranges after bulk imports.
-
-#### 2. Full Diff Validation (Deep Analysis)
-Detailed row-by-row comparison:
-- Exports entire DB table to DataFrame
-- Loads all CSVs and merges
-- Identifies records only in CSV, only in DB, or with value differences
-- Samples up to 10,000 rows for value comparison
-
-**Output**: `error_importer_diff.md`
-
-**Time**: 5-10 minutes (memory intensive)
-
-**Enable with**: `ENABLE_FULL_DIFF=1`
 
 ### Usage Examples
 
 ```bash
 # Normal import with automatic statistical validation
 START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer
-
-# Enable full diff for detailed analysis
-START_DATE=20200210 END_DATE=20200210 ENABLE_FULL_DIFF=1 docker compose run --rm importer
-
-# Full diff for specific table only
-IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run --rm importer
 ```
 
 ### Interpreting Validation Reports
 
-#### error_importer.md (Statistical Report)
+#### error_importer.log (Statistical Report)
 ```
 ### daily_quotes
 - total_rows: CSV=3075602, DB=2666920
@@ -316,27 +296,6 @@ IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run --rm importer
 - Row count differences > 10% → investigate
 - Numeric differences > 1% → investigate
 - Small differences (< 0.1%) → likely rounding/filtering, acceptable
-
-#### error_importer_diff.md (Detailed Report)
-```
-### 只在 CSV 存在（461,900 筆）
-2022-09-13|00865B  ← ETF filtered by importer
-2023-04-24|00700   ← ETF filtered by importer
-2022-07-29|9941A   ← Preferred stock filtered by importer
-
-### 只在 DB 存在（53,216 筆）
-2026-01-02|2611    ← Data outside date range
-2026-01-23|1310    ← Old data not in current CSV
-
-### 數值差異
-**2020-01-02|020000**
-- `volume`: CSV=`284000.0` vs DB=`284000`  ← Format difference (normal)
-```
-
-**What each section means**:
-- **Only in CSV**: Usually ETFs (00xxx) or preferred stocks (xxxA/B) filtered by importer → **Normal**
-- **Only in DB**: Records outside START_DATE/END_DATE range → **Normal** (unless using FORCE_REIMPORT)
-- **Value differences**: Check if format differences (`.0` suffix) or real data errors
 
 ### Common Validation Scenarios
 
@@ -372,19 +331,10 @@ IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run --rm importer
 3. Use `FORCE_REIMPORT=1` to re-import
 4. If persists, investigate data source
 
-### When to Use Full Diff
-
-- Statistical validation shows large differences (> 1%)
-- Suspect data quality issues
-- After major processor changes
-- Debugging specific table problems
-- **Don't use** for routine imports (too slow)
-
 ### Implementation Details
 
 **Files**:
 - `validator.py`: Statistical validation logic
-- `full_diff.py`: Detailed comparison logic
 - `main.py`: Orchestrates validation after import
 
 **Key Functions**:
@@ -392,11 +342,6 @@ IMPORT_CATEGORY=daily_quotes ENABLE_FULL_DIFF=1 docker compose run --rm importer
 # Statistical validation
 from validator import validate_all_tables
 all_passed, all_errors = validate_all_tables(engine)
-
-# Full diff validation
-from full_diff import full_diff_validation, write_diff_report
-diff_reports = full_diff_validation(engine)
-write_diff_report(diff_reports, "/app/error_importer_diff.md")
 ```
 
 **Validation runs automatically** - no need to manually invoke unless debugging.

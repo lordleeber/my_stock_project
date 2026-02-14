@@ -56,8 +56,8 @@ def clean_value_for_comparison(val):
 
 
 def write_error_report(date_str, category, issue):
-    """Write a single error to error_processor.md and raise exception to stop"""
-    error_file = Path("/app/error_processor.md")
+    """Write a single error to error_processor.log and raise exception to stop"""
+    error_file = Path("/app/error_processor.log")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     report = f"\n## Data Quality Error - {date_str}\n"
@@ -72,7 +72,7 @@ def write_error_report(date_str, category, issue):
 
     print(f"\n❌ Data quality error in {category}:")
     print(f"   {issue}")
-    print(f"📝 Report written to error_processor.md")
+    print(f"📝 Report written to error_processor.log")
 
 
 def get_processed_date_path(category, date_str, market=None):

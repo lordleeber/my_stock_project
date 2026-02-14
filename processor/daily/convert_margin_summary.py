@@ -15,7 +15,7 @@ INPUT_CATEGORY = "margin_trading"
 
 
 def log_processing_error(msg, date_str=None, category=None):
-    error_file = Path("/app/error_processor.md")
+    error_file = Path("/app/error_processor.log")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(error_file, "a", encoding="utf-8") as f:
         f.write(f"\n## Processor Runtime Error - {timestamp}\n")
@@ -26,7 +26,7 @@ def log_processing_error(msg, date_str=None, category=None):
         f.write(f"**Message:** {msg}\n")
         f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
         f.write("---\n")
-    print(f"❌ Error logged to error_processor.md: {msg}")
+    print(f"❌ Error logged to error_processor.log: {msg}")
 
 
 def _handle_margin_summary(date_str, raw_dir=RAW_DIR):

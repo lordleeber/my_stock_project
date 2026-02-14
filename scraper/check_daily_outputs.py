@@ -1,74 +1,13 @@
-import datetime
 import os
+import sys
 from pathlib import Path
 
+# Backward-compatible wrapper:
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
 
-def _append_missing(missing, date_list, market_type):
-    if not missing:
-        return
-
-    error_md = Path("/app/error_scraper_daily.md")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_md, "a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] scraper-daily missing outputs\n")
-        f.write(f"Market Type: {market_type}\n")
-        f.write(f"Dates: {', '.join(date_list)}\n")
-        f.write("Missing files:\n")
-        for path in missing:
-            f.write(f"- {path}\n")
-
-    print(f"\n[WARN] Missing outputs detected. See: {error_md}")
-
-
-def _is_file_valid(path: Path, min_bytes: int, min_lines: int) -> bool:
-    if not path.exists():
-        return False
-    try:
-        if path.stat().st_size < min_bytes:
-            return False
-        with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
-            lines = 0
-            for _ in f:
-                lines += 1
-                if lines >= min_lines:
-                    return True
-        return False
-    except OSError:
-        return False
-
-
-def check_daily_outputs(date_list, output_dir, market_type):
-    datasets = [
-        "daily_quotes",
-        "institutional_summary",
-        "institutional_investors",
-        "foreign_holding",
-        "margin_trading",
-        "margin_sbl",
-        "pe_ratio",
-    ]
-    if market_type == "SII":
-        markets = ["sii"]
-    elif market_type == "OTC":
-        markets = ["otc"]
-    else:
-        markets = ["sii", "otc"]
-
-    base_dir = Path(output_dir).resolve()
-
-    missing = []
-    min_bytes = int(os.getenv("MIN_BYTES", "10"))
-    min_lines = int(os.getenv("MIN_LINES", "2"))
-    for date in date_list:
-        for dataset in datasets:
-            for market in markets:
-                new_path = base_dir / "raw" / dataset / date[:4] / date / f"{market}.csv"
-                old_path = base_dir / "raw" / dataset / f"date={date}" / f"{market}.csv"
-                path = new_path if new_path.exists() else old_path
-                if not _is_file_valid(path, min_bytes, min_lines):
-                    missing.append(str(path))
-
-    _append_missing(missing, date_list, market_type)
+from daily.check_outputs import check_daily_outputs
 
 
 if __name__ == "__main__":

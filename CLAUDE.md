@@ -12,7 +12,7 @@ Then read the corresponding guide:
 | Role | Guide File | Scope |
 |------|-----------|-------|
 | Frontend Engineer | `frontend/CLAUDE.md` | `frontend/` directory only |
-| Backend & Data Engineer | `backend/CLAUDE.md` | `backend/`, `scanner/`, `strategy/`, `scraper/`, `processor/`, `importer/`, `calculator/`, `scripts/`, `common/` |
+| Backend & Data Engineer | `backend/CLAUDE.md` | `backend/`, `scanner/`, `strategy/`, `scraper/`, `processor/`, `importer/`, `calculator/`, `schedules/`, `common/` |
 
 ## Boundaries
 

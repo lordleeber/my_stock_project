@@ -427,7 +427,7 @@ scraper/     → Fetch raw CSV from TWSE/TPEx/MOPS/TDCC        [scraper/CLAUDE.m
 processor/   → Clean & standardize (CSV→standardized CSVs)     [processor/CLAUDE.md]
 importer/    → Load into PostgreSQL (delete-before-insert)     [importer/CLAUDE.md]
 calculator/  → Compute technical indicators                     [calculator/CLAUDE.md]
-scripts/     → Orchestration (daily_update.sh)
+schedules/   → Orchestration (daily_update.sh)
 common/      → Shared constants (CATEGORY_MAP)
 ```
 
@@ -442,7 +442,7 @@ common/      → Shared constants (CATEGORY_MAP)
 ```bash
 # Run full pipeline for a specific date (Always BUILD before bulk runs to ensure logic sync)
 docker compose build processor importer calculator
-./scripts/daily_update.sh 20260201
+./schedules/daily_update.sh 20260201
 
 # Manual steps (Use --rm for transient tasks):
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm scraper-daily
@@ -526,7 +526,7 @@ For detailed information, see individual module documentation:
 ### Daily Update
 ```bash
 # Full pipeline for a specific date
-./scripts/daily_update.sh 20260201
+./schedules/daily_update.sh 20260201
 ```
 
 ### Batch Historical Import
