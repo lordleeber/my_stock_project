@@ -124,6 +124,9 @@ def process_file(file_path: str, date_str: str) -> bool:
 
         df = df.select([col for col in column_map.keys() if col in df.columns])
         df = df.rename({k: v for k, v in column_map.items() if k in df.columns})
+        # TDCC symbol 常見右側補空白，統一先去除
+        if "symbol" in df.columns:
+            df = df.with_columns(pl.col("symbol").cast(pl.Utf8).str.strip_chars().alias("symbol"))
 
         # 轉換數值型別
         df = df.with_columns([

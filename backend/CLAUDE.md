@@ -447,7 +447,7 @@ docker compose build processor importer calculator
 # Manual steps (Use --rm for transient tasks):
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm scraper-daily
 START_DATE=20260201 END_DATE=20260201 docker compose run --rm processor
-START_DATE=20260201 END_DATE=20260201 docker compose run --rm importer
+START_DATE=20260201 END_DATE=20260201 docker compose run --rm importer python import_daily.py
 docker compose run --rm calculator
 ```
 
@@ -467,28 +467,22 @@ For detailed information about data sources, see `scraper/CLAUDE.md`.
 | TWSE/TPEx | `scraper-daily` | Daily (after market close, 22:00) |
 | MOPS | `scraper-monthly` | Monthly (before 10th) |
 | MOPS | `scraper-quarterly` | Quarterly (approx. 45 days after Q-end) |
-| TDCC | `scraper-weekly` | Weekly (Sunday) |
+| TDCC | `scraper-weekly` | Weekly (Saturday) |
 
 ## Directory Structure (Data)
 
 ```
 data/
 ├── raw/                          # Scraper output (original CSVs)
-│   ├── daily_quotes/date=YYYYMMDD/{sii,otc}.csv
-│   ├── institutional_investors/date=YYYYMMDD/{sii,otc}.csv
-│   ├── institutional_summary/date=YYYYMMDD/{sii,otc}.csv
-│   ├── foreign_holding/date=YYYYMMDD/{sii,otc}.csv
-│   ├── margin_trading/date=YYYYMMDD/{sii,otc}.csv
-│   ├── margin_sbl/date=YYYYMMDD/{sii,otc}.csv
-│   ├── pe_ratio/date=YYYYMMDD/{sii,otc}.csv
-│   ├── monthly_revenue/date=YYYYMM01/market.csv
-│   ├── income_statement/date=YYYYQX/{sii,otc}_*.csv
-│   ├── balance_sheet/date=YYYYQX/{sii,otc}_*.csv
-│   ├── cash_flow/date=YYYYQX/{sii,otc}_*.csv
-│   ├── shareholding_div/date=YYYYMMDD/{symbol}.csv   # Per-stock format (2023/09~)
-│   └── shareholding_div2/TDCC_OD_1-5_YYYYMMDD.csv   # All-in-one format (2020/01~2023/09)
+│   ├── <daily_category>/YYYY/YYYYMMDD/{sii,otc}.csv
+│   ├── monthly_revenue/YYYY/YYYYMXX/market.csv
+│   ├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.{xls,csv}
+│   ├── income_statement/YYYY/YYYYQX/{sii,otc}_*.csv
+│   ├── balance_sheet/YYYY/YYYYQX/{sii,otc}_*.csv
+│   ├── cash_flow/YYYY/YYYYQX/{sii,otc}_*.csv
+│   └── shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv
 ├── processed/                    # Processor output (cleaned CSVs)
-│   └── (same structure, standardized schemas)
+│   └── category-specific normalized CSV outputs
 └── postgres/                     # PostgreSQL data volume
 ```
 
@@ -509,7 +503,7 @@ data/
 **Module-Specific Variables**:
 - **Scraper**: `MARKET_TYPE`, `FETCH_DELAY`, `REVENUE_YEAR`, `REVENUE_MONTH`, `TDCC_DATE` (see `scraper/CLAUDE.md`)
 - **Processor**: `FORCE_REPROCESS`, `DEBUG` (see `processor/CLAUDE.md`)
-- **Importer**: `IMPORT_CATEGORY`, `FORCE_REIMPORT` (see `importer/CLAUDE.md`)
+- **Importer**: frequency entry points (`import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_quarterly.py`) and `FORCE_REIMPORT` (see `importer/CLAUDE.md`)
 
 ## Key Pipeline Behaviors
 
@@ -539,7 +533,7 @@ for d in cal.schedule('2022-01-01','2022-12-31').index:
     print(d.strftime('%Y%m%d'))
 "); do
   START_DATE=$date END_DATE=$date docker compose run --rm processor
-  START_DATE=$date END_DATE=$date docker compose run --rm importer
+  START_DATE=$date END_DATE=$date docker compose run --rm importer python import_daily.py
 done
 docker compose run --rm calculator
 ```

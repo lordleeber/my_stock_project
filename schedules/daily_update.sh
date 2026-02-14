@@ -58,7 +58,7 @@ fi
 
 # 4. Importer
 echo "[4/5] Running importer..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer python import_daily.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else

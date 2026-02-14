@@ -51,7 +51,7 @@ fi
 
 # 4) Importer weekly
 echo "[3/3] Running importer for shareholding..." | tee -a "$LOG_FILE"
-if docker compose run --rm -e START_DATE=$TARGET_DATE -e END_DATE=$TARGET_DATE -e IMPORT_CATEGORY=shareholding importer 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose run --rm -e START_DATE=$TARGET_DATE -e END_DATE=$TARGET_DATE importer python import_weekly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Importer failed" | tee -a "$LOG_FILE"

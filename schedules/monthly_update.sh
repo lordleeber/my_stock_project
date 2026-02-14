@@ -65,7 +65,7 @@ fi
 
 # 4. Importer
 echo "[4/4] Running importer for monthly_revenue..." | tee -a "$LOG_FILE"
-if docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE -e IMPORT_CATEGORY=monthly_revenue importer 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE importer python import_monthly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Importer failed" | tee -a "$LOG_FILE"

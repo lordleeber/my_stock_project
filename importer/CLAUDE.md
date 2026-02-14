@@ -34,7 +34,6 @@ Uses SQLAlchemy engine with psycopg2 driver.
 |----------|---------|-------------|
 | `START_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
 | `END_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
-| `IMPORT_CATEGORY` | (all) | Import only a specific category |
 | `FORCE_REIMPORT` | 0 | Set to 1 to delete and re-import existing data |
 | `DB_HOST` | db | PostgreSQL host |
 | `DB_USER` | user | Database user |
@@ -45,41 +44,31 @@ Uses SQLAlchemy engine with psycopg2 driver.
 ## Docker Service
 
 ```bash
-# Import all categories for a specific date
-START_DATE=20260201 END_DATE=20260201 docker compose run --rm importer
+# Daily import for a specific date
+docker compose run --rm -e START_DATE=20260201 -e END_DATE=20260201 importer python import_daily.py
 
-# Import only one category
-docker compose run --rm -e IMPORT_CATEGORY=monthly_revenue importer
+# Weekly import (shareholding)
+docker compose run --rm -e START_DATE=20260207 -e END_DATE=20260207 importer python import_weekly.py
 
-# Force re-import (delete and re-import existing data)
-docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding importer
+# Monthly import
+docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer python import_monthly.py
+
+# Quarterly import
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
 ```
 
 **Important Notes**:
 - `FORCE_REIMPORT` must be passed via `-e` flag, not as a shell env var prefix
 - Always rebuild after code changes: `docker compose build importer`
 
-## Import Categories
+## Import Entry Points
 
-Available `IMPORT_CATEGORY` values:
-
-| Category | Table | Description |
+| Entry | Scope | Description |
 |----------|-------|-------------|
-| `daily_quotes` | `daily_quotes` | Daily OHLCV data |
-| `market_indices` | `market_indices` | Market indices (auto-extracted from daily_quotes) |
-| `institutional_investors` | `institutional_investors` | Institutional buy/sell per stock |
-| `institutional_summary` | `institutional_summary` | Institutional buy/sell market-level summary |
-| `foreign_holding` | `foreign_holding` | Foreign shareholding ratio |
-| `margin_trading` | `margin_trading` | Margin long/short balance |
-| `margin_sbl` | `margin_sbl` | Securities borrowing and lending |
-| `margin_summary` | `margin_summary` | Market-level margin trading summary |
-| `pe_ratio` | `pe_ratio` | Price-to-earnings ratio |
-| `monthly_revenue` | `monthly_revenue` | Monthly revenue |
-| `shareholding` | `shareholding` | TDCC shareholding dispersion |
-| `quarterly_reports` | `quarterly_reports` | Quarterly financial summary |
-| `income_statements` | `income_statements` | Quarterly income statements |
-| `balance_sheets` | `balance_sheets` | Quarterly balance sheets |
-| `cash_flows` | `cash_flows` | Quarterly cash flow statements |
+| `import_daily.py` | Daily categories | daily_quotes, market_indices, institutional_investors, institutional_summary, foreign_holding, margin_trading, margin_sbl, margin_summary, pe_ratio |
+| `import_weekly.py` | Weekly categories | shareholding |
+| `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
+| `import_quarterly.py` | Quarterly categories | quarterly_reports, income_statement, balance_sheet, cash_flow |
 
 ## Import Behaviors
 
@@ -100,6 +89,10 @@ Importer excludes:
 - **Preferred stocks**: Symbols containing letters (e.g., 1101B, 2330A)
 
 Only ordinary common stocks are imported.
+
+#### Symbol Whitespace Normalization (shareholding)
+For weekly `shareholding` imports, `symbol` is trimmed before filtering and insert.
+This prevents right-padded symbols like `2330  ` from being stored in DB.
 
 #### OHLCV Validation
 Filters rows where all of the following are NULL or 0:
@@ -152,29 +145,26 @@ for d in cal.schedule('2022-01-01','2022-12-31').index:
     print(d.strftime('%Y%m%d'))
 "); do
   START_DATE=$date END_DATE=$date docker compose run --rm processor
-  START_DATE=$date END_DATE=$date docker compose run --rm importer
+  START_DATE=$date END_DATE=$date docker compose run --rm importer python import_daily.py
 done
 ```
 
 ### Import Monthly Revenue
 ```bash
 # After scraping and processing
-docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 -e IMPORT_CATEGORY=monthly_revenue importer
+docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer python import_monthly.py
 ```
 
 ### Import Quarterly Reports
 ```bash
 # Use YYYYQX format for quarterly reports
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=quarterly_reports importer
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=income_statements importer
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=balance_sheets importer
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 -e IMPORT_CATEGORY=cash_flows importer
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
 ```
 
 ### Force Reimport TDCC Data
 ```bash
 # Delete existing data and reimport
-docker compose run --rm -e FORCE_REIMPORT=1 -e IMPORT_CATEGORY=shareholding importer
+docker compose run --rm -e FORCE_REIMPORT=1 -e START_DATE=20260207 -e END_DATE=20260207 importer python import_weekly.py
 ```
 
 ## Database Schema Notes
@@ -280,7 +270,7 @@ Fast validation comparing aggregate statistics across all imported dates:
 
 ```bash
 # Normal import with automatic statistical validation
-START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer
+START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer python import_daily.py
 ```
 
 ### Interpreting Validation Reports
@@ -335,7 +325,7 @@ START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer
 
 **Files**:
 - `validator.py`: Statistical validation logic
-- `main.py`: Orchestrates validation after import
+- `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_quarterly.py`: Frequency-based import entry points
 
 **Key Functions**:
 ```python

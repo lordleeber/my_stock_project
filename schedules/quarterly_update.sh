@@ -62,17 +62,14 @@ else
     exit 1
 fi
 
-# 3) Importer quarterly categories
-echo "[3/3] Running importer for quarterly categories..." | tee -a "$LOG_FILE"
-for category in quarterly_reports income_statement balance_sheet cash_flow; do
-    echo "  -> Importing $category..." | tee -a "$LOG_FILE"
-    if docker compose run --rm -e START_DATE=$TARGET_QUARTER -e END_DATE=$TARGET_QUARTER -e IMPORT_CATEGORY=$category importer 2>&1 | tee -a "$LOG_FILE"; then
-        echo "  ✓ $category imported" | tee -a "$LOG_FILE"
-    else
-        echo "  ✗ $category import failed" | tee -a "$LOG_FILE"
-        exit 1
-    fi
-done
+# 3) Importer quarterly
+echo "[3/3] Running importer (import_quarterly.py)..." | tee -a "$LOG_FILE"
+if docker compose run --rm -e START_DATE=$TARGET_QUARTER -e END_DATE=$TARGET_QUARTER importer python import_quarterly.py 2>&1 | tee -a "$LOG_FILE"; then
+    echo "✓ Importer completed" | tee -a "$LOG_FILE"
+else
+    echo "✗ Importer failed" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Quarterly Update Completed" | tee -a "$LOG_FILE"

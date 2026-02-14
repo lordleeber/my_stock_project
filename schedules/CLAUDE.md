@@ -42,7 +42,13 @@
 
 `com.poyilee.stock-monthly-update`：
 - Script: `schedules/monthly_update.sh`
-- Time: 每月 `14` 號 `12:35`
+- Time: 每月 `14` 號 `14:00`
+
+### Weekly Schedule (current)
+
+`com.poyilee.stock-weekly-update`：
+- Script: `schedules/weekly_update.sh`
+- Time: 每週六 `14:10`
 
 ## Common Commands
 
