@@ -1,27 +1,57 @@
 import os
+import re
 import shutil
 import argparse
 import sys
 
-def delete_processed_monthly_data(target_date):
+
+def normalize_to_month(target: str) -> str:
+    """Accept YYYYMXX, YYYYMM, or YYYYMMDD and normalize to YYYYMXX."""
+    t = target.strip().upper()
+
+    if re.fullmatch(r"\d{4}M\d{2}", t):
+        month = int(t[5:7])
+        if 1 <= month <= 12:
+            return t
+        raise ValueError(f"Invalid month in '{target}'.")
+
+    if re.fullmatch(r"\d{6}", t):
+        month = int(t[4:6])
+        if 1 <= month <= 12:
+            return f"{t[:4]}M{t[4:6]}"
+        raise ValueError(f"Invalid month in '{target}'.")
+
+    if re.fullmatch(r"\d{8}", t):
+        month = int(t[4:6])
+        if 1 <= month <= 12:
+            return f"{t[:4]}M{t[4:6]}"
+        raise ValueError(f"Invalid month in '{target}'.")
+
+    raise ValueError(
+        f"Invalid format '{target}'. Expected YYYYMXX, YYYYMM, or YYYYMMDD "
+        f"(e.g., 2024M01, 202401, 20240101)."
+    )
+
+
+def delete_processed_monthly_data(target: str):
     """
-    Deletes processed monthly revenue data for a specific date (YYYYMMDD).
-    Note: Monthly data typically uses the 1st of the month or a specific date as the folder name.
+    Delete processed monthly revenue data for one month.
+
+    Current processed path:
+      - data/processed/monthly_revenue/YYYY/YYYYMXX
     """
-    if len(target_date) != 8 or not target_date.isdigit():
-        print(f"Error: Invalid date format '{target_date}'. Expected YYYYMMDD.")
+    try:
+        month_key = normalize_to_month(target)
+    except ValueError as e:
+        print(f"Error: {e}")
         sys.exit(1)
 
-    year = target_date[:4]
-    
-    # Get the project root directory (parent of tools/)
+    year = month_key[:4]
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # Target path: data/processed/monthly_revenue/<year>/<target_date>
-    path = os.path.join(base_dir, "data", "processed", "monthly_revenue", year, target_date)
-    
-    print(f"--- Checking data/processed/monthly_revenue for date {target_date} ---")
-    
+    path = os.path.join(base_dir, "data", "processed", "monthly_revenue", year, month_key)
+
+    print(f"--- Checking data/processed/monthly_revenue for month {month_key} ---")
+
     if os.path.exists(path):
         try:
             if os.path.isdir(path):
@@ -29,15 +59,20 @@ def delete_processed_monthly_data(target_date):
             else:
                 os.remove(path)
             print(f"Deleted: {path}")
-            print(f"\nSuccessfully deleted monthly revenue data for {target_date}.")
+            print(f"\nSuccessfully deleted monthly revenue data for {month_key}.")
         except Exception as e:
             print(f"Failed to delete {path}: {e}")
     else:
-        print(f"\nNo monthly revenue data found for date {target_date} at: {path}")
+        print(f"\nNo monthly revenue data found for {month_key} at: {path}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Delete processed monthly revenue data for a specific date.")
-    parser.add_argument("date", help="Target date in YYYYMMDD format (e.g., 20240201)")
-    
+    parser = argparse.ArgumentParser(
+        description="Delete processed monthly revenue data for one month."
+    )
+    parser.add_argument(
+        "month_or_date",
+        help="YYYYMXX, YYYYMM, or YYYYMMDD (e.g., 2024M01, 202401, 20240101)",
+    )
     args = parser.parse_args()
-    delete_processed_monthly_data(args.date)
+    delete_processed_monthly_data(args.month_or_date)

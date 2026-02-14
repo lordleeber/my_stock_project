@@ -1,35 +1,60 @@
 import os
+import re
 import shutil
 import argparse
 import sys
 
-def delete_processed_quarterly_data(target_date):
+
+def normalize_to_quarter(target: str) -> str:
+    """Accept YYYYQX or YYYYMMDD and normalize to YYYYQX."""
+    target = target.strip().upper()
+
+    if re.fullmatch(r"\d{4}Q[1-4]", target):
+        return target
+
+    if re.fullmatch(r"\d{8}", target):
+        month = int(target[4:6])
+        if month < 1 or month > 12:
+            raise ValueError(f"Invalid month in date '{target}'.")
+        quarter = (month - 1) // 3 + 1
+        return f"{target[:4]}Q{quarter}"
+
+    raise ValueError(
+        f"Invalid format '{target}'. Expected YYYYQX or YYYYMMDD "
+        f"(e.g., 2025Q3 or 20250930)."
+    )
+
+
+def delete_processed_quarterly_data(target: str):
     """
-    Deletes processed quarterly data for a specific date (YYYYMMDD).
-    Handles both quarterly_reports and quarterly_statements.
+    Delete processed quarterly data for one quarter.
+
+    Current processed paths:
+      - data/processed/quarterly_reports/YYYY/YYYYQX
+      - data/processed/income_statement/YYYY/YYYYQX
+      - data/processed/balance_sheet/YYYY/YYYYQX
+      - data/processed/cash_flow/YYYY/YYYYQX
     """
-    if len(target_date) != 8 or not target_date.isdigit():
-        print(f"Error: Invalid date format '{target_date}'. Expected YYYYMMDD.")
+    try:
+        quarter = normalize_to_quarter(target)
+    except ValueError as e:
+        print(f"Error: {e}")
         sys.exit(1)
 
-    year = target_date[:4]
-    
-    # Categories for quarterly data
+    year = quarter[:4]
     quarterly_categories = [
         "quarterly_reports",
-        "quarterly_statements"
+        "income_statement",
+        "balance_sheet",
+        "cash_flow",
     ]
 
-    # Get the project root directory (parent of tools/)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
     deleted_count = 0
 
-    print(f"--- Checking data/processed for quarterly date {target_date} ---")
+    print(f"--- Checking data/processed for quarter {quarter} ---")
     for cat in quarterly_categories:
-        # Expected structure: data/processed/<category>/<year>/<target_date>
-        path = os.path.join(base_dir, "data", "processed", cat, year, target_date)
-        
+        path = os.path.join(base_dir, "data", "processed", cat, year, quarter)
         if os.path.exists(path):
             try:
                 if os.path.isdir(path):
@@ -42,15 +67,18 @@ def delete_processed_quarterly_data(target_date):
                 print(f"Failed to delete {path}: {e}")
 
     if deleted_count == 0:
-        print(f"
-No quarterly data found for date {target_date}.")
+        print(f"\nNo quarterly data found for {quarter}.")
     else:
-        print(f"
-Total quarterly items deleted: {deleted_count}")
+        print(f"\nTotal quarterly items deleted: {deleted_count}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Delete processed quarterly stock data for a specific date.")
-    parser.add_argument("date", help="Target date in YYYYMMDD format (e.g., 20240331)")
-    
+    parser = argparse.ArgumentParser(
+        description="Delete processed quarterly data for one quarter."
+    )
+    parser.add_argument(
+        "date_or_quarter",
+        help="Quarter (YYYYQX) or date (YYYYMMDD), e.g. 2025Q3 or 20250930",
+    )
     args = parser.parse_args()
-    delete_processed_quarterly_data(args.date)
+    delete_processed_quarterly_data(args.date_or_quarter)
