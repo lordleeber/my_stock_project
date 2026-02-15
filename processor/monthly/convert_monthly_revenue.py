@@ -162,7 +162,7 @@ def process_monthly_revenue():
 
     if not os.path.exists(RAW_DIR):
         print(f"Raw revenue directory not found: {RAW_DIR}")
-        return
+        sys.exit(1)
 
     # 取得所有目錄（僅新格式 YYYY/YYYYMXX）
     all_dirs = []
@@ -269,7 +269,7 @@ def process_monthly_revenue():
                 sys.exit(1)
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
-                continue
+                sys.exit(1)
         
         if not dfs:
             print(f"No valid data found for {date_str}")

@@ -206,7 +206,7 @@ def main():
 
         except Exception as e:
             log_processing_error(f"Error in main loop for {date_str}: {e}", date_str)
-            continue
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

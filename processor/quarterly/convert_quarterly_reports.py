@@ -115,14 +115,14 @@ def process_csv_file(file_path, date_str, market):
             rows = list(reader)
 
         if not rows:
-            print(f"  [!] Empty file: {file_path}")
-            return None
+            print(f"❌ Empty file: {file_path}")
+            sys.exit(1)
 
         # 找到 header 行
         header_idx = find_header_row(rows)
         if header_idx == -1:
-            print(f"  [!] Cannot find header row in {file_path}")
-            return None
+            print(f"❌ Cannot find header row in {file_path}")
+            sys.exit(1)
 
         # 選擇映射 (1-based column indices)
         col_mapping = SII_MAPPING if market == 'sii' else OTC_MAPPING
@@ -199,7 +199,7 @@ def process_csv_file(file_path, date_str, market):
         print(f"Error processing {file_path}: {e}")
         import traceback
         traceback.print_exc()
-        return None
+        sys.exit(1)
 
 
 def main():
@@ -243,7 +243,8 @@ def main():
                 if df is not None:
                     all_dfs.append(df)
             else:
-                print(f"  [!] CSV not found: {csv_path}")
+                print(f"❌ CSV not found: {csv_path}")
+                sys.exit(1)
 
         if all_dfs:
             final_df = pl.concat(all_dfs).unique(subset=["symbol"])

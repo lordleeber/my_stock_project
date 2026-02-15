@@ -158,7 +158,8 @@ def process_csv_file(csv_file, date_str, market, mapping, schema, schema_cols):
             reader = csv.reader(f)
             rows = list(reader)
         if not rows:
-            return None
+            print(f"❌ Empty file: {csv_file}")
+            sys.exit(1)
 
         headers = [h.strip() for h in rows[0]]
         col_mapping = build_col_mapping(headers, mapping)
@@ -177,7 +178,8 @@ def process_csv_file(csv_file, date_str, market, mapping, schema, schema_cols):
                 symbol_col = col
                 break
         if symbol_col is None:
-            return None
+            print(f"❌ Missing symbol column in {csv_file}")
+            sys.exit(1)
 
         rename = {}
         for col in df.columns:
@@ -231,7 +233,7 @@ def process_csv_file(csv_file, date_str, market, mapping, schema, schema_cols):
         print(f"Error processing {csv_file}: {e}")
         import traceback
         traceback.print_exc()
-        return None
+        sys.exit(1)
 
 
 def process_category(category, qc_runner):
@@ -318,4 +320,5 @@ def process_category(category, qc_runner):
             if final_df.is_empty():
                 print(f"  [!] Warning: {date_str} generated an empty CSV.")
         else:
-            print(f"  [!] No data for {date_str}")
+            print(f"❌ No data for {date_str}")
+            sys.exit(1)

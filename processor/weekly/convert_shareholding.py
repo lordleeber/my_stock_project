@@ -100,7 +100,7 @@ def process_file(file_path: str, date_str: str) -> bool:
 
         if df.is_empty():
             print(f"No valid data for {date_str}")
-            return False
+            sys.exit(1)
 
         # 標準化欄位名稱
         # 原始欄位: 資料日期, 證券代號, 持股分級, 人數, 股數, 占集保庫存數比例%
@@ -178,7 +178,7 @@ def process_file(file_path: str, date_str: str) -> bool:
         sys.exit(1)
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
-        return False
+        sys.exit(1)
 
 
 def get_date_range():
@@ -218,7 +218,7 @@ def main():
     input_dir = os.path.join(RAW_DIR, INPUT_CATEGORY)
     if not os.path.exists(input_dir):
         print(f"Input directory not found: {input_dir}")
-        return
+        sys.exit(1)
 
     # 找出所有 CSV 檔案並解析日期（含子目錄）
     pattern = re.compile(r"TDCC_OD_1-5_(\d{8})\.csv$")
