@@ -26,10 +26,12 @@ COLUMN_MAP = {
     "漲跌(+/-)": "direction", 
     "漲跌": "change_raw",
     "漲跌價差": "change",
-    "最後買價": "bid",
-    "最後賣價": "ask",
-    "最後買量(千股)": "bid_volume",  # OTC format (in thousands)
-    "最後賣量(千股)": "ask_volume",  # OTC format (in thousands)
+    "最後買價": "last_bid",
+    "最後賣價": "last_ask",
+    "最後買量(千股)": "last_bid_volume",  # OTC format (in thousands)
+    "最後賣量(千股)": "last_ask_volume",  # OTC format (in thousands)
+    "最後買量(張數)": "last_bid_volume",  # OTC newer format
+    "最後賣量(張數)": "last_ask_volume",  # OTC newer format
     "最後揭示買價": "last_disclosed_bid",
     "最後揭示賣價": "last_disclosed_ask",
     "最後揭示買量": "last_disclosed_bid_volume",
@@ -43,6 +45,7 @@ COLUMN_MAP = {
     "股價淨值比": "pb_ratio",
     "財報年/季": "report_period",
     "": "empty_column",  # 空列名（某些檔案有空列）
+    "column_5": "empty_column_5",  # Pandas/Polars 生成的空列名（例如 pe_ratio SII 尾端空欄）
     "column_8": "empty_column_8",  # Pandas 生成的空列名
     "column_12": "empty_column_12",  # Pandas 生成的空列名
     "column_16": "empty_column_16",  # Pandas 生成的空列名

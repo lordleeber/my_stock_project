@@ -134,6 +134,12 @@ docker compose build processor
 ## Notes
 
 - 舊制檔名（如 `data_quality_checker*.py`, `convert_shareholding_div.py`, `convert_quarterly_statements.py`）不再使用。
+- Daily quotes 欄位映射採用 `last_*` 命名：
+  - `最後買價 -> last_bid`
+  - `最後賣價 -> last_ask`
+  - `最後買量(千股)/(張數) -> last_bid_volume`
+  - `最後賣量(千股)/(張數) -> last_ask_volume`
+- 部分來源會有未命名尾端空欄（例如 `pe_ratio` SII），目前已納入 `column_5 -> empty_column_5` 映射，避免 parse 失敗。
 - Shell 腳本目前已對齊新入口：
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`

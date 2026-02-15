@@ -285,7 +285,7 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
             return df_cleaned
     except Exception as e:
         log_parsing_error(file_path, f"Failed to parse CSV: {str(e)}", exception=e)
-        return None
+        return (None, {}) if return_col_mapping else None
 
 def read_sii_indices(file_path, return_col_mapping=False):
     """特別為 SII 指數區塊設計的讀取邏輯
