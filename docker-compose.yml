@@ -130,6 +130,7 @@ services:
       - TZ=Asia/Taipei
     volumes:
       - ./calculator:/app
+      - ./error_calculator.log:/error_calculator.log
     depends_on:
       db:
         condition: service_healthy

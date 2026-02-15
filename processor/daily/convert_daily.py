@@ -10,6 +10,7 @@ import sys
 import datetime
 import traceback
 import re
+import glob
 from pathlib import Path
 from audit_base import DataQualityError
 from .audit_daily_quotes import DailyQuotesChecker
@@ -74,14 +75,62 @@ def log_processing_error(msg, date_str=None, category=None):
     print(f"❌ Error logged to error_processor.log: {msg}")
 
 def process_date_category(category, date_str):
-    if category in CATEGORY_PROCESSORS:
-        CATEGORY_PROCESSORS[category](
-            date_str,
-            raw_dir=RAW_DIR,
-            processed_dir=PROCESSED_DIR,
-            force_reprocess=FORCE_REPROCESS,
-        )
-        return
+    if category not in CATEGORY_PROCESSORS:
+        return False
+
+    if not should_process_category(category, date_str):
+        return False
+
+    CATEGORY_PROCESSORS[category](
+        date_str,
+        raw_dir=RAW_DIR,
+        processed_dir=PROCESSED_DIR,
+        force_reprocess=FORCE_REPROCESS,
+    )
+    return True
+
+
+def _date_dir(base_dir, category, date_str):
+    return os.path.join(base_dir, category, date_str[:4], date_str)
+
+
+def should_process_category(category, date_str):
+    if FORCE_REPROCESS:
+        return True
+
+    processed_date_dir = _date_dir(PROCESSED_DIR, category, date_str)
+
+    # Categories that aggregate to a single all.csv
+    if category in ("institutional_summary", "margin_summary"):
+        output_file = os.path.join(processed_date_dir, "all.csv")
+        if os.path.exists(output_file):
+            return False
+
+        raw_date_dir = _date_dir(RAW_DIR, category, date_str)
+        return any(glob.glob(os.path.join(raw_date_dir, "*.csv")))
+
+    # market_indices is special:
+    # - otc from raw/market_indices/<date>/otc.csv
+    # - sii extracted from raw/daily_quotes/<date>/sii.csv
+    if category == "market_indices":
+        otc_raw = os.path.join(_date_dir(RAW_DIR, "market_indices", date_str), "otc.csv")
+        sii_raw = os.path.join(_date_dir(RAW_DIR, "daily_quotes", date_str), "sii.csv")
+        otc_out = os.path.join(processed_date_dir, "otc.csv")
+        sii_out = os.path.join(processed_date_dir, "sii.csv")
+
+        if os.path.exists(otc_raw) and not os.path.exists(otc_out):
+            return True
+        if os.path.exists(sii_raw) and not os.path.exists(sii_out):
+            return True
+        return False
+
+    # Generic market categories (sii/otc csv)
+    raw_date_dir = _date_dir(RAW_DIR, category, date_str)
+    for raw_file in glob.glob(os.path.join(raw_date_dir, "*.csv")):
+        output_file = os.path.join(processed_date_dir, os.path.basename(raw_file))
+        if not os.path.exists(output_file):
+            return True
+    return False
 
 
 def run_category_quality_check(category, date_str):
@@ -151,8 +200,9 @@ def main():
             
             # 2a. 處理當天所有類別
             for category in all_categories:
-                process_date_category(category, date_str)
-                run_category_quality_check(category, date_str)
+                processed = process_date_category(category, date_str)
+                if processed:
+                    run_category_quality_check(category, date_str)
 
         except Exception as e:
             log_processing_error(f"Error in main loop for {date_str}: {e}", date_str)

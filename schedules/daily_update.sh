@@ -72,7 +72,7 @@ docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE calculat
 if [ $? -eq 0 ]; then
     echo "✓ Calculator completed" | tee -a "$LOG_FILE"
 else
-    echo "✗ Calculator failed" | tee -a "$LOG_FILE"
+    echo "✗ Calculator failed (see error_calculator.log)" | tee -a "$LOG_FILE"
     exit 1
 fi
 

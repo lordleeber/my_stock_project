@@ -70,6 +70,9 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python 
 | `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
 | `import_quarterly.py` | Quarterly categories | quarterly_reports, income_statement, balance_sheet, cash_flow |
 
+`import_daily.py` runs all daily categories in sequence for the date range.  
+For long ranges (for example a full year), runtime can be very long; this is expected and not a hang.
+
 ## Import Behaviors
 
 ### 1. Incremental by Default

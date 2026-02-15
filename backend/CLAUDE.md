@@ -142,6 +142,18 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 
 ### Raw Data API (Direct Table Access)
 
+AI assistant guardrails:
+- Do use `/raw/...` routes with `start_date` and `end_date`.
+- Don't use `/api/raw/...` or `date_from` / `date_to` for backend raw endpoints.
+- Date formats:
+  - Daily-style endpoints (including `/raw/shareholding`): `YYYY-MM-DD`
+  - `/raw/monthly-revenue`: `YYYYMXX` (example: `2026M01`)
+  - Quarterly endpoints (`/raw/quarterly-reports`, `/raw/income-statements`, `/raw/balance-sheets`, `/raw/cash-flows`): `YYYYQX` (example: `2025Q1`)
+- Quick valid examples:
+  - `GET /raw/shareholding?symbol=2308&start_date=2026-01-30&end_date=2026-01-30`
+  - `GET /raw/monthly-revenue?symbol=2330&start_date=2026M01&end_date=2026M01`
+  - `GET /raw/quarterly-reports?symbol=2330&start_date=2025Q1&end_date=2025Q1`
+
 | Endpoint | Method | Key Params | Response Model |
 |----------|--------|-----------|----------------|
 | `/raw/daily-quotes` | GET | `start_date`, `end_date`, `symbol?`, `market?`, `limit=1000`, `offset=0` | `List[DailyQuoteRaw]` |
@@ -359,7 +371,7 @@ curl "http://localhost:8000/raw/margin-trading?symbol=2330&start_date=2026-02-01
 curl "http://localhost:8000/raw/institutional-summary?start_date=2026-02-06&end_date=2026-02-06"
 
 # Get raw monthly revenue
-curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026-01-01&end_date=2026-01-01"
+curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026M01&end_date=2026M01"
 
 # Get raw quarterly reports (Uses YYYYQX format)
 curl "http://localhost:8000/raw/quarterly-reports?symbol=2330&start_date=2024Q1&end_date=2025Q3"

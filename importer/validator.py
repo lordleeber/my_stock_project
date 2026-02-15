@@ -406,7 +406,11 @@ def validate_single_date(engine, table_name, target_date):
 
                 # 讀取 processed CSV（不過濾，pced_row 記錄的是原始位置）
                 try:
-                    df_csv = pl.read_csv(pced_file)
+                    df_csv = pl.read_csv(
+                        pced_file,
+                        infer_schema_length=0,
+                        schema_overrides={"symbol": pl.Utf8},
+                    )
                     files_checked.add(pced_file)
                 except Exception as e:
                     errors.append(f"無法讀取 {pced_file}: {e}")
