@@ -118,3 +118,33 @@ pe_percentile = (current_pe - pe_min) / (pe_max - pe_min) * 100
 
 ---
 *Updated by Claude (Fundamental Analysis Specialist) - 2026-02-10*
+
+---
+
+## 變更紀錄（2026-02-15）
+
+### 1) `flagship_screener.py` 新規則
+- `--quarter` 為必填，不填會直接中止。
+- `--market/--martket` 為必填，必須指定 `sii` 或 `otc`。
+- 最早允許季度為 `2020Q4`（`2020Q1~2020Q3` 不允許）。
+- 已改為分市場生效日：
+  - `SII`: `Q1=05/15`, `Q2=08/14`, `Q3=11/14`, `Q4=次年03/31`
+  - `OTC`: `Q1=6月第20個工作日`, `Q2=9月第20個工作日`, `Q3=12月第20個工作日`, `Q4=次年4月第20個工作日`
+- `PE` 優先使用 `/raw/pe-ratio`，`/raw/daily-quotes` 僅作備援。
+- `annual_eps` 優先使用 `TTM EPS`；不再使用估算係數因子做主估值。
+- 無完整 `TTM EPS` 的股票會被排除（不再用 `eps*4` 補估）。
+
+### 2) `valuation_screener.py` 新規則
+- `--quarter` 為必填，不填會直接中止。
+- `--market/--martket` 為必填，必須指定 `sii` 或 `otc`。
+- 最早允許季度為 `2020Q4`。
+- 估值結果依市場分流輸出：
+  - `strategy/fundamental/undervalued_picks_<quarter>_<market>.csv`
+- 無完整 `TTM EPS` 資料時會中止，不再 fallback `eps*4`。
+
+### 3) 共用模組
+- 新增 `strategy/fundamental/screener_base.py` 共用函式：
+  - `calculate_ttm_eps()`
+  - `build_ttm_eps_for_quarter()`
+  - `fetch_pe_ratio_for_date()`
+- `flagship_screener.py` 與 `valuation_screener.py` 已改為共用此模組。
