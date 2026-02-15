@@ -2,6 +2,11 @@ import os
 import polars as pl
 from schemas import SCHEMA_COLS
 from utils import read_raw_csv
+import sys
+
+# 加入 common 目錄到搜尋路徑
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from common.schemas import get_polars_schema
 
 
 def get_category_date_dir(base_dir, category, date_str):
@@ -16,7 +21,22 @@ def enforce_schema(df, category):
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         df = df.with_columns([pl.lit(None).alias(col) for col in missing_cols])
-    return df.select(required_cols)
+    
+    # 按照標準欄位順序排列
+    df = df.select(required_cols)
+    
+    # 強制執行型別轉換
+    schema = get_polars_schema(category)
+    if schema:
+        # 只針對存在的欄位進行轉換
+        cast_exprs = []
+        for col, dtype in schema.items():
+            if col in df.columns:
+                cast_exprs.append(pl.col(col).cast(dtype, strict=False))
+        if cast_exprs:
+            df = df.with_columns(cast_exprs)
+            
+    return df
 
 
 def generate_src_col(schema_cols, col_mapping):
@@ -44,8 +64,9 @@ def handle_generic_category(file_path, market, category, date_str):
     ])
 
     if "symbol" in df.columns:
-        df = df.filter((pl.col("symbol").is_not_null()) & (pl.col("symbol") != ""))
-        df = df.filter(pl.col("symbol").str.len_chars().is_between(2, 10))
+        df = df.filter(pl.col("symbol").is_not_null())
+        # 只保留 4 碼純數字代號 (過濾 ETF, 權證, 特別股等)
+        df = df.filter(pl.col("symbol").cast(pl.Utf8).str.contains(r"^\d{4}$"))
 
     return df, col_mapping
 

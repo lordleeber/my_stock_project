@@ -8,6 +8,11 @@ from pathlib import Path
 
 import polars as pl
 from sqlalchemy import text
+import sys
+
+# 加入 common 目錄到搜尋路徑
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from common.schemas import get_polars_schema
 
 
 def abort_with_error(message, exception=None):
@@ -174,11 +179,12 @@ def filter_etf(df):
 
     symbol_col = pl.col("symbol").cast(pl.Utf8)
     original_count = df.height
-    df = df.filter(~symbol_col.str.starts_with("00") & ~symbol_col.str.contains(r"[A-Za-z]"))
+    # 只保留剛好 4 碼且全部為數字的代號
+    df = df.filter(symbol_col.str.contains(r"^\d{4}$"))
 
     filtered_count = original_count - df.height
     if filtered_count > 0:
-        print(f"  -> Filtered out {filtered_count} ETF/preferred stock records")
+        print(f"  -> Filtered out {filtered_count} non-stock records (kept only 4-digit numeric symbols)")
     return df
 
 
@@ -342,7 +348,10 @@ def import_static_all_csv(engine, category, table_name, schema_overrides=None):
 
     print(f"Processing {table_name}...")
     try:
-        df = pl.read_csv(csv_file, schema_overrides=schema_overrides or {})
+        full_schema = get_polars_schema(category) or {}
+        if schema_overrides:
+            full_schema.update(schema_overrides)
+        df = pl.read_csv(csv_file, schema_overrides=full_schema)
         if df.height == 0:
             print("  -> Empty file, skipping.")
             return False
@@ -384,7 +393,13 @@ def import_daily_market_category(
                     continue
 
                 print(f"Processing {table_name} - {date_token} - {market}...")
-                df = pl.read_csv(csv_file, schema_overrides=schema_overrides or {})
+                
+                # 使用明確定義的 Schema，並與傳入的 override 合併
+                full_schema = get_polars_schema(category) or {}
+                if schema_overrides:
+                    full_schema.update(schema_overrides)
+                df = pl.read_csv(csv_file, schema_overrides=full_schema)
+                
                 if df.height == 0:
                     print("  -> Empty file, skipping.")
                     continue
@@ -453,7 +468,13 @@ def import_daily_all_category(
                 continue
 
             print(f"Processing {table_name} - {date_token}...")
-            df = pl.read_csv(csv_file, schema_overrides=schema_overrides or {})
+            
+            # 使用明確定義的 Schema
+            full_schema = get_polars_schema(category) or {}
+            if schema_overrides:
+                full_schema.update(schema_overrides)
+            df = pl.read_csv(csv_file, schema_overrides=full_schema)
+            
             if df.height == 0:
                 print("  -> Empty file, skipping.")
                 continue

@@ -91,6 +91,7 @@ services:
       context: ./processor
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
       - ./error_processor.log:/app/error_processor.log
     environment:
       - START_DATE=${START_DATE:-}
@@ -104,6 +105,7 @@ services:
       context: ./importer
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
       - ./error_importer.log:/app/error_importer.log
     depends_on:
       db:
@@ -230,6 +232,7 @@ services:
       context: ./processor
     volumes:
       - ./data:/app/data
+      - ./common:/app/common
       - ./error_processor.log:/app/error_processor.log
     environment:
       - TZ=Asia/Taipei

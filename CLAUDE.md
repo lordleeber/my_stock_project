@@ -29,6 +29,7 @@ Examples:
 These files are shared across roles. Be careful when modifying:
 
 - `docker-compose.yml` — All services defined here
+- `common/schemas.py` — **Single Source of Truth** for all database table schemas and data types (shared by processor, importer, and validator)
 - `data/` — Shared data directory (raw → processed → DB)
 - PostgreSQL schema — Changes affect both Data Engineer (importer) and Backend Engineer (queries)
 

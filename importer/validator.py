@@ -5,6 +5,11 @@ import os
 import glob
 import polars as pl
 from sqlalchemy import text
+import sys
+
+# 加入 common 目錄到搜尋路徑
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from common.schemas import get_polars_schema
 
 
 def get_csv_stats(table_name, data_dir="/app/data/processed"):
@@ -38,11 +43,11 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
 
     # 讀取所有 CSV 並合併
     dfs = []
+    schema = get_polars_schema(table_name)
     for csv_file in sorted(csv_files):
         try:
-            # 使用 infer_schema_length=0 讓 Polars 掃描所有行來推斷型態
-            # 這樣可以避免不同檔案間型態不一致的問題
-            df = pl.read_csv(csv_file, infer_schema_length=0)
+            # 使用明確定義的 Schema
+            df = pl.read_csv(csv_file, schema_overrides=schema or {})
             dfs.append(df)
         except Exception as e:
             print(f"⚠️  讀取失敗: {csv_file} - {e}")
@@ -71,17 +76,13 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
 
     # 過濾 ETF 和特別股（與 importer 的過濾邏輯一致）
     # 這樣 CSV 統計值才能與資料庫統計值正確比對
-    if 'symbol' in df_all.columns:
-        original_count = df_all.height
-        # 過濾 ETF（代號開頭是 00）和特別股（代號包含英文字母）
-        df_all = df_all.filter(
-            ~pl.col('symbol').str.starts_with('00') &
-            ~pl.col('symbol').str.contains(r'[A-Za-z]')
-        )
-        filtered_count = original_count - df_all.height
-        if filtered_count > 0:
-            print(f"已過濾 {filtered_count} 筆 ETF/特別股記錄（與資料庫過濾邏輯一致）")
-
+        if 'symbol' in df_all.columns:
+            original_count = df_all.height
+            # 只保留 4 碼純數字代號
+            df_all = df_all.filter(pl.col('symbol').cast(pl.Utf8).str.contains(r"^\d{4}$"))
+            filtered_count = original_count - df_all.height
+            if filtered_count > 0:
+                print(f"已過濾 {filtered_count} 筆非四碼股票記錄（與匯入邏輯一致）")
     # 計算基本統計值
     stats = {
         'total_rows': df_all.height,

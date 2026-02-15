@@ -243,21 +243,22 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 
 **Important Notes:**
 - All `date` fields return YYYY-MM-DD format strings (not datetime objects)
-- Database schema uses TEXT type for all date columns (standardized across 12 tables)
-- All `symbol` fields use TEXT type (standardized across 10 tables)
+- Database schema uses TEXT type for all date columns (standardized across 15 tables)
+- All `symbol` fields use **TEXT** type and strictly contain **4-digit numeric symbols** only.
 - `bid` and `ask` fields in DailyQuoteRaw are strings (stored as TEXT in database)
+- **DailyQuoteRaw** no longer contains `pe_ratio`. Use the standalone `pe_ratio` endpoint for valuation data.
 
 **Models:**
-- **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, value, transactions, change, direction, bid, ask, pe_ratio
+- **DailyQuoteRaw**: date, symbol, name, market, open, high, low, close, volume, value, transactions, change, direction, bid, ask
 - **MarginTradingRaw**: date, symbol, name, market, margin_long_buy/sell/cash_repay/prev_balance/balance/limit, margin_short_buy/sell/cash_repay/prev_balance/balance/limit, offset_balance
 - **MarginSummaryRaw**: date, market, item, buy, sell, cash_repay, prev_balance, today_balance
 - **InstitutionalInvestorsRaw**: date, symbol, name, market, foreign_buy/sell/net, trust_buy/sell/net, dealer_buy/sell/net
-- **InstitutionalSummaryRaw**: date, market, item, buy, sell, net
+- **InstitutionalSummaryRaw**: date, market, institution, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
 - **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
-- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct
-- **ShareholdingRaw**: date, symbol, market, level, holders, shares, percentage
+- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct, comment
+- **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
 - **StockInfoRaw**: symbol, name, industry, market, listing_date, tags (array)
 - **StockTagRaw**: symbol, tag
 - **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue, revenue_ly, revenue_yoy, op_income, op_income_ly, op_income_yoy, non_op_income, pretax_income, net_income, eps, eps_ly, eps_yoy, capital, nav_per_share, equity_to_assets_ratio, current_ratio, quick_ratio

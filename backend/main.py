@@ -197,7 +197,6 @@ class DailyQuoteRaw(BaseModel):
     direction: Optional[str] = None
     bid: Optional[str] = None  # Stored as text in database
     ask: Optional[str] = None  # Stored as text in database
-    pe_ratio: Optional[float] = None
 
 class MarginTradingRaw(BaseModel):
     date: str  # Stored as text in database

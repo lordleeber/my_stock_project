@@ -86,12 +86,10 @@ When `FORCE_REIMPORT=1` or updating existing data:
 
 ### 3. Data Filtering
 
-#### ETF & Preferred Stock Filtering
-Importer excludes:
-- **ETFs**: Symbols starting with "00" (e.g., 0050, 0056)
-- **Preferred stocks**: Symbols containing letters (e.g., 1101B, 2330A)
-
-Only ordinary common stocks are imported.
+#### Strict Stock Filtering
+Importer strictly only allows **4-digit numeric symbols** (e.g., "2330", "2317"). 
+- Filters out all other symbols including ETFs ("00xxxx"), preferred stocks ("xxxxA/B"), warrants, and REITs.
+- This ensures only ordinary common stocks are stored in the primary database tables.
 
 #### Symbol Whitespace Normalization (shareholding)
 For weekly `shareholding` imports, `symbol` is trimmed before filtering and insert.
@@ -105,35 +103,27 @@ Filters rows where all of the following are NULL or 0:
 - close
 - volume
 
-This removes invalid trading day records.
+This removes invalid trading day records from the `daily_quotes` table.
 
 ### 4. Lineage Tracking (Data Traceability)
-The processor adds `src_file`, `src_row`, `src_col` columns to processed CSVs pointing to raw data sources. The importer **recalculates** these columns to point to processed CSV positions before storing them in the database as `pced_file`, `pced_row`, `pced_col`.
+The processor adds `pced_file`, `pced_row`, `pced_col` columns to processed CSVs. The importer preserves these metadata columns in the database for full traceability.
 
-**Lineage Calculation (in `recalculate_lineage()`):**
-- Executed **BEFORE** ETF/OHLCV filtering to record original CSV positions
-- **pced_file**: Path to the processed CSV file (e.g., `/app/data/processed/foreign_holding/2020/20200102/sii.csv`)
-- **pced_row**: 1-based line number in processed CSV (row 1 = header, row 2 = first data row)
-- **pced_col**: Column position mapping (format: `1#2#3#4#...` for each column)
+**Lineage-Based Validation:**
+- After each import, the system compares database records against the processed CSV at the exact `pced_row` positions.
+- Uses **explicit schemas** from `common/schemas.py` to ensure type-safe comparisons.
 
-**Why recalculate?**
-- Processor's `src_*` points to raw CSV (for QC purposes)
-- Importer reads from processed CSV, so lineage should reflect the actual import source
-- Enables accurate validation by comparing DB data against processed CSV at exact positions
+### 5. Schema Enforcement (No Inference)
+The importer **no longer relies on automatic type inference**. It uses `common/schemas.py` as a single source of truth:
+- Every `pl.read_csv` call uses `schema_overrides` from the shared schema.
+- This prevents numeric symbols from being incorrectly detected as integers (bigint).
 
-**Validation Usage:**
-- Reads processed CSV without filtering
-- Uses `pced_row` to locate exact row in original CSV
-- Performs column-by-column value comparison
-- Reports any discrepancies (type-aware: int/float/string)
-
-### 5. Row Count Verification
+### 6. Row Count Verification
 After each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
 
-### 6. Fail-Fast Error Handling
+### 7. Fail-Fast Error Handling
 Any import error immediately writes the error and traceback to `/app/error_importer.log` and exits with `SystemExit(1)`. The importer does **not** silently skip failed imports.
 
-### 7. Database Wait Logic
+### 8. Database Wait Logic
 Importer has built-in retry logic (up to 30 seconds) to wait for database availability. This is useful when starting services with `docker compose up`.
 
 ## Common Import Tasks
@@ -178,7 +168,10 @@ All `date` columns use **TEXT** type (not DATE), storing values as:
 - Quarterly data: "YYYYQX" (e.g., "2025Q3")
 
 ### Symbol Column Types
-All `symbol` columns use **TEXT** type (standardized across 10 tables).
+**STRICTLY TEXT**: All `symbol` columns in all tables are of type **TEXT** to prevent leading zero loss and ensure JOIN consistency.
+
+### Daily Quotes Table
+**No pe_ratio**: The `daily_quotes` table does not contain the `pe_ratio` column. Use the standalone `pe_ratio` table for valuation data.
 
 ### Bid/Ask in daily_quotes
 `bid` and `ask` fields are **TEXT** type in the database (preserved from source format).

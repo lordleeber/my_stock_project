@@ -26,7 +26,7 @@ class DailyQuotesChecker(DataQualityCheckerBase):
     INTEGER_COLUMNS = {'volume', 'transactions', 'value'}
 
     # Columns that are floats
-    FLOAT_COLUMNS = {'open', 'high', 'low', 'close', 'change', 'bid', 'ask', 'pe_ratio'}
+    FLOAT_COLUMNS = {'open', 'high', 'low', 'close', 'change', 'bid', 'ask'}
 
     # String columns
     STRING_COLUMNS = {'symbol', 'name', 'direction'}

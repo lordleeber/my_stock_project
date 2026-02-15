@@ -1,3 +1,4 @@
+import polars as pl
 from import_common import (
     import_daily_all_category,
     import_daily_market_category,
@@ -26,6 +27,8 @@ def run(engine, config, import_category=None):
         return False
 
     imported_any = False
+    # 強制指定 symbol 為字串型態，避免資料庫自動推斷為 bigint
+    daily_schema_overrides = {"symbol": pl.Utf8}
 
     for category in DAILY_MARKET_CATEGORIES:
         if import_category and import_category != category:
@@ -35,6 +38,7 @@ def run(engine, config, import_category=None):
             category=category,
             table_name=category,
             config=config,
+            schema_overrides=daily_schema_overrides,
         )
 
     for category in DAILY_ALL_CATEGORIES:

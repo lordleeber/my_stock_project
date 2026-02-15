@@ -111,15 +111,21 @@ START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python conve
 START_DATE=20240102 END_DATE=20240102 docker compose run --rm processor python audit.py
 ```
 
-## Data Lineage
+## Data Lineage & Schema Enforcement
 
 所有 processed CSV 都包含 lineage 欄位：
 
-- `src_file`: raw 檔案路徑
-- `src_row`: raw 檔案行號（1-based）
-- `src_col`: 欄位來源映射（例如 `x#x#1#2#...`）
+- `pced_file`: raw 檔案路徑
+- `pced_row`: raw 檔案行號（1-based）
+- `pced_col`: 欄位來源映射（例如 `x#x#1#2#...`）
 
-`audit_*` 會依 `src_file/src_row/src_col` 做欄位級比對，發現 mismatch 即停止流程並寫入 `/app/error_processor.log`。
+**Schema 強制執行 (Single Source of Truth):**
+Processor 在存入 CSV 之前，會引用 `common/schemas.py` 定義的 Schema 進行強制型別轉換。這確保了產出的 CSV 檔案在匯入資料庫前就已經具備正確的資料型別（例如 `symbol` 必為字串，數值欄位必為 `Float64`）。
+
+**嚴格股票過濾:**
+所有包含 `symbol` 欄位的類別都會執行嚴格過濾：**僅保留 4 碼純數字代號**。這會自動排除 ETF (如 0050)、權證、特別股及 REITs。
+
+`audit_*` 會依 `pced_file/pced_row/pced_col` 做欄位級比對，發現 mismatch 即停止流程並寫入 `/app/error_processor.log`。
 
 ## Runtime Behavior
 
@@ -139,7 +145,8 @@ docker compose build processor
   - `最後賣價 -> last_ask`
   - `最後買量(千股)/(張數) -> last_bid_volume`
   - `最後賣量(千股)/(張數) -> last_ask_volume`
-- 部分來源會有未命名尾端空欄（例如 `pe_ratio` SII），目前已納入 `column_5 -> empty_column_5` 映射，避免 parse 失敗。
+- **重要變更**: `daily_quotes` 不再包含 `pe_ratio` 欄位（以確保 SII/OTC 一致性）。本益比資料現在統一由獨立的 `pe_ratio` 類別處理。
+- 部分來源會有未命名尾端空欄，目前已納入映射避免 parse 失敗。
 - Shell 腳本目前已對齊新入口：
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`
