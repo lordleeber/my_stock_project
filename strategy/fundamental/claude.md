@@ -52,7 +52,7 @@ Current behavior:
 - `predict_price` has been removed from output and scoring path.
 
 Output naming:
-- `fundamental_report_<quarter>_<market>.csv`
+- `flagship_report_<quarter>_<market>.csv`
 
 ## `valuation_screener.py`
 Current behavior:
@@ -60,9 +60,18 @@ Current behavior:
 - Uses shared TTM EPS logic from `screener_base.py`.
 - Does not use fallback `eps * 4`.
 - Stocks without complete TTM inputs are dropped.
+- `predict_price` and `upside` are removed from both calculation flow and output.
+- Current screening keeps stocks with:
+  - `eps_ttm > 0`
+  - `roe_annual > 8`
+  - `pe_ratio > 0`
+- Current sort order:
+  - lower `pe_percentile` first
+  - then lower `peg_ratio`
+  - then higher `roe_annual`
 
 Output naming:
-- `undervalued_picks_<quarter>_<market>.csv`
+- `valuation_report_<quarter>_<market>.csv`
 
 ## `price_range_analyzer.py`
 CLI requirements:

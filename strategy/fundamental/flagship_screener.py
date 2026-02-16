@@ -323,9 +323,9 @@ def process_quarter(q_str, market_filter=None):
 
         final_df = df[final_cols].sort_values("total_score", ascending=False)
         if market_filter in {"sii", "otc"}:
-            filename = f"fundamental_report_{q_str}_{market_filter}.csv"
+            filename = f"flagship_report_{q_str}_{market_filter}.csv"
         else:
-            filename = f"fundamental_report_{q_str}.csv"
+            filename = f"flagship_report_{q_str}.csv"
         output_path = os.path.join("strategy", "fundamental", filename)
         final_df.to_csv(output_path, index=False, encoding="utf-8-sig")
         print(f"  [完成] {output_path}")

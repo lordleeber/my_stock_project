@@ -196,15 +196,7 @@ def calculate_fair_prices(df, industry_pe, industry_pb):
             fair_peg = eps_ttm * min(eps_growth, 30)
         else:
             fair_peg = fair_pe
-        fair_dividend = dividend / 0.05 if dividend > 0 else 0
-
-        prices = {"pe": fair_pe, "pb": fair_pb, "peg": fair_peg, "dividend": fair_dividend}
-        valid = {k: v for k, v in prices.items() if v > 0}
-        if valid:
-            w_sum = sum(config[k] for k in valid.keys())
-            predict = sum(prices[k] * config[k] for k in valid.keys()) / w_sum
-        else:
-            predict = 0
+        fair_price_from_dividend = dividend / 0.05 if dividend > 0 else 0
 
         rows.append(
             {
@@ -212,8 +204,7 @@ def calculate_fair_prices(df, industry_pe, industry_pb):
                 "fair_pe": round(fair_pe, 2),
                 "fair_pb": round(fair_pb, 2),
                 "fair_peg": round(fair_peg, 2),
-                "fair_dividend": round(fair_dividend, 2),
-                "predict_price": round(predict, 2),
+                "fair_price_from_dividend": round(fair_price_from_dividend, 2),
                 "valuation_method": (
                     f"PE:{config['pe']:.0%}/PB:{config['pb']:.0%}/"
                     f"PEG:{config['peg']:.0%}/DIV:{config['dividend']:.0%}"
@@ -327,7 +318,6 @@ def run_valuation(market_filter, target_quarter=None):
     df = pd.merge(df, fair_prices, on="symbol", how="left")
     df = calculate_pe_percentile(df, hist_pe)
 
-    df["upside"] = np.where(df["close"] > 0, (df["predict_price"] - df["close"]) / df["close"] * 100, np.nan)
     df["roe_annual"] = np.where(df["nav_per_share"] > 0, (df["eps_ttm"] / df["nav_per_share"]) * 100, 0)
     df["peg_ratio"] = np.where(
         (df["eps_growth"] > 0) & (df["pe_ratio"] > 0),
@@ -335,13 +325,18 @@ def run_valuation(market_filter, target_quarter=None):
         np.nan,
     )
 
-    undervalued = df[(df["upside"] > 20) & (df["eps_ttm"] > 0) & (df["roe_annual"] > 8)].copy()
+    undervalued = df[(df["eps_ttm"] > 0) & (df["roe_annual"] > 8) & (df["pe_ratio"] > 0)].copy()
     undervalued["quality_flag"] = ""
     undervalued.loc[undervalued["peg_ratio"] < 1, "quality_flag"] += "PEG<1 "
     undervalued.loc[undervalued["pe_zone"] == "極度低估", "quality_flag"] += "歷史低點 "
     undervalued.loc[undervalued["roe_annual"] > 15, "quality_flag"] += "高ROE "
 
-    undervalued = undervalued.sort_values("upside", ascending=False)
+    undervalued["_pe_rank"] = undervalued["pe_percentile"].fillna(9999)
+    undervalued["_peg_rank"] = undervalued["peg_ratio"].fillna(9999)
+    undervalued = undervalued.sort_values(
+        ["_pe_rank", "_peg_rank", "roe_annual"],
+        ascending=[True, True, False],
+    ).drop(columns=["_pe_rank", "_peg_rank"])
     undervalued["price_date"] = latest_date
     undervalued["report_quarter"] = quarter
     undervalued["market"] = market_filter
@@ -354,8 +349,6 @@ def run_valuation(market_filter, target_quarter=None):
         "market",
         "price_date",
         "market_price",
-        "predict_price",
-        "upside",
         "eps_ttm",
         "eps_growth",
         "pe_ratio",
@@ -367,15 +360,18 @@ def run_valuation(market_filter, target_quarter=None):
         "fair_pe",
         "fair_pb",
         "fair_peg",
-        "fair_dividend",
+        "fair_price_from_dividend",
         "valuation_method",
         "quality_flag",
         "report_quarter",
     ]
     out_cols = [c for c in out_cols if c in undervalued.columns]
+    out_df = undervalued[out_cols].copy()
+    float_cols = out_df.select_dtypes(include=[np.floating]).columns
+    out_df[float_cols] = out_df[float_cols].round(2)
 
-    out_path = os.path.join("strategy", "fundamental", f"undervalued_picks_{quarter}_{market_filter}.csv")
-    undervalued[out_cols].to_csv(out_path, index=False, encoding="utf-8-sig")
+    out_path = os.path.join("strategy", "fundamental", f"valuation_report_{quarter}_{market_filter}.csv")
+    out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
     print(f"完成，輸出: {out_path}，共 {len(undervalued)} 檔")
 
 
