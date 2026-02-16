@@ -63,6 +63,9 @@ BALANCE_MAP = {
     "庫藏股票": "treasury_shares",
     "每股參考淨值": "nav_per_share",
     "歸屬於母公司業主權益合計": "equity_parent",
+    "存貨": "inventory",
+    "應收帳款淨額": "accounts_receivable",
+    "應收帳款": "accounts_receivable",
 }
 
 CASHFLOW_MAP = {

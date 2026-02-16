@@ -85,7 +85,9 @@ SCHEMA_COLS = {
         "current_liabilities", "noncurrent_liabilities", "total_liabilities",
         "total_equity", "equity_parent",
         "share_capital", "capital_surplus", "retained_earnings",
-        "other_equity", "treasury_shares", "nav_per_share",
+        "other_equity", "treasury_shares",
+        "inventory", "accounts_receivable",
+        "nav_per_share",
         "pced_file", "pced_row", "pced_col"
     ],
     "cash_flow": [
@@ -121,6 +123,10 @@ SCHEMA_COLS = {
     "dividend": [
         "date", "symbol", "name", "close_before", "ref_price", "rights_dividend_value", "type",
         "pced_file", "pced_row", "pced_col"
+    ],
+    "valuation_analysis": [
+        "date", "symbol", "close", "ttm_eps", "pe_ratio_calculated", "pe_ratio_from_pe_table", "pe_percentile",
+        "pced_file", "pced_row", "pced_col"
     ]
 }
 
@@ -141,6 +147,8 @@ COLUMN_TYPES = {
     "index_name": pl.Utf8,
     "comment": pl.Utf8,
     "type": pl.Utf8,
+    "pe_percentile": pl.Float64,
+    "ttm_eps": pl.Float64,
     "pced_file": pl.Utf8,
     "pced_col": pl.Utf8,
     "pced_row": pl.Int64,
