@@ -49,6 +49,16 @@ def is_otc_market(market_value):
     return ("otc" in s) or ("tpex" in s) or ("上櫃" in s)
 
 
+def ensure_alias_column(df, target, candidates):
+    if target in df.columns:
+        return
+    for c in candidates:
+        if c in df.columns:
+            df[target] = df[c]
+            return
+    df[target] = np.nan
+
+
 def fetch_quotes_with_fallback(sim_date, max_forward_days=10):
     df_p = fetch_dataframe(
         "/raw/daily-quotes",
@@ -70,19 +80,8 @@ def fetch_quotes_with_fallback(sim_date, max_forward_days=10):
     return df_p, actual_date
 
 
-def fetch_pe_ratio_with_fallback(sim_date, max_forward_days=10):
-    df_pe = fetch_pe_ratio_for_date(fetch_dataframe, sim_date)
-    actual_date = sim_date
-    if df_pe.empty:
-        curr = datetime.strptime(sim_date, "%Y-%m-%d")
-        for _ in range(max_forward_days):
-            curr += timedelta(days=1)
-            d_str = curr.strftime("%Y-%m-%d")
-            df_pe = fetch_pe_ratio_for_date(fetch_dataframe, d_str)
-            if not df_pe.empty:
-                actual_date = d_str
-                break
-    return df_pe, actual_date
+def fetch_pe_ratio_strict(sim_date):
+    return fetch_pe_ratio_for_date(fetch_dataframe, sim_date), sim_date
 
 
 def get_config_for_quarter(q_str):
@@ -130,7 +129,11 @@ def process_quarter(q_str, market_filter=None):
             "/raw/cash-flows", {"start_date": q_str, "end_date": q_str, "limit": 3000}
         )
         df_info = fetch_dataframe("/raw/stock-info", {"limit": 5000})
-        df_ttm = build_ttm_eps_for_quarter(q_str, fetch_dataframe).rename(
+        df_ttm = build_ttm_eps_for_quarter(
+            q_str,
+            fetch_dataframe,
+            endpoint="/raw/income-statements",
+        ).rename(
             columns={"eps_ttm": "ttm_eps"}
         )
 
@@ -143,6 +146,14 @@ def process_quarter(q_str, market_filter=None):
 
         if df_q.empty or df_r.empty:
             return
+
+        # Backend migrated quarterly/cash-flow schema to dual columns (_q / _acc).
+        ensure_alias_column(df_q, "revenue", ["revenue", "revenue_q"])
+        ensure_alias_column(df_q, "op_income", ["op_income", "op_income_q"])
+        ensure_alias_column(df_q, "net_income", ["net_income", "net_income_q"])
+        ensure_alias_column(df_q, "eps", ["eps_q"])
+        ensure_alias_column(df_q, "eps_yoy", ["eps_yoy", "eps_acc_yoy"])
+        ensure_alias_column(df_cf, "cash_flow_operating", ["cash_flow_operating", "cash_flow_operating_q"])
 
         # Allow degraded run when optional endpoints fail.
         if df_cf.empty or "cash_flow_operating" not in df_cf.columns:
@@ -180,7 +191,7 @@ def process_quarter(q_str, market_filter=None):
             if "symbol" not in df_p_bucket.columns:
                 continue
 
-            df_pe_bucket, pe_date = fetch_pe_ratio_with_fallback(sim_date, max_forward_days=10)
+            df_pe_bucket, pe_date = fetch_pe_ratio_strict(sim_date)
 
             df_p_bucket["symbol"] = df_p_bucket["symbol"].astype(str)
             df_p_bucket = df_p_bucket[df_p_bucket["symbol"].apply(is_regular_stock)].copy()
@@ -194,7 +205,7 @@ def process_quarter(q_str, market_filter=None):
             if "pe_ratio" not in df_p_bucket.columns:
                 df_p_bucket["pe_ratio"] = np.nan
 
-            # Use /raw/pe-ratio as primary source of PE, fallback to daily-quotes PE.
+            # Strict mode: only use /raw/pe-ratio, no fallback.
             if not df_pe_bucket.empty and "symbol" in df_pe_bucket.columns and "pe_ratio" in df_pe_bucket.columns:
                 df_pe_bucket["symbol"] = df_pe_bucket["symbol"].astype(str)
                 df_pe_bucket["pe_ratio"] = pd.to_numeric(df_pe_bucket["pe_ratio"], errors="coerce")
@@ -205,13 +216,11 @@ def process_quarter(q_str, market_filter=None):
                     on="symbol",
                     how="left",
                 )
-                df_p_bucket["pe_ratio"] = np.where(
-                    df_p_bucket["pe_ratio_api"].notna(),
-                    df_p_bucket["pe_ratio_api"],
-                    pd.to_numeric(df_p_bucket["pe_ratio"], errors="coerce"),
-                )
+                df_p_bucket["pe_ratio"] = pd.to_numeric(df_p_bucket["pe_ratio_api"], errors="coerce")
                 df_p_bucket = df_p_bucket.drop(columns=["pe_ratio_api"], errors="ignore")
                 _ = pe_date
+            else:
+                df_p_bucket["pe_ratio"] = np.nan
 
             df_p_bucket["market_bucket"] = bucket
             df_p_bucket["price_date"] = actual_date

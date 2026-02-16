@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -9,7 +9,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from common.http_client import fetch_dataframe, fetch_json
-from strategy.fundamental.screener_base import calculate_ttm_eps, fetch_pe_ratio_for_date
+from strategy.fundamental.screener_base import calculate_ttm_eps
 
 
 MIN_SUPPORTED_QUARTER = "2020Q4"
@@ -31,6 +31,37 @@ def is_otc_market(market_value):
         return False
     s = str(market_value).strip().lower()
     return ("otc" in s) or ("tpex" in s) or ("上櫃" in s)
+
+
+def get_20th_business_day(year, month):
+    count = 0
+    curr = datetime(year, month, 1)
+    while count < 20:
+        if curr.weekday() < 5:
+            count += 1
+        if count < 20:
+            curr += timedelta(days=1)
+    return curr.strftime("%Y-%m-%d")
+
+
+def quarter_to_effective_date(q_str, market):
+    year = int(q_str[:4])
+    q = q_str[-1]
+    if market == "sii":
+        if q == "1":
+            return f"{year}-05-15"
+        if q == "2":
+            return f"{year}-08-14"
+        if q == "3":
+            return f"{year}-11-14"
+        return f"{year + 1}-03-31"
+    if q == "1":
+        return get_20th_business_day(year, 6)
+    if q == "2":
+        return get_20th_business_day(year, 9)
+    if q == "3":
+        return get_20th_business_day(year, 12)
+    return get_20th_business_day(year + 1, 4)
 
 
 def get_latest_quarters(n=4):
@@ -83,61 +114,69 @@ def get_trailing_quarters(target_quarter, n=4):
     return quarters
 
 
-def fetch_historical_pe():
+def fetch_valuation_analysis_for_date(target_date):
+    if not target_date:
+        return pd.DataFrame(columns=["symbol", "pe_ratio", "pe_percentile"])
     try:
-        sample_dates = []
-        today = datetime.now()
-        for i in range(12):
-            y = today.year - (i // 4)
-            m = [3, 6, 9, 12][3 - (i % 4)]
-            sample_dates.append(f"{y}-{m:02d}-15")
-
-        all_pe = []
-        for d in sample_dates[:6]:
-            df = fetch_dataframe("/raw/daily-quotes", {"start_date": d, "end_date": d, "limit": 5000})
-            if not df.empty and "pe_ratio" in df.columns:
-                df = df[["symbol", "pe_ratio"]].copy()
-                df["pe_ratio"] = pd.to_numeric(df["pe_ratio"], errors="coerce")
-                all_pe.append(df)
-
-        if not all_pe:
-            return pd.DataFrame()
-
-        df_all = pd.concat(all_pe, ignore_index=True)
-        pe_stats = (
-            df_all[df_all["pe_ratio"] > 0]
-            .groupby("symbol")["pe_ratio"]
-            .agg(["min", "max", "median"])
-            .reset_index()
+        df = fetch_dataframe(
+            "/raw/valuation-analysis",
+            {"start_date": target_date, "end_date": target_date, "limit": 5000},
         )
-        pe_stats.columns = ["symbol", "pe_min", "pe_max", "pe_median"]
-        return pe_stats
-    except Exception:
-        return pd.DataFrame()
+        if df.empty or "symbol" not in df.columns:
+            return pd.DataFrame(columns=["symbol", "pe_ratio", "pe_percentile"])
 
+        if "pe_ratio_from_pe_table" not in df.columns:
+            df["pe_ratio_from_pe_table"] = np.nan
+        if "pe_percentile" not in df.columns:
+            df["pe_percentile"] = np.nan
 
-def fetch_dividends():
-    try:
-        df = fetch_dataframe("/raw/dividends", {"limit": 5000})
-        if df.empty or "cash_dividend" not in df.columns:
-            return pd.DataFrame()
         df["symbol"] = df["symbol"].astype(str)
-        df["cash_dividend"] = pd.to_numeric(df["cash_dividend"], errors="coerce").fillna(0)
-        return df.sort_values("year", ascending=False).drop_duplicates("symbol")[["symbol", "cash_dividend"]]
+        df["pe_ratio_from_pe_table"] = pd.to_numeric(df["pe_ratio_from_pe_table"], errors="coerce")
+        df["pe_percentile"] = pd.to_numeric(df["pe_percentile"], errors="coerce")
+
+        out = df[["symbol", "pe_ratio_from_pe_table", "pe_percentile"]].drop_duplicates("symbol")
+        out = out.rename(columns={"pe_ratio_from_pe_table": "pe_ratio"})
+        return out
     except Exception:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["symbol", "pe_ratio", "pe_percentile"])
 
 
-def fetch_all_data(target_quarter=None):
+def fetch_dividend_proxy_for_symbols(symbols, end_date, start_date="2020-01-01"):
+    if not end_date or not symbols:
+        return pd.DataFrame(columns=["symbol", "cash_dividend"])
+    rows = []
+    for sym in sorted(set(str(s) for s in symbols)):
+        try:
+            df = fetch_dataframe(
+                "/raw/dividend",
+                {"start_date": start_date, "end_date": end_date, "symbol": sym, "limit": 5000},
+            )
+            if df.empty or "rights_dividend_value" not in df.columns:
+                continue
+            df["date"] = pd.to_datetime(df.get("date"), errors="coerce")
+            df["rights_dividend_value"] = pd.to_numeric(df["rights_dividend_value"], errors="coerce").fillna(0)
+            latest = df.sort_values("date", ascending=False).head(1)
+            if latest.empty:
+                continue
+            rows.append({"symbol": sym, "cash_dividend": float(latest["rights_dividend_value"].iloc[0])})
+        except Exception:
+            continue
+    if not rows:
+        return pd.DataFrame(columns=["symbol", "cash_dividend"])
+    return pd.DataFrame(rows).drop_duplicates("symbol")
+
+
+def fetch_all_data(target_quarter=None, market_filter=None):
     if target_quarter:
         quarters = get_trailing_quarters(target_quarter, 4)
+        latest_date = quarter_to_effective_date(target_quarter, market_filter)
     else:
         quarters = get_latest_quarters(4)
-    latest_data = fetch_json(
-        "/raw/daily-quotes",
-        {"start_date": "2025-01-01", "end_date": "2026-12-31", "limit": 1},
-    )
-    latest_date = latest_data[0]["date"] if latest_data else None
+        latest_data = fetch_json(
+            "/raw/daily-quotes",
+            {"start_date": "2025-01-01", "end_date": "2026-12-31", "limit": 1},
+        )
+        latest_date = latest_data[0]["date"] if latest_data else None
 
     all_income = []
     for q in quarters:
@@ -160,9 +199,7 @@ def fetch_all_data(target_quarter=None):
         {"start_date": latest_date, "end_date": latest_date, "limit": 5000},
     )
     info = fetch_dataframe("/raw/stock-info", {"limit": 5000})
-    hist_pe = fetch_historical_pe()
-    dividends = fetch_dividends()
-    return df_income_all, bs_stmt, cf_stmt, p_data, info, hist_pe, dividends, latest_date, quarters[0]
+    return df_income_all, bs_stmt, cf_stmt, p_data, info, latest_date, quarters[0]
 
 
 def get_industry_config(industry):
@@ -244,12 +281,33 @@ def calculate_pe_percentile(df, hist_pe):
     return df
 
 
+def apply_pe_zone(df):
+    if "pe_percentile" not in df.columns:
+        df["pe_percentile"] = np.nan
+
+    def zone(v):
+        if pd.isna(v):
+            return "無資料"
+        if v <= 20:
+            return "極度低估"
+        if v <= 40:
+            return "低估"
+        if v <= 60:
+            return "合理"
+        if v <= 80:
+            return "偏高"
+        return "極度高估"
+
+    df["pe_zone"] = df["pe_percentile"].apply(zone)
+    return df
+
+
 def run_valuation(market_filter, target_quarter=None):
     if target_quarter and not is_supported_quarter(target_quarter):
         print(f"不支援 {target_quarter}，最早可用季度為 {MIN_SUPPORTED_QUARTER}")
         return
 
-    df_income_all, df_bs, df_cf, df_p, df_info, hist_pe, dividends, latest_date, quarter = fetch_all_data(target_quarter)
+    df_income_all, df_bs, df_cf, df_p, df_info, latest_date, quarter = fetch_all_data(target_quarter, market_filter)
     if df_p.empty:
         print("無法取得價格資料")
         return
@@ -272,29 +330,29 @@ def run_valuation(market_filter, target_quarter=None):
         print(f"無符合 market={market_filter} 的價格資料")
         return
 
-    if "pe_ratio" not in df_p.columns:
-        df_p["pe_ratio"] = np.nan
+    # Strict PE source: /raw/valuation-analysis only.
+    df_p["pe_ratio"] = np.nan
+    df_p["pe_percentile"] = np.nan
 
-    pe_df = fetch_pe_ratio_for_date(fetch_dataframe, latest_date)
-    if not pe_df.empty:
+    valuation_df = fetch_valuation_analysis_for_date(latest_date)
+    if not valuation_df.empty:
         df_p = pd.merge(
             df_p,
-            pe_df.rename(columns={"pe_ratio": "pe_ratio_api"}),
+            valuation_df.rename(columns={"pe_ratio": "pe_ratio_api", "pe_percentile": "pe_percentile_api"}),
             on="symbol",
             how="left",
         )
-        df_p["pe_ratio"] = np.where(
-            df_p["pe_ratio_api"].notna(),
-            df_p["pe_ratio_api"],
-            pd.to_numeric(df_p["pe_ratio"], errors="coerce"),
-        )
+        df_p["pe_ratio"] = pd.to_numeric(df_p["pe_ratio_api"], errors="coerce")
+        df_p["pe_percentile"] = pd.to_numeric(df_p["pe_percentile_api"], errors="coerce")
         df_p = df_p.drop(columns=["pe_ratio_api"], errors="ignore")
+        df_p = df_p.drop(columns=["pe_percentile_api"], errors="ignore")
 
-    df = pd.merge(df_p[["symbol", "name", "close", "pe_ratio"]], ttm_eps, on="symbol", how="inner")
+    df = pd.merge(df_p[["symbol", "name", "close", "pe_ratio", "pe_percentile"]], ttm_eps, on="symbol", how="inner")
     info_cols = ["symbol", "industry"] + (["market"] if "market" in df_info.columns else [])
     df = pd.merge(df, df_bs[["symbol", "nav_per_share"]], on="symbol", how="left")
     df = pd.merge(df, df_info[info_cols], on="symbol", how="left")
 
+    dividends = fetch_dividend_proxy_for_symbols(df["symbol"].astype(str).unique().tolist(), latest_date)
     if not dividends.empty:
         df = pd.merge(df, dividends, on="symbol", how="left")
     else:
@@ -316,7 +374,7 @@ def run_valuation(market_filter, target_quarter=None):
 
     fair_prices = calculate_fair_prices(df, industry_pe, industry_pb)
     df = pd.merge(df, fair_prices, on="symbol", how="left")
-    df = calculate_pe_percentile(df, hist_pe)
+    df = apply_pe_zone(df)
 
     df["roe_annual"] = np.where(df["nav_per_share"] > 0, (df["eps_ttm"] / df["nav_per_share"]) * 100, 0)
     df["peg_ratio"] = np.where(

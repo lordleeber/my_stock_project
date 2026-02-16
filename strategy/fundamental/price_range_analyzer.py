@@ -146,6 +146,7 @@ def run_range_analysis(start_date, end_date, report_path, market, start_label=No
     if "symbol" not in df_report.columns:
         raise ValueError("Input report missing required column: symbol")
     df_report["symbol"] = df_report["symbol"].astype(str)
+    df_report["_input_order"] = np.arange(len(df_report))
     df_report = filter_report_by_market(df_report, market)
     if df_report.empty:
         raise ValueError(f"No rows left in report after market filter: {market}")
@@ -174,8 +175,15 @@ def run_range_analysis(start_date, end_date, report_path, market, start_label=No
     stats.columns = ["symbol", "period_high", "period_low"]
     result = pd.merge(df_report, stats, on="symbol", how="inner")
 
-    if "market_price" not in result.columns:
-        raise ValueError("Input report missing required column: market_price")
+    # start_price: close of the first available quote date in range per symbol
+    start_rows = (
+        df_quotes.sort_values(["symbol", "date"])
+        .groupby("symbol", as_index=False)
+        .head(1)[["symbol", "date", "close"]]
+        .copy()
+    )
+    start_rows.columns = ["symbol", "start_date", "start_price"]
+    result = pd.merge(result, start_rows, on="symbol", how="left")
 
     # end_price: close of the last available quote date in range per symbol
     end_rows = (
@@ -188,16 +196,14 @@ def run_range_analysis(start_date, end_date, report_path, market, start_label=No
     result = pd.merge(result, end_rows, on="symbol", how="left")
 
     result["max_upside_pct"] = (
-        (result["period_high"] - result["market_price"]) / result["market_price"] * 100
+        (result["period_high"] - result["start_price"]) / result["start_price"] * 100
     )
     result["max_drawdown_pct"] = (
-        (result["period_low"] - result["market_price"]) / result["market_price"] * 100
+        (result["period_low"] - result["start_price"]) / result["start_price"] * 100
     )
 
     float_cols = result.select_dtypes(include=[np.float64, np.float32]).columns
     result[float_cols] = result[float_cols].round(2)
-
-    result = result.rename(columns={"price_date": "start_date", "market_price": "start_price"})
 
     preferred_cols = [
         "symbol",
@@ -214,10 +220,8 @@ def run_range_analysis(start_date, end_date, report_path, market, start_label=No
         "total_score",
     ]
     final_cols = [c for c in preferred_cols if c in result.columns]
-    if "total_score" in result.columns:
-        result = result[final_cols].sort_values("total_score", ascending=False)
-    else:
-        result = result[final_cols].sort_values("max_upside_pct", ascending=False)
+    result = result.sort_values("_input_order", ascending=True)
+    result = result[final_cols]
 
     start_part = start_label or start_date
     end_part = end_label or end_date

@@ -43,13 +43,22 @@ Notes:
 - Do not use row-index-as-symbol fallback.
 - If a stock lacks enough quarterly rows for full TTM, exclude it.
 - PE data should come from `/raw/pe-ratio`.
+- Backend now uses dual financial columns (`*_q`, `*_acc`).
+- TTM EPS logic accepts `eps_q` only.
 
 ## `flagship_screener.py`
 Current behavior:
 - Uses TTM EPS instead of single-quarter annualization.
 - Enforces quarter and market constraints above.
-- Uses `/raw/pe-ratio` for PE values.
+- Uses `/raw/pe-ratio` for PE values in strict mode (no fallback to daily-quotes PE).
 - `predict_price` has been removed from output and scoring path.
+- Supports backend dual-column financial schema via alias mapping:
+  - `revenue_q -> revenue`
+  - `op_income_q -> op_income`
+  - `net_income_q -> net_income`
+  - `eps_q -> eps`
+  - `eps_acc_yoy -> eps_yoy`
+  - `cash_flow_operating_q -> cash_flow_operating`
 
 Output naming:
 - `flagship_report_<quarter>_<market>.csv`
@@ -61,6 +70,9 @@ Current behavior:
 - Does not use fallback `eps * 4`.
 - Stocks without complete TTM inputs are dropped.
 - `predict_price` and `upside` are removed from both calculation flow and output.
+- PE/percentile source is `/raw/valuation-analysis` (strict source for `pe_ratio` + `pe_percentile`).
+- Dividend proxy source is `/raw/dividend` using `rights_dividend_value` as `cash_dividend`.
+- `price_date` is quarter effective date by market (not latest system date).
 - Current screening keeps stocks with:
   - `eps_ttm > 0`
   - `roe_annual > 8`
@@ -92,6 +104,8 @@ Data-fetch reliability fix:
 - Current approach: fetch `/raw/daily-quotes` by symbol (from report) across the target period first.
 - Fallback to wide-range mode only when symbol-mode returns no data.
 - Use `limit=5000` for stability.
+- `start_date/start_price` are derived from the first available quote in the analyzer range per symbol.
+- Output row order always follows input report order (no re-sort by score/upside).
 
 ## Maintenance Checklist
 Before committing changes:

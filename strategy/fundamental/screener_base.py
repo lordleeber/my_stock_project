@@ -2,6 +2,13 @@ import numpy as np
 import pandas as pd
 
 
+def _pick_first_existing(columns, candidates):
+    for c in candidates:
+        if c in columns:
+            return c
+    return None
+
+
 def get_prev_quarter(q_str):
     year = int(q_str[:4])
     quarter = int(q_str[-1])
@@ -23,19 +30,23 @@ def calculate_ttm_eps(df_income_all):
 
     Required columns:
     - symbol
-    - eps
+    - eps_q
     Optional:
-    - quarter (enables eps_growth calculation)
+    - quarter/date (enables eps_growth calculation)
     """
     if df_income_all.empty:
         return pd.DataFrame(columns=["symbol", "eps_ttm", "eps_growth"])
 
     df = df_income_all.copy()
-    if "symbol" not in df.columns or "eps" not in df.columns:
+    eps_col = _pick_first_existing(df.columns, ["eps_q"])
+    quarter_col = _pick_first_existing(df.columns, ["quarter", "date"])
+    if "symbol" not in df.columns or eps_col is None:
         return pd.DataFrame(columns=["symbol", "eps_ttm", "eps_growth"])
 
     df["symbol"] = df["symbol"].astype(str)
-    df["eps"] = pd.to_numeric(df["eps"], errors="coerce")
+    df["eps"] = pd.to_numeric(df[eps_col], errors="coerce")
+    if quarter_col is not None and "quarter" not in df.columns:
+        df["quarter"] = df[quarter_col].astype(str)
 
     # Keep only symbols with at least 4 valid EPS rows
     valid = df[df["eps"].notna()].copy()
@@ -56,8 +67,7 @@ def calculate_ttm_eps(df_income_all):
         dfq = dfq.sort_values(["symbol", "quarter"], ascending=[True, False])
 
         latest = dfq.drop_duplicates("symbol")[["symbol", "eps"]].rename(columns={"eps": "eps_latest"})
-        yoy_base = dfq.groupby("symbol").nth(3)
-        yoy_base = yoy_base[["symbol", "eps"]].copy()
+        yoy_base = dfq.groupby("symbol").nth(3).reset_index()[["symbol", "eps"]].copy()
         yoy_base = yoy_base.rename(columns={"eps": "eps_yoy_base"})
 
         growth = pd.merge(latest, yoy_base, on="symbol", how="left")
@@ -90,9 +100,10 @@ def build_ttm_eps_for_quarter(
             endpoint,
             {"start_date": quarter, "end_date": quarter, "limit": limit},
         )
-        if df_tmp.empty or "symbol" not in df_tmp.columns or "eps" not in df_tmp.columns:
+        eps_col = _pick_first_existing(df_tmp.columns, ["eps_q"])
+        if df_tmp.empty or "symbol" not in df_tmp.columns or eps_col is None:
             continue
-        frames.append(df_tmp[["symbol", "eps"]].assign(quarter=quarter))
+        frames.append(df_tmp[["symbol", eps_col]].assign(quarter=quarter))
 
     if not frames:
         return pd.DataFrame(columns=["symbol", "eps_ttm", "eps_growth"])
