@@ -192,6 +192,13 @@ COLUMN_MAP = {
     "漲跌": "change", # 通用漲跌（用於非指數）
     "漲跌幅度(%)": "index_change_pct",
     "大盤資訊連結": "index_info_link",
+
+    # --- 除權除息 (Dividend) ---
+    "資料日期": "date",
+    "除權息前收盤價": "close_before",
+    "除權息參考價": "ref_price",
+    "權值+息值": "rights_dividend_value",
+    "權/息": "type",
 }
 
 # 需要轉為數值的欄位

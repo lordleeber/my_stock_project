@@ -168,6 +168,7 @@ AI assistant guardrails:
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
 | `/raw/stock-info` | GET | `symbol?`, `industry?`, `market?`, `limit`, `offset` | `List[StockInfoRaw]` |
 | `/raw/stock-tags` | GET | `symbol?`, `tag?`, `limit`, `offset` | `List[StockTagRaw]` |
+| `/raw/dividend` | GET | `start_date`, `end_date`, `symbol?`, `limit`, `offset` | `List[DividendRaw]` |
 | `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` |
 | `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` |
 | `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` |
@@ -261,6 +262,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
 - **StockInfoRaw**: symbol, name, industry, market, listing_date, tags (array)
 - **StockTagRaw**: symbol, tag
+- **DividendRaw**: date, symbol, name, close_before, ref_price, rights_dividend_value, type
 - **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc/acc_ly/acc_yoy, op_income_q/acc/acc_ly/acc_yoy, net_income_q/acc/acc_ly/acc_yoy, eps_q/acc/acc_ly/acc_yoy, capital, nav_per_share, etc.
 - **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc, cost_of_revenue_q/acc, gross_profit_q/acc, operating_income_q/acc, net_income_q/acc, eps_q/acc, etc.
 - **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, total_assets, total_equity, share_capital, nav_per_share, etc. (No _q/_acc needed for snapshot data).

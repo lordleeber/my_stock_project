@@ -438,11 +438,31 @@ class CashFlowRaw(BaseModel):
     cash_begin: Optional[float] = None
     cash_end: Optional[float] = None
 
+class DividendRaw(BaseModel):
+    date: str
+    symbol: str
+    name: str
+    close_before: Optional[float] = None
+    ref_price: Optional[float] = None
+    rights_dividend_value: Optional[float] = None
+    type: Optional[str] = None
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
 
 # --- Raw Data Endpoints ---
+
+@app.get("/raw/dividend", response_model=List[DividendRaw])
+def get_raw_dividend(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    """取得除權除息資料"""
+    return get_raw_data("dividend", start_date, end_date, symbol, None, limit, offset)
 
 def get_raw_data(
     table: str,

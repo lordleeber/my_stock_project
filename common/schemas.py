@@ -117,6 +117,10 @@ SCHEMA_COLS = {
     "stock_tags": [
         "symbol", "tag",
         "pced_file", "pced_row", "pced_col"
+    ],
+    "dividend": [
+        "date", "symbol", "name", "close_before", "ref_price", "rights_dividend_value", "type",
+        "pced_file", "pced_row", "pced_col"
     ]
 }
 
@@ -136,6 +140,7 @@ COLUMN_TYPES = {
     "statement_type": pl.Utf8,
     "index_name": pl.Utf8,
     "comment": pl.Utf8,
+    "type": pl.Utf8,
     "pced_file": pl.Utf8,
     "pced_col": pl.Utf8,
     "pced_row": pl.Int64,
