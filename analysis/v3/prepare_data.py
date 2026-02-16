@@ -1,8 +1,9 @@
 import os
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 def get_db_url():
+    """取得資料庫連線字串"""
     user = os.getenv("DB_USER", "user")
     password = os.getenv("DB_PASSWORD", "password")
     host = os.getenv("DB_HOST", "db")
@@ -11,17 +12,22 @@ def get_db_url():
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
 def prepare_v3_data():
+    """
+    準備 V3 (終極整合版) 特徵資料集
+    核心邏輯：三位一體 (損益、資產、現金流) + 月營收動能
+    我們相信「保留盈餘」決定財務厚度，「營業現金流 (OCF)」決定獲利真假。
+    """
     engine = create_engine(get_db_url())
-    
     all_years_data = []
-    # 抓取 2021-2024 的資料
+    
+    # 遍歷 2021 到 2024 的歷史資料
     for year in range(2021, 2025):
-        q2_str, q3_str = f"{year}Q2", f"{year}Q3"
-        ly_q3_str = f"{year-1}Q3"
+        q2_str, q3_str, ly_q3_str = f"{year}Q2", f"{year}Q3", f"{year-1}Q3"
         m7, m8, m9 = f"{year}M07", f"{year}M08", f"{year}M09"
         
-        print(f"Processing Year {year} for V3 Analysis (OCF + Net Income + Monthly)...")
+        print(f"正在準備 {year} 年 V3 強化特徵 (OCF + 保留盈餘 + 營收動能)...")
         
+        # 執行四表聯查 (JOIN Income, Balance, CashFlow, MonthlyRevenue)
         query = f"""
         WITH 
         q2_fundamental AS (
@@ -64,23 +70,24 @@ def prepare_v3_data():
             all_years_data.append(df_year)
 
     final_df = pd.concat(all_years_data)
+    # 移除關鍵欄位缺失的樣本
     final_df = final_df.dropna(subset=['q2_ni', 'q2_ocf', 'target_eps'])
     
-    # 衍生特徵：三位一體
-    final_df['q2_ocf_ratio'] = (final_df['q2_ocf'] / NULLIF_PD(final_df['q2_ni'])).clip(-5, 5) # 獲利含金量
-    final_df['q2_re_ratio'] = final_df['q2_retained_earnings'] / NULLIF_PD(final_df['capital']) # 保留盈餘比
+    # --- 衍生特徵工程 (Feature Engineering) ---
+    # 1. 獲利含金量 (OCF/NI)：判斷獲利是否真的有現金流入 (限制區間在 -5 到 5 避免離群值)
+    final_df['q2_ocf_ratio'] = (final_df['q2_ocf'] / final_df['q2_ni'].replace(0, 1e-9)).clip(-5, 5)
+    # 2. 保留盈餘比：(保留盈餘 / 股本)。衡量公司的歷史累積實力。
+    final_df['q2_re_ratio'] = final_df['q2_retained_earnings'] / final_df['capital'].replace(0, 1e-9)
     
-    # 月趨勢
-    final_df['rev_trend_m8_m7'] = (final_df['rev_m8'] / NULLIF_PD(final_df['rev_m7'])) - 1
-    final_df['rev_trend_m9_m8'] = (final_df['rev_m9'] / NULLIF_PD(final_df['rev_m8'])) - 1
+    # 3. 月營收趨勢：8月與9月的月增率 (MoM)
+    final_df['rev_trend_m8_m7'] = (final_df['rev_m8'] / final_df['rev_m7'].replace(0, 1e-9)) - 1
+    final_df['rev_trend_m9_m8'] = (final_df['rev_m9'] / final_df['rev_m8'].replace(0, 1e-9)) - 1
 
-    print(f"V3 dataset prepared: {len(final_df)} samples.")
+    print(f"V3 強化資料集準備完成：共 {len(final_df)} 筆樣本。")
     return final_df
-
-def NULLIF_PD(series):
-    return series.replace(0, pd.NA)
 
 if __name__ == "__main__":
     df = prepare_v3_data()
-    df.to_csv("analysis/eps_v3_dataset.csv", index=False)
-    print("Saved to analysis/eps_v3_dataset.csv")
+    # 確保輸出到 v3 目錄下的 dataset.csv
+    df.to_csv("analysis/v3/dataset.csv", index=False)
+    print("資料已儲存至 analysis/v3/dataset.csv")
