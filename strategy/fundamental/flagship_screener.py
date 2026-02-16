@@ -268,16 +268,14 @@ def process_quarter(q_str, market_filter=None):
         df_valid_pe = df[df["pe_ratio"] > 0].copy()
         ind_pe_map = df_valid_pe.groupby("industry")["pe_ratio"].median().to_dict()
 
-        def calc_v_and_p(row):
+        def calc_value_score(row):
             pe = row["pe_ratio"]
             ind = str(row["industry"])
             base_pe = ind_pe_map.get(ind, 12)
             v_score = score_linear(1.5 - (pe / base_pe), 0, 1.0) if pe > 0 else 0
-            annual_eps = row["ttm_eps"] if row["ttm_eps"] > 0 else 0
-            p_price = annual_eps * base_pe
-            return v_score, round(p_price, 2)
+            return v_score
 
-        df[["value_score", "predict_price"]] = df.apply(lambda r: pd.Series(calc_v_and_p(r)), axis=1)
+        df["value_score"] = df.apply(calc_value_score, axis=1)
         df["growth_score"] = df["eps_yoy"].apply(lambda x: score_linear(x, 0, 50))
         df["momentum_score"] = df["rev_avg_3m"].apply(lambda x: score_linear(x, 0, 20))
         df["quality_score"] = df["cash_quality"].apply(lambda x: score_linear(x, 0.5, 1.2))
@@ -305,7 +303,6 @@ def process_quarter(q_str, market_filter=None):
             "industry",
             "price_date",
             "market_price",
-            "predict_price",
             "ttm_eps",
             "report_quarter",
             "pe_ratio",

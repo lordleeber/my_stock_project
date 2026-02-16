@@ -148,3 +148,24 @@ pe_percentile = (current_pe - pe_min) / (pe_max - pe_min) * 100
   - `build_ttm_eps_for_quarter()`
   - `fetch_pe_ratio_for_date()`
 - `flagship_screener.py` 與 `valuation_screener.py` 已改為共用此模組。
+
+## Update 2026-02-16 (Price Range Analyzer)
+- `price_range_analyzer.py` now supports required CLI params:
+  - `--report-path`
+  - `--market/--martket {sii,otc}`
+  - either `--start-date --end-date` or `--start-quarter --end-quarter`
+- Output file naming updated to include report reference:
+  - `price_analysis_ref_<report_stem>_<start>_<end>_<market>.csv`
+- Removed `predict_price` usage from analyzer output.
+- Output columns updated:
+  - `price_date -> start_date`
+  - `market_price -> start_price`
+  - added `end_date`, `end_price`
+- Fixed quote-fetch completeness issue:
+  - old behavior: range-wide query could be truncated by API `limit`, causing invalid `period_high/period_low`
+  - new behavior: fetch quotes by symbol in report first, then fallback to range mode only if needed
+  - this ensures `period_high`/`period_low` are computed from complete symbol-level data
+- `/raw/daily-quotes` request `limit` adjusted to `5000` for stability.
+
+## Update 2026-02-16 (Flagship)
+- Removed `predict_price` from `flagship_screener.py` output and value-score path.
