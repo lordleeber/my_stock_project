@@ -145,6 +145,9 @@ docker compose build processor
   - `最後賣價 -> last_ask`
   - `最後買量(千股)/(張數) -> last_bid_volume`
   - `最後賣量(千股)/(張數) -> last_ask_volume`
+- **財務報表雙軌制**: `quarterly_reports`, `income_statement`, `cash_flow` 現在具備 `_q` (單季) 與 `_acc` (累計) 雙軌欄位。
+  - **單季計算邏輯**: Processor 在處理 Q2~Q4 時，會自動讀取前一季的 `processed` CSV 檔案，將當前累計值減去前一季累計值以算出單季值。若無歷史資料則預設 `q = acc`。
+  - **計算順序**: 由於具備時序依賴性，重跑歷史資料時**必須按照時間順序**（如 2024Q1 -> Q2 -> Q3...）執行。
 - **重要變更**: `daily_quotes` 不再包含 `pe_ratio` 欄位（以確保 SII/OTC 一致性）。本益比資料現在統一由獨立的 `pe_ratio` 類別處理。
 - 部分來源會有未命名尾端空欄，目前已納入映射避免 parse 失敗。
 - Shell 腳本目前已對齊新入口：

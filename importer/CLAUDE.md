@@ -116,9 +116,9 @@ The processor adds `pced_file`, `pced_row`, `pced_col` columns to processed CSVs
 The importer **no longer relies on automatic type inference**. It uses `common/schemas.py` as a single source of truth:
 - Every `pl.read_csv` call uses `schema_overrides` from the shared schema.
 - This prevents numeric symbols from being incorrectly detected as integers (bigint).
+- **Dual-Column Support**: For flow statements (`income_statement`, `cash_flow`, `quarterly_reports`), the importer correctly handles both single-quarter (`_q`) and accumulated (`_acc`) fields as defined in the schema.
 
-### 6. Row Count Verification
-After each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
+### 6. Row Count VerificationAfter each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
 
 ### 7. Fail-Fast Error Handling
 Any import error immediately writes the error and traceback to `/app/error_importer.log` and exits with `SystemExit(1)`. The importer does **not** silently skip failed imports.
@@ -173,8 +173,10 @@ All `date` columns use **TEXT** type (not DATE), storing values as:
 ### Daily Quotes Table
 **No pe_ratio**: The `daily_quotes` table does not contain the `pe_ratio` column. Use the standalone `pe_ratio` table for valuation data.
 
-### Bid/Ask in daily_quotes
-`bid` and `ask` fields are **TEXT** type in the database (preserved from source format).
+### Flow Statements (Income/Cash Flow/Reports)
+**Dual-Column Schema**: These tables contain both `_q` (single-quarter) and `_acc` (accumulated) versions of each flow-based field (e.g., `eps_q` and `eps_acc`). Data is prepared by the processor via subtractive calculation.
+
+### Bid/Ask in daily_quotes`bid` and `ask` fields are **TEXT** type in the database (preserved from source format).
 
 ## Indexes
 

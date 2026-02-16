@@ -261,10 +261,10 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
 - **StockInfoRaw**: symbol, name, industry, market, listing_date, tags (array)
 - **StockTagRaw**: symbol, tag
-- **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue, revenue_ly, revenue_yoy, op_income, op_income_ly, op_income_yoy, non_op_income, pretax_income, net_income, eps, eps_ly, eps_yoy, capital, nav_per_share, equity_to_assets_ratio, current_ratio, quick_ratio
-- **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue, cost_of_revenue, gross_profit, operating_expense, operating_income, non_operating_income, pretax_income, tax_expense, net_income, eps, etc.
-- **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, noncurrent_assets, total_assets, current_liabilities, total_liabilities, total_equity, share_capital, nav_per_share, etc.
-- **CashFlowRaw**: date (YYYYQX), symbol, market, name, cash_flow_operating, cash_flow_investing, cash_flow_financing, net_cash_change, cash_begin, cash_end
+- **QuarterlyReportRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc/acc_ly/acc_yoy, op_income_q/acc/acc_ly/acc_yoy, net_income_q/acc/acc_ly/acc_yoy, eps_q/acc/acc_ly/acc_yoy, capital, nav_per_share, etc.
+- **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc, cost_of_revenue_q/acc, gross_profit_q/acc, operating_income_q/acc, net_income_q/acc, eps_q/acc, etc.
+- **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, total_assets, total_equity, share_capital, nav_per_share, etc. (No _q/_acc needed for snapshot data).
+- **CashFlowRaw**: date (YYYYQX), symbol, market, name, cash_flow_operating_q/acc, cash_flow_investing_q/acc, cash_flow_financing_q/acc, net_cash_change_q/acc, cash_begin, cash_end
 
 ## Database Tables Used
 

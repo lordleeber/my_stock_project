@@ -327,25 +327,31 @@ class QuarterlyReportRaw(BaseModel):
     symbol: str
     market: str
     name: Optional[str] = None
-    # Profitability (Current / Last Year / YoY)
-    revenue: Optional[float] = None
-    revenue_ly: Optional[float] = None
-    revenue_yoy: Optional[float] = None
-    op_income: Optional[float] = None
-    op_income_ly: Optional[float] = None
-    op_income_yoy: Optional[float] = None
-    non_op_income: Optional[float] = None
-    non_op_income_ly: Optional[float] = None
-    non_op_income_yoy: Optional[float] = None
-    pretax_income: Optional[float] = None
-    pretax_income_ly: Optional[float] = None
-    pretax_income_yoy: Optional[float] = None
-    net_income: Optional[float] = None
-    net_income_ly: Optional[float] = None
-    net_income_yoy: Optional[float] = None
-    eps: Optional[float] = None
-    eps_ly: Optional[float] = None
-    eps_yoy: Optional[float] = None
+    # Profitability (Quarterly / Accumulated)
+    revenue_q: Optional[float] = None
+    revenue_acc: Optional[float] = None
+    revenue_acc_ly: Optional[float] = None
+    revenue_acc_yoy: Optional[float] = None
+    op_income_q: Optional[float] = None
+    op_income_acc: Optional[float] = None
+    op_income_acc_ly: Optional[float] = None
+    op_income_acc_yoy: Optional[float] = None
+    non_op_income_q: Optional[float] = None
+    non_op_income_acc: Optional[float] = None
+    non_op_income_acc_ly: Optional[float] = None
+    non_op_income_acc_yoy: Optional[float] = None
+    pretax_income_q: Optional[float] = None
+    pretax_income_acc: Optional[float] = None
+    pretax_income_acc_ly: Optional[float] = None
+    pretax_income_acc_yoy: Optional[float] = None
+    net_income_q: Optional[float] = None
+    net_income_acc: Optional[float] = None
+    net_income_acc_ly: Optional[float] = None
+    net_income_acc_yoy: Optional[float] = None
+    eps_q: Optional[float] = None
+    eps_acc: Optional[float] = None
+    eps_acc_ly: Optional[float] = None
+    eps_acc_yoy: Optional[float] = None
     # Financial Condition
     capital: Optional[float] = None
     nav_per_share: Optional[float] = None
@@ -359,22 +365,38 @@ class IncomeStatementRaw(BaseModel):
     symbol: str
     name: Optional[str] = None
     statement_type: Optional[str] = None
-    revenue: Optional[float] = None
-    cost_of_revenue: Optional[float] = None
-    gross_profit: Optional[float] = None
-    operating_expense: Optional[float] = None
-    operating_income: Optional[float] = None
-    non_operating_income: Optional[float] = None
-    pretax_income: Optional[float] = None
-    tax_expense: Optional[float] = None
-    net_income: Optional[float] = None
-    other_comprehensive_income: Optional[float] = None
-    comprehensive_income: Optional[float] = None
-    eps: Optional[float] = None
-    net_interest_income: Optional[float] = None
-    non_interest_income: Optional[float] = None
-    net_revenue: Optional[float] = None
-    other_income_net: Optional[float] = None
+    revenue_q: Optional[float] = None
+    revenue_acc: Optional[float] = None
+    cost_of_revenue_q: Optional[float] = None
+    cost_of_revenue_acc: Optional[float] = None
+    gross_profit_q: Optional[float] = None
+    gross_profit_acc: Optional[float] = None
+    operating_expense_q: Optional[float] = None
+    operating_expense_acc: Optional[float] = None
+    operating_income_q: Optional[float] = None
+    operating_income_acc: Optional[float] = None
+    non_operating_income_q: Optional[float] = None
+    non_operating_income_acc: Optional[float] = None
+    pretax_income_q: Optional[float] = None
+    pretax_income_acc: Optional[float] = None
+    tax_expense_q: Optional[float] = None
+    tax_expense_acc: Optional[float] = None
+    net_income_q: Optional[float] = None
+    net_income_acc: Optional[float] = None
+    other_comprehensive_income_q: Optional[float] = None
+    other_comprehensive_income_acc: Optional[float] = None
+    comprehensive_income_q: Optional[float] = None
+    comprehensive_income_acc: Optional[float] = None
+    eps_q: Optional[float] = None
+    eps_acc: Optional[float] = None
+    net_interest_income_q: Optional[float] = None
+    net_interest_income_acc: Optional[float] = None
+    non_interest_income_q: Optional[float] = None
+    non_interest_income_acc: Optional[float] = None
+    net_revenue_q: Optional[float] = None
+    net_revenue_acc: Optional[float] = None
+    other_income_net_q: Optional[float] = None
+    other_income_net_acc: Optional[float] = None
 
 class BalanceSheetRaw(BaseModel):
     date: str
@@ -403,11 +425,16 @@ class CashFlowRaw(BaseModel):
     symbol: str
     name: Optional[str] = None
     statement_type: Optional[str] = None
-    cash_flow_operating: Optional[float] = None
-    cash_flow_investing: Optional[float] = None
-    cash_flow_financing: Optional[float] = None
-    fx_effect: Optional[float] = None
-    net_cash_change: Optional[float] = None
+    cash_flow_operating_q: Optional[float] = None
+    cash_flow_operating_acc: Optional[float] = None
+    cash_flow_investing_q: Optional[float] = None
+    cash_flow_investing_acc: Optional[float] = None
+    cash_flow_financing_q: Optional[float] = None
+    cash_flow_financing_acc: Optional[float] = None
+    fx_effect_q: Optional[float] = None
+    fx_effect_acc: Optional[float] = None
+    net_cash_change_q: Optional[float] = None
+    net_cash_change_acc: Optional[float] = None
     cash_begin: Optional[float] = None
     cash_end: Optional[float] = None
 
