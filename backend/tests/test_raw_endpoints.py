@@ -115,6 +115,17 @@ CASES = [
         "expected_fields": ["date", "symbol", "name", "market", "close", "change", "change_pct"],
     },
     {
+        "endpoint": "/raw/valuation-analysis",
+        "table": "valuation_analysis",
+        "columns": ["date", "symbol"],
+        "params": ["symbol"],
+        "required_non_empty": ["date", "symbol"],
+        "expected_fields": [
+            "date", "symbol", "close", "ttm_eps", "pe_ratio_calculated",
+            "pe_ratio_from_pe_table", "pe_percentile"
+        ],
+    },
+    {
         "endpoint": "/raw/monthly-revenue",
         "table": "monthly_revenue",
         "columns": ["date", "symbol", "market"],

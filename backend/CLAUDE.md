@@ -69,6 +69,9 @@ Raw endpoints have pytest coverage under `backend/tests/`.
 **Run:**
 ```bash
 ./venv/bin/python -m pytest backend/tests -q
+
+# Container (recommended for env consistency)
+docker compose run --rm backend python -m pytest tests -q
 ```
 
 **Notes:**
@@ -146,7 +149,7 @@ AI assistant guardrails:
 - Do use `/raw/...` routes with `start_date` and `end_date`.
 - Don't use `/api/raw/...` or `date_from` / `date_to` for backend raw endpoints.
 - Date formats:
-  - Daily-style endpoints (including `/raw/shareholding`): `YYYY-MM-DD`
+  - Daily-style endpoints (including `/raw/shareholding`, `/raw/valuation-analysis`): `YYYY-MM-DD`
   - `/raw/monthly-revenue`: `YYYYMXX` (example: `2026M01`)
   - Quarterly endpoints (`/raw/quarterly-reports`, `/raw/income-statements`, `/raw/balance-sheets`, `/raw/cash-flows`): `YYYYQX` (example: `2025Q1`)
 - Quick valid examples:
@@ -163,6 +166,7 @@ AI assistant guardrails:
 | `/raw/institutional-summary` | GET | Same as margin-summary | `List[InstitutionalSummaryRaw]` |
 | `/raw/foreign-holding` | GET | Same as daily-quotes | `List[ForeignHoldingRaw]` |
 | `/raw/pe-ratio` | GET | Same as daily-quotes | `List[PeRatioRaw]` |
+| `/raw/valuation-analysis` | GET | `start_date`, `end_date`, `symbol?`, `limit=1000`, `offset=0` | `List[ValuationAnalysisRaw]` |
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
@@ -257,6 +261,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **InstitutionalSummaryRaw**: date, market, institution, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
 - **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
+- **ValuationAnalysisRaw**: date, symbol, close, ttm_eps, pe_ratio_calculated, pe_ratio_from_pe_table, pe_percentile
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
 - **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct, comment
 - **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
@@ -375,6 +380,9 @@ curl "http://localhost:8000/raw/institutional-summary?start_date=2026-02-06&end_
 
 # Get raw monthly revenue
 curl "http://localhost:8000/raw/monthly-revenue?symbol=2330&start_date=2026M01&end_date=2026M01"
+
+# Get valuation analysis (daily format)
+curl "http://localhost:8000/raw/valuation-analysis?symbol=2330&start_date=2026-02-01&end_date=2026-02-11&limit=2"
 
 # Get raw quarterly reports (Uses YYYYQX format)
 curl "http://localhost:8000/raw/quarterly-reports?symbol=2330&start_date=2024Q1&end_date=2025Q3"

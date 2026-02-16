@@ -447,6 +447,15 @@ class DividendRaw(BaseModel):
     rights_dividend_value: Optional[float] = None
     type: Optional[str] = None
 
+class ValuationAnalysisRaw(BaseModel):
+    date: str
+    symbol: str
+    close: Optional[float] = None
+    ttm_eps: Optional[float] = None
+    pe_ratio_calculated: Optional[float] = None
+    pe_ratio_from_pe_table: Optional[float] = None
+    pe_percentile: Optional[float] = None
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
@@ -701,6 +710,16 @@ def get_raw_pe_ratio(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/valuation-analysis", response_model=List[ValuationAnalysisRaw])
+def get_raw_valuation_analysis(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    return get_raw_data("valuation_analysis", start_date, end_date, symbol, None, limit, offset)
 
 @app.get("/raw/market-indices", response_model=List[MarketIndexRaw])
 def get_raw_market_indices(
