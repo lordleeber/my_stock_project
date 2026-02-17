@@ -31,6 +31,7 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Backtest for analysis/v6")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--confidence-quantile", type=float, default=0.95)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     return parser.parse_args()
 
@@ -47,6 +48,12 @@ def percentile_rank(series: pd.Series, value: float) -> float:
         return float("nan")
     rank = (series <= value).mean()
     return float(rank)
+
+
+def predict_with_uncertainty(model: RandomForestRegressor, x_data: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    x_np = x_data.to_numpy(dtype=float)
+    tree_preds = np.vstack([tree.predict(x_np) for tree in model.estimators_])
+    return tree_preds.mean(axis=0), tree_preds.std(axis=0)
 
 
 def build_valuation_daily_frame(
@@ -202,13 +209,16 @@ def main() -> None:
             max_depth=12,
             random_state=args.seed,
             criterion="absolute_error",
-            n_jobs=1,
+            n_jobs=-1,
         )
         model.fit(train_df[FEATURES], train_df[TARGET_DELTA])
 
         y_true = test_df[TARGET].to_numpy(dtype=float)
-        pred_delta = model.predict(test_df[FEATURES])
-        pred_eps_rf = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta
+        pred_delta_raw, pred_delta_std = predict_with_uncertainty(model, test_df[FEATURES])
+        _, pred_delta_train_std = predict_with_uncertainty(model, train_df[FEATURES])
+        confidence_threshold = float(np.quantile(pred_delta_train_std, args.confidence_quantile))
+        pred_delta_hybrid = np.where(pred_delta_std > confidence_threshold, 0.0, pred_delta_raw)
+        pred_eps_rf = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_hybrid
 
         pred_eps_baseline_q2 = test_df["q2_eps"].to_numpy(dtype=float)
         pred_eps_baseline_median = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
@@ -241,6 +251,8 @@ def main() -> None:
         pred_detail_df = test_df[keep_cols].copy()
         pred_detail_df["y_true"] = y_true
         pred_detail_df["pred_rf_delta"] = pred_eps_rf
+        pred_detail_df["pred_delta_std"] = pred_delta_std
+        pred_detail_df["confidence_threshold"] = confidence_threshold
         pred_detail_df["pred_baseline_q2_eps"] = pred_eps_baseline_q2
         pred_detail_df["pred_baseline_train_median"] = pred_eps_baseline_median
         pred_detail_df["fold"] = f"year_{test_year}"

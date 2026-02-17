@@ -21,8 +21,10 @@
 - `v2`：加入更多基本特徵與年度展開回測。
 - `v3`：補強財務比率特徵（例如現金流、保留盈餘相關比率）。
 - `v4`：擴充基本面深度，提升模型對不同公司體質的辨識。
-- `v5`：改為預測 `delta_eps`，並同步評估估值鏈路誤差。
-- `v6`：固定 `pred_eps -> valuation_daily` 鏈路，輸出預覽表與品質報告。
+- `v5`：改為預測 `delta_eps`，並同步評估估值鏈路誤差，
+  目前 hybrid 預設 `confidence_quantile=0.95`。
+- `v6`：固定 `pred_eps -> valuation_daily` 鏈路，輸出預覽表與品質報告，
+  並加入 hybrid 回退（預設 `confidence_quantile=0.95`）。
 - `v7`：Regime-aware（分群子模型）+ 低信心回退（global/baseline），
   目前預設 `confidence_quantile=0.95`。
 

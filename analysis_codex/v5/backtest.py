@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Backtest for analysis/v5")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
-    parser.add_argument("--confidence-quantile", type=float, default=0.70)
+    parser.add_argument("--confidence-quantile", type=float, default=0.95)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--error-clip-quantile", type=float, default=0.99)
     return parser.parse_args()
@@ -150,7 +150,7 @@ def main() -> None:
             max_depth=12,
             random_state=args.seed,
             criterion="absolute_error",
-            n_jobs=1,
+            n_jobs=-1,
         )
         model.fit(train_df[FEATURES], train_df[TARGET_DELTA])
 

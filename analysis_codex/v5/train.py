@@ -74,7 +74,7 @@ def main() -> None:
         max_depth=12,
         random_state=args.seed,
         criterion="absolute_error",
-        n_jobs=1,
+        n_jobs=-1,
     )
     model.fit(X, y_delta)
 

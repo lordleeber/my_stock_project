@@ -7,7 +7,8 @@
   - `target` 改為 `delta_eps = Q3 EPS - Q2 EPS`
   - 加入估值誤差指標（`pe_forward`、`target_price`、`upside_pct`）
   - v5.1 加入穩健化（winsorize、hybrid fallback、eps floor）
-- 備註：若要更穩，下一步是調 `confidence_quantile`（未完成）。
+  - 依回測調參，hybrid 預設 `confidence_quantile` 更新為 `0.95`
+- 備註：後續可再做更細緻的分年/分產業調參。
 
 ## v6
 - 狀態：功能完成
@@ -17,6 +18,7 @@
   - 產出 `valuation_daily_preview.csv`
   - 產出 `valuation_quality_report.json`（檢查 null/inf/覆蓋率）
   - 增加追蹤欄位：`pced_file`、`pced_row`、`pced_col`、`model_version`
+  - 加入 hybrid 回退，預設 `confidence_quantile=0.95`
 - 後續待辦（現在不做）：
   - market snapshot fallback（9 月無資料時回退到最近可得交易日）
   - `missing_market_snapshot_reason` 診斷欄位
