@@ -7,6 +7,7 @@
 - `analysis_codex/v3/`
 - `analysis_codex/v4/`
 - `analysis_codex/v5/`
+- `analysis_codex/v6/`
 
 ## 版本策略
 
@@ -22,6 +23,8 @@
 - `v4`: 擴充更多比率型財務特徵（ROE、負債比、流動比等），強化基本面深度。
 - `v5`: 改為預測 `delta_eps`（增量），並同時評估估值誤差
   （`pe_forward_err_mae`, `target_price_err_mae`, `upside_pct_err_mae`）。
+- `v6`: 固定化 `pred_eps -> valuation_daily` 鏈路，輸出 `valuation_daily_preview.csv`
+  與 `valuation_quality_report.json`（欄位品質與可追溯檢查）。
 
 ## 統一原則
 
