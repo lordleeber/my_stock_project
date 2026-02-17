@@ -132,6 +132,7 @@ services:
       - TZ=Asia/Taipei
     volumes:
       - ./calculator:/app
+      - ./common:/app/common
       - ./error_calculator.log:/error_calculator.log
     depends_on:
       db:
@@ -182,6 +183,8 @@ services:
       - ./backend:/app
       - ./strategy:/app/strategy
       - ./scanner:/app/scanner
+      - ./analysis:/app/analysis
+      - ./common:/app/common
 
   frontend:
     build:

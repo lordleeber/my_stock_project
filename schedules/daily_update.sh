@@ -66,13 +66,13 @@ else
     exit 1
 fi
 
-# 5. Calculator
-echo "[5/5] Running calculator..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE calculator 2>&1 | tee -a "$LOG_FILE"
+# 5. Daily Calculator (Analytics & Indicators)
+echo "[5/5] Running daily calculator..." | tee -a "$LOG_FILE"
+./schedules/daily_calculator.sh "$TARGET_DATE" 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
-    echo "✓ Calculator completed" | tee -a "$LOG_FILE"
+    echo "✓ Daily calculations completed" | tee -a "$LOG_FILE"
 else
-    echo "✗ Calculator failed (see error_calculator.log)" | tee -a "$LOG_FILE"
+    echo "✗ Daily calculations failed (see error_calculator.log)" | tee -a "$LOG_FILE"
     exit 1
 fi
 

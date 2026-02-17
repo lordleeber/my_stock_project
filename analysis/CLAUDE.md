@@ -2,45 +2,61 @@
 
 This directory contains the machine learning pipeline for predicting future EPS using multi-dimensional financial data.
 
+## Core Methodology: Point-in-Time & Staged Prediction
+
+The system implements a **Point-in-Time (PIT)** logic to eliminate Look-ahead Bias in backtesting and daily analysis.
+
+1.  **Financial Publication Baseline**: Predictions and valuations are anchored to official publication deadlines (e.g., Q2 is available on Aug 14).
+2.  **Forward TTM (The "Swap" Logic)**:
+    - **Official TTM**: Sum of the last 4 published quarters.
+    - **Forward TTM**: Sum of the last 3 published quarters + **1 predicted quarter** (dropping the oldest).
+    - This creates a **leading indicator** that updates as soon as monthly revenue is available, well before the official earnings call.
+
+## Data Workflow & Persistence
+
+The analysis results are no longer just CSVs; they are persisted into the database to fuel the valuation engine.
+
+- **`db_utils.py`**: A shared utility module that standardizes saving model outputs to the `eps_predictions` table.
+- **`valuation_daily`**: The final destination. Updated daily via `calculator/calculate_valuation.py`, integrating:
+    - Daily Price (`close`)
+    - Forward EPS (`ttm_eps_forward`)
+    - Target Price (`predict_target_price` = `ttm_eps_forward * pe_official`)
+    - Forward Percentile (`pe_percentile_forward`)
+
 ## Project Structure
 
-The analytics module is organized by model versions, representing the evolution of our methodology:
-
-- **`v1/` (Baseline)**: Focuses on basic fundamental metrics (Q2 EPS, margins) and Q3 revenue total.
-- **`v2/` (Seasonality)**: Adds historical context by including last year's performance and monthly revenue YoY trends.
-- **`v3/` (Full Integration)**: The most advanced version. Adds quality of earnings (OCF ratio) and financial depth (Retained Earnings). **[Recommended]**
+- **`v1/` - `v4/`**: Progressive iterations of the EPS prediction models.
+- **`db_utils.py`**: Shared database operations for model output.
+- **`CLAUDE.md`**: This guide.
 
 ## How to Run
 
-Use the `backend` container for execution as it contains `scikit-learn` and `joblib`. Each version has its own `prepare_data.py` and `train.py`.
-
-### Example (Running V3):
+### 1. Model Training & Prediction (Persistence)
+Use the `backend` container. V4 is the current standard.
 ```bash
-# 1. Prepare data (extracts history from 2021 to 2024)
-docker compose run --rm -v $(pwd):/app -w /app backend python analysis/v3/prepare_data.py
-
-# 2. Train and Evaluate
-docker compose run --rm -v $(pwd):/app -w /app backend python analysis/v3/train.py
+# Prepare full history features
+docker compose run --rm backend python analysis/v4/prepare_data.py
+# Train and save predictions to 'eps_predictions' table
+docker compose run --rm backend python analysis/v4/train.py
 ```
 
-## Model Comparison (2024Q3 Evaluation)
+### 2. Daily Analytics (Calculations)
+The analysis results are automatically utilized by the **`daily_calculator.sh`** task.
+```bash
+# Runs technical indicators followed by PIT forward-looking valuations
+./schedules/daily_calculator.sh 20260211
+```
 
-| Version | Key Features Added | Result (MAE) | Focus |
-|---------|-------------------|--------------|-------|
-| **v1**  | Q2 EPS, Q2 Margins, Q3 Total Rev | 0.4778 | Base fundamental + revenue sum |
-| **v2**  | **Seasonality**: LY Q3 EPS, Monthly Revenue **YoY** | 0.5208 | Capturing seasonal trends & momentum |
-| **v3**  | **Financial Health**: OCF Ratio, Retained Earnings Ratio | **0.5255** | Multi-table integration (Quality of earnings) |
+## Model Performance (2024Q3 PIT Evaluation)
 
-*Note: MAE values for v2/v3 reflect a more rigorous out-of-time testing (2020-2023 train, 2024 test).*
-
-## Key Features & Importances (v3 Model)
-
-1. **`q2_eps` (~70%)**: The strongest anchor for future performance.
-2. **`q2_re_ratio` (~10%)**: (Retained Earnings / Capital). Indicates financial depth.
-3. **`ly_q3_eps` (~8%)**: Captures industry-specific seasonality.
-4. **`rev_trend` & `rev_yoy`**: Monthly momentum and YoY expansion.
-5. **`q2_ocf_ratio`**: (Operating Cash Flow / Net Income). Validates earnings quality.
+| Version | Features | 2330 Pred (Real: 12.55) | Status |
+|---------|----------|-------------------------|--------|
+| **v2**  | Seasonality | 10.82 | Good |
+| **v3**  | OCF + Retained Earnings | 11.93 | **Strong** |
+| **v4**  | **Full Financial Ratios (ROE)** | **12.17** | **Elite** |
 
 ## Database Dependencies
 
-The models rely on the **Dual-Column Schema** (`_q` and `_acc`) implemented in `quarterly_reports`, `income_statement`, and `cash_flow`. Ensure the data pipeline has been run sequentially to calculate these values before training.
+- **`eps_predictions`**: Input for `valuation_daily`.
+- **`valuation_daily`**: Primary table for screening and PE bands.
+- **`quarterly_reports`**: Requires dual-column schema (`_q` and `_acc`) for TTM calculations.

@@ -4,24 +4,51 @@ This guide covers the technical indicator calculation component of the Taiwan st
 
 ## Overview
 
-The calculator computes technical indicators from `daily_quotes` and stores results in `technical_indicators`.
-Entry point:
-- `calculate_daily.py`
+The calculator component refines raw market and financial data into actionable investment insights. It consists of two main pillars:
+
+1.  **Technical Indicators (`calculate_daily.py`)**: Computes MA, RSI, MACD, etc., for price trend analysis.
+2.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
 
 Error handling is fail-fast:
-- Any runtime error writes to `/error_calculator.log`
-- Then exits immediately with non-zero status
+- Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
+- Exits immediately with non-zero status.
 
-The core calculation logic is integrated in `calculate_daily.py`.
+---
 
-Indicators:
-- Moving averages (MA, VMA)
-- Momentum indicators (KD, RSI)
-- Trend indicators (MACD)
-- Volatility indicators (Bollinger Bands)
+## Technical Indicators (`calculate_daily.py`)
 
-**Input**: `daily_quotes` table in PostgreSQL
-**Output**: `technical_indicators` table in PostgreSQL
+Computes technical signals from `daily_quotes` and stores results in `technical_indicators`.
+
+### Indicators
+- **Moving Averages (MA/VMA)**: 5, 10, 20, 60, 120, 240 days.
+- **KD Stochastic**: 9-day alpha=1/3.
+- **RSI**: 6 and 12-day.
+- **MACD**: DIF (EMA12-26), DEA (EMA9 of DIF), Histogram.
+- **Bollinger Bands**: 20-day, 2σ.
+
+---
+
+## Forward Valuation (`calculate_valuation.py`)
+
+This is the "Brain" of the valuation system. it integrates Price, Financial Reports, and ML Predictions using **Point-in-Time (PIT)** logic.
+
+### Core Logic: Point-in-Time (PIT) Alignment
+To avoid look-ahead bias, the calculator anchors financial data to their **official publication deadlines**:
+- Q1: May 15 | Q2: Aug 14 | Q3: Nov 14 | Q4: Mar 31.
+Every daily valuation record uses the latest report *available at that specific date*.
+
+### Dual TTM EPS Calculation
+- **`ttm_eps_official`**: Sum of the 4 most recently published single-quarter EPS (`eps_q`).
+- **`ttm_eps_forward`**: Sum of the 3 most recently published quarters + **1 predicted quarter** from `eps_predictions`.
+- **The Swap**: As time passes, the oldest quarter is dropped and replaced by the ML prediction for the upcoming quarter.
+
+### Forward Metrics
+- **`pe_forward`**: `close / ttm_eps_forward`.
+- **`predict_target_price`**: `ttm_eps_forward * pe_official`.
+- **`upside_pct`**: Potential return based on the valuation surprise.
+- **`pe_percentile_forward`**: Historical rank of the current price against the *predicted* future earnings.
+
+---
 
 ## Environment Variables
 
@@ -32,131 +59,53 @@ Indicators:
 | `DB_PASSWORD` | password | Database password |
 | `DB_NAME` | stock_db | Database name |
 | `DB_PORT` | 5432 | Database port |
-| `START_DATE` | - | Incremental start date (`YYYYMMDD` or `YYYY-MM-DD`) |
-| `END_DATE` | - | Incremental end date (`YYYYMMDD` or `YYYY-MM-DD`) |
+| `START_DATE` | - | Used by `calculate_daily.py` for incremental updates. |
 
-## Docker Service
+---
 
+## Running the Calculators
+
+### Via Dedicated Script (Recommended)
+We use a dedicated shell script to run all analytics after the ETL pipeline:
 ```bash
-# Daily entry (default for calculator service)
-docker compose run --rm calculator
+./schedules/daily_calculator.sh 20260211
+```
+
+### Manual Execution
+```bash
+# Indicators
 docker compose run --rm calculator python calculate_daily.py
-
-# Rebuild after code changes
-docker compose build calculator
+# Valuations (Recomputes full history to ensure percentile consistency)
+docker compose run --rm calculator python calculate_valuation.py
 ```
 
-**Important**:
-- `calculate_daily.py` supports full mode (no `START_DATE`) and incremental mode (with `START_DATE`).
+---
 
-## Technical Indicators
+## Database Table Schemas
 
-Computed for every stock, stored in `technical_indicators` table.
+### technical_indicators
+... (same as before) ...
 
-### Moving Averages (MA)
-- **Periods**: 5, 10, 20, 60, 120, 240 days
-- **Formula**: Simple Moving Average (SMA) of closing prices
-- **Columns**: `ma5`, `ma10`, `ma20`, `ma60`, `ma120`, `ma240`
-
-### Volume Moving Averages (VMA)
-- **Periods**: 5, 10, 20, 60, 120, 240 days
-- **Formula**: Simple Moving Average (SMA) of volume
-- **Columns**: `vma5`, `vma10`, `vma20`, `vma60`, `vma120`, `vma240`
-
-### KD Stochastic Oscillator
-- **Period**: 9 days
-- **Smoothing**: α=1/3 (exponential smoothing)
-- **Formula**:
-  - RSV = (Close - Low9) / (High9 - Low9) × 100
-  - K = Previous K × 2/3 + RSV × 1/3
-  - D = Previous D × 2/3 + K × 1/3
-- **Columns**: `k`, `d`
-- **Range**: 0-100
-- **Interpretation**:
-  - K > 80: Overbought
-  - K < 20: Oversold
-  - K crosses above D: Buy signal
-  - K crosses below D: Sell signal
-
-### RSI (Relative Strength Index)
-- **Periods**: 6-day and 12-day
-- **Formula**: RSI = 100 - (100 / (1 + RS))
-  - RS = Average Gain / Average Loss
-- **Columns**: `rsi6`, `rsi12`
-- **Range**: 0-100
-- **Interpretation**:
-  - RSI > 70: Overbought
-  - RSI < 30: Oversold
-
-### MACD (Moving Average Convergence Divergence)
-- **DIF (Fast Line)**: EMA12 - EMA26
-- **DEA (Signal Line)**: EMA9 of DIF
-- **Histogram**: DIF - DEA (not stored separately)
-- **Columns**: `macd_dif`, `macd_dea`
-- **Interpretation**:
-  - DIF crosses above DEA: Buy signal
-  - DIF crosses below DEA: Sell signal
-  - Histogram > 0: Bullish momentum
-  - Histogram < 0: Bearish momentum
-
-### Bollinger Bands
-- **Period**: 20 days
-- **Standard Deviation**: 2σ
-- **Formula**:
-  - Middle Band: MA20
-  - Upper Band: MA20 + 2σ
-  - Lower Band: MA20 - 2σ
-- **Columns**: `bb_upper`, `bb_middle`, `bb_lower`
-- **Interpretation**:
-  - Price near upper band: Overbought
-  - Price near lower band: Oversold
-  - Band width expansion: Increased volatility
-  - Band width contraction: Decreased volatility
-
-## Implementation Details
-
-### Pandas Vectorized Operations
-Uses Pandas with grouped apply (by symbol) for efficiency:
-```python
-df.groupby('symbol').apply(lambda group: calculate_indicators(group))
-```
-
-This approach:
-- Processes each stock independently
-- Preserves time-series order within each stock
-- Leverages Pandas' optimized C extensions
-
-### Database Strategy
-1. Fetch `daily_quotes` (with buffer window in incremental mode)
-2. Calculate indicators grouped by `symbol`
-3. Write to `technical_indicators`
-4. Incremental mode deletes target date range first, then inserts recalculated rows
-
-## Database Table Schema
-
-### technical_indicators table
+### valuation_daily
 ```sql
-CREATE TABLE technical_indicators (
+CREATE TABLE valuation_daily (
     date TEXT NOT NULL,
     symbol TEXT NOT NULL,
-    market TEXT,
-    -- Moving Averages
-    ma5 REAL, ma10 REAL, ma20 REAL, ma60 REAL, ma120 REAL, ma240 REAL,
-    -- Volume Moving Averages
-    vma5 REAL, vma10 REAL, vma20 REAL, vma60 REAL, vma120 REAL, vma240 REAL,
-    -- KD Oscillator
-    k REAL, d REAL,
-    -- RSI
-    rsi6 REAL, rsi12 REAL,
-    -- MACD
-    macd_dif REAL, macd_dea REAL,
-    -- Bollinger Bands
-    bb_upper REAL, bb_middle REAL, bb_lower REAL,
+    close DOUBLE PRECISION,
+    ttm_eps_official DOUBLE PRECISION,
+    ttm_eps_forward DOUBLE PRECISION,
+    pe_official DOUBLE PRECISION,
+    pe_forward DOUBLE PRECISION,
+    pe_percentile_official DOUBLE PRECISION,
+    pe_percentile_forward DOUBLE PRECISION,
+    predict_target_price DOUBLE PRECISION,
+    upside_pct DOUBLE PRECISION,
+    roe_official DOUBLE PRECISION,
+    roe_forward DOUBLE PRECISION,
     PRIMARY KEY (date, symbol)
 );
-
-CREATE INDEX idx_tech_symbol_date ON technical_indicators(symbol, date);
 ```
+
 
 ### Date Type Requirement (Important)
 - `technical_indicators.date` must use `TEXT` type (not `DATE`).

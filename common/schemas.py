@@ -124,8 +124,16 @@ SCHEMA_COLS = {
         "date", "symbol", "name", "close_before", "ref_price", "rights_dividend_value", "type",
         "pced_file", "pced_row", "pced_col"
     ],
-    "valuation_analysis": [
-        "date", "symbol", "close", "ttm_eps", "pe_ratio_calculated", "pe_ratio_from_pe_table", "pe_percentile",
+    "eps_predictions": [
+        "target_quarter", "symbol", "predict_eps", "model_version", "created_at"
+    ],
+    "valuation_daily": [
+        "date", "symbol", "close", 
+        "ttm_eps_official", "ttm_eps_forward",
+        "pe_official", "pe_forward",
+        "pe_percentile_official", "pe_percentile_forward",
+        "predict_target_price", "upside_pct", 
+        "roe_official", "roe_forward",
         "pced_file", "pced_row", "pced_col"
     ]
 }
@@ -134,6 +142,9 @@ SCHEMA_COLS = {
 COLUMN_TYPES = {
     "symbol": pl.Utf8,
     "date": pl.Utf8,
+    "target_quarter": pl.Utf8,
+    "model_version": pl.Utf8,
+    "created_at": pl.Utf8,
     "market": pl.Utf8,
     "name": pl.Utf8,
     "industry": pl.Utf8,
@@ -147,8 +158,16 @@ COLUMN_TYPES = {
     "index_name": pl.Utf8,
     "comment": pl.Utf8,
     "type": pl.Utf8,
-    "pe_percentile": pl.Float64,
-    "ttm_eps": pl.Float64,
+    "pe_percentile_official": pl.Float64,
+    "pe_percentile_forward": pl.Float64,
+    "ttm_eps_official": pl.Float64,
+    "ttm_eps_forward": pl.Float64,
+    "pe_official": pl.Float64,
+    "pe_forward": pl.Float64,
+    "predict_target_price": pl.Float64,
+    "upside_pct": pl.Float64,
+    "roe_official": pl.Float64,
+    "roe_forward": pl.Float64,
     "pced_file": pl.Utf8,
     "pced_col": pl.Utf8,
     "pced_row": pl.Int64,

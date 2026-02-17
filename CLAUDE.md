@@ -37,17 +37,21 @@ These files are shared across roles. Be careful when modifying:
 
 Taiwan stock market analysis platform:
 
-- **Data pipeline**: Scrape TWSE/TPEx → process CSVs → import to PostgreSQL → calculate technical indicators
-- **Backend API**: FastAPI serving market data, volume spike scanner, institutional investor tracking, backtesting
+- **Data pipeline**: Scrape TWSE/TPEx → process CSVs → import to PostgreSQL.
+- **Analytics engine**: ML-based EPS prediction (v1-v4) and Point-in-Time (PIT) valuation analysis.
+- **Backend API**: FastAPI serving market data, volume spike scanner, forward-looking valuations, and backtesting.
 - **Frontend**: Next.js dashboard with candlestick charts, scanner UI, institutional charts
 
 ## How to Run
 
 ```bash
-# Start everything
-docker compose up -d backend frontend
+# 1. Start core services
+docker compose up -d db backend frontend
 
-# Database is at localhost:5432 (auto-started as dependency)
-# Backend API at localhost:8000
-# Frontend UI at localhost:3000
+# 2. Daily Data Update (ETL)
+./schedules/daily_update.sh 20260211
+
+# 3. Daily Analytics (Indicators & ML Valuations)
+# This script handles technical indicators and the valuation_daily table.
+./schedules/daily_calculator.sh 20260211
 ```
