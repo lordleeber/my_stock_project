@@ -11,6 +11,10 @@
 - `year_2025` 優於 baseline。
 - `year_2024` 不得明顯退步（需設定可接受門檻）。
 
+狀態：
+- 功能上完成。
+- 若要追求更穩，下一步是調整 `confidence_quantile`（未完成）。
+
 ## v6: `valuation_daily` 對接與計算流程固定化
 - 目標：把 `pred_eps` 穩定映射到 `valuation_daily` 欄位。
 - 任務：

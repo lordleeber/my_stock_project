@@ -6,18 +6,22 @@
 - `analysis_codex/v2/`
 - `analysis_codex/v3/`
 - `analysis_codex/v4/`
+- `analysis_codex/v5/`
 
 ## 版本策略
 
-- `v1` 只作為簡易測試版本（baseline/demo 用途）。
-- 後續將不再更新 `v1`，新特徵與新流程只會在 `v2+`（目前為 `v2/v3/v4`）持續迭代。
+- `v1` 只作為簡易測試版本（baseline/demo）。
+- 後續不再更新 `v1`。
+- 新特徵與新流程主要在 `v2+`（`v2/v3/v4/v5`）持續迭代。
 
-每個版本都包含：
+## 各版本重點
 
-- `prepare_data.py`
-- `train.py`
-- `backtest.py`
-- `results/`（執行 backtest 後產生）
+- `v1`: 最小可用版，特徵最少，主要做流程驗證與 baseline 對照。
+- `v2`: 加入季節性與年增訊號（`ly_q3_eps`, `rev_yoy_m7`），建立年別回測基線。
+- `v3`: 加入財務品質與結構特徵（`q2_ocf_ratio`, `q2_re_ratio`）與營收動能。
+- `v4`: 擴充更多比率型財務特徵（ROE、負債比、流動比等），強化基本面深度。
+- `v5`: 改為預測 `delta_eps`（增量），並同時評估估值誤差
+  （`pe_forward_err_mae`, `target_price_err_mae`, `upside_pct_err_mae`）。
 
 ## 統一原則
 
@@ -27,27 +31,24 @@
 
 說明：
 
-- 原則上主評分指標應與訓練目標盡量一致。
-- 不同指標過多會增加判讀成本，因此此專案只保留 `MAE + P90_AE`。
+- 主評分指標應與訓練目標盡量一致。
+- 避免指標過多導致判讀混亂，預設聚焦在 `MAE + P90_AE`。
 
 ## Backtest 輸出
 
-每個版本的 `backtest.py` 只輸出：
+每個版本的 `backtest.py` 主要輸出：
 
 - `backtest_by_fold.csv`
 - `predictions.csv`
 
-`backtest_summary.csv` 已移除。
-
 ## 執行方式
 
-以 v2 為例：
+以 `v5` 為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v2/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v2/train.py
-.\.venv\Scripts\python.exe analysis_codex/v2/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v5/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v5/train.py
+.\.venv\Scripts\python.exe analysis_codex/v5/backtest.py
 ```
 
-v1、v3 只要把路徑換成對應版本即可。
-v4 也使用同樣流程。
+`v2/v3/v4` 使用相同流程，僅替換版本路徑。
