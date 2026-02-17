@@ -22,10 +22,17 @@
   - `missing_market_snapshot_reason` 診斷欄位
 
 ## v7
-- 目標：Regime-aware / 分市場分群建模。
-- 重點：
-  - 依市況或產業切分子模型
-  - 比較分群模型與單一模型在 out-of-time 的穩定度
+- 狀態：功能完成（第一版）
+- 目標：Regime-aware / 分群建模，改善不同市況下的穩定度。
+- 已完成：
+  - 新增 regime 切分：`q2_margin` + `rev_volatility`
+  - 訓練 global 模型 + regime 子模型（樣本不足則不建）
+  - 低信心回退：`regime -> global -> baseline_q2`
+  - 回測輸出 `pred_source` 與 `pred_std`，可檢查回退比例
+  - 依回測調參，預設 `confidence_quantile` 更新為 `0.95`
+- 後續可調：
+  - `confidence_quantile`（回退靈敏度）
+  - `min_regime_samples`（子模型最小樣本）
 
 ## v8
 - 目標：事件時間對齊與特徵切片。

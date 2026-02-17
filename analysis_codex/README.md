@@ -1,6 +1,6 @@
-# analysis_codex
+﻿# analysis_codex
 
-`analysis_codex` 採用分版本、可獨立執行的結構：
+`analysis_codex` 是我這條線的版本化實驗目錄，重點是簡單、清晰、可對照。
 
 - `analysis_codex/v1/`
 - `analysis_codex/v2/`
@@ -8,50 +8,50 @@
 - `analysis_codex/v4/`
 - `analysis_codex/v5/`
 - `analysis_codex/v6/`
+- `analysis_codex/v7/`
 
 ## 版本策略
 
-- `v1` 只作為簡易測試版本（baseline/demo）。
-- 後續不再更新 `v1`。
-- 新特徵與新流程主要在 `v2+`（`v2/v3/v4/v5`）持續迭代。
+- `v1`：簡易測試版本（baseline/demo），後續不再更新。
+- `v2+`：正式迭代版本，依任務目標持續改進。
 
 ## 各版本重點
 
-- `v1`: 最小可用版，特徵最少，主要做流程驗證與 baseline 對照。
-- `v2`: 加入季節性與年增訊號（`ly_q3_eps`, `rev_yoy_m7`），建立年別回測基線。
-- `v3`: 加入財務品質與結構特徵（`q2_ocf_ratio`, `q2_re_ratio`）與營收動能。
-- `v4`: 擴充更多比率型財務特徵（ROE、負債比、流動比等），強化基本面深度。
-- `v5`: 改為預測 `delta_eps`（增量），並同時評估估值誤差
-  （`pe_forward_err_mae`, `target_price_err_mae`, `upside_pct_err_mae`）。
-- `v6`: 固定化 `pred_eps -> valuation_daily` 鏈路，輸出 `valuation_daily_preview.csv`
-  與 `valuation_quality_report.json`（欄位品質與可追溯檢查）。
+- `v1`：最小可行流程，建立資料、訓練、回測骨架。
+- `v2`：加入更多基本特徵與年度展開回測。
+- `v3`：補強財務比率特徵（例如現金流、保留盈餘相關比率）。
+- `v4`：擴充基本面深度，提升模型對不同公司體質的辨識。
+- `v5`：改為預測 `delta_eps`，並同步評估估值鏈路誤差。
+- `v6`：固定 `pred_eps -> valuation_daily` 鏈路，輸出預覽表與品質報告。
+- `v7`：Regime-aware（分群子模型）+ 低信心回退（global/baseline），
+  目前預設 `confidence_quantile=0.95`。
 
 ## 統一原則
 
-1. 主評分指標：`MAE`
-2. 輔助指標：`P90_AE`（尾部風險）
-3. 訓練目標與主評分指標對齊：`RandomForestRegressor(criterion="absolute_error")`
+1. 主評分指標固定用 `MAE`。
+2. 輔助風險指標用 `P90_AE`（看尾端誤差）。
+3. 訓練目標盡量和主評分一致：
+   `RandomForestRegressor(criterion="absolute_error")` 對應 MAE 方向。
+4. 避免同時堆太多主指標，先把主目標做穩，再看輔助指標。
 
-說明：
+## Backtest 產物
 
-- 主評分指標應與訓練目標盡量一致。
-- 避免指標過多導致判讀混亂，預設聚焦在 `MAE + P90_AE`。
-
-## Backtest 輸出
-
-每個版本的 `backtest.py` 主要輸出：
+每個版本的 `backtest.py` 主要產出：
 
 - `backtest_by_fold.csv`
 - `predictions.csv`
 
+若版本有估值鏈路，另外輸出：
+
+- `valuation_daily_preview.csv`
+- `valuation_quality_report.json`
+
 ## 執行方式
 
-以 `v5` 為例：
+以 `v7` 為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v5/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v5/train.py
-.\.venv\Scripts\python.exe analysis_codex/v5/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v7/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v7/train.py
+.\.venv\Scripts\python.exe analysis_codex/v7/backtest.py
 ```
-
-`v2/v3/v4` 使用相同流程，僅替換版本路徑。
