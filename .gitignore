@@ -213,3 +213,11 @@ StockDailyUpdate.app/
 # Project specific
 data/
 strategy/fundamental/*.csv
+
+# analysis_codex generated artifacts
+analysis_codex/**/dataset.csv
+analysis_codex/**/model.pkl
+analysis_codex/**/feature_importance.csv
+analysis_codex/**/train_metrics.json
+analysis_codex/**/results/*.csv
+analysis_codex/**/__pycache__/

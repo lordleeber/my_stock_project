@@ -1,4 +1,0 @@
-version,protocol,fold,model,mae,p90_ae,n_train,n_test
-v1,index_holdout_no_year,index_holdout,rf_vanilla,0.6,1.18,746,187
-v1,index_holdout_no_year,index_holdout,baseline_q2_eps,0.52,1.3,746,187
-v1,index_holdout_no_year,index_holdout,baseline_train_median,1.24,3.21,746,187

@@ -5,6 +5,12 @@
 - `analysis_codex/v1/`
 - `analysis_codex/v2/`
 - `analysis_codex/v3/`
+- `analysis_codex/v4/`
+
+## 版本策略
+
+- `v1` 只作為簡易測試版本（baseline/demo 用途）。
+- 後續將不再更新 `v1`，新特徵與新流程只會在 `v2+`（目前為 `v2/v3/v4`）持續迭代。
 
 每個版本都包含：
 
@@ -44,3 +50,4 @@
 ```
 
 v1、v3 只要把路徑換成對應版本即可。
+v4 也使用同樣流程。
