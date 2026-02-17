@@ -10,53 +10,48 @@ The system implements a **Point-in-Time (PIT)** logic to eliminate Look-ahead Bi
 2.  **Forward TTM (The "Swap" Logic)**:
     - **Official TTM**: Sum of the last 4 published quarters.
     - **Forward TTM**: Sum of the last 3 published quarters + **1 predicted quarter** (dropping the oldest).
-    - This creates a **leading indicator** that updates as soon as monthly revenue is available, well before the official earnings call.
-
-## Data Workflow & Persistence
-
-The analysis results are no longer just CSVs; they are persisted into the database to fuel the valuation engine.
-
-- **`db_utils.py`**: A shared utility module that standardizes saving model outputs to the `eps_predictions` table.
-- **`valuation_daily`**: The final destination. Updated daily via `calculator/calculate_valuation.py`, integrating:
-    - Daily Price (`close`)
-    - Forward EPS (`ttm_eps_forward`)
-    - Target Price (`predict_target_price` = `ttm_eps_forward * pe_official`)
-    - Forward Percentile (`pe_percentile_forward`)
 
 ## Project Structure
 
-- **`v1/` - `v4/`**: Progressive iterations of the EPS prediction models.
-- **`db_utils.py`**: Shared database operations for model output.
-- **`CLAUDE.md`**: This guide.
+The analytics module is organized by model versions:
 
-## How to Run
+- **`v1/` (Proof of Concept)**: Simple baseline test using basic metrics. **[DEPRECATED]**
+- **`v2/` (Seasonality)**: Adds historical context and monthly revenue YoY trends.
+- **`v3/` (Full Integration)**: Adds quality of earnings (OCF ratio) and financial depth (Retained Earnings).
+- **`v4/` (Ratio-Based Elite)**: Integrates 15+ financial ratios. Implements **Expanding Window Backtesting** and decoupled DB persistence. **[Current Production Standard]**
 
-### 1. Model Training & Prediction (Persistence)
-Use the `backend` container. V4 is the current standard.
+## Model Performance (PIT Evaluation)
+
+| Version | Evaluation Method | Key Features | Status |
+|---------|-------------------|--------------|--------|
+| **v2/v3**| Single 2024 Holdout | Seasonality & OCF | Legacy |
+| **v4**  | **Multi-fold Expanding** | **Full Ratios (ROE, Debt, etc.)** | **Production** |
+
+## How to Run (V4 Standard)
+
+Use the `backend` container. V4 is designed to be parameterized and side-effect free by default.
+
+### 1. Prepare Data
 ```bash
-# Prepare full history features
-docker compose run --rm backend python analysis/v4/prepare_data.py
-# Train and save predictions to 'eps_predictions' table
+# Default: 2021 to 2024
+docker compose run --rm backend python analysis/v4/prepare_data.py --start-year 2021 --end-year 2024
+```
+
+### 2. Train & Experiment (Safe Mode)
+By default, this will run an expanding window backtest and print metrics without touching the DB.
+```bash
 docker compose run --rm backend python analysis/v4/train.py
 ```
 
-### 2. Daily Analytics (Calculations)
-The analysis results are automatically utilized by the **`daily_calculator.sh`** task.
+### 3. Production Deployment (Save to DB)
+Use the `--save-db` flag to persist predictions into the `eps_predictions` table.
 ```bash
-# Runs technical indicators followed by PIT forward-looking valuations
-./schedules/daily_calculator.sh 20260211
+docker compose run --rm backend python analysis/v4/train.py --save-db --target-year 2024 --target-quarter Q3
 ```
 
-## Model Performance (2024Q3 PIT Evaluation)
+## Engineering Standards (v4+)
 
-| Version | Features | 2330 Pred (Real: 12.55) | Status |
-|---------|----------|-------------------------|--------|
-| **v2**  | Seasonality | 10.82 | Good |
-| **v3**  | OCF + Retained Earnings | 11.93 | **Strong** |
-| **v4**  | **Full Financial Ratios (ROE)** | **12.17** | **Elite** |
-
-## Database Dependencies
-
-- **`eps_predictions`**: Input for `valuation_daily`.
-- **`valuation_daily`**: Primary table for screening and PE bands.
-- **`quarterly_reports`**: Requires dual-column schema (`_q` and `_acc`) for TTM calculations.
+- **Decoupling**: Model evaluation logic is separated from database persistence.
+- **CLI first**: Hardcoded values (quarters, symbols) are moved to CLI arguments.
+- **Encoding**: All files must use UTF-8 without BOM. Comments are in Traditional Chinese for team maintenance.
+- **Robustness**: Multi-year expanding window backtests are mandatory for performance claims.

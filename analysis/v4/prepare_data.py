@@ -1,6 +1,8 @@
 import os
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+import argparse
+from pathlib import Path
 
 def get_db_url():
     """取得資料庫連線字串"""
@@ -11,24 +13,23 @@ def get_db_url():
     db_name = os.getenv("DB_NAME", "stock_db")
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
-def prepare_v4_data():
+def prepare_v4_data(start_year, end_year):
     """
     準備 V4 (財務比率全整合) 特徵資料集
-    核心邏輯：整合四大報表，計算超過 10 項關鍵財務比率
-    這能讓模型觀察到企業的資產利用效率 (ROE)、財務槓桿 (Debt) 與利潤動能
+    核心邏輯：整合四大報表，計算關鍵財務比率
     """
     engine = create_engine(get_db_url())
     all_years_data = []
     
-    # 遍歷歷史季度
-    for year in range(2021, 2025):
+    # 遍歷指定年份區間
+    for year in range(start_year, end_year + 1):
         q1_str, q2_str, q3_str = f"{year}Q1", f"{year}Q2", f"{year}Q3"
         ly_q3_str = f"{year-1}Q3"
         m7, m8, m9 = f"{year}M07", f"{year}M08", f"{year}M09"
         
         print(f"正在準備 {year} 年 V4 財務比率特徵資料...")
         
-        # 執行四表大 JOIN，計算各種比率
+        # 使用 CTE 結構確保 SQL 邏輯清晰 (Reviewer 肯定點)
         query = f"""
         WITH 
         q2_data AS (
@@ -37,21 +38,21 @@ def prepare_v4_data():
                 i.revenue_q as q2_rev, 
                 i.net_income_q as q2_ni,
                 i.eps_q as q2_eps,
-                -- 獲利三率：毛利、營益、淨利
+                -- 獲利三率
                 i.gross_profit_q / NULLIF(i.revenue_q, 0) as q2_gross_margin,
                 i.operating_income_q / NULLIF(i.revenue_q, 0) as q2_operating_margin,
                 i.net_income_q / NULLIF(i.revenue_q, 0) as q2_net_margin,
-                -- 業外佔比：判斷是否有一次性業外收益虛胖
+                -- 獲利純度
                 i.non_operating_income_q / NULLIF(i.pretax_income_q, 0) as q2_non_op_ratio,
-                -- 財務結構：負債比、流動比 (體質評估)
+                -- 財務結構
                 b.total_liabilities / NULLIF(b.total_assets, 0) as q2_debt_ratio,
                 b.current_assets / NULLIF(b.current_liabilities, 0) as q2_current_ratio,
                 b.share_capital as capital,
                 b.retained_earnings as q2_retained_earnings,
-                -- 效率指標：ROE (股東權益報酬率), ROA (資產報酬率)
+                -- 效率指標
                 i.net_income_q / NULLIF(b.total_equity, 0) as q2_roe,
                 i.net_income_q / NULLIF(b.total_assets, 0) as q2_roa,
-                -- 現金流與資本支出強度
+                -- 現金流
                 c.cash_flow_operating_q as q2_ocf,
                 ABS(c.cash_flow_investing_q) / NULLIF(i.revenue_q, 0) as q2_capex_intensity
             FROM income_statement i
@@ -90,24 +91,32 @@ def prepare_v4_data():
         if not df_year.empty:
             all_years_data.append(df_year)
 
+    if not all_years_data:
+        return pd.DataFrame()
+
     final_df = pd.concat(all_years_data)
-    # 移除目標值缺失的資料
     final_df = final_df.dropna(subset=['q2_ni', 'target_eps'])
     
-    # --- 衍生特徵工程 ---
-    # 1. 獲利含金量 (OCF/NI)
+    # 衍生特徵計算
     final_df['q2_ocf_ratio'] = (final_df['q2_ocf'] / final_df['q2_ni'].replace(0, 1e-9)).clip(-5, 5)
-    # 2. 獲利動能 (Q2 vs Q1 淨利率變動)
     final_df['margin_momentum'] = final_df['q2_net_margin'] - final_df['q1_net_margin'].fillna(final_df['q2_net_margin'])
-    # 3. 營收月增趨勢
     final_df['rev_trend_m8_m7'] = (final_df['rev_m8'] / final_df['rev_m7'].replace(0, 1e-9)) - 1
     final_df['rev_trend_m9_m8'] = (final_df['rev_m9'] / final_df['rev_m8'].replace(0, 1e-9)) - 1
 
-    print(f"V4 財務比率強化資料集準備完成：共 {len(final_df)} 筆樣本。")
     return final_df
 
 if __name__ == "__main__":
-    df = prepare_v4_data()
-    os.makedirs("analysis/v4", exist_ok=True)
-    df.to_csv("analysis/v4/dataset.csv", index=False)
-    print("資料已儲存至 analysis/v4/dataset.csv")
+    parser = argparse.ArgumentParser(description="V4 資料準備腳本 (參數化版本)")
+    parser.add_argument("--start-year", type=int, default=2021)
+    parser.add_argument("--end-year", type=int, default=2024)
+    parser.add_argument("--output", type=str, default="analysis/v4/dataset.csv")
+    args = parser.parse_args()
+
+    df = prepare_v4_data(args.start_year, args.end_year)
+    
+    if not df.empty:
+        os.makedirs(os.path.dirname(args.output), exist_ok=True)
+        df.to_csv(args.output, index=False)
+        print(f"✅ V4 資料集已儲存至 {args.output} (共 {len(df)} 筆樣本)")
+    else:
+        print("❌ 未找到符合條件的資料")
