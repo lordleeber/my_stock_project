@@ -1,0 +1,10 @@
+version,protocol,fold,model,mae,p90_ae,n_train,n_test
+v3,expanding_by_year,year_2022,rf_vanilla,0.74,1.43,868,885
+v3,expanding_by_year,year_2022,baseline_q2_eps,0.74,1.57,868,885
+v3,expanding_by_year,year_2022,baseline_train_median,1.34,2.91,868,885
+v3,expanding_by_year,year_2023,rf_vanilla,0.51,1.13,1753,905
+v3,expanding_by_year,year_2023,baseline_q2_eps,0.5,1.13,1753,905
+v3,expanding_by_year,year_2023,baseline_train_median,1.07,2.17,1753,905
+v3,expanding_by_year,year_2024,rf_vanilla,0.53,1.11,2658,934
+v3,expanding_by_year,year_2024,baseline_q2_eps,0.5,1.01,2658,934
+v3,expanding_by_year,year_2024,baseline_train_median,1.2,2.34,2658,934

@@ -1,0 +1,6 @@
+{
+  "n_rows": 3592,
+  "main_metric": "mae",
+  "train_mae_rf": 0.21061245360059414,
+  "train_mae_baseline_q2_eps": 0.5909604677060133
+}
