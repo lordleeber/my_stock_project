@@ -212,3 +212,4 @@ StockDailyUpdate.app/
 
 # Project specific
 data/
+strategy/fundamental/*.csv
