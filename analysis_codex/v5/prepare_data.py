@@ -31,7 +31,11 @@ KEEP_OPTIONAL = [
     "q2_ocf",
     "q2_retained_earnings",
     "q3_close",
+    "q3_volume",
     "pe_current",
+    "prev_q4_eps",
+    "q1_eps",
+    "q2_eps_official",
 ]
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "dataset.csv"
@@ -59,6 +63,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     q1_str = f"{year}Q1"
     q2_str = f"{year}Q2"
     q3_str = f"{year}Q3"
+    prev_q4_str = f"{year - 1}Q4"
     ly_q3_str = f"{year - 1}Q3"
 
     m7 = f"{year}M07"
@@ -107,6 +112,21 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         SELECT
             qr.symbol,
             qr.eps_q AS target_eps,
+            (SELECT qp4.eps_q
+             FROM quarterly_reports qp4
+             WHERE qp4.symbol = qr.symbol
+               AND qp4.date = '{prev_q4_str}'
+               AND qp4.market = '{market}') AS prev_q4_eps,
+            (SELECT q1.eps_q
+             FROM quarterly_reports q1
+             WHERE q1.symbol = qr.symbol
+               AND q1.date = '{q1_str}'
+               AND q1.market = '{market}') AS q1_eps,
+            (SELECT q2.eps_q
+             FROM quarterly_reports q2
+             WHERE q2.symbol = qr.symbol
+               AND q2.date = '{q2_str}'
+               AND q2.market = '{market}') AS q2_eps_official,
             (SELECT qly.eps_q
              FROM quarterly_reports qly
              WHERE qly.symbol = qr.symbol
@@ -119,6 +139,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         SELECT DISTINCT ON (dq.symbol)
                dq.symbol,
                dq.close AS q3_close,
+               dq.volume AS q3_volume,
                pr.pe_ratio AS pe_current
         FROM daily_quotes dq
         LEFT JOIN pe_ratio pr
@@ -139,7 +160,11 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         m.rev_m9,
         t.ly_q3_eps,
         t.target_eps,
+        t.prev_q4_eps,
+        t.q1_eps,
+        t.q2_eps_official,
         ms.q3_close,
+        ms.q3_volume,
         ms.pe_current
     FROM q2_data q2
     LEFT JOIN q1_data q1 ON q2.symbol = q1.symbol

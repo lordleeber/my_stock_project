@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--error-clip-quantile", type=float, default=0.99)
+    parser.add_argument("--min-ttm-eps", type=float, default=2.0)
+    parser.add_argument("--min-volume-lots", type=float, default=500.0)
     return parser.parse_args()
 
 
@@ -75,34 +77,60 @@ def predict_with_uncertainty(model: RandomForestRegressor, X: pd.DataFrame) -> t
 
 
 def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarray, eps_floor: float, error_clip_q: float) -> dict:
-    abs_err = np.abs(y_true - y_pred)
+    # 實務交易過濾：TTM EPS 與日成交量門檻
+    if {"prev_q4_eps", "q1_eps", "q2_eps_official", "q3_volume"}.issubset(df_eval.columns):
+        ttm_eps_forward = (
+            df_eval["prev_q4_eps"].to_numpy(dtype=float)
+            + df_eval["q1_eps"].to_numpy(dtype=float)
+            + df_eval["q2_eps_official"].to_numpy(dtype=float)
+            + y_pred
+        )
+        volume_lots = df_eval["q3_volume"].to_numpy(dtype=float) / 1000.0
+        mask_tradeable = (ttm_eps_forward >= evaluate_metrics.min_ttm_eps) & (volume_lots >= evaluate_metrics.min_volume_lots)
+    else:
+        mask_tradeable = np.full(len(df_eval), True, dtype=bool)
 
-    close = df_eval["q3_close"].to_numpy(dtype=float) if "q3_close" in df_eval.columns else np.full(len(df_eval), np.nan)
-    pe_current = df_eval["pe_current"].to_numpy(dtype=float) if "pe_current" in df_eval.columns else np.full(len(df_eval), np.nan)
+    y_true_f = y_true[mask_tradeable]
+    y_pred_f = y_pred[mask_tradeable]
+    df_eval_f = df_eval.loc[mask_tradeable].copy()
+
+    if len(df_eval_f) == 0:
+        return {
+            "mae": float("nan"),
+            "p90_ae": float("nan"),
+            "pe_forward_err_mae": float("nan"),
+            "target_price_err_mae": float("nan"),
+            "upside_pct_err_mae": float("nan"),
+        }
+
+    abs_err = np.abs(y_true_f - y_pred_f)
+
+    close = df_eval_f["q3_close"].to_numpy(dtype=float) if "q3_close" in df_eval_f.columns else np.full(len(df_eval_f), np.nan)
+    pe_current = df_eval_f["pe_current"].to_numpy(dtype=float) if "pe_current" in df_eval_f.columns else np.full(len(df_eval_f), np.nan)
 
     valid_price = (~np.isnan(close)) & (close > 0)
     valid_pe = (~np.isnan(pe_current)) & (pe_current > 0)
 
-    true_forward_pe = np.full(len(df_eval), np.nan)
-    pred_forward_pe = np.full(len(df_eval), np.nan)
+    true_forward_pe = np.full(len(df_eval_f), np.nan)
+    pred_forward_pe = np.full(len(df_eval_f), np.nan)
 
-    eps_true_ok = np.abs(y_true) >= eps_floor
-    eps_pred_ok = np.abs(y_pred) >= eps_floor
+    eps_true_ok = np.abs(y_true_f) >= eps_floor
+    eps_pred_ok = np.abs(y_pred_f) >= eps_floor
 
     mask_true_pe = valid_price & eps_true_ok
     mask_pred_pe = valid_price & eps_pred_ok
 
-    true_forward_pe[mask_true_pe] = close[mask_true_pe] / y_true[mask_true_pe]
-    pred_forward_pe[mask_pred_pe] = close[mask_pred_pe] / y_pred[mask_pred_pe]
+    true_forward_pe[mask_true_pe] = close[mask_true_pe] / y_true_f[mask_true_pe]
+    pred_forward_pe[mask_pred_pe] = close[mask_pred_pe] / y_pred_f[mask_pred_pe]
 
-    true_target_price = np.full(len(df_eval), np.nan)
-    pred_target_price = np.full(len(df_eval), np.nan)
+    true_target_price = np.full(len(df_eval_f), np.nan)
+    pred_target_price = np.full(len(df_eval_f), np.nan)
     mask_target = valid_pe
-    true_target_price[mask_target] = y_true[mask_target] * pe_current[mask_target]
-    pred_target_price[mask_target] = y_pred[mask_target] * pe_current[mask_target]
+    true_target_price[mask_target] = y_true_f[mask_target] * pe_current[mask_target]
+    pred_target_price[mask_target] = y_pred_f[mask_target] * pe_current[mask_target]
 
-    true_upside = np.full(len(df_eval), np.nan)
-    pred_upside = np.full(len(df_eval), np.nan)
+    true_upside = np.full(len(df_eval_f), np.nan)
+    pred_upside = np.full(len(df_eval_f), np.nan)
     mask_upside = valid_price & (~np.isnan(true_target_price)) & (~np.isnan(pred_target_price))
     true_upside[mask_upside] = (true_target_price[mask_upside] / close[mask_upside] - 1.0) * 100.0
     pred_upside[mask_upside] = (pred_target_price[mask_upside] / close[mask_upside] - 1.0) * 100.0
@@ -112,7 +140,7 @@ def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarr
     upside_error = pred_upside - true_upside
 
     return {
-        "mae": float(mean_absolute_error(y_true, y_pred)),
+        "mae": float(mean_absolute_error(y_true_f, y_pred_f)),
         "p90_ae": float(np.quantile(abs_err, 0.9)),
         "pe_forward_err_mae": mae_from_error(pe_forward_error, error_clip_q),
         "target_price_err_mae": mae_from_error(target_price_error, error_clip_q),
@@ -123,6 +151,8 @@ def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarr
 def main() -> None:
     args = parse_args()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    evaluate_metrics.min_ttm_eps = float(args.min_ttm_eps)
+    evaluate_metrics.min_volume_lots = float(args.min_volume_lots)
 
     df = pd.read_csv(DATASET_PATH)
     df = df.replace([np.inf, -np.inf], np.nan)
@@ -196,7 +226,7 @@ def main() -> None:
             )
 
         keep_cols = []
-        for col in ["year", "symbol", "name", "q3_close", "pe_current"]:
+        for col in ["year", "symbol", "name", "q3_close", "q3_volume", "pe_current", "prev_q4_eps", "q1_eps", "q2_eps_official"]:
             if col in test_df.columns:
                 keep_cols.append(col)
 

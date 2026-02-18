@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--min-regime-samples", type=int, default=120)
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
+    parser.add_argument("--min-ttm-eps", type=float, default=2.0)
+    parser.add_argument("--min-volume-lots", type=float, default=500.0)
     return parser.parse_args()
 
 
@@ -148,6 +150,7 @@ def build_valuation_daily_frame(df_eval: pd.DataFrame, pred_eps: np.ndarray, mod
     out["date"] = df_eval["q3_date"] if "q3_date" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
     out["symbol"] = df_eval["symbol"] if "symbol" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
     out["close"] = df_eval["q3_close"] if "q3_close" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
+    out["volume"] = df_eval["q3_volume"] if "q3_volume" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
 
     ttm_official = df_eval["ttm_eps_official"].to_numpy(dtype=float)
     target_eps = df_eval[TARGET].to_numpy(dtype=float)
@@ -337,7 +340,7 @@ def main() -> None:
 
         keep_cols = [
             c
-            for c in ["year", "symbol", "name", "q3_date", "q3_close", "pe_current", "ttm_eps_official"]
+            for c in ["year", "symbol", "name", "q3_date", "q3_close", "q3_volume", "pe_current", "ttm_eps_official"]
             if c in test_df.columns
         ]
         pred_detail_df = test_df[keep_cols].copy()
@@ -370,6 +373,13 @@ def main() -> None:
     fold_df[fold_num_cols] = fold_df[fold_num_cols].round(2)
     pred_df[pred_num_cols] = pred_df[pred_num_cols].round(2)
     valuation_df[val_num_cols] = valuation_df[val_num_cols].round(4)
+
+    # 實務交易過濾：忽略 TTM EPS < 2 與日成交量 < 500 張
+    if not valuation_df.empty:
+        ttm_ok = valuation_df["ttm_eps_forward"] >= float(args.min_ttm_eps)
+        volume_lots = valuation_df["volume"] / 1000.0
+        volume_ok = volume_lots >= float(args.min_volume_lots)
+        valuation_df = valuation_df[ttm_ok & volume_ok].copy()
 
     fold_path = RESULTS_DIR / "backtest_by_fold.csv"
     pred_path = RESULTS_DIR / "predictions.csv"

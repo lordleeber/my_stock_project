@@ -28,6 +28,7 @@ KEEP_OPTIONAL = [
     "name",
     "q3_date",
     "q3_close",
+    "q3_volume",
     "pe_current",
     "prev_q4_eps",
     "q1_eps",
@@ -121,6 +122,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
                dq.symbol,
                dq.date AS q3_date,
                dq.close AS q3_close,
+               dq.volume AS q3_volume,
                pr.pe_ratio AS pe_current
         FROM daily_quotes dq
         LEFT JOIN pe_ratio pr
@@ -146,6 +148,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         e.q2_eps_official,
         ms.q3_date,
         ms.q3_close,
+        ms.q3_volume,
         ms.pe_current
     FROM q2_data q2
     LEFT JOIN q1_data q1 ON q2.symbol = q1.symbol
