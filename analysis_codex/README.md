@@ -13,6 +13,10 @@
   - `analysis_codex/v8/t1/` (8/15 視角)
   - `analysis_codex/v8/t2/` (9月初視角)
   - `analysis_codex/v8/t3/` (10月初視角)
+- `analysis_codex/v9/`
+  - `analysis_codex/v9/t1/` (8/15 + 特徵工程)
+  - `analysis_codex/v9/t2/` (9月初 + 特徵工程)
+  - `analysis_codex/v9/t3/` (10月初 + 特徵工程)
 
 ## 版本策略
 
@@ -36,8 +40,12 @@
   - `t1`：Q2 + M07
   - `t2`：Q2 + M07 + M08
   - `t3`：Q2 + M07 + M08 + M09
+- `v9`：承接 v8，補強月營收特徵工程（winsorize + 同比 + 產業標準化）。
+  - `t1`：Q2 + M07（yoy + industry z）
+  - `t2`：Q2 + M07 + M08（yoy + mom + industry z）
+  - `t3`：Q2 + M07 + M08 + M09（yoy + mom + industry z）
 
-所有 `v5/v6/v7/v8` 的估值/應用面輸出都套用實務過濾：
+所有 `v5/v6/v7/v8/v9` 的估值/應用面輸出都套用實務過濾：
 - `ttm_eps_forward >= 2.0`
 - `日成交量 >= 500 張`（`volume/1000`）
 
@@ -47,25 +55,21 @@
 - `v7` 在部分估值誤差（`pe_forward_err_mae`, `target_price_err_mae`）略優
 - `v6` 在 `upside_pct_err_mae` 較優
 
-## v8 切片比較（目前回測）
+## v8 切片比較（固定樣本）
 
-- `t1`（8/15）目前最佳：`MAE=0.622`, `P90_AE=1.264`
-- `t2`（9月初）：`MAE=0.634`, `P90_AE=1.284`
-- `t3`（10月初）：`MAE=0.636`, `P90_AE=1.294`
+- `t1`：`MAE=0.6252`, `P90_AE=1.25`
+- `t2`：`MAE=0.6357`, `P90_AE=1.28`
+- `t3`：`MAE=0.6386`, `P90_AE=1.28`
 
-## 目前問題（交接重點）
+## v9 切片比較（固定樣本）
 
-- 直覺上 `t2/t3` 應該比 `t1` 更好（因為多了 8/9 月資訊），但回測結果反而變差。
-- 已做公平檢查：在 `t1/t2/t3` 的共同樣本（固定 `fold + symbol`）下，`t1` 仍最佳。
-- 目前判斷：不是樣本不一致造成，而是新增月營收特徵的噪音/特徵工程不足造成。
+- `t1`：`MAE=0.6317`, `P90_AE=1.27`
+- `t2`：`MAE=0.6279`, `P90_AE=1.24`
+- `t3`：`MAE=0.6272`, `P90_AE=1.243`
 
-## 下一步假設（v9）
-
-- 對 `M07/M08/M09` 全部做一致特徵工程：
-  - 去極值（winsorize）
-  - 同比/季節性特徵
-  - 產業標準化（industry z-score 或 rank）
-- 驗證方式：固定同一批樣本重比 `t1/t2/t3`，確認新增月份是否帶來淨增益。
+解讀：
+- v9 已修正 v8 的反直覺現象，加入 8/9 月資訊後（t2/t3）不再劣於 t1。
+- 目前最佳是 `t3`（MAE 最低），`t2` 在 P90_AE 最佳。
 
 ## 統一原則
 
@@ -106,4 +110,16 @@
 .\.venv\Scripts\python.exe analysis_codex/v8/t2/backtest.py
 .\.venv\Scripts\python.exe analysis_codex/v8/t3/prepare_data.py
 .\.venv\Scripts\python.exe analysis_codex/v8/t3/backtest.py
+```
+
+以 `v9` 三切片為例：
+
+```bash
+.\.venv\Scripts\python.exe analysis_codex/v9/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v9/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v9/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v9/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v9/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v9/t3/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v9/compare_fixed_universe.py
 ```
