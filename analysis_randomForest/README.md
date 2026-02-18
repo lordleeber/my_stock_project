@@ -1,26 +1,26 @@
-﻿# analysis_codex
+﻿# analysis_randomForest
 
-`analysis_codex` 是我這條線的版本化實驗目錄，重點是簡單、清晰、可對照。
+`analysis_randomForest` 是我這條線的版本化實驗目錄，重點是簡單、清晰、可對照。
 
-- `analysis_codex/v1/`
-- `analysis_codex/v2/`
-- `analysis_codex/v3/`
-- `analysis_codex/v4/`
-- `analysis_codex/v5/`
-- `analysis_codex/v6/`
-- `analysis_codex/v7/`
-- `analysis_codex/v8/`
-  - `analysis_codex/v8/t1/` (8/15 視角)
-  - `analysis_codex/v8/t2/` (9月初視角)
-  - `analysis_codex/v8/t3/` (10月初視角)
-- `analysis_codex/v9/`
-  - `analysis_codex/v9/t1/` (8/15 + 特徵工程)
-  - `analysis_codex/v9/t2/` (9月初 + 特徵工程)
-  - `analysis_codex/v9/t3/` (10月初 + 特徵工程)
-- `analysis_codex/v10/` (區間預測版)
-  - `analysis_codex/v10/t1/` (8/15 + 區間預測)
-  - `analysis_codex/v10/t2/` (9月初 + 區間預測)
-  - `analysis_codex/v10/t3/` (10月初 + 區間預測)
+- `analysis_randomForest/v1/`
+- `analysis_randomForest/v2/`
+- `analysis_randomForest/v3/`
+- `analysis_randomForest/v4/`
+- `analysis_randomForest/v5/`
+- `analysis_randomForest/v6/`
+- `analysis_randomForest/v7/`
+- `analysis_randomForest/v8/`
+  - `analysis_randomForest/v8/t1/` (8/15 視角)
+  - `analysis_randomForest/v8/t2/` (9月初視角)
+  - `analysis_randomForest/v8/t3/` (10月初視角)
+- `analysis_randomForest/v9/`
+  - `analysis_randomForest/v9/t1/` (8/15 + 特徵工程)
+  - `analysis_randomForest/v9/t2/` (9月初 + 特徵工程)
+  - `analysis_randomForest/v9/t3/` (10月初 + 特徵工程)
+- `analysis_randomForest/v10/` (區間預測版)
+  - `analysis_randomForest/v10/t1/` (8/15 + 區間預測)
+  - `analysis_randomForest/v10/t2/` (9月初 + 區間預測)
+  - `analysis_randomForest/v10/t3/` (10月初 + 區間預測)
 
 ## 版本策略
 
@@ -99,9 +99,9 @@
 - `t3`: `MAE 0.6272 -> 0.6262`, `P90_AE 1.243 -> 1.243`
 
 調整前後對照檔：
-- `analysis_codex/v9/results_compare/fixed_universe_compare_baseline.csv`
-- `analysis_codex/v9/results_compare/fixed_universe_compare_tuned.csv`
-- `analysis_codex/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
+- `analysis_randomForest/v9/results_compare/fixed_universe_compare_baseline.csv`
+- `analysis_randomForest/v9/results_compare/fixed_universe_compare_tuned.csv`
+- `analysis_randomForest/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
 
 ## v10 切片比較（區間版）
 
@@ -143,41 +143,42 @@
 以 `v7` 為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v7/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v7/train.py
-.\.venv\Scripts\python.exe analysis_codex/v7/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v7/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v7/train.py
+.\.venv\Scripts\python.exe analysis_randomForest/v7/backtest.py
 ```
 
 以 `v8` 三切片為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v8/t1/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v8/t1/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v8/t2/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v8/t2/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v8/t3/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v8/t3/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v8/t3/backtest.py
 ```
 
 以 `v9` 三切片為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v9/t1/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v9/t1/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v9/t2/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v9/t2/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v9/t3/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v9/t3/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v9/compare_fixed_universe.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/t3/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v9/compare_fixed_universe.py
 ```
 
 以 `v10` 三切片為例：
 
 ```bash
-.\.venv\Scripts\python.exe analysis_codex/v10/t1/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v10/t1/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v10/t2/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v10/t2/backtest.py
-.\.venv\Scripts\python.exe analysis_codex/v10/t3/prepare_data.py
-.\.venv\Scripts\python.exe analysis_codex/v10/t3/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_randomForest/v10/t3/backtest.py
 ```
+

@@ -39,7 +39,7 @@
 - 狀態：功能完成（第一版）
 - 目標：事件時間對齊與特徵切片。
 - 已完成：
-  - 建立 `analysis_codex/v8/t1`、`analysis_codex/v8/t2`、`analysis_codex/v8/t3`
+  - 建立 `analysis_randomForest/v8/t1`、`analysis_randomForest/v8/t2`、`analysis_randomForest/v8/t3`
   - `t1`: Q2 + M07、`t2`: Q2 + M07 + M08、`t3`: Q2 + M07 + M08 + M09
   - 保留 v6 對接輸出鏈路（`valuation_daily_preview` / `quality_report`）
 - 後續可調：
@@ -50,7 +50,7 @@
 - 狀態：功能完成（第一版）
 - 目標：月營收特徵工程強化（承接 v8 的 t1/t2/t3）。
 - 已完成：
-  - 建立 `analysis_codex/v9/t1`、`analysis_codex/v9/t2`、`analysis_codex/v9/t3`
+  - 建立 `analysis_randomForest/v9/t1`、`analysis_randomForest/v9/t2`、`analysis_randomForest/v9/t3`
   - 對 `M07/M08/M09` 做一致化特徵工程：
     - winsorize（訓練集分位數）
     - 同比特徵（yoy）
@@ -63,15 +63,15 @@
   - 已完成：新增 2025 分年參數（`year_winsor_quantile` / `year_confidence_quantile`）
   - 本次採用 tuned 設定：`feature_transform=quantile` + `year_winsor_quantile=0.02`
   - 調整前後比較另存：
-    - `analysis_codex/v9/results_compare/fixed_universe_compare_baseline.csv`
-    - `analysis_codex/v9/results_compare/fixed_universe_compare_tuned.csv`
-    - `analysis_codex/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
+    - `analysis_randomForest/v9/results_compare/fixed_universe_compare_baseline.csv`
+    - `analysis_randomForest/v9/results_compare/fixed_universe_compare_tuned.csv`
+    - `analysis_randomForest/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
 
 ## v10
 - 狀態：功能完成（第一版）
 - 目標：不只給點估計，加入區間預測。
 - 已完成：
-  - 建立 `analysis_codex/v10/t1`、`analysis_codex/v10/t2`、`analysis_codex/v10/t3`
+  - 建立 `analysis_randomForest/v10/t1`、`analysis_randomForest/v10/t2`、`analysis_randomForest/v10/t3`
   - `t1/t2/t3` 繼承 v9 切片架構並加入區間輸出
   - 產生 `pred_rf_delta_low / mid / high`
   - 同步輸出 `predict_target_price_low/high`、`upside_pct_low/high`
@@ -86,3 +86,4 @@
   - 定期重訓與版本管理
   - 線上監控（資料品質、預測漂移、策略績效）
   - 回滾機制與告警
+
