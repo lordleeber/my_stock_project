@@ -38,7 +38,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
     FLOAT_COLUMNS = {'mom_pct', 'yoy_pct', 'cumulative_yoy_pct'}
 
     # String columns
-    STRING_COLUMNS = {'symbol', 'name', 'comment', 'market'}
+    STRING_COLUMNS = {'symbol', 'name', 'comment', 'publish_time', 'market'}
 
     def get_file_path(self, market=None):
         """Override to handle monthly_revenue date format (YYYYMXX) in new path structure."""

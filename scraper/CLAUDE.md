@@ -61,7 +61,9 @@ Backward compatibility:
 ## Raw Output Paths (current)
 
 - Daily categories: `data/raw/<category>/YYYY/YYYYMMDD/{sii,otc}.csv`
-- Monthly revenue: `data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv`
+- Monthly revenue:
+  - snapshot: `data/raw/monthly_revenue/YYYY/YYYYMXX/tmp.csv` (overwritten each run)
+  - cumulative: `data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv` (append only newly published rows)
 - Quarterly reports: `data/raw/quarterly_reports/YYYY/YYYYQX/{sii,otc}.{xls,csv}`
 - Quarterly statements:
   - `data/raw/income_statement/YYYY/YYYYQX/{sii,otc}_*.csv`
@@ -89,6 +91,8 @@ REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
 
 - 這次重構目標是「入口與分層一致化」。既有抓取邏輯（TWSE/TPEx/MOPS/TDCC）保持不變。
 - 四個入口（daily/weekly/monthly/quarterly）都會在抓取完成後自動執行對應 `check_outputs`。
+- `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
+- `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
 - 如有改程式碼，先重建 image：
 

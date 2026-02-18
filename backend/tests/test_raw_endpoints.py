@@ -99,6 +99,17 @@ CASES = [
         ],
     },
     {
+        "endpoint": "/raw/trust-holding",
+        "table": "trust_holding",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": [
+            "date", "symbol", "market",
+            "issued_shares", "trust_held_shares", "trust_held_ratio"
+        ],
+    },
+    {
         "endpoint": "/raw/pe-ratio",
         "table": "pe_ratio",
         "columns": ["date", "symbol", "market"],
@@ -135,7 +146,8 @@ CASES = [
             "date", "symbol", "market",
             "revenue_current", "revenue_last_month", "revenue_last_year",
             "mom_pct", "yoy_pct",
-            "revenue_cumulative", "revenue_cumulative_last_year", "cumulative_yoy_pct"
+            "revenue_cumulative", "revenue_cumulative_last_year", "cumulative_yoy_pct",
+            "publish_time"
         ],
         "is_q_format": True,
     },

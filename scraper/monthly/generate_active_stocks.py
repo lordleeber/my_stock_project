@@ -129,9 +129,7 @@ def generate_stock_list(output_file="active_stocks.txt", date_str: str | None = 
 
     logger.info(f"Using monthly revenue month: {month_key}")
     year = month_key[:4]
-    new_path = revenue_dir / year / month_key / "market.csv"
-    legacy_path = revenue_dir / f"date={year}{month_key[5:7]}01" / "market.csv"
-    source_path = new_path if new_path.exists() else legacy_path
+    source_path = revenue_dir / year / month_key / "market.csv"
 
     rows = _load_monthly_revenue(source_path)
     if not rows:

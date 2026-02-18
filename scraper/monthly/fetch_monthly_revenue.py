@@ -125,7 +125,6 @@ def fetch_market_revenue(year_roc, month, market_type):
         
         if not all_data:
             print(f"❌ No valid data tables found for {market_type}.")
-            print(f"❌ No valid data tables found for {market_type}.")
             return None
             
         final_df = pd.concat(all_data, ignore_index=True)
@@ -205,19 +204,44 @@ def process_and_save(year, month):
             full_df[col] = pd.to_numeric(full_df[col].astype(str).str.replace(',', ''), errors='coerce')
 
     # Save
-    # New raw path format: data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv
+    # New raw path format: data/raw/monthly_revenue/YYYY/YYYYMXX/tmp.csv
     year_str = str(year)
     month_key = f"{year}M{month:02d}"
     output_dir = f"data/raw/monthly_revenue/{year_str}/{month_key}"
     os.makedirs(output_dir, exist_ok=True)
 
-    output_path = os.path.join(output_dir, "market.csv")
-    if os.path.exists(output_path) and not FORCE_REPROCESS:
-        print(f"\n⏭️  {output_path} already exists, skip. (Set FORCE_REPROCESS=1 to overwrite)")
-        return
-    full_df.to_csv(output_path, index=False)
-    print(f"\n✅ Saved {len(full_df)} records to: {output_path}")
+    tmp_path = os.path.join(output_dir, "tmp.csv")
+    # Always overwrite tmp.csv; this is the latest daily snapshot.
+    full_df.to_csv(tmp_path, index=False)
+    print(f"\n✅ Saved {len(full_df)} records to: {tmp_path}")
     print(f"Sample:\n{full_df[['symbol', 'name', 'revenue', 'yoy_pct']].head()}")
+
+    # Merge tmp snapshot into accumulated market.csv, preserving first publish_time.
+    publish_time = os.getenv("PUBLISH_TIME", "").strip() or datetime.now().strftime("%Y%m%d")
+    full_df["publish_time"] = publish_time
+
+    market_path = os.path.join(output_dir, "market.csv")
+    key_cols = ["market", "symbol"]
+    if os.path.exists(market_path):
+        market_df = pd.read_csv(market_path)
+        if "publish_date" in market_df.columns and "publish_time" not in market_df.columns:
+            market_df = market_df.rename(columns={"publish_date": "publish_time"})
+        existing_keys = set(market_df[key_cols].astype(str).agg("||".join, axis=1).tolist())
+    else:
+        market_df = pd.DataFrame(columns=list(full_df.columns))
+        existing_keys = set()
+
+    full_df["_key"] = full_df[key_cols].astype(str).agg("||".join, axis=1)
+    new_rows = full_df[~full_df["_key"].isin(existing_keys)].drop(columns=["_key"])
+
+    if len(new_rows) > 0:
+        merged_df = pd.concat([market_df, new_rows], ignore_index=True)
+        merged_df.to_csv(market_path, index=False)
+        print(f"✅ Appended {len(new_rows)} new rows to: {market_path} (publish_time={publish_time})")
+    else:
+        if not os.path.exists(market_path):
+            full_df.drop(columns=["_key"]).to_csv(market_path, index=False)
+        print(f"✅ No new rows to append. market.csv unchanged (publish_time={publish_time})")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch monthly revenue from MOPS (mopsov).")

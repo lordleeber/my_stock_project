@@ -15,7 +15,7 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Final output column order (schema) - src_col is generated based on this order
 SCHEMA_COLS = ['date', 'market', 'symbol', 'name', 'revenue_current', 'revenue_last_month',
                'revenue_last_year', 'mom_pct', 'yoy_pct', 'revenue_cumulative',
-               'revenue_cumulative_last_year', 'cumulative_yoy_pct', 'comment']
+               'revenue_cumulative_last_year', 'cumulative_yoy_pct', 'comment', 'publish_time']
 
 
 def generate_src_col(schema_cols, col_mapping):
@@ -49,8 +49,8 @@ COL_MAPPING = {
     "去年累計營收": "revenue_cumulative_last_year",
     "前期比較增減(%)": "cumulative_yoy_pct",
     "備註": "comment",
+    "出表日期": "publish_time",
     # Ignore columns (mapped to None)
-    "出表日期": None,
     "資料年月": None,
 }
 
@@ -67,6 +67,7 @@ COL_MAPPING_EN = {
     "revenue_acc_last_year": "revenue_cumulative_last_year",
     "acc_yoy_pct": "cumulative_yoy_pct",
     "comment": "comment",
+    "publish_time": "publish_time",
     # Known columns to ignore (internal use)
     "market": None,  # Handled separately
 }
@@ -194,7 +195,14 @@ def process_monthly_revenue():
         year_str = dir_name[:4]
         month_str = dir_name[5:7]
             
-        csv_files = glob.glob(os.path.join(dir_path, "*.csv"))
+        market_csv = os.path.join(dir_path, "market.csv")
+        tmp_csv = os.path.join(dir_path, "tmp.csv")
+        if os.path.exists(market_csv):
+            csv_files = [market_csv]
+        elif os.path.exists(tmp_csv):
+            csv_files = [tmp_csv]
+        else:
+            csv_files = glob.glob(os.path.join(dir_path, "*.csv"))
 
         dfs = []
         for file_path in csv_files:

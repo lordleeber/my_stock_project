@@ -22,14 +22,12 @@ def check_monthly_outputs(output_dir, year, month):
     date_str = f"{year}{month_int:02d}01"
     base_dir = Path(output_dir).resolve()
 
-    # Prefer new path, fallback old path
-    new_path = base_dir / "raw" / "monthly_revenue" / date_str[:4] / f"{date_str[:4]}M{date_str[4:6]}" / "market.csv"
-    old_path = base_dir / "raw" / "monthly_revenue" / f"date={date_str}" / "market.csv"
-    target_path = new_path if new_path.exists() else old_path
-
     missing = []
-    if not target_path.exists() or target_path.stat().st_size == 0:
-        missing.append(str(target_path))
+    new_dir = base_dir / "raw" / "monthly_revenue" / date_str[:4] / f"{date_str[:4]}M{date_str[4:6]}"
+    required_files = [new_dir / "tmp.csv", new_dir / "market.csv"]
+    for p in required_files:
+        if not p.exists() or p.stat().st_size == 0:
+            missing.append(str(p))
 
     _append_missing(
         title="scraper-monthly missing outputs",

@@ -7,14 +7,16 @@
 - `schedules/daily_update.sh`
   - 流程：`scraper-daily -> processor -> audit -> importer -> calculator`
   - 參數：可選 `YYYYMMDD`（不給則用今天）
+  - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_valuation.py`
 
 - `schedules/weekly_update.sh`
   - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding)`
   - 自動偵測最新 TDCC 檔案日期後處理
 
 - `schedules/monthly_update.sh`
-  - 流程：`scraper-monthly -> generate_active_stocks -> processor(convert_monthly) -> importer(monthly_revenue)`
-  - 自動抓「上個月」
+  - 目標月份：自動抓「上個月」
+  - 只在每月 1~15 日執行（公告窗口），其餘日期直接 skip
+  - 流程：`scraper-monthly -> (day 15 only) generate_active_stocks -> processor(convert_monthly) -> importer(monthly_revenue, FORCE_REIMPORT=1)`
 
 - `schedules/quarterly_update.sh`
   - 流程：`scraper-quarterly -> processor(convert_quarterly) -> importer(quarterly categories)`
@@ -38,11 +40,17 @@
 - `com.poyilee.stock-weekly-update`
 - `com.poyilee.stock-monthly-update`
 
+### Daily Schedule (current)
+
+`com.poyilee.stock-daily-update`：
+- Script: `StockDailyUpdate.app`（內部呼叫 `schedules/daily_update.sh`）
+- Time: 每天 `23:00`
+
 ### Monthly Schedule (current)
 
 `com.poyilee.stock-monthly-update`：
 - Script: `schedules/monthly_update.sh`
-- Time: 每月 `14` 號 `14:00`
+- Time: 每天 `22:45`（腳本內再判斷是否在 1~15 日）
 
 ### Weekly Schedule (current)
 
@@ -79,4 +87,5 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-monthl
 
 - 執行腳本前請確認 Docker Desktop 已啟動。
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
-- 月腳本會在專案根目錄更新 `active_stocks.txt`。
+- 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
+- Daily/Weekly/Monthly/Quarterly 都會寫入對應 `logs/*_update_*.log`。

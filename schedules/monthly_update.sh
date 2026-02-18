@@ -19,6 +19,13 @@ echo "Monthly Revenue Update Started" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
+# 僅在每月 1~15 日執行（公告期間）
+TODAY_DAY=$(date +%d)
+if [ "$TODAY_DAY" -lt 1 ] || [ "$TODAY_DAY" -gt 15 ]; then
+    echo "Outside publish window (day=$TODAY_DAY). Skip monthly update." | tee -a "$LOG_FILE"
+    exit 0
+fi
+
 # 計算上個月的年份和月份
 CURRENT_MONTH=$(date +%m)
 CURRENT_YEAR=$(date +%Y)
@@ -45,13 +52,17 @@ else
     exit 1
 fi
 
-# 2. Generate active_stocks.txt
-echo "[2/4] Generating active_stocks.txt..." | tee -a "$LOG_FILE"
-if python3 scraper/monthly/generate_active_stocks.py --date "$REVENUE_DATE" --output active_stocks.txt 2>&1 | tee -a "$LOG_FILE"; then
-    echo "✓ Active stocks generated" | tee -a "$LOG_FILE"
+# 2. Generate active_stocks.txt (only on day 15)
+if [ "$TODAY_DAY" -eq 15 ]; then
+    echo "[2/4] Generating active_stocks.txt..." | tee -a "$LOG_FILE"
+    if python3 scraper/monthly/generate_active_stocks.py --date "$REVENUE_DATE" --output active_stocks.txt 2>&1 | tee -a "$LOG_FILE"; then
+        echo "✓ Active stocks generated" | tee -a "$LOG_FILE"
+    else
+        echo "✗ Failed to generate active_stocks.txt" | tee -a "$LOG_FILE"
+        exit 1
+    fi
 else
-    echo "✗ Failed to generate active_stocks.txt" | tee -a "$LOG_FILE"
-    exit 1
+    echo "[2/4] Skipping active_stocks.txt generation (only runs on day 15)." | tee -a "$LOG_FILE"
 fi
 
 # 3. Processor
@@ -63,9 +74,9 @@ else
     exit 1
 fi
 
-# 4. Importer
+# 4. Importer (force reimport to refresh cumulative monthly publication progress)
 echo "[4/4] Running importer for monthly_revenue..." | tee -a "$LOG_FILE"
-if docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE importer python import_monthly.py 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose run --rm -e FORCE_REIMPORT=1 -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE importer python import_monthly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Importer failed" | tee -a "$LOG_FILE"

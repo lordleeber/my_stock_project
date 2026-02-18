@@ -24,6 +24,11 @@ SCHEMA_COLS = {
         "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio",
         "pced_file", "pced_row", "pced_col"
     ],
+    "trust_holding": [
+        "date", "market", "symbol", "name",
+        "issued_shares", "trust_held_shares", "trust_held_ratio",
+        "pced_file", "pced_row", "pced_col"
+    ],
     "margin_trading": [
         "date", "market", "symbol", "name",
         "margin_long_buy", "margin_long_sell", "margin_long_cash_repay",
@@ -56,7 +61,7 @@ SCHEMA_COLS = {
     "monthly_revenue": [
         "date", "market", "symbol", "name", "revenue_current", "revenue_last_month",
         "revenue_last_year", "mom_pct", "yoy_pct", "revenue_cumulative",
-        "revenue_cumulative_last_year", "cumulative_yoy_pct", "comment",
+        "revenue_cumulative_last_year", "cumulative_yoy_pct", "comment", "publish_time",
         "pced_file", "pced_row", "pced_col"
     ],
     "income_statement": [
@@ -157,6 +162,7 @@ COLUMN_TYPES = {
     "statement_type": pl.Utf8,
     "index_name": pl.Utf8,
     "comment": pl.Utf8,
+    "publish_time": pl.Utf8,
     "type": pl.Utf8,
     "pe_percentile_official": pl.Float64,
     "pe_percentile_forward": pl.Float64,

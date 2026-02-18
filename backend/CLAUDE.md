@@ -165,6 +165,7 @@ AI assistant guardrails:
 | `/raw/institutional-investors`| GET | Same as daily-quotes | `List[InstitutionalInvestorsRaw]` |
 | `/raw/institutional-summary` | GET | Same as margin-summary | `List[InstitutionalSummaryRaw]` |
 | `/raw/foreign-holding` | GET | Same as daily-quotes | `List[ForeignHoldingRaw]` |
+| `/raw/trust-holding` | GET | Same as daily-quotes | `List[TrustHoldingRaw]` |
 | `/raw/pe-ratio` | GET | Same as daily-quotes | `List[PeRatioRaw]` |
 | `/raw/valuation-analysis` | GET | `start_date`, `end_date`, `symbol?`, `limit=1000`, `offset=0` | `List[ValuationAnalysisRaw]` |
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
@@ -248,7 +249,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 
 **Important Notes:**
 - All `date` fields return YYYY-MM-DD format strings (not datetime objects)
-- Database schema uses TEXT type for all date columns (standardized across 15 tables)
+- Database schema uses TEXT type for all date columns across raw tables
 - All `symbol` fields use **TEXT** type and strictly contain **4-digit numeric symbols** only.
 - `bid` and `ask` fields in DailyQuoteRaw are strings (stored as TEXT in database)
 - **DailyQuoteRaw** no longer contains `pe_ratio`. Use the standalone `pe_ratio` endpoint for valuation data.
@@ -260,10 +261,11 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **InstitutionalInvestorsRaw**: date, symbol, name, market, foreign_buy/sell/net, trust_buy/sell/net, dealer_buy/sell/net
 - **InstitutionalSummaryRaw**: date, market, institution, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
+- **TrustHoldingRaw**: date, symbol, market, trust_held_shares, issued_shares, trust_held_ratio
 - **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
 - **ValuationAnalysisRaw**: date, symbol, close, ttm_eps, pe_ratio_calculated, pe_ratio_from_pe_table, pe_percentile
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
-- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct, comment
+- **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct, comment, publish_time
 - **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
 - **StockInfoRaw**: symbol, name, industry, market, listing_date, tags (array)
 - **StockTagRaw**: symbol, tag
@@ -281,6 +283,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 | `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea | Scanner, analysis, ML training |
 | `institutional_investors` | date, symbol, foreign_net, trust_net, dealer_net | Institutional API, ML training |
 | `foreign_holding` | date, symbol, foreign_held_shares | Institutional API, ML training |
+| `trust_holding` | date, symbol, trust_held_shares, trust_held_ratio | Raw API (`/raw/trust-holding`) |
 | `margin_summary` | date, market, item, buy, sell, cash_repay, today_balance | Market analysis |
 
 **Indexes:**
@@ -288,6 +291,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - `idx_technical_indicators_symbol_date` (technical_indicators)
 - `idx_institutional_investors_symbol_date` (institutional_investors)
 - `idx_foreign_holding_symbol_date` (foreign_holding)
+- `idx_trust_holding_symbol_date` (trust_holding)
 
 The composite indexes on `(symbol, date)` optimize JOIN performance for the ML training data endpoint.
 
@@ -419,12 +423,13 @@ curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end
    docker compose run --rm backend python create_indexes.py
    ```
 
-3. **Expected indexes (5 total):**
+3. **Expected indexes (6 total):**
    - `idx_daily_quotes_date_symbol` (daily_quotes)
    - `idx_daily_quotes_symbol_date` (daily_quotes)
-   - `idx_tech_symbol_date` (technical_indicators)
+   - `idx_technical_indicators_symbol_date` (technical_indicators)
    - `idx_institutional_investors_symbol_date` (institutional_investors)
    - `idx_foreign_holding_symbol_date` (foreign_holding)
+   - `idx_trust_holding_symbol_date` (trust_holding)
 
 **Performance Impact:** Missing indexes can degrade query performance from ~50ms to several seconds for multi-table JOINs (e.g., ML training data endpoint).
 
@@ -488,7 +493,7 @@ For detailed information about data sources, see `scraper/CLAUDE.md`.
 | Source | Service | Update Frequency |
 |--------|---------|------------------|
 | TWSE/TPEx | `scraper-daily` | Daily (after market close, 22:00) |
-| MOPS | `scraper-monthly` | Monthly (before 10th) |
+| MOPS | `scraper-monthly` | Daily during month day 1~15 (updates previous month cumulatively) |
 | MOPS | `scraper-quarterly` | Quarterly (approx. 45 days after Q-end) |
 | TDCC | `scraper-weekly` | Weekly (Saturday) |
 
@@ -498,6 +503,7 @@ For detailed information about data sources, see `scraper/CLAUDE.md`.
 data/
 ├── raw/                          # Scraper output (original CSVs)
 │   ├── <daily_category>/YYYY/YYYYMMDD/{sii,otc}.csv
+│   ├── monthly_revenue/YYYY/YYYYMXX/tmp.csv
 │   ├── monthly_revenue/YYYY/YYYYMXX/market.csv
 │   ├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.{xls,csv}
 │   ├── income_statement/YYYY/YYYYQX/{sii,otc}_*.csv
