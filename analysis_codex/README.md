@@ -9,6 +9,10 @@
 - `analysis_codex/v5/`
 - `analysis_codex/v6/`
 - `analysis_codex/v7/`
+- `analysis_codex/v8/`
+  - `analysis_codex/v8/t1/` (8/15 視角)
+  - `analysis_codex/v8/t2/` (9月初視角)
+  - `analysis_codex/v8/t3/` (10月初視角)
 
 ## 版本策略
 
@@ -27,8 +31,13 @@
   並加入 hybrid 回退（預設 `confidence_quantile=0.95`，`n_jobs=-1`）。
 - `v7`：Regime-aware（分群子模型）+ 低信心回退（global/baseline），
   目前預設 `confidence_quantile=0.95`，`n_jobs=-1`。
+- `v8`：事件時點對齊版，嚴格特徵切片為 Q2 + M07/M08（不使用 M09），
+  避免使用可能晚於事件時點才可得的欄位。
+  - `t1`：Q2 + M07
+  - `t2`：Q2 + M07 + M08
+  - `t3`：Q2 + M07 + M08 + M09
 
-所有 `v5/v6/v7` 的估值/應用面輸出都套用實務過濾：
+所有 `v5/v6/v7/v8` 的估值/應用面輸出都套用實務過濾：
 - `ttm_eps_forward >= 2.0`
 - `日成交量 >= 500 張`（`volume/1000`）
 
@@ -37,6 +46,26 @@
 - `v6` 在 EPS 指標（`MAE`, `P90_AE`）略優於 `v7`
 - `v7` 在部分估值誤差（`pe_forward_err_mae`, `target_price_err_mae`）略優
 - `v6` 在 `upside_pct_err_mae` 較優
+
+## v8 切片比較（目前回測）
+
+- `t1`（8/15）目前最佳：`MAE=0.622`, `P90_AE=1.264`
+- `t2`（9月初）：`MAE=0.634`, `P90_AE=1.284`
+- `t3`（10月初）：`MAE=0.636`, `P90_AE=1.294`
+
+## 目前問題（交接重點）
+
+- 直覺上 `t2/t3` 應該比 `t1` 更好（因為多了 8/9 月資訊），但回測結果反而變差。
+- 已做公平檢查：在 `t1/t2/t3` 的共同樣本（固定 `fold + symbol`）下，`t1` 仍最佳。
+- 目前判斷：不是樣本不一致造成，而是新增月營收特徵的噪音/特徵工程不足造成。
+
+## 下一步假設（v9）
+
+- 對 `M07/M08/M09` 全部做一致特徵工程：
+  - 去極值（winsorize）
+  - 同比/季節性特徵
+  - 產業標準化（industry z-score 或 rank）
+- 驗證方式：固定同一批樣本重比 `t1/t2/t3`，確認新增月份是否帶來淨增益。
 
 ## 統一原則
 
@@ -66,4 +95,15 @@
 .\.venv\Scripts\python.exe analysis_codex/v7/prepare_data.py
 .\.venv\Scripts\python.exe analysis_codex/v7/train.py
 .\.venv\Scripts\python.exe analysis_codex/v7/backtest.py
+```
+
+以 `v8` 三切片為例：
+
+```bash
+.\.venv\Scripts\python.exe analysis_codex/v8/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v8/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v8/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v8/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v8/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v8/t3/backtest.py
 ```

@@ -37,18 +37,31 @@
   - `min_regime_samples`（子模型最小樣本）
 
 ## v8
+- 狀態：功能完成（第一版）
 - 目標：事件時間對齊與特徵切片。
-- 重點：
-  - 只使用「公告當下可得」的特徵
-  - 避免任何未來資訊滲漏
+- 已完成：
+  - 建立 `analysis_codex/v8/t1`、`analysis_codex/v8/t2`、`analysis_codex/v8/t3`
+  - `t1`: Q2 + M07、`t2`: Q2 + M07 + M08、`t3`: Q2 + M07 + M08 + M09
+  - 保留 v6 對接輸出鏈路（`valuation_daily_preview` / `quality_report`）
+- 後續可調：
+  - 事件日定義精緻化（依實際公告日而非固定切點）
+  - 加入公告延遲/修正的資料品質處理
 
 ## v9
+- 目標：月營收特徵工程強化（承接 v8 的 t1/t2/t3）。
+- 重點：
+  - 對 `M07/M08/M09` 全部做去極值（winsorize）
+  - 加入同比/季節性特徵（避免只看原始環比）
+  - 產業標準化（industry z-score / rank）
+  - 在「固定同一批樣本」下重比 t1/t2/t3，確認新增月份是否帶來淨增益
+
+## v10
 - 目標：不只給點估計，加入區間預測。
 - 重點：
   - 產生 `pred_eps_low/mid/high`
   - 同步輸出 `target_price_low/high`、`upside_pct_low/high`
 
-## v10
+## v11
 - 目標：上線化與監控。
 - 重點：
   - 定期重訓與版本管理
