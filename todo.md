@@ -64,10 +64,16 @@
   - 針對 2025 高波動年度做分年參數
 
 ## v10
+- 狀態：功能完成（第一版）
 - 目標：不只給點估計，加入區間預測。
-- 重點：
-  - 產生 `pred_eps_low/mid/high`
-  - 同步輸出 `target_price_low/high`、`upside_pct_low/high`
+- 已完成：
+  - 建立 `analysis_codex/v10`（以 v9_t3 為底）
+  - 產生 `pred_rf_delta_low / mid / high`
+  - 同步輸出 `predict_target_price_low/high`、`upside_pct_low/high`
+  - 回測新增區間指標：`interval_coverage`、`interval_avg_width`
+- 後續可調：
+  - 校準區間分位數（目前 0.2/0.8）
+  - 目標 coverage 校準（例如 60%/70%/80%）
 
 ## v11
 - 目標：上線化與監控。

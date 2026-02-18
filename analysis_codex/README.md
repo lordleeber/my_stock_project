@@ -17,6 +17,7 @@
   - `analysis_codex/v9/t1/` (8/15 + 特徵工程)
   - `analysis_codex/v9/t2/` (9月初 + 特徵工程)
   - `analysis_codex/v9/t3/` (10月初 + 特徵工程)
+- `analysis_codex/v10/` (區間預測版)
 
 ## 版本策略
 
@@ -44,8 +45,13 @@
   - `t1`：Q2 + M07（yoy + industry z）
   - `t2`：Q2 + M07 + M08（yoy + mom + industry z）
   - `t3`：Q2 + M07 + M08 + M09（yoy + mom + industry z）
+- `v10`：在 v9_t3 基礎上加入區間預測。
+  - `pred_rf_delta_low / pred_rf_delta / pred_rf_delta_high`
+  - `predict_target_price_low / mid / high`
+  - `upside_pct_low / mid / high`
+  - 回測輸出 `interval_coverage`、`interval_avg_width`
 
-所有 `v5/v6/v7/v8/v9` 的估值/應用面輸出都套用實務過濾：
+所有 `v5/v6/v7/v8/v9/v10` 的估值/應用面輸出都套用實務過濾：
 - `ttm_eps_forward >= 2.0`
 - `日成交量 >= 500 張`（`volume/1000`）
 
