@@ -18,6 +18,9 @@
   - `analysis_codex/v9/t2/` (9月初 + 特徵工程)
   - `analysis_codex/v9/t3/` (10月初 + 特徵工程)
 - `analysis_codex/v10/` (區間預測版)
+  - `analysis_codex/v10/t1/` (8/15 + 區間預測)
+  - `analysis_codex/v10/t2/` (9月初 + 區間預測)
+  - `analysis_codex/v10/t3/` (10月初 + 區間預測)
 
 ## 版本策略
 
@@ -46,6 +49,7 @@
   - `t2`：Q2 + M07 + M08（yoy + mom + industry z）
   - `t3`：Q2 + M07 + M08 + M09（yoy + mom + industry z）
 - `v10`：在 v9_t3 基礎上加入區間預測。
+  - `t1/t2/t3` 繼承 v9 的事件切片
   - `pred_rf_delta_low / pred_rf_delta / pred_rf_delta_high`
   - `predict_target_price_low / mid / high`
   - `upside_pct_low / mid / high`
@@ -76,6 +80,21 @@
 解讀：
 - v9 已修正 v8 的反直覺現象，加入 8/9 月資訊後（t2/t3）不再劣於 t1。
 - 目前最佳是 `t3`（MAE 最低），`t2` 在 P90_AE 最佳。
+
+## v10 切片比較（區間版）
+
+- `t1`：`MAE=0.630`, `P90_AE=1.292`, `coverage=0.258`, `avg_width=0.296`
+- `t2`：`MAE=0.628`, `P90_AE=1.272`, `coverage=0.270`, `avg_width=0.294`
+- `t3`：`MAE=0.624`, `P90_AE=1.276`, `coverage=0.262`, `avg_width=0.294`
+
+解讀：
+- 點估計（MAE）以 `t3` 最佳，尾端誤差（P90）以 `t2` 最佳。
+- 目前區間 coverage 約 `0.26`，仍偏低，後續要做區間校準。
+
+## v9 與 v10關係
+
+- `v10` 的資料準備與切片基礎承接 `v9`（同一批特徵工程）。
+- `v10` 的新增價值在輸出區間（low/mid/high）與 coverage/width 指標。
 
 ## 統一原則
 
@@ -128,4 +147,15 @@
 .\.venv\Scripts\python.exe analysis_codex/v9/t3/prepare_data.py
 .\.venv\Scripts\python.exe analysis_codex/v9/t3/backtest.py
 .\.venv\Scripts\python.exe analysis_codex/v9/compare_fixed_universe.py
+```
+
+以 `v10` 三切片為例：
+
+```bash
+.\.venv\Scripts\python.exe analysis_codex/v10/t1/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v10/t1/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v10/t2/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v10/t2/backtest.py
+.\.venv\Scripts\python.exe analysis_codex/v10/t3/prepare_data.py
+.\.venv\Scripts\python.exe analysis_codex/v10/t3/backtest.py
 ```

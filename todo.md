@@ -8,7 +8,7 @@
   - 加入估值誤差指標（`pe_forward`、`target_price`、`upside_pct`）
   - v5.1 加入穩健化（winsorize、hybrid fallback、eps floor）
   - 依回測調參，hybrid 預設 `confidence_quantile` 更新為 `0.95`
-- 備註：後續可再做更細緻的分年/分產業調參。
+- 備註：分年/分產業與事件切片方向已在 `v8/v9` 延伸實作，`v5` 本身不再擴充。
 
 ## v6
 - 狀態：功能完成
@@ -33,8 +33,7 @@
   - 回測輸出 `pred_source` 與 `pred_std`，可檢查回退比例
   - 依回測調參，預設 `confidence_quantile` 更新為 `0.95`
 - 後續可調：
-  - `confidence_quantile`（回退靈敏度）
-  - `min_regime_samples`（子模型最小樣本）
+  - `min_regime_samples`（子模型最小樣本，尚未系統化調參）
 
 ## v8
 - 狀態：功能完成（第一版）
@@ -67,7 +66,8 @@
 - 狀態：功能完成（第一版）
 - 目標：不只給點估計，加入區間預測。
 - 已完成：
-  - 建立 `analysis_codex/v10`（以 v9_t3 為底）
+  - 建立 `analysis_codex/v10/t1`、`analysis_codex/v10/t2`、`analysis_codex/v10/t3`
+  - `t1/t2/t3` 繼承 v9 切片架構並加入區間輸出
   - 產生 `pred_rf_delta_low / mid / high`
   - 同步輸出 `predict_target_price_low/high`、`upside_pct_low/high`
   - 回測新增區間指標：`interval_coverage`、`interval_avg_width`
