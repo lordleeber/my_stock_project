@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 
 FEATURES = [
@@ -34,18 +34,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
+    parser.add_argument("--interval-method", type=str, choices=["tree_quantile", "quantile_model"], default="quantile_model")
     parser.add_argument("--feature-transform", type=str, choices=["zscore", "rank", "quantile"], default="quantile")
     parser.add_argument("--year-param-start", type=int, default=2025)
     parser.add_argument("--year-winsor-quantile", type=float, default=0.02)
     parser.add_argument("--year-confidence-quantile", type=float, default=None)
     parser.add_argument("--n-jobs", type=int, default=-1)
-    parser.add_argument("--interval-low-quantile", type=float, default=0.2)
-    parser.add_argument("--interval-high-quantile", type=float, default=0.8)
+    parser.add_argument("--interval-low-quantile", type=float, default=0.18)
+    parser.add_argument("--interval-high-quantile", type=float, default=0.82)
     parser.add_argument("--target-coverage", type=float, default=None)
-    parser.add_argument("--calibration-mode", type=str, choices=["global", "latest_year", "regime"], default="regime")
+    parser.add_argument("--calibration-mode", type=str, choices=["global", "latest_year", "regime", "nonlinear"], default="nonlinear")
     parser.add_argument("--min-calib-samples", type=int, default=100)
     parser.add_argument("--min-calib-scale", type=float, default=0.5)
     parser.add_argument("--max-calib-scale", type=float, default=3.0)
+    parser.add_argument("--nonlinear-bins", type=int, default=8)
+    parser.add_argument("--nonlinear-min-bin-samples", type=int, default=50)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--min-ttm-eps", type=float, default=2.0)
     parser.add_argument("--min-volume-lots", type=float, default=500.0)
@@ -336,6 +339,104 @@ def calibrate_interval_scale_by_regime(
     return out_scale, f"regime_groups={len(scales)}", global_scale
 
 
+def calibrate_interval_scale_nonlinear(
+    y_true_train: np.ndarray,
+    y_mid_train: np.ndarray,
+    y_low_train: np.ndarray,
+    y_high_train: np.ndarray,
+    pred_std_train: np.ndarray,
+    pred_std_test: np.ndarray,
+    target_coverage: float | None,
+    min_samples: int,
+    min_scale: float,
+    max_scale: float,
+    n_bins: int,
+    min_bin_samples: int,
+) -> tuple[np.ndarray, str, float]:
+    global_scale = calibrate_interval_scale(
+        y_true_train,
+        y_mid_train,
+        y_low_train,
+        y_high_train,
+        target_coverage,
+        min_samples,
+        min_scale,
+        max_scale,
+    )
+    if target_coverage is None:
+        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_disabled_target_none", global_scale
+
+    if len(y_true_train) < max(min_samples, min_bin_samples * 2):
+        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_small_train", global_scale
+
+    half_width = (y_high_train - y_low_train) / 2.0
+    valid = (~np.isnan(y_true_train)) & (~np.isnan(y_mid_train)) & (~np.isnan(half_width)) & (~np.isnan(pred_std_train))
+    if int(np.sum(valid)) < max(min_samples, min_bin_samples * 2):
+        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_invalid_train", global_scale
+
+    std_v = pred_std_train[valid]
+    y_true_v = y_true_train[valid]
+    y_mid_v = y_mid_train[valid]
+    hw_v = np.clip(half_width[valid], 1e-6, None)
+    ratio_v = np.abs(y_true_v - y_mid_v) / hw_v
+
+    n_bins = max(3, int(n_bins))
+    quantiles = np.linspace(0.0, 1.0, n_bins + 1)
+    edges = np.quantile(std_v, quantiles)
+    edges = np.unique(edges)
+    if len(edges) < 3:
+        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_flat_std", global_scale
+
+    bin_scales = []
+    bin_left = []
+    bin_right = []
+    for i in range(len(edges) - 1):
+        lo = float(edges[i])
+        hi = float(edges[i + 1])
+        if i == len(edges) - 2:
+            mask = (std_v >= lo) & (std_v <= hi)
+        else:
+            mask = (std_v >= lo) & (std_v < hi)
+        if int(np.sum(mask)) < min_bin_samples:
+            continue
+        s = float(np.quantile(ratio_v[mask], target_coverage))
+        s = float(np.clip(s, min_scale, max_scale))
+        bin_left.append(lo)
+        bin_right.append(hi)
+        bin_scales.append(s)
+
+    if len(bin_scales) < 2:
+        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_small_bins", global_scale
+
+    bin_scales = np.maximum.accumulate(np.array(bin_scales, dtype=float))
+
+    out_scale = np.full(len(pred_std_test), global_scale, dtype=float)
+    for i, std_val in enumerate(pred_std_test):
+        if np.isnan(std_val):
+            continue
+        hit = False
+        for j in range(len(bin_scales)):
+            lo = bin_left[j]
+            hi = bin_right[j]
+            if j == len(bin_scales) - 1:
+                if std_val >= lo and std_val <= hi:
+                    out_scale[i] = bin_scales[j]
+                    hit = True
+                    break
+            else:
+                if std_val >= lo and std_val < hi:
+                    out_scale[i] = bin_scales[j]
+                    hit = True
+                    break
+        if not hit:
+            if std_val < bin_left[0]:
+                out_scale[i] = bin_scales[0]
+            elif std_val > bin_right[-1]:
+                out_scale[i] = bin_scales[-1]
+
+    return out_scale, f"nonlinear_bins={len(bin_scales)}", global_scale
+
+
 def main() -> None:
     args = parse_args()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -372,26 +473,59 @@ def main() -> None:
         model.fit(train_df[use_features], train_df[TARGET_DELTA])
 
         y_true = test_df[TARGET].to_numpy(dtype=float)
-        pred_delta_raw, pred_delta_std, pred_delta_low, pred_delta_high = predict_with_uncertainty(
+        pred_delta_raw, pred_delta_std, pred_delta_low_tree, pred_delta_high_tree = predict_with_uncertainty(
             model, test_df[use_features], args.interval_low_quantile, args.interval_high_quantile
         )
-        _, pred_delta_train_std, _, _ = predict_with_uncertainty(
+        train_delta_raw, pred_delta_train_std, train_delta_low_tree, train_delta_high_tree = predict_with_uncertainty(
             model, train_df[use_features], args.interval_low_quantile, args.interval_high_quantile
         )
         threshold = float(np.quantile(pred_delta_train_std, effective_conf_q))
         pred_delta = np.where(pred_delta_std > threshold, 0.0, pred_delta_raw)
-        pred_delta_low = np.where(pred_delta_std > threshold, 0.0, pred_delta_low)
-        pred_delta_high = np.where(pred_delta_std > threshold, 0.0, pred_delta_high)
+
+        if args.interval_method == "quantile_model":
+            q_low_model = GradientBoostingRegressor(
+                loss="quantile",
+                alpha=float(args.interval_low_quantile),
+                n_estimators=300,
+                learning_rate=0.03,
+                max_depth=3,
+                random_state=args.seed,
+            )
+            q_high_model = GradientBoostingRegressor(
+                loss="quantile",
+                alpha=float(args.interval_high_quantile),
+                n_estimators=300,
+                learning_rate=0.03,
+                max_depth=3,
+                random_state=args.seed,
+            )
+            q_low_model.fit(train_df[use_features], train_df[TARGET_DELTA])
+            q_high_model.fit(train_df[use_features], train_df[TARGET_DELTA])
+
+            pred_delta_low = q_low_model.predict(test_df[use_features])
+            pred_delta_high = q_high_model.predict(test_df[use_features])
+            train_delta_low = q_low_model.predict(train_df[use_features])
+            train_delta_high = q_high_model.predict(train_df[use_features])
+        else:
+            pred_delta_low = np.where(pred_delta_std > threshold, 0.0, pred_delta_low_tree)
+            pred_delta_high = np.where(pred_delta_std > threshold, 0.0, pred_delta_high_tree)
+            train_delta_low = np.where(pred_delta_train_std > threshold, 0.0, train_delta_low_tree)
+            train_delta_high = np.where(pred_delta_train_std > threshold, 0.0, train_delta_high_tree)
+
+        pred_lo = np.minimum(pred_delta_low, pred_delta_high)
+        pred_hi = np.maximum(pred_delta_low, pred_delta_high)
+        pred_delta_low = np.minimum(pred_lo, pred_delta_raw)
+        pred_delta_high = np.maximum(pred_hi, pred_delta_raw)
+        train_lo = np.minimum(train_delta_low, train_delta_high)
+        train_hi = np.maximum(train_delta_low, train_delta_high)
+        train_delta_low = np.minimum(train_lo, train_delta_raw)
+        train_delta_high = np.maximum(train_hi, train_delta_raw)
+
         pred_eps_rf = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta
         pred_eps_low = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_low
         pred_eps_high = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_high
 
-        train_delta_raw, train_delta_std, train_delta_low, train_delta_high = predict_with_uncertainty(
-            model, train_df[use_features], args.interval_low_quantile, args.interval_high_quantile
-        )
-        train_delta_mid = np.where(train_delta_std > threshold, 0.0, train_delta_raw)
-        train_delta_low = np.where(train_delta_std > threshold, 0.0, train_delta_low)
-        train_delta_high = np.where(train_delta_std > threshold, 0.0, train_delta_high)
+        train_delta_mid = np.where(pred_delta_train_std > threshold, 0.0, train_delta_raw)
         train_eps_mid = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_mid
         train_eps_low = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_low
         train_eps_high = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_high
@@ -434,12 +568,27 @@ def main() -> None:
                 y_mid_train=train_eps_mid,
                 y_low_train=train_eps_low,
                 y_high_train=train_eps_high,
-                pred_std_train=train_delta_std,
+                pred_std_train=pred_delta_train_std,
                 pred_std_test=pred_delta_std,
                 target_coverage=args.target_coverage,
                 min_samples=args.min_calib_samples,
                 min_scale=args.min_calib_scale,
                 max_scale=args.max_calib_scale,
+            )
+        elif args.calibration_mode == "nonlinear":
+            interval_scale_vec, calib_source, interval_scale = calibrate_interval_scale_nonlinear(
+                y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                y_mid_train=train_eps_mid,
+                y_low_train=train_eps_low,
+                y_high_train=train_eps_high,
+                pred_std_train=pred_delta_train_std,
+                pred_std_test=pred_delta_std,
+                target_coverage=args.target_coverage,
+                min_samples=args.min_calib_samples,
+                min_scale=args.min_calib_scale,
+                max_scale=args.max_calib_scale,
+                n_bins=args.nonlinear_bins,
+                min_bin_samples=args.nonlinear_min_bin_samples,
             )
         else:
             interval_scale = calibrate_interval_scale(
@@ -469,6 +618,7 @@ def main() -> None:
                 "fold": f"year_{test_year}",
                 "model": model_name,
                 "feature_transform": args.feature_transform,
+                "interval_method": args.interval_method,
                 "effective_winsor_q": effective_winsor_q,
                 "effective_confidence_q": effective_conf_q,
                 "target_coverage": args.target_coverage if args.target_coverage is not None else np.nan,
@@ -494,6 +644,7 @@ def main() -> None:
         tmp["pred_baseline_q2_eps"] = pred_eps_q2
         tmp["pred_baseline_train_median"] = pred_eps_med
         tmp["feature_transform"] = args.feature_transform
+        tmp["interval_method"] = args.interval_method
         tmp["effective_winsor_q"] = effective_winsor_q
         tmp["effective_confidence_q"] = effective_conf_q
         tmp["target_coverage"] = args.target_coverage if args.target_coverage is not None else np.nan
@@ -544,3 +695,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
