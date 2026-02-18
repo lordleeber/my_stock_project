@@ -73,12 +73,16 @@
 - 已完成：
   - 建立 `analysis_randomForest/v10/t1`、`analysis_randomForest/v10/t2`、`analysis_randomForest/v10/t3`
   - `t1/t2/t3` 繼承 v9 切片架構並加入區間輸出
+  - 套用 v9 tuned 設定（`feature_transform=quantile` + `year_winsor_quantile=0.02`）
   - 產生 `pred_rf_delta_low / mid / high`
   - 同步輸出 `predict_target_price_low/high`、`upside_pct_low/high`
   - 回測新增區間指標：`interval_coverage`、`interval_avg_width`
+- 已完成（後續可調第一輪）：
+  - 校準區間分位數可調（`interval_low_quantile` / `interval_high_quantile`）
+  - 目標 coverage 校準可調（`target_coverage`），每個 fold 會用訓練集自動估計 `interval_scale`
+  - 比較輸出：`analysis_randomForest/v10/calibration_compare.csv`
 - 後續可調：
-  - 校準區間分位數（目前 0.2/0.8）
-  - 目標 coverage 校準（例如 60%/70%/80%）
+  - 目前 `target_0.80` 仍約落在 `0.56` coverage，需再調校準方法（例如分年/分群 scale 或非線性校準）
 
 ## v11
 - 目標：上線化與監控。
@@ -87,3 +91,11 @@
   - 線上監控（資料品質、預測漂移、策略績效）
   - 回滾機制與告警
 
+
+## improve plan
+  1. 交易導向評估報表（方向、分層、勝率、回撤）
+  2. 事件日真實對齊（公告日而非固定切點）
+  3. 嚴格 walk-forward 一體化回測流程
+  4. 多模型集成（RF/LGBM/CatBoost）
+  5. v10 不確定度校準（coverage 對齊）
+  6. 資料品質監控與告警

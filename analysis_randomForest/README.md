@@ -113,6 +113,30 @@
 - 點估計（MAE）以 `t3` 最佳，尾端誤差（P90）以 `t2` 最佳。
 - 目前區間 coverage 約 `0.26`，仍偏低，後續要做區間校準。
 
+## v10 校準（已實作）
+
+- 已套用 v9 tuned 設定：
+  - `feature_transform=quantile`
+  - `year_winsor_quantile=0.02`（2025 起）
+- 新增可調參數：
+  - `target_coverage`
+  - `min_calib_samples`
+  - `min_calib_scale` / `max_calib_scale`
+- 校準方式：
+  - 每個 fold 以訓練集誤差估計 `interval_scale`，再放大/縮小測試區間寬度
+- 比較輸出：
+  - `analysis_randomForest/v10/calibration_compare.csv`
+
+校準結果摘要（平均）：
+- `no_calibration`：coverage 約 `0.25~0.27`
+- `target_0.60`：coverage 約 `0.43~0.48`
+- `target_0.70`：coverage 約 `0.51~0.55`
+- `target_0.80`：coverage 約 `0.56`
+
+解讀：
+- 校準已能顯著提高 coverage，但目前仍無法達到 0.7/0.8 目標。
+- 下一步應改進校準函式（例如分年/分群校準或非線性校準）。
+
 ## v9 與 v10關係
 
 - `v10` 的資料準備與切片基礎承接 `v9`（同一批特徵工程）。

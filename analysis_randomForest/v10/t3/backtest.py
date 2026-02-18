@@ -23,6 +23,7 @@ FEATURES = [
     "q2_debt_ratio",
     "q2_non_op_ratio",
 ]
+Z_FEATURES = ["rev_yoy_m7_z", "rev_yoy_m8_z", "rev_yoy_m9_z", "rev_mom_m8_m7_z", "rev_mom_m9_m8_z"]
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 
@@ -35,8 +36,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
+    parser.add_argument("--feature-transform", type=str, choices=["zscore", "rank", "quantile"], default="quantile")
+    parser.add_argument("--year-param-start", type=int, default=2025)
+    parser.add_argument("--year-winsor-quantile", type=float, default=0.02)
+    parser.add_argument("--year-confidence-quantile", type=float, default=None)
+    parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--interval-low-quantile", type=float, default=0.2)
     parser.add_argument("--interval-high-quantile", type=float, default=0.8)
+    parser.add_argument("--target-coverage", type=float, default=None)
+    parser.add_argument("--calibration-mode", type=str, choices=["global", "latest_year", "regime"], default="regime")
+    parser.add_argument("--min-calib-samples", type=int, default=100)
+    parser.add_argument("--min-calib-scale", type=float, default=0.5)
+    parser.add_argument("--max-calib-scale", type=float, default=3.0)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--min-ttm-eps", type=float, default=2.0)
     parser.add_argument("--min-volume-lots", type=float, default=500.0)
@@ -83,6 +94,23 @@ def predict_with_uncertainty(
         np.quantile(tree_preds, q_low, axis=0),
         np.quantile(tree_preds, q_high, axis=0),
     )
+
+
+def add_cross_section_transforms(df: pd.DataFrame, z_cols: list[str]) -> None:
+    group_cols = ["year", "industry"] if "industry" in df.columns else ["year"]
+    for z_col in z_cols:
+        rank_col = z_col.replace("_z", "_rank")
+        quantile_col = z_col.replace("_z", "_quantile")
+        ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True).fillna(0.5)
+        df[rank_col] = ranks
+        df[quantile_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
+
+
+def resolve_features(transform: str) -> list[str]:
+    if transform == "zscore":
+        return FEATURES
+    suffix = "_rank" if transform == "rank" else "_quantile"
+    return [f.replace("_z", suffix) if f in Z_FEATURES else f for f in FEATURES]
 
 
 def build_valuation_daily_frame(
@@ -213,6 +241,103 @@ def interval_metrics(y_true: np.ndarray, y_low: np.ndarray, y_high: np.ndarray) 
     }
 
 
+def calibrate_interval_scale(
+    y_true: np.ndarray,
+    y_mid: np.ndarray,
+    y_low: np.ndarray,
+    y_high: np.ndarray,
+    target_coverage: float | None,
+    min_samples: int,
+    min_scale: float,
+    max_scale: float,
+) -> float:
+    if target_coverage is None:
+        return 1.0
+    if target_coverage <= 0.0 or target_coverage >= 1.0:
+        return 1.0
+    if len(y_true) < min_samples:
+        return 1.0
+
+    half_width = (y_high - y_low) / 2.0
+    valid = (~np.isnan(y_true)) & (~np.isnan(y_mid)) & (~np.isnan(half_width))
+    if not np.any(valid):
+        return 1.0
+
+    half_width_valid = np.clip(half_width[valid], 1e-6, None)
+    norm_err = np.abs(y_true[valid] - y_mid[valid]) / half_width_valid
+    if len(norm_err) < min_samples:
+        return 1.0
+
+    scale = float(np.quantile(norm_err, target_coverage))
+    return float(np.clip(scale, min_scale, max_scale))
+
+
+def calibrate_interval_scale_by_regime(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    y_true_train: np.ndarray,
+    y_mid_train: np.ndarray,
+    y_low_train: np.ndarray,
+    y_high_train: np.ndarray,
+    pred_std_train: np.ndarray,
+    pred_std_test: np.ndarray,
+    target_coverage: float | None,
+    min_samples: int,
+    min_scale: float,
+    max_scale: float,
+) -> tuple[np.ndarray, str, float]:
+    global_scale = calibrate_interval_scale(
+        y_true_train,
+        y_mid_train,
+        y_low_train,
+        y_high_train,
+        target_coverage,
+        min_samples,
+        min_scale,
+        max_scale,
+    )
+    if target_coverage is None:
+        return np.full(len(test_df), global_scale, dtype=float), "regime_disabled_target_none", global_scale
+
+    train_reg = train_df.copy()
+    test_reg = test_df.copy()
+    train_reg["industry_key"] = train_reg.get("industry", pd.Series(index=train_reg.index)).fillna("unknown").astype(str)
+    test_reg["industry_key"] = test_reg.get("industry", pd.Series(index=test_reg.index)).fillna("unknown").astype(str)
+
+    q1 = float(np.quantile(pred_std_train, 0.33))
+    q2 = float(np.quantile(pred_std_train, 0.66))
+    train_reg["unc_bucket"] = np.where(pred_std_train <= q1, "low", np.where(pred_std_train <= q2, "mid", "high"))
+    test_reg["unc_bucket"] = np.where(pred_std_test <= q1, "low", np.where(pred_std_test <= q2, "mid", "high"))
+    train_reg["regime_key"] = train_reg["industry_key"] + "__" + train_reg["unc_bucket"]
+    test_reg["regime_key"] = test_reg["industry_key"] + "__" + test_reg["unc_bucket"]
+
+    scales: dict[str, float] = {}
+    for key, idx in train_reg.groupby("regime_key").groups.items():
+        idx_arr = np.array(list(idx), dtype=int)
+        if len(idx_arr) < min_samples:
+            continue
+        scales[key] = calibrate_interval_scale(
+            y_true_train[idx_arr],
+            y_mid_train[idx_arr],
+            y_low_train[idx_arr],
+            y_high_train[idx_arr],
+            target_coverage,
+            min_samples,
+            min_scale,
+            max_scale,
+        )
+
+    if len(scales) == 0:
+        return np.full(len(test_df), global_scale, dtype=float), "regime_fallback_global_no_group", global_scale
+
+    out_scale = np.full(len(test_df), global_scale, dtype=float)
+    for i, key in enumerate(test_reg["regime_key"].astype(str).tolist()):
+        if key in scales:
+            out_scale[i] = scales[key]
+
+    return out_scale, f"regime_groups={len(scales)}", global_scale
+
+
 def main() -> None:
     args = parse_args()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -231,20 +356,31 @@ def main() -> None:
         if train_raw.empty or test_raw.empty:
             continue
 
-        winsor_cols = [c for c in FEATURES if c != "q2_eps"] + [TARGET_DELTA]
-        train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, args.winsor_quantile)
+        effective_winsor_q = args.winsor_quantile
+        if args.year_winsor_quantile is not None and test_year >= args.year_param_start:
+            effective_winsor_q = args.year_winsor_quantile
 
-        model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=-1)
-        model.fit(train_df[FEATURES], train_df[TARGET_DELTA])
+        effective_conf_q = args.confidence_quantile
+        if args.year_confidence_quantile is not None and test_year >= args.year_param_start:
+            effective_conf_q = args.year_confidence_quantile
+
+        winsor_cols = [c for c in FEATURES if c != "q2_eps"] + [TARGET_DELTA]
+        train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)
+        add_cross_section_transforms(train_df, Z_FEATURES)
+        add_cross_section_transforms(test_df, Z_FEATURES)
+        use_features = resolve_features(args.feature_transform)
+
+        model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=args.n_jobs)
+        model.fit(train_df[use_features], train_df[TARGET_DELTA])
 
         y_true = test_df[TARGET].to_numpy(dtype=float)
         pred_delta_raw, pred_delta_std, pred_delta_low, pred_delta_high = predict_with_uncertainty(
-            model, test_df[FEATURES], args.interval_low_quantile, args.interval_high_quantile
+            model, test_df[use_features], args.interval_low_quantile, args.interval_high_quantile
         )
         _, pred_delta_train_std, _, _ = predict_with_uncertainty(
-            model, train_df[FEATURES], args.interval_low_quantile, args.interval_high_quantile
+            model, train_df[use_features], args.interval_low_quantile, args.interval_high_quantile
         )
-        threshold = float(np.quantile(pred_delta_train_std, args.confidence_quantile))
+        threshold = float(np.quantile(pred_delta_train_std, effective_conf_q))
         pred_delta = np.where(pred_delta_std > threshold, 0.0, pred_delta_raw)
         pred_delta_low = np.where(pred_delta_std > threshold, 0.0, pred_delta_low)
         pred_delta_high = np.where(pred_delta_std > threshold, 0.0, pred_delta_high)
@@ -252,12 +388,99 @@ def main() -> None:
         pred_eps_low = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_low
         pred_eps_high = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_high
 
+        train_delta_raw, train_delta_std, train_delta_low, train_delta_high = predict_with_uncertainty(
+            model, train_df[use_features], args.interval_low_quantile, args.interval_high_quantile
+        )
+        train_delta_mid = np.where(train_delta_std > threshold, 0.0, train_delta_raw)
+        train_delta_low = np.where(train_delta_std > threshold, 0.0, train_delta_low)
+        train_delta_high = np.where(train_delta_std > threshold, 0.0, train_delta_high)
+        train_eps_mid = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_mid
+        train_eps_low = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_low
+        train_eps_high = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_high
+
+        calib_source = "global"
+        interval_scale_vec = np.full(len(test_df), 1.0, dtype=float)
+        if args.calibration_mode == "latest_year":
+            latest_year = int(train_df["year"].astype(int).max())
+            latest_mask = train_df["year"].astype(int).to_numpy() == latest_year
+            if int(np.sum(latest_mask)) >= args.min_calib_samples:
+                interval_scale = calibrate_interval_scale(
+                    train_df.loc[latest_mask, TARGET].to_numpy(dtype=float),
+                    train_eps_mid[latest_mask],
+                    train_eps_low[latest_mask],
+                    train_eps_high[latest_mask],
+                    args.target_coverage,
+                    args.min_calib_samples,
+                    args.min_calib_scale,
+                    args.max_calib_scale,
+                )
+                calib_source = f"latest_year_{latest_year}"
+            else:
+                interval_scale = calibrate_interval_scale(
+                    train_df[TARGET].to_numpy(dtype=float),
+                    train_eps_mid,
+                    train_eps_low,
+                    train_eps_high,
+                    args.target_coverage,
+                    args.min_calib_samples,
+                    args.min_calib_scale,
+                    args.max_calib_scale,
+                )
+                calib_source = f"fallback_global_from_latest_year_{latest_year}"
+            interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
+        elif args.calibration_mode == "regime":
+            interval_scale_vec, calib_source, interval_scale = calibrate_interval_scale_by_regime(
+                train_df=train_df,
+                test_df=test_df,
+                y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                y_mid_train=train_eps_mid,
+                y_low_train=train_eps_low,
+                y_high_train=train_eps_high,
+                pred_std_train=train_delta_std,
+                pred_std_test=pred_delta_std,
+                target_coverage=args.target_coverage,
+                min_samples=args.min_calib_samples,
+                min_scale=args.min_calib_scale,
+                max_scale=args.max_calib_scale,
+            )
+        else:
+            interval_scale = calibrate_interval_scale(
+                train_df[TARGET].to_numpy(dtype=float),
+                train_eps_mid,
+                train_eps_low,
+                train_eps_high,
+                args.target_coverage,
+                args.min_calib_samples,
+                args.min_calib_scale,
+                args.max_calib_scale,
+            )
+            interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
+
+        pred_half_width = (pred_eps_high - pred_eps_low) / 2.0
+        pred_eps_low = pred_eps_rf - pred_half_width * interval_scale_vec
+        pred_eps_high = pred_eps_rf + pred_half_width * interval_scale_vec
+
         pred_eps_q2 = test_df["q2_eps"].to_numpy(dtype=float)
         pred_eps_med = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
 
         for model_name, pred in [("rf_delta", pred_eps_rf), ("baseline_q2_eps", pred_eps_q2), ("baseline_train_median", pred_eps_med)]:
             m = evaluate_metrics(test_df, y_true, pred, args.eps_floor)
-            row = {"version": "v10_t3", "protocol": "expanding_by_year", "fold": f"year_{test_year}", "model": model_name, **m, "n_train": len(train_df), "n_test": len(test_df)}
+            row = {
+                "version": "v10_t3",
+                "protocol": "expanding_by_year",
+                "fold": f"year_{test_year}",
+                "model": model_name,
+                "feature_transform": args.feature_transform,
+                "effective_winsor_q": effective_winsor_q,
+                "effective_confidence_q": effective_conf_q,
+                "target_coverage": args.target_coverage if args.target_coverage is not None else np.nan,
+                "calibration_mode": args.calibration_mode,
+                "calibration_source": calib_source,
+                "interval_scale": float(np.mean(interval_scale_vec)),
+                **m,
+                "n_train": len(train_df),
+                "n_test": len(test_df),
+            }
             if model_name == "rf_delta":
                 row.update(interval_metrics(y_true, pred_eps_low, pred_eps_high))
             fold_rows.append(row)
@@ -272,6 +495,13 @@ def main() -> None:
         tmp["confidence_threshold"] = threshold
         tmp["pred_baseline_q2_eps"] = pred_eps_q2
         tmp["pred_baseline_train_median"] = pred_eps_med
+        tmp["feature_transform"] = args.feature_transform
+        tmp["effective_winsor_q"] = effective_winsor_q
+        tmp["effective_confidence_q"] = effective_conf_q
+        tmp["target_coverage"] = args.target_coverage if args.target_coverage is not None else np.nan
+        tmp["calibration_mode"] = args.calibration_mode
+        tmp["calibration_source"] = calib_source
+        tmp["interval_scale"] = interval_scale_vec
         tmp["fold"] = f"year_{test_year}"
         pred_rows.append(tmp)
 
@@ -280,8 +510,8 @@ def main() -> None:
             pred_eps_rf,
             pred_eps_low,
             pred_eps_high,
-            "v10_t3",
-            "analysis_codex/v10/t3/results/predictions.csv",
+            f"v10_t3_{args.feature_transform}",
+            "analysis_randomForest/v10/t3/results/predictions.csv",
         )
         val["fold"] = f"year_{test_year}"
         valuation_rows.append(val)
