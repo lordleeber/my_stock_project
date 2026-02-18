@@ -59,8 +59,13 @@
   - 在固定同一批樣本（`fold + symbol`）下比較 `t1/t2/t3`
   - 比較結果：`t2/t3` 已不再劣於 `t1`（方向合理化）
 - 後續可調：
-  - industry z-score 以外，再測 rank/quantile 轉換
-  - 針對 2025 高波動年度做分年參數
+  - 已完成：新增 `feature_transform`（`zscore/rank/quantile`）可切換
+  - 已完成：新增 2025 分年參數（`year_winsor_quantile` / `year_confidence_quantile`）
+  - 本次採用 tuned 設定：`feature_transform=quantile` + `year_winsor_quantile=0.02`
+  - 調整前後比較另存：
+    - `analysis_codex/v9/results_compare/fixed_universe_compare_baseline.csv`
+    - `analysis_codex/v9/results_compare/fixed_universe_compare_tuned.csv`
+    - `analysis_codex/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
 
 ## v10
 - 狀態：功能完成（第一版）

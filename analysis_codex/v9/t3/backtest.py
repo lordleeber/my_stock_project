@@ -23,6 +23,7 @@ FEATURES = [
     "q2_debt_ratio",
     "q2_non_op_ratio",
 ]
+Z_FEATURES = ["rev_yoy_m7_z", "rev_yoy_m8_z", "rev_yoy_m9_z", "rev_mom_m8_m7_z", "rev_mom_m9_m8_z"]
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 
@@ -35,6 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
+    parser.add_argument("--feature-transform", type=str, choices=["zscore", "rank", "quantile"], default="zscore")
+    parser.add_argument("--year-param-start", type=int, default=2025)
+    parser.add_argument("--year-winsor-quantile", type=float, default=None)
+    parser.add_argument("--year-confidence-quantile", type=float, default=None)
+    parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--eps-floor", type=float, default=0.20)
     parser.add_argument("--min-ttm-eps", type=float, default=2.0)
     parser.add_argument("--min-volume-lots", type=float, default=500.0)
@@ -71,6 +77,25 @@ def predict_with_uncertainty(model: RandomForestRegressor, x_data: pd.DataFrame)
     x_np = x_data.to_numpy(dtype=float)
     tree_preds = np.vstack([tree.predict(x_np) for tree in model.estimators_])
     return tree_preds.mean(axis=0), tree_preds.std(axis=0)
+
+
+def add_cross_section_transforms(df: pd.DataFrame, z_cols: list[str]) -> None:
+    group_cols = ["year", "industry"] if "industry" in df.columns else ["year"]
+    for z_col in z_cols:
+        rank_col = z_col.replace("_z", "_rank")
+        quantile_col = z_col.replace("_z", "_quantile")
+
+        ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True).fillna(0.5)
+        df[rank_col] = ranks
+        # 分箱後讓模型看到更穩定的相對位置訊號
+        df[quantile_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
+
+
+def resolve_features(transform: str) -> list[str]:
+    if transform == "zscore":
+        return FEATURES
+    suffix = "_rank" if transform == "rank" else "_quantile"
+    return [f.replace("_z", suffix) if f in Z_FEATURES else f for f in FEATURES]
 
 
 def build_valuation_daily_frame(df_eval: pd.DataFrame, pred_eps: np.ndarray, model_version: str, source_file: str) -> pd.DataFrame:
@@ -188,16 +213,27 @@ def main() -> None:
         if train_raw.empty or test_raw.empty:
             continue
 
-        winsor_cols = [c for c in FEATURES if c != "q2_eps"] + [TARGET_DELTA]
-        train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, args.winsor_quantile)
+        effective_winsor_q = args.winsor_quantile
+        if args.year_winsor_quantile is not None and test_year >= args.year_param_start:
+            effective_winsor_q = args.year_winsor_quantile
 
-        model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=-1)
-        model.fit(train_df[FEATURES], train_df[TARGET_DELTA])
+        effective_conf_q = args.confidence_quantile
+        if args.year_confidence_quantile is not None and test_year >= args.year_param_start:
+            effective_conf_q = args.year_confidence_quantile
+
+        winsor_cols = [c for c in FEATURES if c != "q2_eps"] + [TARGET_DELTA]
+        train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)
+        add_cross_section_transforms(train_df, Z_FEATURES)
+        add_cross_section_transforms(test_df, Z_FEATURES)
+        use_features = resolve_features(args.feature_transform)
+
+        model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=args.n_jobs)
+        model.fit(train_df[use_features], train_df[TARGET_DELTA])
 
         y_true = test_df[TARGET].to_numpy(dtype=float)
-        pred_delta_raw, pred_delta_std = predict_with_uncertainty(model, test_df[FEATURES])
-        _, pred_delta_train_std = predict_with_uncertainty(model, train_df[FEATURES])
-        threshold = float(np.quantile(pred_delta_train_std, args.confidence_quantile))
+        pred_delta_raw, pred_delta_std = predict_with_uncertainty(model, test_df[use_features])
+        _, pred_delta_train_std = predict_with_uncertainty(model, train_df[use_features])
+        threshold = float(np.quantile(pred_delta_train_std, effective_conf_q))
         pred_delta = np.where(pred_delta_std > threshold, 0.0, pred_delta_raw)
         pred_eps_rf = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta
 
@@ -206,7 +242,20 @@ def main() -> None:
 
         for model_name, pred in [("rf_delta", pred_eps_rf), ("baseline_q2_eps", pred_eps_q2), ("baseline_train_median", pred_eps_med)]:
             m = evaluate_metrics(test_df, y_true, pred, args.eps_floor)
-            fold_rows.append({"version": "v9_t3", "protocol": "expanding_by_year", "fold": f"year_{test_year}", "model": model_name, **m, "n_train": len(train_df), "n_test": len(test_df)})
+            fold_rows.append(
+                {
+                    "version": "v9_t3",
+                    "protocol": "expanding_by_year",
+                    "fold": f"year_{test_year}",
+                    "model": model_name,
+                    "feature_transform": args.feature_transform,
+                    "effective_winsor_q": effective_winsor_q,
+                    "effective_confidence_q": effective_conf_q,
+                    **m,
+                    "n_train": len(train_df),
+                    "n_test": len(test_df),
+                }
+            )
 
         keep_cols = [c for c in ["year", "symbol", "name", "industry", "feature_cutoff_date", "q3_date", "q3_close", "q3_volume", "pe_current", "ttm_eps_official"] if c in test_df.columns]
         tmp = test_df[keep_cols].copy()
@@ -216,10 +265,13 @@ def main() -> None:
         tmp["confidence_threshold"] = threshold
         tmp["pred_baseline_q2_eps"] = pred_eps_q2
         tmp["pred_baseline_train_median"] = pred_eps_med
+        tmp["feature_transform"] = args.feature_transform
+        tmp["effective_winsor_q"] = effective_winsor_q
+        tmp["effective_confidence_q"] = effective_conf_q
         tmp["fold"] = f"year_{test_year}"
         pred_rows.append(tmp)
 
-        val = build_valuation_daily_frame(test_df, pred_eps_rf, "v9_t3", "analysis_codex/v9/t3/results/predictions.csv")
+        val = build_valuation_daily_frame(test_df, pred_eps_rf, f"v9_t3_{args.feature_transform}", "analysis_codex/v9/t3/results/predictions.csv")
         val["fold"] = f"year_{test_year}"
         valuation_rows.append(val)
 

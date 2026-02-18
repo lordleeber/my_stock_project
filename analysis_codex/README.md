@@ -81,6 +81,28 @@
 - v9 已修正 v8 的反直覺現象，加入 8/9 月資訊後（t2/t3）不再劣於 t1。
 - 目前最佳是 `t3`（MAE 最低），`t2` 在 P90_AE 最佳。
 
+## v9 後續可調（已實作）
+
+- `feature_transform`：`zscore` / `rank` / `quantile`
+- 分年參數：
+  - `year_winsor_quantile`
+  - `year_confidence_quantile`
+  - `year_param_start`（預設 2025）
+
+本次調整採用：
+- `feature_transform=quantile`
+- `year_winsor_quantile=0.02`（其他年份沿用 `winsor_quantile=0.01`）
+
+固定樣本比較（rf_delta）：
+- `t1`: `MAE 0.6317 -> 0.6277`, `P90_AE 1.27 -> 1.26`
+- `t2`: `MAE 0.6279 -> 0.6262`, `P90_AE 1.24 -> 1.24`
+- `t3`: `MAE 0.6272 -> 0.6262`, `P90_AE 1.243 -> 1.243`
+
+調整前後對照檔：
+- `analysis_codex/v9/results_compare/fixed_universe_compare_baseline.csv`
+- `analysis_codex/v9/results_compare/fixed_universe_compare_tuned.csv`
+- `analysis_codex/v9/results_compare/fixed_universe_compare_baseline_vs_tuned.csv`
+
 ## v10 切片比較（區間版）
 
 - `t1`：`MAE=0.630`, `P90_AE=1.292`, `coverage=0.258`, `avg_width=0.296`
