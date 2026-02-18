@@ -214,10 +214,14 @@ StockDailyUpdate.app/
 data/
 strategy/fundamental/*.csv
 
-# analysis_codex generated artifacts
-analysis_codex/**/dataset.csv
-analysis_codex/**/model.pkl
-analysis_codex/**/feature_importance.csv
-analysis_codex/**/train_metrics.json
-analysis_codex/**/results/*.csv
-analysis_codex/**/__pycache__/
+# Generated artifacts
+*.csv
+*.json
+*.pkl
+result/
+results/
+**/result/
+**/results/
+
+# analysis_randomForest generated artifacts
+analysis_randomForest/**/__pycache__/
