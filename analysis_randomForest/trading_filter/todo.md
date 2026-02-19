@@ -1,34 +1,38 @@
 # trading_filter TODO
 
-## v1（先做最小可用改善）
+## 現況
 
-1. 加進場門檻：
-   - 僅當 `predict_target_price >= entry_open * 1.10` 才進場。
-2. 改交易規則為雙閾值：
-   - 停利 `+8%`、停損 `-5%`、最長持有 `20` 個交易日。
-3. 分層持倉：
-   - 依 `upside_pct` 排序，只取前 `20~30` 檔等權。
-4. 納入交易成本：
-   - 手續費、證交稅、滑價，輸出淨報酬。
+1. 目錄已精簡：`x1~x30` 僅保留 `x9`。
+2. `strategyA` 已完成並已跑完網格搜尋（1050 組）。
+3. `strategyB`、`strategyC`：程式已建立，尚未執行。
+4. `strategyD`~`strategyI`：骨架已建立，尚未實作完整回測。
 
-## v2（方向策略）
+## 已完成
 
-1. 改為分類任務：
-   - 目標改為 `未來20日報酬 > 0`（up/down）。
-2. 以分類分數做選股：
-   - 只買高信心區間（例如 top 20%）。
-3. 比較分類與回歸策略：
-   - 勝率、平均報酬、最大回撤。
+1. 建立共用回測引擎：`multi_strategy_backtest.py`
+2. 建立日線快取流程：`cache_daily_quotes.py`
+3. 完成 `strategyA/grid_search.py` 並輸出：
+   - `strategyA/grid_results_all.csv`
+   - `strategyA/grid_results_top20.csv`
+   - `strategyA/best_config.json`
 
-## v3（估值安全邊際）
+## 待執行
 
-1. 估值保守濾網：
-   - `pe_current <= pe_percentile_official` 或固定分位（例如 <= 0.70）。
-2. 與 v1 規則組合測試：
-   - 觀察交易筆數與報酬品質是否提升。
+1. 跑 `strategyB/grid_search.py`（trailing stop 族群）
+2. 跑 `strategyC/grid_search.py`（進場過濾 族群）
+3. 比較 A/B/C 最佳組合（同一評分標準）
+
+## 待實作
+
+1. `strategyD`：分批出場（partial take profit）
+2. `strategyE`：波動度調整 TP/SL（ATR / volatility）
+3. `strategyF`：相對強弱進場過濾
+4. `strategyG`：時間分段停損停利
+5. `strategyH`：組合層風控（開倉數/產業曝險/風險預算）
+6. `strategyI`：信心加權倉位
 
 ## 原則
 
-1. 先確保「進場後有正期望空間」再下單（避免目標價低於買價）。
-2. 先看「淨報酬」再看毛報酬。
-3. 每次只改少量規則，保留可比較性。
+1. 優先使用同一份候選與同一份日線快取，確保可比性。
+2. 先看 `total_revenue(損益)`，再看 `return_percent`。
+3. 排除樣本太少的策略後再排名（避免少量交易造成假象）。
