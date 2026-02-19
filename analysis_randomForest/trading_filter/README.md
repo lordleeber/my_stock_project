@@ -1,45 +1,43 @@
 # trading_filter
 
-這個資料夾專門放「交易/估值篩選」與「簡單交易回測」，避免和模型訓練/回測混在一起。
+交易策略實驗區（與模型訓練分離）。
 
-## 資料來源
+## 目前保留內容
 
-- `analysis_randomForest/v10/t3/results/predictions_year_2025.csv`
-- `analysis_randomForest/v10/t3/dataset.csv`
+- 單一代表策略：`x9/`
+- 策略家族資料夾：`strategyA/` ~ `strategyI/`
+- 共用腳本：
+  - `build_candidates.py`
+  - `cache_daily_quotes.py`
+  - `multi_strategy_backtest.py`
+- 共用資料：
+  - `trade_candidates_2025_1013_1120.csv`
+  - `daily_quotes_20251013_1120_sii.csv`
 
-## Live 估值口徑（你指定）
+## 已清理
 
-- `ttm_eps_official_live = previous_q3 + prev_q4 + q1 + q2_official`
-- `ttm_forward_live = prev_q4 + q1 + q2_official + predict_q3_eps`
-- `predict_q3_eps = q2_eps + pred_rf_delta`
+- 先前重複實驗資料夾 `x1~x30` 已刪除（僅保留 `x9`）。
 
-## 候選股篩選條件
+## 關鍵結果檔
 
-- `ttm_eps_forward_live >= 2.0`
-- `volume / 1000 >= 500`（至少 500 張）
-- `ttm_eps_forward_live >= ttm_eps_official_live`
+- `strategy_compare_x1_x30.csv`：x1~x30 歷史比較結果（保留作為紀錄）
+- `strategyA/grid_results_all.csv`：A 類網格搜尋全結果
+- `strategyA/grid_results_top20.csv`：A 類前 20 名
+- `strategyA/best_config.json`：A 類最佳組合
 
-## 交易回測規則（目前版本）
+## strategyA 現況（已完成）
 
-- `2025-10-13` 開盤買進 1 張
-- 盤中碰到 `predict_target_price` 即賣出
-- 盤中跌到買價 `-5%` 即停損賣出
-- 統計區間到 `2025-11-20`
-- 若到期未觸發，記錄 `open_until_end`
+- A 類定義：固定停利停損、全進場、無進場過濾
+- 搜尋範圍：
+  - `TP = 1%~15%`
+  - `SL = 1%~10%`
+  - `max_hold_days = 5,7,10,12,15,20,30`
+- 最佳結果：
+  - `A_tp15_sl10_h15`
+  - `total_revenue(損益) = 1175225.72`
+  - `return_percent = 5.7205`
 
-## 輸出檔案
+## strategyB~I 狀態
 
-- `trade_candidates_2025_1013_1120.csv`
-- `results/trade_backtest_20251013_1120_all.csv`
-- `results/trade_backtest_20251013_1120_sold.csv`
-- `results/trade_backtest_20251013_1120_open_until_end.csv`
-- `results/trade_backtest_20251013_1120_summary.json`
-
-所有數值欄位統一四捨五入到小數第 2 位。
-
-## 執行方式
-
-```bash
-.\.venv\Scripts\python.exe analysis_randomForest/trading_filter/build_candidates.py
-.\.venv\Scripts\python.exe analysis_randomForest/trading_filter/trade_backtest_20251013.py
-```
+- `strategyB/`、`strategyC/`：已建立可執行網格腳本，尚未執行。
+- `strategyD/`~`strategyI/`：已建立骨架腳本與說明，尚未實作完整回測流程。
