@@ -1,38 +1,32 @@
-# trading_filter TODO
-
-## 現況
-
-1. 目錄已精簡：`x1~x30` 僅保留 `x9`。
-2. `strategyA` 已完成並已跑完網格搜尋（1050 組）。
-3. `strategyB`、`strategyC`：程式已建立，尚未執行。
-4. `strategyD`~`strategyI`：骨架已建立，尚未實作完整回測。
+﻿# trading_filter TODO
 
 ## 已完成
+1. 將舊版 `x1~x30` 策略整理為 `strategyA~strategyI`。
+2. 建立共用回測核心：`analysis_randomForest/trading_filter/multi_strategy_backtest.py`。
+3. 建立日線快取流程：`analysis_randomForest/trading_filter/cache_daily_quotes.py`。
+4. 每個策略皆有可重跑的 `grid_search.py`，並輸出：
+   - `grid_results_all.csv`
+   - `grid_results_top20.csv`
+   - `best_config.json`
+5. `strategyD~strategyI` 已完成實作與回測。
+6. `README.md` 已更新為策略說明 + 各策略最佳成績比較。
 
-1. 建立共用回測引擎：`multi_strategy_backtest.py`
-2. 建立日線快取流程：`cache_daily_quotes.py`
-3. 完成 `strategyA/grid_search.py` 並輸出：
-   - `strategyA/grid_results_all.csv`
-   - `strategyA/grid_results_top20.csv`
-   - `strategyA/best_config.json`
+## 下一步（優先順序）
+1. 穩定性驗證（優先）
+   - 不只看 2025-10-13 ~ 2025-11-20，改做多期間切片回測。
+   - 建立固定評估模板：平均報酬、最大回撤、勝率、樣本數。
+2. 小樣本防呆（優先）
+   - 對高報酬但小樣本策略（如 F/H/I）設定最小成交檔數門檻。
+   - 排名時同時考慮 `return_percent` 與 `selected_count`。
+3. 交易摩擦成本
+   - 納入手續費、交易稅、滑價，避免報酬高估。
+4. 參數搜尋治理
+   - 對每個策略保留「粗搜 + 細搜」設定，避免過度擬合。
+   - 將最佳參數與實驗日期自動寫入單一 summary 檔。
+5. 產線化準備
+   - 定義每日執行流程（候選池 -> 快取行情 -> 策略 -> 報表）。
+   - 整理輸出欄位，對接後續決策或監控頁面。
 
-## 待執行
-
-1. 跑 `strategyB/grid_search.py`（trailing stop 族群）
-2. 跑 `strategyC/grid_search.py`（進場過濾 族群）
-3. 比較 A/B/C 最佳組合（同一評分標準）
-
-## 待實作
-
-1. `strategyD`：分批出場（partial take profit）
-2. `strategyE`：波動度調整 TP/SL（ATR / volatility）
-3. `strategyF`：相對強弱進場過濾
-4. `strategyG`：時間分段停損停利
-5. `strategyH`：組合層風控（開倉數/產業曝險/風險預算）
-6. `strategyI`：信心加權倉位
-
-## 原則
-
-1. 優先使用同一份候選與同一份日線快取，確保可比性。
-2. 先看 `total_revenue(損益)`，再看 `return_percent`。
-3. 排除樣本太少的策略後再排名（避免少量交易造成假象）。
+## 備註
+1. 目前高報酬策略多集中在小樣本，不能直接視為可實盤。
+2. 後續比較請優先看「跨期間穩定性」而非單一窗口最佳值。
