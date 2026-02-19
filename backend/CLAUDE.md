@@ -166,6 +166,7 @@ AI assistant guardrails:
 | `/raw/institutional-summary` | GET | Same as margin-summary | `List[InstitutionalSummaryRaw]` |
 | `/raw/foreign-holding` | GET | Same as daily-quotes | `List[ForeignHoldingRaw]` |
 | `/raw/trust-holding` | GET | Same as daily-quotes | `List[TrustHoldingRaw]` |
+| `/raw/dealer-holding` | GET | Same as daily-quotes | `List[DealerHoldingRaw]` |
 | `/raw/pe-ratio` | GET | Same as daily-quotes | `List[PeRatioRaw]` |
 | `/raw/valuation-analysis` | GET | `start_date`, `end_date`, `symbol?`, `limit=1000`, `offset=0` | `List[ValuationAnalysisRaw]` |
 | `/raw/market-indices` | GET | Same as daily-quotes | `List[MarketIndexRaw]` |
@@ -262,6 +263,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - **InstitutionalSummaryRaw**: date, market, institution, buy, sell, net
 - **ForeignHoldingRaw**: date, symbol, market, issued_shares, available_shares, foreign_held_shares, available_pct, held_pct, limit_pct
 - **TrustHoldingRaw**: date, symbol, market, trust_held_shares, issued_shares, trust_held_ratio
+- **DealerHoldingRaw**: date, symbol, market, dealer_held_shares, issued_shares, dealer_held_ratio
 - **PeRatioRaw**: date, symbol, market, pe_ratio, dividend_yield, pb_ratio
 - **ValuationAnalysisRaw**: date, symbol, close, ttm_eps, pe_ratio_calculated, pe_ratio_from_pe_table, pe_percentile
 - **MarketIndexRaw**: date, symbol, name, market, close, change, change_pct
@@ -284,6 +286,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 | `institutional_investors` | date, symbol, foreign_net, trust_net, dealer_net | Institutional API, ML training |
 | `foreign_holding` | date, symbol, foreign_held_shares | Institutional API, ML training |
 | `trust_holding` | date, symbol, trust_held_shares, trust_held_ratio | Raw API (`/raw/trust-holding`) |
+| `dealer_holding` | date, symbol, dealer_held_shares, dealer_held_ratio | Raw API (`/raw/dealer-holding`) |
 | `margin_summary` | date, market, item, buy, sell, cash_repay, today_balance | Market analysis |
 
 **Indexes:**
@@ -292,6 +295,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 - `idx_institutional_investors_symbol_date` (institutional_investors)
 - `idx_foreign_holding_symbol_date` (foreign_holding)
 - `idx_trust_holding_symbol_date` (trust_holding)
+- `idx_dealer_holding_symbol_date` (dealer_holding)
 
 The composite indexes on `(symbol, date)` optimize JOIN performance for the ML training data endpoint.
 
@@ -423,13 +427,14 @@ curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end
    docker compose run --rm backend python create_indexes.py
    ```
 
-3. **Expected indexes (6 total):**
+3. **Expected indexes (7 total):**
    - `idx_daily_quotes_date_symbol` (daily_quotes)
    - `idx_daily_quotes_symbol_date` (daily_quotes)
    - `idx_technical_indicators_symbol_date` (technical_indicators)
    - `idx_institutional_investors_symbol_date` (institutional_investors)
    - `idx_foreign_holding_symbol_date` (foreign_holding)
    - `idx_trust_holding_symbol_date` (trust_holding)
+   - `idx_dealer_holding_symbol_date` (dealer_holding)
 
 **Performance Impact:** Missing indexes can degrade query performance from ~50ms to several seconds for multi-table JOINs (e.g., ML training data endpoint).
 

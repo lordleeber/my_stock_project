@@ -277,6 +277,15 @@ class TrustHoldingRaw(BaseModel):
     trust_held_shares: Optional[float] = None
     trust_held_ratio: Optional[float] = None
 
+class DealerHoldingRaw(BaseModel):
+    date: str
+    symbol: str
+    market: str
+    name: Optional[str] = None
+    issued_shares: Optional[float] = None
+    dealer_held_shares: Optional[float] = None
+    dealer_held_ratio: Optional[float] = None
+
 class PeRatioRaw(BaseModel):
     date: str
     symbol: str
@@ -720,6 +729,17 @@ def get_raw_trust_holding(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("trust_holding", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/dealer-holding", response_model=List[DealerHoldingRaw])
+def get_raw_dealer_holding(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    return get_raw_data("dealer_holding", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/pe-ratio", response_model=List[PeRatioRaw])
 def get_raw_pe_ratio(

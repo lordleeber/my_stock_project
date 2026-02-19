@@ -110,6 +110,17 @@ CASES = [
         ],
     },
     {
+        "endpoint": "/raw/dealer-holding",
+        "table": "dealer_holding",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": [
+            "date", "symbol", "market",
+            "issued_shares", "dealer_held_shares", "dealer_held_ratio"
+        ],
+    },
+    {
         "endpoint": "/raw/pe-ratio",
         "table": "pe_ratio",
         "columns": ["date", "symbol", "market"],

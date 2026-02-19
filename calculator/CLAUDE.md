@@ -7,7 +7,8 @@ This guide covers the technical indicator calculation component of the Taiwan st
 The calculator component refines raw market and financial data into actionable investment insights. It consists of two main pillars:
 
 1.  **Technical Indicators (`calculate_daily.py`)**: Computes MA, RSI, MACD, etc., for price trend analysis.
-2.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
+2.  **Institutional Holding Derivatives (`calculate_trust_holding.py`, `calculate_dealer_holding.py`)**: Computes cumulative trust/dealer held shares and held ratio.
+3.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
 
 Error handling is fail-fast:
 - Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
@@ -75,6 +76,10 @@ We use a dedicated shell script to run all analytics after the ETL pipeline:
 ```bash
 # Indicators
 docker compose run --rm calculator python calculate_daily.py
+# Trust holding
+docker compose run --rm calculator python calculate_trust_holding.py
+# Dealer holding
+docker compose run --rm calculator python calculate_dealer_holding.py
 # Valuations (Recomputes full history to ensure percentile consistency)
 docker compose run --rm calculator python calculate_valuation.py
 ```

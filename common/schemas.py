@@ -29,6 +29,11 @@ SCHEMA_COLS = {
         "issued_shares", "trust_held_shares", "trust_held_ratio",
         "pced_file", "pced_row", "pced_col"
     ],
+    "dealer_holding": [
+        "date", "market", "symbol", "name",
+        "issued_shares", "dealer_held_shares", "dealer_held_ratio",
+        "pced_file", "pced_row", "pced_col"
+    ],
     "margin_trading": [
         "date", "market", "symbol", "name",
         "margin_long_buy", "margin_long_sell", "margin_long_cash_repay",
