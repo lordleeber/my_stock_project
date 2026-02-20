@@ -184,6 +184,20 @@ CASES = [
         ],
     },
     {
+        "endpoint": "/raw/short-interest-analysis",
+        "table": "short_interest_analysis",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": [
+            "date", "symbol", "market", "name",
+            "sbl_balance", "sbl_balance_wow", "sbl_balance_wow_pct",
+            "sbl_sell", "sbl_repay", "sbl_sell_repay_ratio",
+            "margin_short_balance", "margin_short_balance_wow", "margin_short_balance_wow_pct",
+            "short_pressure_score"
+        ],
+    },
+    {
         "endpoint": "/raw/quarterly-reports",
         "table": "quarterly_reports",
         "columns": ["date", "symbol", "market"],

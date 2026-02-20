@@ -362,6 +362,22 @@ class ShareholdingConcentrationRaw(BaseModel):
     small_holder_ratio_wow: Optional[float] = None
     concentration_spread_wow: Optional[float] = None
 
+class ShortInterestAnalysisRaw(BaseModel):
+    date: str
+    symbol: str
+    market: str
+    name: Optional[str] = None
+    sbl_balance: Optional[float] = None
+    sbl_balance_wow: Optional[float] = None
+    sbl_balance_wow_pct: Optional[float] = None
+    sbl_sell: Optional[float] = None
+    sbl_repay: Optional[float] = None
+    sbl_sell_repay_ratio: Optional[float] = None
+    margin_short_balance: Optional[float] = None
+    margin_short_balance_wow: Optional[float] = None
+    margin_short_balance_wow_pct: Optional[float] = None
+    short_pressure_score: Optional[float] = None
+
 class QuarterlyReportRaw(BaseModel):
     date: str  # Format: YYYYQX (e.g. 2025Q1)
     symbol: str
@@ -827,6 +843,17 @@ def get_raw_shareholding_concentration(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("shareholding_concentration", start_date, end_date, symbol, None, limit, offset)
+
+@app.get("/raw/short-interest-analysis", response_model=List[ShortInterestAnalysisRaw])
+def get_raw_short_interest_analysis(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    return get_raw_data("short_interest_analysis", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(

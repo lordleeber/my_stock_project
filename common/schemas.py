@@ -50,6 +50,14 @@ SCHEMA_COLS = {
         "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance",
         "pced_file", "pced_row", "pced_col"
     ],
+    "short_interest_analysis": [
+        "date", "market", "symbol", "name",
+        "sbl_balance", "sbl_balance_wow", "sbl_balance_wow_pct",
+        "sbl_sell", "sbl_repay", "sbl_sell_repay_ratio",
+        "margin_short_balance", "margin_short_balance_wow", "margin_short_balance_wow_pct",
+        "short_pressure_score",
+        "pced_file", "pced_row", "pced_col"
+    ],
     "pe_ratio": [
         "date", "market", "symbol", "name",
         "pe_ratio",

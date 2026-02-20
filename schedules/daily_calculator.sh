@@ -13,7 +13,7 @@ echo "Date: ${TARGET_DATE:-Full History / Latest}"
 echo "=============================================================================="
 
 # 1. 計算技術指標 (MA, RSI, MACD, Bollinger Bands)
-echo ">>> [1/5] Calculating Technical Indicators..."
+echo ">>> [1/6] Calculating Technical Indicators..."
 if [ -n "$TARGET_DATE" ]; then
     START_DATE=$TARGET_DATE END_DATE=$TARGET_DATE docker compose run --rm calculator python calculate_daily.py
 else
@@ -22,22 +22,27 @@ fi
 
 # 2. 計算投信持股統計 (trust_holding)
 echo -e "
->>> [2/5] Calculating Trust Holding..."
+>>> [2/6] Calculating Trust Holding..."
 docker compose run --rm calculator python calculate_trust_holding.py
 
 # 3. 計算自營商持股統計 (dealer_holding)
 echo -e "
->>> [3/5] Calculating Dealer Holding..."
+>>> [3/6] Calculating Dealer Holding..."
 docker compose run --rm calculator python calculate_dealer_holding.py
 
 # 4. 計算大戶/散戶集中度衍生指標
 echo -e "
->>> [4/5] Calculating Shareholding Concentration..."
+>>> [4/6] Calculating Shareholding Concentration..."
 docker compose run --rm calculator python calculate_shareholding_concentration.py
 
-# 5. 計算前瞻估值分析 (TTM EPS, PE Forward, ROE, Upside Potential)
+# 5. 計算融券/借券分析衍生指標
 echo -e "
->>> [5/5] Calculating Forward-looking Valuations (PE/ROE)..."
+>>> [5/6] Calculating Short Interest Analysis..."
+docker compose run --rm calculator python calculate_short_interest_analysis.py
+
+# 6. 計算前瞻估值分析 (TTM EPS, PE Forward, ROE, Upside Potential)
+echo -e "
+>>> [6/6] Calculating Forward-looking Valuations (PE/ROE)..."
 docker compose run --rm calculator python calculate_valuation.py
 
 echo -e "

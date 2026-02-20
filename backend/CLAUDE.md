@@ -173,6 +173,7 @@ AI assistant guardrails:
 | `/raw/monthly-revenue` | GET | Same as daily-quotes | `List[MonthlyRevenueRaw]` |
 | `/raw/shareholding` | GET | Same as above (no market) | `List[ShareholdingRaw]` |
 | `/raw/shareholding-concentration` | GET | Same as above (no market) | `List[ShareholdingConcentrationRaw]` |
+| `/raw/short-interest-analysis` | GET | `start_date`, `end_date`, `symbol?`, `market?`, `limit=1000`, `offset=0` | `List[ShortInterestAnalysisRaw]` |
 | `/raw/stock-info` | GET | `symbol?`, `industry?`, `market?`, `limit`, `offset` | `List[StockInfoRaw]` |
 | `/raw/stock-tags` | GET | `symbol?`, `tag?`, `limit`, `offset` | `List[StockTagRaw]` |
 | `/raw/dividend` | GET | `start_date`, `end_date`, `symbol?`, `limit`, `offset` | `List[DividendRaw]` |
@@ -278,6 +279,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 - **MonthlyRevenueRaw**: date, symbol, market, revenue_current, revenue_last_month/year, mom_pct, yoy_pct, accumulated_revenue, accumulated_revenue_last_year, accumulated_yoy_pct, comment, publish_time
 - **ShareholdingRaw**: date, symbol, level, level_name, holders, shares, percentage
 - **ShareholdingConcentrationRaw**: date, symbol, large_holder_ratio, small_holder_ratio, concentration_spread, large_holder_count, small_holder_count, large_holder_ratio_wow, small_holder_ratio_wow, concentration_spread_wow
+- **ShortInterestAnalysisRaw**: date, symbol, market, name, sbl_balance, sbl_balance_wow, sbl_balance_wow_pct, sbl_sell, sbl_repay, sbl_sell_repay_ratio, margin_short_balance, margin_short_balance_wow, margin_short_balance_wow_pct, short_pressure_score
 - **StockInfoRaw**: symbol, name, industry, market, listing_date, tags (array)
 - **StockTagRaw**: symbol, tag
 - **DividendRaw**: date, symbol, name, close_before, ref_price, rights_dividend_value, type
@@ -297,6 +299,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 | `trust_holding` | date, symbol, trust_held_shares, trust_held_ratio | Raw API (`/raw/trust-holding`) |
 | `dealer_holding` | date, symbol, dealer_held_shares, dealer_held_ratio | Raw API (`/raw/dealer-holding`) |
 | `shareholding_concentration` | date, symbol, large_holder_ratio, small_holder_ratio, concentration_spread | Raw API (`/raw/shareholding-concentration`), ML training |
+| `short_interest_analysis` | date, symbol, market, sbl/margin short metrics, short_pressure_score | Raw API (`/raw/short-interest-analysis`) |
 | `margin_summary` | date, market, item, buy, sell, cash_repay, today_balance | Market analysis |
 
 **Indexes:**
@@ -307,6 +310,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 - `idx_trust_holding_symbol_date` (trust_holding)
 - `idx_dealer_holding_symbol_date` (dealer_holding)
 - `idx_shareholding_concentration_symbol_date` (shareholding_concentration)
+- `idx_short_interest_analysis_symbol_date` (short_interest_analysis)
 
 The composite indexes on `(symbol, date)` optimize JOIN performance for the ML training data endpoint.
 
@@ -438,7 +442,7 @@ curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end
    docker compose run --rm backend python create_indexes.py
    ```
 
-3. **Expected indexes (8 total):**
+3. **Expected indexes (9 total):**
    - `idx_daily_quotes_date_symbol` (daily_quotes)
    - `idx_daily_quotes_symbol_date` (daily_quotes)
    - `idx_technical_indicators_symbol_date` (technical_indicators)
@@ -447,6 +451,7 @@ curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end
    - `idx_trust_holding_symbol_date` (trust_holding)
    - `idx_dealer_holding_symbol_date` (dealer_holding)
    - `idx_shareholding_concentration_symbol_date` (shareholding_concentration)
+   - `idx_short_interest_analysis_symbol_date` (short_interest_analysis)
 
 **Performance Impact:** Missing indexes can degrade query performance from ~50ms to several seconds for multi-table JOINs (e.g., ML training data endpoint).
 
