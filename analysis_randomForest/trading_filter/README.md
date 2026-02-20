@@ -9,6 +9,8 @@
 - `analysis_randomForest/trading_filter/cache_daily_quotes.py`: 快取日線資料
 - `analysis_randomForest/trading_filter/multi_strategy_backtest.py`: 共用回測核心
 - `analysis_randomForest/trading_filter/strategyA` ~ `analysis_randomForest/trading_filter/strategyI`: 各策略網格搜尋
+- `analysis_randomForest/trading_filter/strategy_fusion`: A~I 融合版（加權訊號 + 單一投組回測）
+- `analysis_randomForest/real_trading_test`: 實盤化測試（單日推論、日線快取、滾動模擬、一次訊號回測）
 - `analysis_randomForest/trading_filter/todo.md`: 待辦事項
 
 ## 策略重點（A~I）
@@ -44,3 +46,8 @@
 - 這代表在 `strategyC` 上，Optuna 目前尚未完全追平 Grid，差距約 `0.1903%`。
 - 原因是 Optuna 為隨機式搜尋，雖然效率高，但不保證在有限 trial 內找到離散參數空間中的全域最佳點。
 - 若你的目標是「可重現且保證找到此離散空間最佳解」，以 Grid 結果為準；若你的目標是「較快找到高品質近似解」，可使用 Optuna。
+
+## Real Trading Test 摘要
+- 一次訊號版（10/09 訊號 -> 10/13 進場 -> 11/20）績效：`4.1539%`
+- 滾動式版（每日訊號 + 隔天 open 成交 + 持倉防重複買入）績效：`1.7805%`
+- 差異主因：滾動式更接近實盤，交易摩擦與訊號干擾更高，通常比一次性事件窗績效低。
