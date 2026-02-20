@@ -50,6 +50,15 @@ SCHEMA_COLS = {
         "sbl_prev_balance", "sbl_sell", "sbl_repay", "sbl_balance",
         "pced_file", "pced_row", "pced_col"
     ],
+    "margin_pressure_analysis": [
+        "date", "market", "symbol", "name",
+        "margin_long_balance", "margin_long_limit", "margin_usage_ratio",
+        "margin_long_balance_wow", "margin_long_balance_wow_pct",
+        "margin_short_balance", "margin_short_limit", "short_usage_ratio",
+        "margin_short_balance_wow", "margin_short_balance_wow_pct",
+        "short_cover_pressure", "margin_pressure_score",
+        "pced_file", "pced_row", "pced_col"
+    ],
     "short_interest_analysis": [
         "date", "market", "symbol", "name",
         "sbl_balance", "sbl_balance_wow", "sbl_balance_wow_pct",

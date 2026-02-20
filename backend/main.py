@@ -378,6 +378,24 @@ class ShortInterestAnalysisRaw(BaseModel):
     margin_short_balance_wow_pct: Optional[float] = None
     short_pressure_score: Optional[float] = None
 
+class MarginPressureAnalysisRaw(BaseModel):
+    date: str
+    symbol: str
+    market: str
+    name: Optional[str] = None
+    margin_long_balance: Optional[float] = None
+    margin_long_limit: Optional[float] = None
+    margin_usage_ratio: Optional[float] = None
+    margin_long_balance_wow: Optional[float] = None
+    margin_long_balance_wow_pct: Optional[float] = None
+    margin_short_balance: Optional[float] = None
+    margin_short_limit: Optional[float] = None
+    short_usage_ratio: Optional[float] = None
+    margin_short_balance_wow: Optional[float] = None
+    margin_short_balance_wow_pct: Optional[float] = None
+    short_cover_pressure: Optional[float] = None
+    margin_pressure_score: Optional[float] = None
+
 class QuarterlyReportRaw(BaseModel):
     date: str  # Format: YYYYQX (e.g. 2025Q1)
     symbol: str
@@ -854,6 +872,17 @@ def get_raw_short_interest_analysis(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("short_interest_analysis", start_date, end_date, symbol, market, limit, offset)
+
+@app.get("/raw/margin-pressure-analysis", response_model=List[MarginPressureAnalysisRaw])
+def get_raw_margin_pressure_analysis(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    market: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    return get_raw_data("margin_pressure_analysis", start_date, end_date, symbol, market, limit, offset)
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(

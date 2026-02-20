@@ -198,6 +198,21 @@ CASES = [
         ],
     },
     {
+        "endpoint": "/raw/margin-pressure-analysis",
+        "table": "margin_pressure_analysis",
+        "columns": ["date", "symbol", "market"],
+        "params": ["symbol", "market"],
+        "required_non_empty": ["date", "symbol", "market"],
+        "expected_fields": [
+            "date", "symbol", "market", "name",
+            "margin_long_balance", "margin_long_limit", "margin_usage_ratio",
+            "margin_long_balance_wow", "margin_long_balance_wow_pct",
+            "margin_short_balance", "margin_short_limit", "short_usage_ratio",
+            "margin_short_balance_wow", "margin_short_balance_wow_pct",
+            "short_cover_pressure", "margin_pressure_score"
+        ],
+    },
+    {
         "endpoint": "/raw/quarterly-reports",
         "table": "quarterly_reports",
         "columns": ["date", "symbol", "market"],

@@ -28,6 +28,7 @@ def add_indexes():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_dealer_holding_symbol_date ON dealer_holding (symbol, date)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_shareholding_concentration_symbol_date ON shareholding_concentration (symbol, date)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_short_interest_analysis_symbol_date ON short_interest_analysis (symbol, date)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_margin_pressure_analysis_symbol_date ON margin_pressure_analysis (symbol, date)"))
 
         print("Indexes created successfully.")
     except Exception as e:
