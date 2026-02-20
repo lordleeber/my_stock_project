@@ -73,7 +73,7 @@ def main() -> None:
         # 交易筆數過少會導致過擬合，因此低於門檻時做重罰
         entered_count = int(row["entered_count"])
         raw_return = float(row["return_percent"])
-        score = raw_return if entered_count >= args.min_entered_count else -999.0 + raw_return
+        score = raw_return
 
         row["score"] = round(score, 4)
         trial_rows.append(row)
@@ -99,7 +99,10 @@ def main() -> None:
     sort_by.append("sold_loss_count")
     ascending.append(True)
 
-    ranked = result_df.sort_values(by=sort_by, ascending=ascending).reset_index(drop=True)
+    filtered = result_df[result_df["entered_count"] >= args.min_entered_count].copy()
+    if filtered.empty:
+        filtered = result_df.copy()
+    ranked = filtered.sort_values(by=sort_by, ascending=ascending).reset_index(drop=True)
 
     result_df.to_csv(OUT_ALL, index=False, encoding="utf-8-sig")
     ranked.head(20).to_csv(OUT_TOP20, index=False, encoding="utf-8-sig")
@@ -127,4 +130,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

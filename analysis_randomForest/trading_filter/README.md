@@ -37,3 +37,10 @@
 - `return_percent` 高不一定代表可實務化，需看 `selected_count/entered_count`。
 - F/H/I 報酬率高，但樣本非常小，穩定性風險較高。
 - 若偏向全股票池穩定性，可優先比較 A/D/E/G。
+
+## Optuna 與 Grid 差異說明（Strategy C）
+- 目前 `strategyC` 的 `grid_search` 最佳為 `7.8458%`（`C_pullback_from_ref_close_0.93_tpTarget_sl6_h15`）。
+- 正式加大到 `optuna n_trials=2000` 後，最佳為 `7.6555%`（`C_pullback_from_ref_close_0.94_tpTarget_sl6_h15`）。
+- 這代表在 `strategyC` 上，Optuna 目前尚未完全追平 Grid，差距約 `0.1903%`。
+- 原因是 Optuna 為隨機式搜尋，雖然效率高，但不保證在有限 trial 內找到離散參數空間中的全域最佳點。
+- 若你的目標是「可重現且保證找到此離散空間最佳解」，以 Grid 結果為準；若你的目標是「較快找到高品質近似解」，可使用 Optuna。

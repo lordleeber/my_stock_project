@@ -28,7 +28,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-trials", type=int, default=400)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--timeout-sec", type=int, default=0)
-    parser.add_argument("--min-entered-count", type=int, default=100)
     parser.add_argument("--entry-date", type=str, default="2025-10-13")
     parser.add_argument("--end-date", type=str, default="2025-11-20")
     return parser.parse_args()
@@ -71,9 +70,8 @@ def main() -> None:
         )
         row["trial_number"] = int(trial.number)
 
-        entered_count = int(row["entered_count"])
         raw_return = float(row["return_percent"])
-        score = raw_return if entered_count >= args.min_entered_count else -999.0 + raw_return
+        score = raw_return
 
         row["score"] = round(score, 4)
         trial_rows.append(row)
@@ -109,7 +107,6 @@ def main() -> None:
         "n_trials": args.n_trials,
         "seed": args.seed,
         "timeout_sec": args.timeout_sec,
-        "min_entered_count": args.min_entered_count,
         "entry_date": args.entry_date,
         "end_date": args.end_date,
         "best_trial_number": int(study.best_trial.number),
@@ -127,4 +124,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
