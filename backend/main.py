@@ -174,6 +174,9 @@ class MLTrainingData(BaseModel):
     rsi12: Optional[float] = None
     macd_dif: Optional[float] = None
     macd_dea: Optional[float] = None
+    foreign_streak_days: Optional[int] = None
+    trust_streak_days: Optional[int] = None
+    dealer_streak_days: Optional[int] = None
     foreign_net: Optional[float] = None
     trust_net: Optional[float] = None
     dealer_net: Optional[float] = None
@@ -1298,7 +1301,8 @@ def get_ml_training_data(
         if include_indicators:
             select_fields.extend(["ti.ma5", "ti.ma10", "ti.ma20", "ti.ma60", "ti.ma120", "ti.ma240",
                                 "ti.vma5", "ti.vma10", "ti.vma20", "ti.vma60",
-                                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea"])
+                                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea",
+                                "ti.foreign_streak_days", "ti.trust_streak_days", "ti.dealer_streak_days"])
         if include_institutional:
             select_fields.extend(["ii.foreign_net", "ii.trust_net", "ii.dealer_net", "fh.foreign_held_shares",
                                 "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares"])
@@ -1331,6 +1335,8 @@ def get_ml_training_data(
                 record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
                              for k in ["ma5", "ma10", "ma20", "ma60", "ma120", "ma240", "vma5", "vma10", "vma20", "vma60",
                                        "k", "d", "rsi6", "rsi12", "macd_dif", "macd_dea"]})
+                record.update({k: int(getattr(row, k)) if getattr(row, k) is not None else None
+                             for k in ["foreign_streak_days", "trust_streak_days", "dealer_streak_days"]})
             if include_institutional:
                 record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
                              for k in ["foreign_net", "trust_net", "dealer_net", "foreign_held_shares", "trust_held_shares"]})

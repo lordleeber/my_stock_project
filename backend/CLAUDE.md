@@ -239,10 +239,15 @@ date, symbol, open, high, low, close, volume,
 ma5?, ma10?, ma20?, ma60?, ma120?, ma240?,
 vma5?, vma10?, vma20?, vma60?,
 k?, d?, rsi6?, rsi12?, macd_dif?, macd_dea?,
+foreign_streak_days?, trust_streak_days?, dealer_streak_days?,
 foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 ```
 - All fields with `?` are optional (null when `include_indicators=false` or `include_institutional=false`)
 - `trust_held_shares` is computed as running sum of `trust_net` (similar to `foreign_held_shares`)
+- `*_streak_days` are streak counters derived from institutional net flow:
+  - `net > 0` => positive streak days
+  - `net < 0` => negative streak days
+  - `net = 0` => `0` (does not distinguish no-trade vs buy=sell)
 - Designed for ML/RL training with complete OHLCV + indicators + institutional data
 - Supports bulk queries across multiple stocks and date ranges
 
@@ -282,7 +287,7 @@ foreign_net?, trust_net?, dealer_net?, foreign_held_shares?, trust_held_shares?
 | Table | Key Columns | Used By |
 |-------|------------|---------|
 | `daily_quotes` | date, symbol, open, high, low, close, volume, name, market | Most endpoints |
-| `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea | Scanner, analysis, ML training |
+| `technical_indicators` | date, symbol, ma5-ma240, vma5-vma240, k, d, rsi6, rsi12, macd_dif, macd_dea, foreign_streak_days, trust_streak_days, dealer_streak_days | Scanner, analysis, ML training |
 | `institutional_investors` | date, symbol, foreign_net, trust_net, dealer_net | Institutional API, ML training |
 | `foreign_holding` | date, symbol, foreign_held_shares | Institutional API, ML training |
 | `trust_holding` | date, symbol, trust_held_shares, trust_held_ratio | Raw API (`/raw/trust-holding`) |

@@ -63,6 +63,20 @@ def get_target_range_from_env(required=False):
     return start_ts, end_ts
 
 
+def calculate_net_streak(net_series):
+    # Buy streak => positive days, sell streak => negative days, flat => 0.
+    signs = net_series.fillna(0).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    streak = pd.Series(0, index=net_series.index, dtype="int64")
+
+    non_zero = signs != 0
+    if non_zero.any():
+        segment = (signs != signs.shift(1)).cumsum()
+        run_len = signs.groupby(segment).cumcount() + 1
+        streak.loc[non_zero] = (run_len * signs).loc[non_zero].astype("int64")
+
+    return streak
+
+
 def calculate_indicators(df_group):
     symbol = df_group.name
     df_group = df_group.sort_values("date").copy()
@@ -113,6 +127,10 @@ def calculate_indicators(df_group):
     df_group["bb_upper"] = df_group["bb_middle"] + 2 * std20
     df_group["bb_lower"] = df_group["bb_middle"] - 2 * std20
 
+    df_group["foreign_streak_days"] = calculate_net_streak(df_group["foreign_net"])
+    df_group["trust_streak_days"] = calculate_net_streak(df_group["trust_net"])
+    df_group["dealer_streak_days"] = calculate_net_streak(df_group["dealer_net"])
+
     df_group["symbol"] = symbol
 
     return df_group[
@@ -141,8 +159,17 @@ def calculate_indicators(df_group):
             "bb_upper",
             "bb_middle",
             "bb_lower",
+            "foreign_streak_days",
+            "trust_streak_days",
+            "dealer_streak_days",
         ]
     ]
+
+def ensure_streak_columns(engine):
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS foreign_streak_days bigint"))
+        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS trust_streak_days bigint"))
+        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS dealer_streak_days bigint"))
 
 
 def run():
@@ -161,15 +188,24 @@ def run():
 
         buffer_date = (start_ts - pd.Timedelta(days=500)).strftime("%Y-%m-%d")
         query = text(
-            "SELECT date, symbol, high, low, close, volume FROM daily_quotes "
-            "WHERE date >= :buffer_date ORDER BY symbol, date"
+            "SELECT dq.date, dq.symbol, dq.high, dq.low, dq.close, dq.volume, "
+            "       ii.foreign_net, ii.trust_net, ii.dealer_net "
+            "FROM daily_quotes dq "
+            "LEFT JOIN institutional_investors ii ON dq.date = ii.date AND dq.symbol = ii.symbol "
+            "WHERE dq.date >= :buffer_date ORDER BY dq.symbol, dq.date"
         )
         df = pd.read_sql(query, engine, params={"buffer_date": buffer_date})
         if_exists_mode = "append"
         is_incremental = True
     else:
         print("Full Calculation Mode (ALL history)")
-        query = text("SELECT date, symbol, high, low, close, volume FROM daily_quotes ORDER BY symbol, date")
+        query = text(
+            "SELECT dq.date, dq.symbol, dq.high, dq.low, dq.close, dq.volume, "
+            "       ii.foreign_net, ii.trust_net, ii.dealer_net "
+            "FROM daily_quotes dq "
+            "LEFT JOIN institutional_investors ii ON dq.date = ii.date AND dq.symbol = ii.symbol "
+            "ORDER BY dq.symbol, dq.date"
+        )
         df = pd.read_sql(query, engine)
         if_exists_mode = "replace"
         is_incremental = False
@@ -213,6 +249,8 @@ def run():
                     conn.commit()
 
     if not results.empty:
+        if is_incremental:
+            ensure_streak_columns(engine)
         print(f"Writing {len(results)} rows (mode={if_exists_mode})...")
         results.to_sql("technical_indicators", engine, if_exists=if_exists_mode, index=False, chunksize=5000)
 
