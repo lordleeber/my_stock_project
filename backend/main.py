@@ -182,6 +182,12 @@ class MLTrainingData(BaseModel):
     dealer_net: Optional[float] = None
     foreign_held_shares: Optional[float] = None
     trust_held_shares: Optional[float] = None
+    large_holder_ratio: Optional[float] = None
+    small_holder_ratio: Optional[float] = None
+    concentration_spread: Optional[float] = None
+    large_holder_ratio_wow: Optional[float] = None
+    small_holder_ratio_wow: Optional[float] = None
+    concentration_spread_wow: Optional[float] = None
 
 # --- Raw Data Models ---
 class DailyQuoteRaw(BaseModel):
@@ -343,6 +349,18 @@ class ShareholdingRaw(BaseModel):
     holders: Optional[float]
     shares: Optional[float]
     percentage: Optional[float]
+
+class ShareholdingConcentrationRaw(BaseModel):
+    date: str
+    symbol: str
+    large_holder_ratio: Optional[float] = None
+    small_holder_ratio: Optional[float] = None
+    concentration_spread: Optional[float] = None
+    large_holder_count: Optional[float] = None
+    small_holder_count: Optional[float] = None
+    large_holder_ratio_wow: Optional[float] = None
+    small_holder_ratio_wow: Optional[float] = None
+    concentration_spread_wow: Optional[float] = None
 
 class QuarterlyReportRaw(BaseModel):
     date: str  # Format: YYYYQX (e.g. 2025Q1)
@@ -799,6 +817,16 @@ def get_raw_shareholding(
     offset: int = Query(0, ge=0)
 ):
     return get_raw_data("shareholding", start_date, end_date, symbol, None, limit, offset)
+
+@app.get("/raw/shareholding-concentration", response_model=List[ShareholdingConcentrationRaw])
+def get_raw_shareholding_concentration(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    return get_raw_data("shareholding_concentration", start_date, end_date, symbol, None, limit, offset)
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(
@@ -1305,7 +1333,9 @@ def get_ml_training_data(
                                 "ti.foreign_streak_days", "ti.trust_streak_days", "ti.dealer_streak_days"])
         if include_institutional:
             select_fields.extend(["ii.foreign_net", "ii.trust_net", "ii.dealer_net", "fh.foreign_held_shares",
-                                "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares"])
+                                "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares",
+                                "shc.large_holder_ratio", "shc.small_holder_ratio", "shc.concentration_spread",
+                                "shc.large_holder_ratio_wow", "shc.small_holder_ratio_wow", "shc.concentration_spread_wow"])
 
         joins = []
         if include_indicators:
@@ -1313,6 +1343,16 @@ def get_ml_training_data(
         if include_institutional:
             joins.append("LEFT JOIN institutional_investors ii ON dq.symbol = ii.symbol AND dq.date = ii.date")
             joins.append("LEFT JOIN foreign_holding fh ON dq.symbol = fh.symbol AND dq.date = fh.date")
+            joins.append(
+                "LEFT JOIN LATERAL ("
+                "  SELECT sc.large_holder_ratio, sc.small_holder_ratio, sc.concentration_spread, "
+                "         sc.large_holder_ratio_wow, sc.small_holder_ratio_wow, sc.concentration_spread_wow "
+                "  FROM shareholding_concentration sc "
+                "  WHERE sc.symbol = dq.symbol AND sc.date <= dq.date "
+                "  ORDER BY sc.date DESC "
+                "  LIMIT 1"
+                ") shc ON TRUE"
+            )
 
         params = {"start_date": start_date, "end_date": end_date}
         where = ["dq.date >= :start_date", "dq.date <= :end_date"]
@@ -1339,7 +1379,9 @@ def get_ml_training_data(
                              for k in ["foreign_streak_days", "trust_streak_days", "dealer_streak_days"]})
             if include_institutional:
                 record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
-                             for k in ["foreign_net", "trust_net", "dealer_net", "foreign_held_shares", "trust_held_shares"]})
+                             for k in ["foreign_net", "trust_net", "dealer_net", "foreign_held_shares", "trust_held_shares",
+                                       "large_holder_ratio", "small_holder_ratio", "concentration_spread",
+                                       "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow"]})
             data.append(MLTrainingData(**record))
         return data
     except Exception as e:

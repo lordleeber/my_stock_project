@@ -171,6 +171,19 @@ CASES = [
         "expected_fields": ["date", "symbol", "level", "level_name", "holders", "shares", "percentage"],
     },
     {
+        "endpoint": "/raw/shareholding-concentration",
+        "table": "shareholding_concentration",
+        "columns": ["date", "symbol"],
+        "params": ["symbol"],
+        "required_non_empty": ["date", "symbol"],
+        "expected_fields": [
+            "date", "symbol",
+            "large_holder_ratio", "small_holder_ratio", "concentration_spread",
+            "large_holder_count", "small_holder_count",
+            "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow"
+        ],
+    },
+    {
         "endpoint": "/raw/quarterly-reports",
         "table": "quarterly_reports",
         "columns": ["date", "symbol", "market"],

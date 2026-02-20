@@ -52,6 +52,6 @@ docker compose up -d db backend frontend
 ./schedules/daily_update.sh 20260211
 
 # 3. Daily Analytics (Indicators & ML Valuations)
-# This script handles technical indicators, trust_holding, dealer_holding, and valuation_daily.
+# This script handles technical indicators, trust_holding, dealer_holding, shareholding_concentration, and valuation_daily.
 ./schedules/daily_calculator.sh 20260211
 ```

@@ -63,6 +63,13 @@ SCHEMA_COLS = {
         "date", "symbol", "level", "level_name", "holders", "shares", "percentage",
         "pced_file", "pced_row", "pced_col"
     ],
+    "shareholding_concentration": [
+        "date", "symbol",
+        "large_holder_ratio", "small_holder_ratio", "concentration_spread",
+        "large_holder_count", "small_holder_count",
+        "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow",
+        "pced_file", "pced_row", "pced_col"
+    ],
     "monthly_revenue": [
         "date", "market", "symbol", "name", "revenue_current", "revenue_last_month",
         "revenue_last_year", "mom_pct", "yoy_pct", "revenue_cumulative",

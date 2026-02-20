@@ -7,7 +7,7 @@
 - `schedules/daily_update.sh`
   - 流程：`scraper-daily -> processor -> audit -> importer -> calculator`
   - 參數：可選 `YYYYMMDD`（不給則用今天）
-  - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_dealer_holding.py -> calculate_valuation.py`
+  - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_dealer_holding.py -> calculate_shareholding_concentration.py -> calculate_valuation.py`
 
 - `schedules/weekly_update.sh`
   - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding)`

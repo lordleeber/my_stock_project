@@ -8,7 +8,8 @@ The calculator component refines raw market and financial data into actionable i
 
 1.  **Technical Indicators (`calculate_daily.py`)**: Computes MA, RSI, MACD, etc., for price trend analysis.
 2.  **Institutional Holding Derivatives (`calculate_trust_holding.py`, `calculate_dealer_holding.py`)**: Computes cumulative trust/dealer held shares and held ratio.
-3.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
+3.  **Shareholding Concentration (`calculate_shareholding_concentration.py`)**: Derives large/small holder concentration metrics from TDCC shareholding buckets.
+4.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
 
 Error handling is fail-fast:
 - Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
@@ -80,6 +81,8 @@ docker compose run --rm calculator python calculate_daily.py
 docker compose run --rm calculator python calculate_trust_holding.py
 # Dealer holding
 docker compose run --rm calculator python calculate_dealer_holding.py
+# Shareholding concentration
+docker compose run --rm calculator python calculate_shareholding_concentration.py
 # Valuations (Recomputes full history to ensure percentile consistency)
 docker compose run --rm calculator python calculate_valuation.py
 ```
