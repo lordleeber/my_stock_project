@@ -62,8 +62,8 @@ def main() -> None:
     feature_cols = [c for c in df.columns if c not in EXCLUDE_COLUMNS]
     if not feature_cols:
         raise ValueError("沒有可用特徵欄位，請檢查 dataset_train.csv")
-    if "q2_eps" not in feature_cols:
-        raise ValueError("dataset_train.csv 必須包含 q2_eps 欄位")
+    if "anchor_eps" not in feature_cols:
+        raise ValueError("dataset_train.csv 必須包含 anchor_eps 欄位")
     z_features = [c for c in feature_cols if c.endswith("_z")]
     if z_features:
         raise ValueError(
@@ -81,7 +81,7 @@ def main() -> None:
     for c in use_features:
         df[c] = df[c].fillna(0)
 
-    winsor_cols = [c for c in use_features if c != "q2_eps"] + [TARGET_DELTA]
+    winsor_cols = [c for c in use_features if c != "anchor_eps"] + [TARGET_DELTA]
     winsorize_inplace(df, winsor_cols, args.winsor_quantile)
 
     x_data = df[use_features]
@@ -96,8 +96,8 @@ def main() -> None:
     )
     model.fit(x_data, y_delta)
 
-    pred_eps = df["q2_eps"].to_numpy(dtype=float) + model.predict(x_data)
-    baseline_eps = df["q2_eps"].to_numpy(dtype=float)
+    pred_eps = df["anchor_eps"].to_numpy(dtype=float) + model.predict(x_data)
+    baseline_eps = df["anchor_eps"].to_numpy(dtype=float)
     y_true = df[TARGET].to_numpy(dtype=float)
 
     metrics = {

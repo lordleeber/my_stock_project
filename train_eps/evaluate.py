@@ -19,6 +19,7 @@ EVAL_EXCLUDE_COLUMNS = {
     "pe_current",
     "prev_q4_eps",
     "q1_eps",
+    "q2_eps",
     "q2_eps_official",
     "ttm_eps_official",
     "feature_cutoff_date",
@@ -57,8 +58,8 @@ def resolve_month_context(month_dir_input: Path) -> tuple[Path, Path, Path, str]
     month_name = month_dir.name
     dataset_path = month_dir / "dataset_evaluate.csv"
     results_dir = month_dir / "results"
-    version_map = {"08": "v10_t1", "09": "v10_t2", "10": "v10_t3"}
-    version_name = version_map.get(month_name, f"v10_t{month_name}")
+    version_map = {"05": "v10", "06": "v10", "07": "v10", "08": "v10", "09": "v10", "10": "v10"}
+    version_name = version_map.get(month_name, f"v10_{month_name}")
     return month_dir, dataset_path, results_dir, version_name
 
 
@@ -106,8 +107,8 @@ def predict_with_uncertainty(
 
 def infer_feature_set(df: pd.DataFrame) -> list[str]:
     feature_cols = [c for c in df.columns if c not in EVAL_EXCLUDE_COLUMNS]
-    if "q2_eps" not in feature_cols:
-        raise ValueError("dataset_evaluate.csv 必須包含 q2_eps 欄位")
+    if "anchor_eps" not in feature_cols:
+        raise ValueError("dataset_evaluate.csv 必須包含 anchor_eps 欄位")
     if not feature_cols:
         raise ValueError("沒有可用特徵欄位，請檢查 dataset_evaluate.csv")
     z_features = [c for c in feature_cols if c.endswith("_z")]
@@ -179,9 +180,9 @@ def build_valuation_daily_frame(
     out["roe_official"] = df_eval["q2_roe"] if "q2_roe" in df_eval.columns else np.nan
 
     roe_forward = np.full(len(out), np.nan, dtype=float)
-    if "q2_roe" in df_eval.columns and "q2_eps" in df_eval.columns:
-        q2_eps = df_eval["q2_eps"].to_numpy(dtype=float)
-        q2_roe = df_eval["q2_roe"].to_numpy(dtype=float)
+    if "q2_roe" in df_eval.columns and "anchor_eps" in df_eval.columns:
+        q2_eps = df_eval["anchor_eps"].to_numpy(dtype=float)
+        q2_roe = df_eval["q2_roe"].to_numpy(dtype=float) if "q2_roe" in df_eval.columns else np.full(len(df_eval), np.nan)
         ok = np.abs(q2_eps) > 1e-9
         roe_forward[ok] = (pred_eps_mid[ok] / q2_eps[ok]) * q2_roe[ok]
     out["roe_forward"] = roe_forward
@@ -452,7 +453,7 @@ def main() -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan)
-    df = df.dropna(subset=[TARGET, TARGET_DELTA, "year", "q2_eps"])
+    df = df.dropna(subset=[TARGET, TARGET_DELTA, "year", "anchor_eps"])
     feature_cols = infer_feature_set(df)
     for c in feature_cols:
         df[c] = df[c].fillna(0)
@@ -469,7 +470,7 @@ def main() -> None:
         effective_winsor_q = args.winsor_quantile
         effective_conf_q = args.confidence_quantile
 
-        winsor_cols = [c for c in feature_cols if c != "q2_eps"] + [TARGET_DELTA]
+        winsor_cols = [c for c in feature_cols if c != "anchor_eps"] + [TARGET_DELTA]
         train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)
         # prepare_data 已完成特徵轉換，evaluate 只讀取最終特徵
         use_features = feature_cols
@@ -526,14 +527,14 @@ def main() -> None:
         train_delta_low = np.minimum(train_lo, train_delta_raw)
         train_delta_high = np.maximum(train_hi, train_delta_raw)
 
-        pred_eps_rf = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta
-        pred_eps_low = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_low
-        pred_eps_high = test_df["q2_eps"].to_numpy(dtype=float) + pred_delta_high
+        pred_eps_rf    = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
+        pred_eps_low   = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_low
+        pred_eps_high  = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_high
 
-        train_delta_mid = np.where(pred_delta_train_std > threshold, 0.0, train_delta_raw)
-        train_eps_mid = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_mid
-        train_eps_low = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_low
-        train_eps_high = train_df["q2_eps"].to_numpy(dtype=float) + train_delta_high
+        train_delta_mid  = np.where(pred_delta_train_std > threshold, 0.0, train_delta_raw)
+        train_eps_mid  = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_mid
+        train_eps_low  = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_low
+        train_eps_high = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_high
 
         calib_source = "global"
         interval_scale_vec = np.full(len(test_df), 1.0, dtype=float)
@@ -612,10 +613,10 @@ def main() -> None:
         pred_eps_low = pred_eps_rf - pred_half_width * interval_scale_vec
         pred_eps_high = pred_eps_rf + pred_half_width * interval_scale_vec
 
-        pred_eps_q2 = test_df["q2_eps"].to_numpy(dtype=float)
+        pred_eps_anchor = test_df["anchor_eps"].to_numpy(dtype=float)
         pred_eps_med = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
 
-        for model_name, pred in [("rf_delta", pred_eps_rf), ("baseline_q2_eps", pred_eps_q2), ("baseline_train_median", pred_eps_med)]:
+        for model_name, pred in [("rf_delta", pred_eps_rf), ("baseline_anchor_eps", pred_eps_anchor), ("baseline_train_median", pred_eps_med)]:
             m = evaluate_metrics(test_df, y_true, pred, args.eps_floor)
             row = {
                 "version": version_name,
@@ -646,7 +647,7 @@ def main() -> None:
         tmp["pred_rf_delta_high"] = pred_eps_high
         tmp["pred_delta_std"] = pred_delta_std
         tmp["confidence_threshold"] = threshold
-        tmp["pred_baseline_q2_eps"] = pred_eps_q2
+        tmp["pred_baseline_anchor_eps"] = pred_eps_anchor
         tmp["pred_baseline_train_median"] = pred_eps_med
         tmp["feature_transform"] = FEATURE_TRANSFORM
         tmp["interval_method"] = args.interval_method

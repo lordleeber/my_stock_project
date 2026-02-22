@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-file", type=Path, default=None, help="預設 <month-dir>/model.pkl")
     parser.add_argument("--metric", type=str, default="mae")
     parser.add_argument("--primary-model", type=str, default="rf_delta")
-    parser.add_argument("--baseline-model", type=str, default="baseline_q2_eps")
+    parser.add_argument("--baseline-model", type=str, default="baseline_anchor_eps")
     parser.add_argument("--max-ratio", type=float, default=0.95, help="primary <= baseline * max_ratio 才通過")
     parser.add_argument("--min-folds", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true")

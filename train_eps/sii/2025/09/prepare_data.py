@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 
 # v10_t2: 9月初視角 -> Q2 + 7/8月，含同比與產業標準化
 FEATURES = [
-    "q2_eps",
+    "anchor_eps",
     "ly_q3_eps",
     "q2_margin",
     "q2_ocf_ratio",
@@ -29,7 +29,7 @@ TARGET_DELTA = "delta_eps"
 
 KEEP_OPTIONAL = [
     "symbol", "name", "industry", "q3_date", "q3_close", "q3_volume", "pe_current",
-    "prev_q4_eps", "q1_eps", "q2_eps_official", "ttm_eps_official", "feature_cutoff_date",
+    "prev_q4_eps", "q1_eps", "q2_eps", "q2_eps_official", "ttm_eps_official", "feature_cutoff_date",
 ]
 
 DEFAULT_OUTPUT_TRAIN = Path(__file__).resolve().parent / "dataset_train.csv"
@@ -293,6 +293,9 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
 
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["q2_ni", TARGET, "year", "q2_eps"])
+
+    # anchor_eps = q2_eps（Q2財報模型統一命名）
+    df["anchor_eps"] = df["q2_eps"]
 
     df["q2_ocf_ratio"] = (df["q2_ocf"] / df["q2_ni"].replace(0, 1e-9)).clip(-5, 5)
     df["q2_re_ratio"] = df["q2_retained_earnings"] / df["capital"].replace(0, 1e-9)

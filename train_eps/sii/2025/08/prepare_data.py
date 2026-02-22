@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 
 # v10_t1: 8/15 視角 + 月營收特徵工程（同比 + 產業標準化）
 FEATURES = [
-    "q2_eps",
+    "anchor_eps",
     "ly_q3_eps",
     "q2_margin",
     "q2_ocf_ratio",
@@ -36,6 +36,7 @@ KEEP_OPTIONAL = [
     "pe_current",
     "prev_q4_eps",
     "q1_eps",
+    "q2_eps",
     "q2_eps_official",
     "ttm_eps_official",
     "feature_cutoff_date",
@@ -388,6 +389,9 @@ def main() -> None:
 
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["q2_ni", TARGET, "year", "q2_eps"])
+
+    # anchor_eps = q2_eps（Q2財報模型統一命名）
+    df["anchor_eps"] = df["q2_eps"]
 
     df["q2_ocf_ratio"] = (df["q2_ocf"] / df["q2_ni"].replace(0, 1e-9)).clip(-5, 5)
     df["q2_re_ratio"] = df["q2_retained_earnings"] / df["capital"].replace(0, 1e-9)
