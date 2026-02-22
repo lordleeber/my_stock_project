@@ -28,6 +28,7 @@ EVAL_EXCLUDE_COLUMNS = {
 }
 
 BASE_DIR = Path(__file__).resolve().parent
+FEATURE_TRANSFORM = "quantile"
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,7 +38,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
     parser.add_argument("--interval-method", type=str, choices=["tree_quantile", "quantile_model"], default="quantile_model")
-    parser.add_argument("--feature-transform", type=str, choices=["zscore", "rank", "quantile"], default="quantile")
     parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--interval-low-quantile", type=float, default=0.18)
     parser.add_argument("--interval-high-quantile", type=float, default=0.82)
@@ -104,31 +104,23 @@ def predict_with_uncertainty(
     )
 
 
-def add_cross_section_transforms(df: pd.DataFrame, z_cols: list[str]) -> None:
-    group_cols = ["year", "industry"] if "industry" in df.columns else ["year"]
-    for z_col in z_cols:
-        rank_col = z_col.replace("_z", "_rank")
-        quantile_col = z_col.replace("_z", "_quantile")
-        ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True).fillna(0.5)
-        df[rank_col] = ranks
-        df[quantile_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
-
-
-def infer_feature_sets(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+def infer_feature_set(df: pd.DataFrame) -> list[str]:
     feature_cols = [c for c in df.columns if c not in EVAL_EXCLUDE_COLUMNS]
     if "q2_eps" not in feature_cols:
         raise ValueError("dataset_evaluate.csv 必須包含 q2_eps 欄位")
     if not feature_cols:
         raise ValueError("沒有可用特徵欄位，請檢查 dataset_evaluate.csv")
     z_features = [c for c in feature_cols if c.endswith("_z")]
-    return feature_cols, z_features
-
-
-def resolve_features(transform: str, feature_cols: list[str], z_features: list[str]) -> list[str]:
-    if transform == "zscore":
-        return feature_cols
-    suffix = "_rank" if transform == "rank" else "_quantile"
-    return [f.replace("_z", suffix) if f in z_features else f for f in feature_cols]
+    if z_features:
+        raise ValueError(
+            "dataset_evaluate.csv 不可包含 *_z 欄位。請先執行新版 prepare_data.py，輸出 *_quantile 後再評估。"
+        )
+    quantile_features = [c for c in feature_cols if c.endswith("_quantile")]
+    if not quantile_features:
+        raise ValueError(
+            "dataset_evaluate.csv 缺少 *_quantile 特徵。請先執行新版 prepare_data.py。"
+        )
+    return feature_cols
 
 
 def build_valuation_daily_frame(
@@ -461,7 +453,7 @@ def main() -> None:
 
     df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=[TARGET, TARGET_DELTA, "year", "q2_eps"])
-    feature_cols, z_features = infer_feature_sets(df)
+    feature_cols = infer_feature_set(df)
     for c in feature_cols:
         df[c] = df[c].fillna(0)
 
@@ -479,9 +471,8 @@ def main() -> None:
 
         winsor_cols = [c for c in feature_cols if c != "q2_eps"] + [TARGET_DELTA]
         train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)
-        add_cross_section_transforms(train_df, z_features)
-        add_cross_section_transforms(test_df, z_features)
-        use_features = resolve_features(args.feature_transform, feature_cols, z_features)
+        # prepare_data 已完成特徵轉換，evaluate 只讀取最終特徵
+        use_features = feature_cols
 
         model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=args.n_jobs)
         model.fit(train_df[use_features], train_df[TARGET_DELTA])
@@ -631,7 +622,7 @@ def main() -> None:
                 "protocol": "expanding_by_year",
                 "fold": f"year_{test_year}",
                 "model": model_name,
-                "feature_transform": args.feature_transform,
+                "feature_transform": FEATURE_TRANSFORM,
                 "interval_method": args.interval_method,
                 "effective_winsor_q": effective_winsor_q,
                 "effective_confidence_q": effective_conf_q,
@@ -657,7 +648,7 @@ def main() -> None:
         tmp["confidence_threshold"] = threshold
         tmp["pred_baseline_q2_eps"] = pred_eps_q2
         tmp["pred_baseline_train_median"] = pred_eps_med
-        tmp["feature_transform"] = args.feature_transform
+        tmp["feature_transform"] = FEATURE_TRANSFORM
         tmp["interval_method"] = args.interval_method
         tmp["effective_winsor_q"] = effective_winsor_q
         tmp["effective_confidence_q"] = effective_conf_q
@@ -673,7 +664,7 @@ def main() -> None:
             pred_eps_rf,
             pred_eps_low,
             pred_eps_high,
-            f"{version_name}_{args.feature_transform}",
+            f"{version_name}_{FEATURE_TRANSFORM}",
             str(results_dir / "predictions.csv"),
         )
         val["fold"] = f"year_{test_year}"
@@ -705,8 +696,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-

@@ -18,6 +18,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def add_cross_section_quantiles(df: pd.DataFrame, z_cols: list[str]) -> None:
+    group_cols = ["year", "industry"] if "industry" in df.columns else ["year"]
+    for z_col in z_cols:
+        quantile_col = z_col.replace("_z", "_quantile")
+        ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True).fillna(0.5)
+        df[quantile_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
+
+
 def main() -> None:
     args = parse_args()
     market = args.market
@@ -48,6 +56,10 @@ def main() -> None:
     df = pd.read_csv(input_path).replace([np.inf, -np.inf], np.nan)
     if "q2_eps" not in df.columns:
         raise ValueError("input must contain q2_eps")
+
+    # 與 train/evaluate 對齊：統一生成 quantile 特徵
+    z_cols = [c for c in df.columns if c.endswith("_z")]
+    add_cross_section_quantiles(df, z_cols)
 
     if hasattr(model, "feature_names_in_"):
         feature_cols = list(model.feature_names_in_)

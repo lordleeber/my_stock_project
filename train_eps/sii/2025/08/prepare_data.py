@@ -15,8 +15,8 @@ FEATURES = [
     "q2_margin",
     "q2_ocf_ratio",
     "q2_re_ratio",
-    "rev_yoy_m7_z",
-    "rev_m7_ratio_q2_z",
+    "rev_yoy_m7_quantile",
+    "rev_m7_ratio_q2_quantile",
     "margin_momentum",
     "q2_roe",
     "q2_debt_ratio",
@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare v10_t1 dataset for analysis_codex from DB.")
     parser.add_argument("--start-year", type=int, default=2020)
     parser.add_argument("--end-year", type=int, default=2025)
-    parser.add_argument("--market", type=str, default="sii")
+    parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
     parser.add_argument("--api-base", type=str, default=os.getenv("BACKEND_API_BASE", "http://100.103.191.79:8000"))
     parser.add_argument("--apply-trading-filter", action="store_true")
@@ -75,6 +75,12 @@ def add_industry_zscore(df: pd.DataFrame, col: str, out_col: str) -> None:
     mean = grp.transform("mean")
     std = grp.transform("std").replace(0, np.nan)
     df[out_col] = ((df[col] - mean) / std).replace([np.inf, -np.inf], np.nan).fillna(0)
+
+
+def add_cross_section_quantile(df: pd.DataFrame, z_col: str, out_col: str) -> None:
+    group_cols = ["year", "industry"]
+    ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True).fillna(0.5)
+    df[out_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
 
 
 def fetch_all_rows_api(api_base: str, path: str, params: dict, limit: int = 5000) -> pd.DataFrame:
@@ -385,6 +391,10 @@ def main() -> None:
 
     add_industry_zscore(df, "rev_yoy_m7", "rev_yoy_m7_z")
     add_industry_zscore(df, "rev_m7_ratio_q2", "rev_m7_ratio_q2_z")
+
+    # 主流程統一使用 quantile 特徵（與 train/evaluate 一致）
+    add_cross_section_quantile(df, "rev_yoy_m7_z", "rev_yoy_m7_quantile")
+    add_cross_section_quantile(df, "rev_m7_ratio_q2_z", "rev_m7_ratio_q2_quantile")
 
     df[TARGET_DELTA] = df[TARGET] - df["q2_eps"]
     df["ttm_eps_official"] = (

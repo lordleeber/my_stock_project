@@ -64,14 +64,27 @@ def main() -> None:
         raise ValueError("沒有可用特徵欄位，請檢查 dataset_train.csv")
     if "q2_eps" not in feature_cols:
         raise ValueError("dataset_train.csv 必須包含 q2_eps 欄位")
+    z_features = [c for c in feature_cols if c.endswith("_z")]
+    if z_features:
+        raise ValueError(
+            "dataset_train.csv 不可包含 *_z 欄位。請先執行新版 prepare_data.py，輸出 *_quantile 後再訓練。"
+        )
+    quantile_features = [c for c in feature_cols if c.endswith("_quantile")]
+    if not quantile_features:
+        raise ValueError(
+            "dataset_train.csv 缺少 *_quantile 特徵。請先執行新版 prepare_data.py。"
+        )
 
-    for c in feature_cols:
+    # prepare_data 已完成特徵轉換，train 只讀取最終特徵
+    use_features = feature_cols
+
+    for c in use_features:
         df[c] = df[c].fillna(0)
 
-    winsor_cols = [c for c in feature_cols if c != "q2_eps"] + [TARGET_DELTA]
+    winsor_cols = [c for c in use_features if c != "q2_eps"] + [TARGET_DELTA]
     winsorize_inplace(df, winsor_cols, args.winsor_quantile)
 
-    x_data = df[feature_cols]
+    x_data = df[use_features]
     y_delta = df[TARGET_DELTA].astype(float).to_numpy()
 
     model = RandomForestRegressor(
@@ -94,10 +107,11 @@ def main() -> None:
         "winsor_quantile": float(args.winsor_quantile),
         "train_mae_rf_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
         "train_mae_baseline_q2_eps": float(mean_absolute_error(y_true, baseline_eps)),
-        "features": feature_cols,
+        "feature_transform": "quantile",
+        "features": use_features,
     }
 
-    importance_df = pd.DataFrame({"feature": feature_cols, "importance": model.feature_importances_}).sort_values(
+    importance_df = pd.DataFrame({"feature": use_features, "importance": model.feature_importances_}).sort_values(
         "importance", ascending=False
     )
 
@@ -128,5 +142,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
