@@ -100,7 +100,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
     m4, ly_m4 = f"{year}M04", f"{year-1}M04"
-    month_start, month_end = f"{year}-09-01", f"{year}-09-30"
+    month_start, month_end = f"{year}-05-01", f"{year}-05-31"
     cutoff = f"{year}-05-14"
 
     inc_q1 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q1, "end_date": q1, "market": market})
@@ -194,7 +194,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
     m4, ly_m4 = f"{year}M04", f"{year-1}M04"
-    month_start, month_end = f"{year}-09-01", f"{year}-09-30"
+    month_start, month_end = f"{year}-05-01", f"{year}-05-31"
     cutoff = f"{year}-05-14"
 
     sql = f"""
@@ -308,8 +308,8 @@ def main() -> None:
     add_industry_zscore(df, "rev_yoy_m4", "rev_yoy_m4_z")
     add_cross_section_quantile(df, "rev_yoy_m4_z", "rev_yoy_m4_quantile")
 
-    # 公司層級季節性：去年 Q3 / Q1 EPS 比值
-    df["ly_seasonality"] = (df["ly_q3_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
+    # 公司層級季節性：去年 Q2 / Q1 EPS 比值（預測 Q2，用去年同季對比）
+    df["ly_seasonality"] = (df["ly_q2_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q1_eps"]
     # 5 月視角僅能使用已公告到 Q1 的資訊，避免把當年 Q2（未公告）帶入造成洩漏
