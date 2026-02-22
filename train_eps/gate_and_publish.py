@@ -122,22 +122,22 @@ def main() -> None:
     shutil.copy2(model_file, published_model)
 
     # 同步保存發布時的評估摘要
-    publish_meta = dict(result)
-    publish_meta.update(
+    meta_payload = dict(result)
+    meta_payload.update(
         {
             "published_model": str(published_model),
             "source_train_metrics": str(month_dir / "train_metrics.json"),
             "source_evaluate_by_fold": str(eval_file),
         }
     )
-    published_meta.write_text(json.dumps(publish_meta, indent=2), encoding="utf-8")
+    published_meta.write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
 
     # 寫 latest 方便服務端直接讀最新模型
     latest_meta = target_dir / "latest.json"
-    latest_meta.write_text(json.dumps(publish_meta, indent=2), encoding="utf-8")
+    latest_meta.write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
 
     print("gate passed and published")
-    print(json.dumps(publish_meta, indent=2))
+    print(json.dumps(meta_payload, indent=2))
 
 
 if __name__ == "__main__":

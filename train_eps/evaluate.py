@@ -38,9 +38,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--confidence-quantile", type=float, default=0.95)
     parser.add_argument("--interval-method", type=str, choices=["tree_quantile", "quantile_model"], default="quantile_model")
     parser.add_argument("--feature-transform", type=str, choices=["zscore", "rank", "quantile"], default="quantile")
-    parser.add_argument("--year-param-start", type=int, default=2025)
-    parser.add_argument("--year-winsor-quantile", type=float, default=0.02)
-    parser.add_argument("--year-confidence-quantile", type=float, default=None)
     parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--interval-low-quantile", type=float, default=0.18)
     parser.add_argument("--interval-high-quantile", type=float, default=0.82)
@@ -478,12 +475,7 @@ def main() -> None:
             continue
 
         effective_winsor_q = args.winsor_quantile
-        if args.year_winsor_quantile is not None and test_year >= args.year_param_start:
-            effective_winsor_q = args.year_winsor_quantile
-
         effective_conf_q = args.confidence_quantile
-        if args.year_confidence_quantile is not None and test_year >= args.year_param_start:
-            effective_conf_q = args.year_confidence_quantile
 
         winsor_cols = [c for c in feature_cols if c != "q2_eps"] + [TARGET_DELTA]
         train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)

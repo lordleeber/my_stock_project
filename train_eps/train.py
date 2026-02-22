@@ -1,6 +1,7 @@
 ﻿import argparse
 import json
 import pickle
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -105,6 +106,21 @@ def main() -> None:
         pickle.dump(model, f)
     metrics_out.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     importance_df.to_csv(importance_out, index=False)
+
+    # sanity check: in-sample RF MAE 應低於 baseline，否則代表訓練有嚴重問題
+    rf_mae = metrics["train_mae_rf_pred_eps"]
+    bl_mae = metrics["train_mae_baseline_q2_eps"]
+    if rf_mae > bl_mae:
+        log_path = BASE_DIR.parent / "error_train_eps.log"
+        ts = datetime.now().isoformat(timespec="seconds")
+        msg = (
+            f"[{ts}] SANITY FAIL | {month_dir}\n"
+            f"  train_mae_rf_pred_eps ({rf_mae:.4f}) > train_mae_baseline_q2_eps ({bl_mae:.4f})\n"
+            f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
+        )
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(msg)
+        print(f"[WARNING] sanity check failed — 詳見 {log_path}")
 
     print(f"train completed: {month_dir.name}")
     print(json.dumps(metrics, indent=2))

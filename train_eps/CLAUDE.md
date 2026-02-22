@@ -43,6 +43,15 @@
 .\.venv\Scripts\python.exe train_eps\gate_and_publish.py --month-dir train_eps\sii\2025\10 --models-root models_eps
 ```
 
+## Health Metrics
+- After running `evaluate.py`, check the zeroed-prediction ratio in `results/predictions.csv`:
+  ```python
+  df = pd.read_csv("results/predictions.csv")
+  ratio = (df["pred_delta_std"] > df["confidence_threshold"]).mean()
+  ```
+  - ✅ Normal: ratio ≈ 10% (observed value)
+  - ⚠️ Warning: ratio > 50% — model lost confidence in most stocks; check feature distribution or retrain.
+
 ## Rules
 - Keep feature definitions consistent across train/evaluate.
 - If schema changes, verify compatibility with:
