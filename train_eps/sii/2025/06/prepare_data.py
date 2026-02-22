@@ -98,7 +98,7 @@ def safe_col(df: pd.DataFrame, col: str) -> pd.Series:
 
 
 def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
-    q1, q2, q3 = f"{year}Q1", f"{year}Q2", f"{year}Q3"
+    q1, q2 = f"{year}Q1", f"{year}Q2"
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
     m4, m5 = f"{year}M04", f"{year}M05"
@@ -109,7 +109,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     inc_q1 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q1, "end_date": q1, "market": market})
     bs_q1  = fetch_all_rows_api(api_base, "/raw/balance-sheets",    {"start_date": q1, "end_date": q1, "market": market})
     cf_q1  = fetch_all_rows_api(api_base, "/raw/cash-flows",        {"start_date": q1, "end_date": q1, "market": market})
-    qr     = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": lyq1, "end_date": q3, "market": market})
+    qr     = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": lyq1, "end_date": q2, "market": market})
     mr     = fetch_all_rows_api(api_base, "/raw/monthly-revenue",   {"start_date": ly_m4, "end_date": m5})
     dq     = fetch_all_rows_api(api_base, "/raw/daily-quotes",      {"start_date": month_start, "end_date": month_end, "market": market})
     pe     = fetch_all_rows_api(api_base, "/raw/pe-ratio",          {"start_date": month_start, "end_date": month_end, "market": market})
@@ -152,9 +152,9 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
 
     eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"])
     if not qr.empty:
-        qr2 = qr[qr["date"].isin([q3, lyq3, lyq2, lyq1, p4, q1, q2])].copy()
+        qr2 = qr[qr["date"].isin([q2, lyq3, lyq2, lyq1, p4, q1])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
-        eps_hist = p.rename(columns={q3: "target_eps", lyq3: "ly_q3_eps", lyq2: "ly_q2_eps", lyq1: "ly_q1_eps",
+        eps_hist = p.rename(columns={q2: "target_eps", lyq3: "ly_q3_eps", lyq2: "ly_q2_eps", lyq1: "ly_q1_eps",
                                      p4: "prev_q4_eps", q1: "q1_eps_official", q2: "q2_eps_official"})
         for c in ["target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]:
             if c not in eps_hist.columns:
@@ -185,7 +185,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
 
 
 def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
-    q1, q2, q3 = f"{year}Q1", f"{year}Q2", f"{year}Q3"
+    q1, q2 = f"{year}Q1", f"{year}Q2"
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
     m4, m5 = f"{year}M04", f"{year}M05"
@@ -223,7 +223,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{p4}' AND market='{market}') AS prev_q4_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q1}' AND market='{market}') AS q1_eps_official,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q2}' AND market='{market}') AS q2_eps_official
-      FROM quarterly_reports qr WHERE qr.date='{q3}' AND qr.market='{market}'
+      FROM quarterly_reports qr WHERE qr.date='{q2}' AND qr.market='{market}'
     ),
     market_snapshot AS (
       SELECT DISTINCT ON (dq.symbol) dq.symbol, dq.date AS q3_date, dq.close AS q3_close, dq.volume AS q3_volume, pr.pe_ratio AS pe_current
