@@ -155,7 +155,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         qr2 = qr[qr["date"].isin([q2, lyq3, lyq2, lyq1, p4, q1])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
         eps_hist = p.rename(columns={q2: "target_eps", lyq3: "ly_q3_eps", lyq2: "ly_q2_eps", lyq1: "ly_q1_eps",
-                                     p4: "prev_q4_eps", q1: "q1_eps_official", q2: "q2_eps_official"})
+                                     p4: "prev_q4_eps", q1: "q1_eps_official"})
         for c in ["target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
