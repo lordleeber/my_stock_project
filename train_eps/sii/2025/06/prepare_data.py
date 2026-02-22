@@ -150,16 +150,16 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                     this_monthly[c] = np.nan
             this_monthly = this_monthly[["symbol", "rev_m4", "rev_m4_ly", "rev_m5", "rev_m5_ly"]]
 
-    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"])
+    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"])
     if not qr.empty:
-        qr2 = qr[qr["date"].isin([q3, lyq3, lyq1, p4, q1, q2])].copy()
+        qr2 = qr[qr["date"].isin([q3, lyq3, lyq2, lyq1, p4, q1, q2])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
-        eps_hist = p.rename(columns={q3: "target_eps", lyq3: "ly_q3_eps", lyq1: "ly_q1_eps",
+        eps_hist = p.rename(columns={q3: "target_eps", lyq3: "ly_q3_eps", lyq2: "ly_q2_eps", lyq1: "ly_q1_eps",
                                      p4: "prev_q4_eps", q1: "q1_eps_official", q2: "q2_eps_official"})
-        for c in ["target_eps", "ly_q3_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]:
+        for c in ["target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
-        eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]]
+        eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]]
 
     market_snapshot = pd.DataFrame(columns=["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"])
     if not dq.empty:
@@ -187,7 +187,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
 def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     q1, q2, q3 = f"{year}Q1", f"{year}Q2", f"{year}Q3"
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
-    lyq1 = f"{year-1}Q1"
+    lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
     m4, m5 = f"{year}M04", f"{year}M05"
     ly_m4, ly_m5 = f"{year-1}M04", f"{year-1}M05"
     month_start, month_end = f"{year}-09-01", f"{year}-09-30"
@@ -218,6 +218,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     eps_hist AS (
       SELECT qr.symbol, qr.eps_q AS target_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq3}' AND market='{market}') AS ly_q3_eps,
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq2}' AND market='{market}') AS ly_q2_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq1}' AND market='{market}') AS ly_q1_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{p4}' AND market='{market}') AS prev_q4_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q1}' AND market='{market}') AS q1_eps_official,
@@ -232,7 +233,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
       ORDER BY dq.symbol, dq.date DESC
     )
     SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m4, m.rev_m5, m.rev_m4_ly, m.rev_m5_ly,
-           e.target_eps, e.ly_q3_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
+           e.target_eps, e.ly_q3_eps, e.ly_q2_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
            ms.q3_date, ms.q3_close, ms.q3_volume, ms.pe_current
     FROM q1_data q1
     JOIN this_monthly m ON q1.symbol=m.symbol
@@ -309,9 +310,13 @@ def main() -> None:
     df["ly_seasonality"] = (df["ly_q3_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q1_eps"]
+    # 6 月視角僅能使用已公告到 Q1 的資訊，避免把當年 Q2（未公告）帶入造成洩漏
+    q1_official_live = df["q1_eps_official"].fillna(0)
     df["ttm_eps_official"] = (
-        df["prev_q4_eps"].fillna(0) + df["q1_eps_official"].fillna(0)
-        + df["q2_eps_official"].fillna(0) + df[TARGET].fillna(0)
+        df["ly_q2_eps"].fillna(0)
+        + df["ly_q3_eps"].fillna(0)
+        + df["prev_q4_eps"].fillna(0)
+        + q1_official_live
     )
 
     rows_before_filter = len(df)

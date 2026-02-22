@@ -106,7 +106,7 @@ def main() -> None:
         "main_metric": "mae",
         "winsor_quantile": float(args.winsor_quantile),
         "train_mae_rf_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
-        "train_mae_baseline_q2_eps": float(mean_absolute_error(y_true, baseline_eps)),
+        "train_mae_baseline_anchor_eps": float(mean_absolute_error(y_true, baseline_eps)),
         "feature_transform": "quantile",
         "features": use_features,
     }
@@ -123,13 +123,13 @@ def main() -> None:
 
     # sanity check: in-sample RF MAE 應低於 baseline，否則代表訓練有嚴重問題
     rf_mae = metrics["train_mae_rf_pred_eps"]
-    bl_mae = metrics["train_mae_baseline_q2_eps"]
+    bl_mae = metrics["train_mae_baseline_anchor_eps"]
     if rf_mae > bl_mae:
         log_path = BASE_DIR.parent / "error_train_eps.log"
         ts = datetime.now().isoformat(timespec="seconds")
         msg = (
             f"[{ts}] SANITY FAIL | {month_dir}\n"
-            f"  train_mae_rf_pred_eps ({rf_mae:.4f}) > train_mae_baseline_q2_eps ({bl_mae:.4f})\n"
+            f"  train_mae_rf_pred_eps ({rf_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
             f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
         )
         with log_path.open("a", encoding="utf-8") as f:

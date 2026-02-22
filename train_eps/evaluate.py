@@ -129,6 +129,7 @@ def build_valuation_daily_frame(
     pred_eps_mid: np.ndarray,
     pred_eps_low: np.ndarray,
     pred_eps_high: np.ndarray,
+    month_name: str,
     model_version: str,
     source_file: str,
 ) -> pd.DataFrame:
@@ -177,14 +178,25 @@ def build_valuation_daily_frame(
     out["upside_pct"] = upside_pct
     out["upside_pct_low"] = upside_pct_low
     out["upside_pct_high"] = upside_pct_high
-    out["roe_official"] = df_eval["q2_roe"] if "q2_roe" in df_eval.columns else np.nan
+    # 依月份視角決定 ROE 基準：05~07 用 Q1，08~10 用 Q2
+    if month_name in {"05", "06", "07"}:
+        roe_col = "q1_roe"
+    elif month_name in {"08", "09", "10"}:
+        roe_col = "q2_roe"
+    else:
+        roe_col = "q2_roe"
+
+    if roe_col not in df_eval.columns:
+        raise ValueError(f"dataset_evaluate.csv 缺少必要欄位: {roe_col} (month={month_name})")
+
+    out["roe_official"] = df_eval[roe_col] if roe_col is not None else np.nan
 
     roe_forward = np.full(len(out), np.nan, dtype=float)
-    if "q2_roe" in df_eval.columns and "anchor_eps" in df_eval.columns:
-        q2_eps = df_eval["anchor_eps"].to_numpy(dtype=float)
-        q2_roe = df_eval["q2_roe"].to_numpy(dtype=float) if "q2_roe" in df_eval.columns else np.full(len(df_eval), np.nan)
-        ok = np.abs(q2_eps) > 1e-9
-        roe_forward[ok] = (pred_eps_mid[ok] / q2_eps[ok]) * q2_roe[ok]
+    if "anchor_eps" in df_eval.columns:
+        anchor_eps = df_eval["anchor_eps"].to_numpy(dtype=float)
+        roe_base = df_eval[roe_col].to_numpy(dtype=float)
+        ok = np.abs(anchor_eps) > 1e-9
+        roe_forward[ok] = (pred_eps_mid[ok] / anchor_eps[ok]) * roe_base[ok]
     out["roe_forward"] = roe_forward
 
     out["pced_file"] = source_file
@@ -665,6 +677,7 @@ def main() -> None:
             pred_eps_rf,
             pred_eps_low,
             pred_eps_high,
+            month_dir.name,
             f"{version_name}_{FEATURE_TRANSFORM}",
             str(results_dir / "predictions.csv"),
         )
