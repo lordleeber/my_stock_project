@@ -16,11 +16,12 @@ FEATURES = [
     "q2_ocf_ratio",
     "q2_re_ratio",
     "rev_yoy_m7_quantile",
-    "rev_m7_ratio_q2_quantile",
+    "rev_mom_m7_m6_quantile",
     "margin_momentum",
     "q2_roe",
     "q2_debt_ratio",
     "q2_non_op_ratio",
+    "ly_seasonality",
 ]
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -112,8 +113,9 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     q3_str = f"{year}Q3"
     prev_q4_str = f"{year - 1}Q4"
     ly_q3_str = f"{year - 1}Q3"
-    m7 = f"{year}M07"
-    ly_m7 = f"{year - 1}M07"
+    ly_q2_str = f"{year - 1}Q2"
+    m6, m7 = f"{year}M06", f"{year}M07"
+    ly_m6, ly_m7 = f"{year - 1}M06", f"{year - 1}M07"
     month_start = f"{year}-09-01"
     month_end = f"{year}-09-30"
     feature_cutoff = f"{year}-08-15"
@@ -122,8 +124,8 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     inc_q1 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q1_str, "end_date": q1_str, "market": market})
     bs_q2 = fetch_all_rows_api(api_base, "/raw/balance-sheets", {"start_date": q2_str, "end_date": q2_str, "market": market})
     cf_q2 = fetch_all_rows_api(api_base, "/raw/cash-flows", {"start_date": q2_str, "end_date": q2_str, "market": market})
-    qr = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": ly_q3_str, "end_date": q3_str, "market": market})
-    mr = fetch_all_rows_api(api_base, "/raw/monthly-revenue", {"start_date": ly_m7, "end_date": m7})
+    qr = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": ly_q2_str, "end_date": q3_str, "market": market})
+    mr = fetch_all_rows_api(api_base, "/raw/monthly-revenue", {"start_date": ly_m6, "end_date": m7})
     dq = fetch_all_rows_api(api_base, "/raw/daily-quotes", {"start_date": month_start, "end_date": month_end, "market": market})
     pe = fetch_all_rows_api(api_base, "/raw/pe-ratio", {"start_date": month_start, "end_date": month_end, "market": market})
 
@@ -176,36 +178,37 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         q1_margin["q1_margin"] = q1_margin["net_income_q"] / q1_margin["revenue_q"].replace(0, np.nan)
         q1_margin = q1_margin[["symbol", "q1_margin"]]
 
-    this_monthly = pd.DataFrame(columns=["symbol", "rev_m7", "rev_m7_ly"])
+    this_monthly = pd.DataFrame(columns=["symbol", "rev_m6", "rev_m7", "rev_m7_ly"])
     if not mr.empty:
         if "market" in mr.columns:
             mr = mr[mr["market"].astype(str).str.upper() == market.upper()].copy()
-        mr2 = mr[mr["date"].isin([m7, ly_m7])].copy()
+        mr2 = mr[mr["date"].isin([m6, m7, ly_m7])].copy()
         if not mr2.empty:
             pivot = mr2.pivot_table(index="symbol", columns="date", values="revenue_current", aggfunc="last").reset_index()
-            this_monthly = pivot.rename(columns={m7: "rev_m7", ly_m7: "rev_m7_ly"})
-            for c in ["rev_m7", "rev_m7_ly"]:
+            this_monthly = pivot.rename(columns={m6: "rev_m6", m7: "rev_m7", ly_m7: "rev_m7_ly"})
+            for c in ["rev_m6", "rev_m7", "rev_m7_ly"]:
                 if c not in this_monthly.columns:
                     this_monthly[c] = np.nan
-            this_monthly = this_monthly[["symbol", "rev_m7", "rev_m7_ly"]]
+            this_monthly = this_monthly[["symbol", "rev_m6", "rev_m7", "rev_m7_ly"]]
 
-    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"])
+    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"])
     if not qr.empty:
-        qr2 = qr[qr["date"].isin([q3_str, ly_q3_str, prev_q4_str, q1_str, q2_str])].copy()
+        qr2 = qr[qr["date"].isin([q3_str, ly_q3_str, ly_q2_str, prev_q4_str, q1_str, q2_str])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
         eps_hist = p.rename(
             columns={
                 q3_str: "target_eps",
                 ly_q3_str: "ly_q3_eps",
+                ly_q2_str: "ly_q2_eps",
                 prev_q4_str: "prev_q4_eps",
                 q1_str: "q1_eps",
                 q2_str: "q2_eps_official",
             }
         )
-        for c in ["target_eps", "ly_q3_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"]:
+        for c in ["target_eps", "ly_q3_eps", "ly_q2_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
-        eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"]]
+        eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"]]
 
     market_snapshot = pd.DataFrame(columns=["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"])
     if not dq.empty:
@@ -238,8 +241,9 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     prev_q4_str = f"{year - 1}Q4"
     ly_q3_str = f"{year - 1}Q3"
 
-    m7 = f"{year}M07"
-    ly_m7 = f"{year - 1}M07"
+    m6, m7 = f"{year}M06", f"{year}M07"
+    ly_m6, ly_m7 = f"{year - 1}M06", f"{year - 1}M07"
+    ly_q2_str = f"{year - 1}Q2"
 
     month_start = f"{year}-09-01"
     month_end = f"{year}-09-30"
@@ -273,10 +277,11 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     ),
     this_monthly AS (
         SELECT symbol,
+               MAX(CASE WHEN date = '{m6}' THEN revenue_current END) AS rev_m6,
                MAX(CASE WHEN date = '{m7}' THEN revenue_current END) AS rev_m7,
                MAX(CASE WHEN date = '{ly_m7}' THEN revenue_current END) AS rev_m7_ly
         FROM monthly_revenue
-        WHERE date IN ('{m7}', '{ly_m7}')
+        WHERE date IN ('{m6}', '{m7}', '{ly_m7}')
         GROUP BY symbol
     ),
     eps_hist AS (
@@ -284,6 +289,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
             qr.symbol,
             qr.eps_q AS target_eps,
             (SELECT eps_q FROM quarterly_reports WHERE symbol = qr.symbol AND date = '{ly_q3_str}' AND market = '{market}') AS ly_q3_eps,
+            (SELECT eps_q FROM quarterly_reports WHERE symbol = qr.symbol AND date = '{ly_q2_str}' AND market = '{market}') AS ly_q2_eps,
             (SELECT eps_q FROM quarterly_reports WHERE symbol = qr.symbol AND date = '{prev_q4_str}' AND market = '{market}') AS prev_q4_eps,
             (SELECT eps_q FROM quarterly_reports WHERE symbol = qr.symbol AND date = '{q1_str}' AND market = '{market}') AS q1_eps,
             (SELECT eps_q FROM quarterly_reports WHERE symbol = qr.symbol AND date = '{q2_str}' AND market = '{market}') AS q2_eps_official
@@ -312,10 +318,12 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         '{feature_cutoff}' AS feature_cutoff_date,
         q2.*,
         q1.q1_margin,
+        m.rev_m6,
         m.rev_m7,
         m.rev_m7_ly,
         e.target_eps,
         e.ly_q3_eps,
+        e.ly_q2_eps,
         e.prev_q4_eps,
         e.q1_eps,
         e.q2_eps_official,
@@ -385,16 +393,19 @@ def main() -> None:
     df["q2_re_ratio"] = df["q2_retained_earnings"] / df["capital"].replace(0, 1e-9)
     df["margin_momentum"] = df["q2_margin"] - df["q1_margin"].fillna(df["q2_margin"])
 
-    # 月營收工程：同比 + 產業標準化
+    # 月營收工程：同比 + 月增率
     df["rev_yoy_m7"] = (df["rev_m7"] / df["rev_m7_ly"].replace(0, 1e-9)) - 1
-    df["rev_m7_ratio_q2"] = (df["rev_m7"] / df["q2_rev"].replace(0, 1e-9)) - 1
+    df["rev_mom_m7_m6"] = (df["rev_m7"] / df["rev_m6"].replace(0, 1e-9)) - 1
 
     add_industry_zscore(df, "rev_yoy_m7", "rev_yoy_m7_z")
-    add_industry_zscore(df, "rev_m7_ratio_q2", "rev_m7_ratio_q2_z")
+    add_industry_zscore(df, "rev_mom_m7_m6", "rev_mom_m7_m6_z")
 
     # 主流程統一使用 quantile 特徵（與 train/evaluate 一致）
     add_cross_section_quantile(df, "rev_yoy_m7_z", "rev_yoy_m7_quantile")
-    add_cross_section_quantile(df, "rev_m7_ratio_q2_z", "rev_m7_ratio_q2_quantile")
+    add_cross_section_quantile(df, "rev_mom_m7_m6_z", "rev_mom_m7_m6_quantile")
+
+    # 公司層級季節性：去年 Q3 / Q2 EPS 比值（捕捉個股 Q3 天然強弱）
+    df["ly_seasonality"] = (df["ly_q3_eps"] / df["ly_q2_eps"].replace(0, 1e-9)).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q2_eps"]
     df["ttm_eps_official"] = (
