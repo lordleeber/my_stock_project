@@ -327,7 +327,13 @@ def main() -> None:
     df["ly_seasonality"] = (df["ly_q3_eps"] / df["ly_q2_eps"].replace(0, 1e-9)).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q2_eps"]
-    df["ttm_eps_official"] = df["prev_q4_eps"].fillna(0) + df["q1_eps"].fillna(0) + df["q2_eps_official"].fillna(0) + df[TARGET].fillna(0)
+    # 10 月視角僅能使用已公告到 Q2 的資訊，避免把當年 Q3（未公告）帶入造成洩漏
+    df["ttm_eps_official"] = (
+        df["ly_q3_eps"].fillna(0)
+        + df["prev_q4_eps"].fillna(0)
+        + df["q1_eps"].fillna(0)
+        + df["q2_eps_official"].fillna(0)
+    )
 
     rows_before_filter = len(df)
     if args.apply_trading_filter:
