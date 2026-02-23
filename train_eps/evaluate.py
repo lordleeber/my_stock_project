@@ -16,6 +16,9 @@ EVAL_EXCLUDE_COLUMNS = {
     "q3_date",
     "q3_close",
     "q3_volume",
+    "target_date",
+    "target_close",
+    "target_volume",
     "pe_current",
     "prev_q4_eps",
     "q1_eps",
@@ -37,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--month-dir", type=Path, required=True, help="例如 train_eps/sii/2025/08")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
-    parser.add_argument("--confidence-quantile", type=float, default=0.95)
+    parser.add_argument("--confidence-quantile", type=float, default=0.975)
     parser.add_argument("--interval-method", type=str, choices=["tree_quantile", "quantile_model"], default="quantile_model")
     parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--interval-low-quantile", type=float, default=0.18)
@@ -134,10 +137,14 @@ def build_valuation_daily_frame(
     source_file: str,
 ) -> pd.DataFrame:
     out = pd.DataFrame()
-    out["date"] = df_eval["q3_date"] if "q3_date" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
+    date_col = "target_date" if "target_date" in df_eval.columns else "q3_date"
+    close_col = "target_close" if "target_close" in df_eval.columns else "q3_close"
+    volume_col = "target_volume" if "target_volume" in df_eval.columns else "q3_volume"
+
+    out["date"] = df_eval[date_col] if date_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
     out["symbol"] = df_eval["symbol"] if "symbol" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-    out["close"] = df_eval["q3_close"] if "q3_close" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-    out["volume"] = df_eval["q3_volume"] if "q3_volume" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
+    out["close"] = df_eval[close_col] if close_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
+    out["volume"] = df_eval[volume_col] if volume_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
 
     ttm_official = df_eval["ttm_eps_official"].to_numpy(dtype=float)
     target_eps = df_eval[TARGET].to_numpy(dtype=float)
@@ -220,7 +227,8 @@ def quality_check_and_report(df_val: pd.DataFrame, report_path: Path) -> None:
 
 def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarray, eps_floor: float) -> dict:
     abs_err = np.abs(y_true - y_pred)
-    close = df_eval["q3_close"].to_numpy(dtype=float) if "q3_close" in df_eval.columns else np.full(len(df_eval), np.nan)
+    close_col = "target_close" if "target_close" in df_eval.columns else "q3_close"
+    close = df_eval[close_col].to_numpy(dtype=float) if close_col in df_eval.columns else np.full(len(df_eval), np.nan)
     pe_current = df_eval["pe_current"].to_numpy(dtype=float) if "pe_current" in df_eval.columns else np.full(len(df_eval), np.nan)
     valid_price = (~np.isnan(close)) & (close > 0)
     valid_pe = (~np.isnan(pe_current)) & (pe_current > 0)
@@ -651,7 +659,25 @@ def main() -> None:
                 row.update(interval_metrics(y_true, pred_eps_low, pred_eps_high))
             fold_rows.append(row)
 
-        keep_cols = [c for c in ["year", "symbol", "name", "industry", "feature_cutoff_date", "q3_date", "q3_close", "q3_volume", "pe_current", "ttm_eps_official"] if c in test_df.columns]
+        keep_cols = [
+            c
+            for c in [
+                "year",
+                "symbol",
+                "name",
+                "industry",
+                "feature_cutoff_date",
+                "target_date",
+                "target_close",
+                "target_volume",
+                "q3_date",
+                "q3_close",
+                "q3_volume",
+                "pe_current",
+                "ttm_eps_official",
+            ]
+            if c in test_df.columns
+        ]
         tmp = test_df[keep_cols].copy()
         tmp["y_true"] = y_true
         tmp["pred_rf_delta"] = pred_eps_rf

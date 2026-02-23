@@ -8,14 +8,15 @@ import requests
 from sqlalchemy import create_engine, text
 
 
-# v10: 5/14 視角 -> Q1 + 4月營收，anchor = q1_eps
+# v10: 5/14 視角 -> anchor_eps=Q1EPS + 4月營收，含同比與產業標準化
 FEATURES = [
     "anchor_eps",
-    "ly_q3_eps",
+    "ly_q2_eps",
     "q1_margin",
     "q1_ocf_ratio",
     "q1_re_ratio",
     "rev_yoy_m4_quantile",
+    "rev_mom_m4_m3_quantile",
     "margin_momentum",
     "q1_roe",
     "q1_debt_ratio",
@@ -26,8 +27,8 @@ TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 
 KEEP_OPTIONAL = [
-    "symbol", "name", "industry", "q3_date", "q3_close", "q3_volume", "pe_current",
-    "prev_q4_eps", "q1_eps", "q2_eps_official", "ttm_eps_official", "feature_cutoff_date",
+    "symbol", "name", "industry", "target_date", "target_close", "target_volume", "pe_current",
+    "prev_q4_eps", "q1_eps", "ttm_eps_official", "feature_cutoff_date",
 ]
 
 DEFAULT_OUTPUT_TRAIN = Path(__file__).resolve().parent / "dataset_train.csv"
@@ -99,7 +100,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     q1, q2 = f"{year}Q1", f"{year}Q2"
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
-    m4, ly_m4 = f"{year}M04", f"{year-1}M04"
+    m3, m4, ly_m4 = f"{year}M03", f"{year}M04", f"{year-1}M04"
     month_start, month_end = f"{year}-05-01", f"{year}-05-31"
     cutoff = f"{year}-05-14"
 
@@ -138,18 +139,18 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                    "q1_roe", "q1_debt_ratio", "capital", "q1_retained_earnings", "q1_ocf"]]
 
     # 月營收
-    this_monthly = pd.DataFrame(columns=["symbol", "rev_m4", "rev_m4_ly"])
+    this_monthly = pd.DataFrame(columns=["symbol", "rev_m3", "rev_m4", "rev_m4_ly"])
     if not mr.empty:
         if "market" in mr.columns:
             mr = mr[mr["market"].astype(str).str.upper() == market.upper()].copy()
-        mr2 = mr[mr["date"].isin([m4, ly_m4])].copy()
+        mr2 = mr[mr["date"].isin([m3, m4, ly_m4])].copy()
         if not mr2.empty:
             pivot = mr2.pivot_table(index="symbol", columns="date", values="revenue_current", aggfunc="last").reset_index()
-            this_monthly = pivot.rename(columns={m4: "rev_m4", ly_m4: "rev_m4_ly"})
-            for c in ["rev_m4", "rev_m4_ly"]:
+            this_monthly = pivot.rename(columns={m3: "rev_m3", m4: "rev_m4", ly_m4: "rev_m4_ly"})
+            for c in ["rev_m3", "rev_m4", "rev_m4_ly"]:
                 if c not in this_monthly.columns:
                     this_monthly[c] = np.nan
-            this_monthly = this_monthly[["symbol", "rev_m4", "rev_m4_ly"]]
+            this_monthly = this_monthly[["symbol", "rev_m3", "rev_m4", "rev_m4_ly"]]
 
     # EPS 歷史
     eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"])
@@ -166,7 +167,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]]
 
     # 市場快照（Q3 期間）
-    market_snapshot = pd.DataFrame(columns=["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"])
+    market_snapshot = pd.DataFrame(columns=["symbol", "target_date", "target_close", "target_volume", "pe_current"])
     if not dq.empty:
         dq2 = dq.copy()
         dq2["date"] = pd.to_datetime(dq2["date"], errors="coerce")
@@ -177,9 +178,9 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         else:
             dq2["pe_ratio"] = np.nan
         dq2 = dq2.sort_values(["symbol", "date"]).dropna(subset=["date"]).groupby("symbol", as_index=False).tail(1)
-        market_snapshot = dq2.rename(columns={"date": "q3_date", "close": "q3_close", "volume": "q3_volume", "pe_ratio": "pe_current"})
-        market_snapshot["q3_date"] = market_snapshot["q3_date"].dt.strftime("%Y-%m-%d")
-        market_snapshot = market_snapshot[["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"]]
+        market_snapshot = dq2.rename(columns={"date": "target_date", "close": "target_close", "volume": "target_volume", "pe_ratio": "pe_current"})
+        market_snapshot["target_date"] = market_snapshot["target_date"].dt.strftime("%Y-%m-%d")
+        market_snapshot = market_snapshot[["symbol", "target_date", "target_close", "target_volume", "pe_current"]]
 
     out = q1_df.merge(this_monthly, on="symbol", how="inner")
     out = out.merge(eps_hist, on="symbol", how="inner")
@@ -193,7 +194,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     q1, q2 = f"{year}Q1", f"{year}Q2"
     p4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
     lyq2, lyq1 = f"{year-1}Q2", f"{year-1}Q1"
-    m4, ly_m4 = f"{year}M04", f"{year-1}M04"
+    m3, m4, ly_m4 = f"{year}M03", f"{year}M04", f"{year-1}M04"
     month_start, month_end = f"{year}-05-01", f"{year}-05-31"
     cutoff = f"{year}-05-14"
 
@@ -213,10 +214,11 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     ),
     this_monthly AS (
       SELECT symbol,
+             MAX(CASE WHEN date='{m3}' THEN revenue_current END) AS rev_m3,
              MAX(CASE WHEN date='{m4}' THEN revenue_current END) AS rev_m4,
              MAX(CASE WHEN date='{ly_m4}' THEN revenue_current END) AS rev_m4_ly
       FROM monthly_revenue
-      WHERE date IN ('{m4}','{ly_m4}')
+      WHERE date IN ('{m3}','{m4}','{ly_m4}')
       GROUP BY symbol
     ),
     eps_hist AS (
@@ -230,15 +232,15 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
       FROM quarterly_reports qr WHERE qr.date='{q2}' AND qr.market='{market}'
     ),
     market_snapshot AS (
-      SELECT DISTINCT ON (dq.symbol) dq.symbol, dq.date AS q3_date, dq.close AS q3_close, dq.volume AS q3_volume, pr.pe_ratio AS pe_current
+      SELECT DISTINCT ON (dq.symbol) dq.symbol, dq.date AS target_date, dq.close AS target_close, dq.volume AS target_volume, pr.pe_ratio AS pe_current
       FROM daily_quotes dq
       LEFT JOIN pe_ratio pr ON pr.symbol=dq.symbol AND pr.market=dq.market AND pr.date=dq.date
       WHERE dq.market='{market}' AND dq.date>='{month_start}' AND dq.date<='{month_end}'
       ORDER BY dq.symbol, dq.date DESC
     )
-    SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m4, m.rev_m4_ly,
+    SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m3, m.rev_m4, m.rev_m4_ly,
            e.target_eps, e.ly_q3_eps, e.ly_q2_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
-           ms.q3_date, ms.q3_close, ms.q3_volume, ms.pe_current
+           ms.target_date, ms.target_close, ms.target_volume, ms.pe_current
     FROM q1_data q1
     JOIN this_monthly m ON q1.symbol=m.symbol
     JOIN eps_hist e ON q1.symbol=e.symbol
@@ -305,8 +307,11 @@ def main() -> None:
 
     # 月營收工程：4月 YoY + 產業標準化
     df["rev_yoy_m4"] = (df["rev_m4"] / df["rev_m4_ly"].replace(0, 1e-9)) - 1
+    df["rev_mom_m4_m3"] = (df["rev_m4"] / df["rev_m3"].replace(0, 1e-9)) - 1
     add_industry_zscore(df, "rev_yoy_m4", "rev_yoy_m4_z")
+    add_industry_zscore(df, "rev_mom_m4_m3", "rev_mom_m4_m3_z")
     add_cross_section_quantile(df, "rev_yoy_m4_z", "rev_yoy_m4_quantile")
+    add_cross_section_quantile(df, "rev_mom_m4_m3_z", "rev_mom_m4_m3_quantile")
 
     # 公司層級季節性：去年 Q2 / Q1 EPS 比值（預測 Q2，用去年同季對比）
     df["ly_seasonality"] = (df["ly_q2_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
@@ -324,7 +329,7 @@ def main() -> None:
     rows_before_filter = len(df)
     if args.apply_trading_filter:
         ttm_ok = df["ttm_eps_official"] >= float(args.min_ttm_eps)
-        vol_ok = (df["q3_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
+        vol_ok = (df["target_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
         df = df[ttm_ok & vol_ok].copy()
 
     for feature_name in FEATURES:

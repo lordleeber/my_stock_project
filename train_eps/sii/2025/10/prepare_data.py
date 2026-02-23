@@ -8,7 +8,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 
-# v10_t3: 10月初視角 -> Q2 + 7/8/9月，含同比與產業標準化
+# 10月15 視角 -> anchor_eps=Q2EPS + 7/8/9月營收，含同比與產業標準化
 FEATURES = [
     "anchor_eps",
     "ly_q3_eps",
@@ -31,7 +31,7 @@ TARGET_DELTA = "delta_eps"
 
 KEEP_OPTIONAL = [
     "symbol", "name", "industry", "q3_date", "q3_close", "q3_volume", "pe_current",
-    "prev_q4_eps", "q1_eps", "q2_eps", "q2_eps_official", "ttm_eps_official", "feature_cutoff_date",
+    "prev_q4_eps", "q1_eps", "q2_eps", "ttm_eps_official", "feature_cutoff_date",
 ]
 
 DEFAULT_OUTPUT_TRAIN = Path(__file__).resolve().parent / "dataset_train.csv"

@@ -8,10 +8,10 @@ import requests
 from sqlalchemy import create_engine, text
 
 
-# v10: 7/10 視角 -> Q1 + 4/5/6月營收，anchor = q1_eps
+# 7/15 視角 -> anchor_eps=Q1EPS + 4/5/6月營收，含同比與產業標準化
 FEATURES = [
     "anchor_eps",
-    "ly_q3_eps",
+    "ly_q2_eps",
     "q1_margin",
     "q1_ocf_ratio",
     "q1_re_ratio",
@@ -30,8 +30,8 @@ TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 
 KEEP_OPTIONAL = [
-    "symbol", "name", "industry", "q3_date", "q3_close", "q3_volume", "pe_current",
-    "prev_q4_eps", "q1_eps", "q2_eps_official", "ttm_eps_official", "feature_cutoff_date",
+    "symbol", "name", "industry", "target_date", "target_close", "target_volume", "pe_current",
+    "prev_q4_eps", "q1_eps", "ttm_eps_official", "feature_cutoff_date",
 ]
 
 DEFAULT_OUTPUT_TRAIN = Path(__file__).resolve().parent / "dataset_train.csv"
@@ -164,7 +164,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                 eps_hist[c] = np.nan
         eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]]
 
-    market_snapshot = pd.DataFrame(columns=["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"])
+    market_snapshot = pd.DataFrame(columns=["symbol", "target_date", "target_close", "target_volume", "pe_current"])
     if not dq.empty:
         dq2 = dq.copy()
         dq2["date"] = pd.to_datetime(dq2["date"], errors="coerce")
@@ -175,9 +175,9 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         else:
             dq2["pe_ratio"] = np.nan
         dq2 = dq2.sort_values(["symbol", "date"]).dropna(subset=["date"]).groupby("symbol", as_index=False).tail(1)
-        market_snapshot = dq2.rename(columns={"date": "q3_date", "close": "q3_close", "volume": "q3_volume", "pe_ratio": "pe_current"})
-        market_snapshot["q3_date"] = market_snapshot["q3_date"].dt.strftime("%Y-%m-%d")
-        market_snapshot = market_snapshot[["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"]]
+        market_snapshot = dq2.rename(columns={"date": "target_date", "close": "target_close", "volume": "target_volume", "pe_ratio": "pe_current"})
+        market_snapshot["target_date"] = market_snapshot["target_date"].dt.strftime("%Y-%m-%d")
+        market_snapshot = market_snapshot[["symbol", "target_date", "target_close", "target_volume", "pe_current"]]
 
     out = q1_df.merge(this_monthly, on="symbol", how="inner")
     out = out.merge(eps_hist, on="symbol", how="inner")
@@ -231,7 +231,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
       FROM quarterly_reports qr WHERE qr.date='{q2}' AND qr.market='{market}'
     ),
     market_snapshot AS (
-      SELECT DISTINCT ON (dq.symbol) dq.symbol, dq.date AS q3_date, dq.close AS q3_close, dq.volume AS q3_volume, pr.pe_ratio AS pe_current
+      SELECT DISTINCT ON (dq.symbol) dq.symbol, dq.date AS target_date, dq.close AS target_close, dq.volume AS target_volume, pr.pe_ratio AS pe_current
       FROM daily_quotes dq
       LEFT JOIN pe_ratio pr ON pr.symbol=dq.symbol AND pr.market=dq.market AND pr.date=dq.date
       WHERE dq.market='{market}' AND dq.date>='{month_start}' AND dq.date<='{month_end}'
@@ -239,7 +239,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     )
     SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m4, m.rev_m5, m.rev_m6, m.rev_m4_ly, m.rev_m5_ly, m.rev_m6_ly,
            e.target_eps, e.ly_q3_eps, e.ly_q2_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
-           ms.q3_date, ms.q3_close, ms.q3_volume, ms.pe_current
+           ms.target_date, ms.target_close, ms.target_volume, ms.pe_current
     FROM q1_data q1
     JOIN this_monthly m ON q1.symbol=m.symbol
     JOIN eps_hist e ON q1.symbol=e.symbol
@@ -334,7 +334,7 @@ def main() -> None:
     rows_before_filter = len(df)
     if args.apply_trading_filter:
         ttm_ok = df["ttm_eps_official"] >= float(args.min_ttm_eps)
-        vol_ok = (df["q3_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
+        vol_ok = (df["target_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
         df = df[ttm_ok & vol_ok].copy()
 
     for feature_name in FEATURES:

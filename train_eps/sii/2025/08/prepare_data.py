@@ -8,7 +8,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 
-# v10_t1: 8/15 視角 + 月營收特徵工程（同比 + 產業標準化）
+# 8/15 視角 -> anchor_eps=Q2EPS + 7月營收，含同比與產業標準化
 FEATURES = [
     "anchor_eps",
     "ly_q3_eps",
@@ -37,7 +37,6 @@ KEEP_OPTIONAL = [
     "prev_q4_eps",
     "q1_eps",
     "q2_eps",
-    "q2_eps_official",
     "ttm_eps_official",
     "feature_cutoff_date",
 ]
