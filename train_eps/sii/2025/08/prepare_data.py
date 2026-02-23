@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 FEATURES = [
     "anchor_eps",
     "ly_q3_eps",
+    "q2_yoy_eps",
     "q2_margin",
     "q2_ocf_ratio",
     "q2_re_ratio",
@@ -409,6 +410,7 @@ def main() -> None:
 
     # 公司層級季節性：去年 Q3 / Q2 EPS 比值（捕捉個股 Q3 天然強弱）
     df["ly_seasonality"] = (df["ly_q3_eps"] / df["ly_q2_eps"].replace(0, 1e-9)).clip(-5, 5)
+    df["q2_yoy_eps"] = ((df["q2_eps"] / df["ly_q2_eps"].replace(0, 1e-9)) - 1).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q2_eps"]
     # 8 月視角僅能使用已公告到 Q2 的資訊，避免把當年 Q3（未公告）帶入造成洩漏
@@ -468,7 +470,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 

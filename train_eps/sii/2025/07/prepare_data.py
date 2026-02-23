@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 FEATURES = [
     "anchor_eps",
     "ly_q2_eps",
+    "q1_yoy_eps",
     "q1_margin",
     "q1_ocf_ratio",
     "q1_re_ratio",
@@ -109,6 +110,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     cutoff = f"{year}-07-10"
 
     inc_q1 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q1, "end_date": q1, "market": market})
+    inc_prev_q4 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": p4, "end_date": p4, "market": market})
     bs_q1  = fetch_all_rows_api(api_base, "/raw/balance-sheets",    {"start_date": q1, "end_date": q1, "market": market})
     cf_q1  = fetch_all_rows_api(api_base, "/raw/cash-flows",        {"start_date": q1, "end_date": q1, "market": market})
     qr     = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": lyq1, "end_date": q2, "market": market})
@@ -138,6 +140,12 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     q1_df["q1_debt_ratio"]   = safe_col(q1_df, "total_liabilities") / safe_col(q1_df, "total_assets").replace(0, np.nan)
     q1_df = q1_df[["symbol", "name", "q1_rev", "q1_ni", "q1_eps", "q1_margin", "q1_non_op_ratio",
                    "q1_roe", "q1_debt_ratio", "capital", "q1_retained_earnings", "q1_ocf"]]
+
+    prev_q4_data = pd.DataFrame(columns=["symbol", "prev_q4_margin"])
+    if not inc_prev_q4.empty:
+        prev_q4_data = inc_prev_q4[["symbol", "revenue_q", "net_income_q"]].copy()
+        prev_q4_data["prev_q4_margin"] = prev_q4_data["net_income_q"] / prev_q4_data["revenue_q"].replace(0, np.nan)
+        prev_q4_data = prev_q4_data[["symbol", "prev_q4_margin"]]
 
     this_monthly = pd.DataFrame(columns=["symbol", "rev_m4", "rev_m5", "rev_m6", "rev_m4_ly", "rev_m5_ly", "rev_m6_ly"])
     if not mr.empty:
@@ -182,6 +190,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     out = q1_df.merge(this_monthly, on="symbol", how="inner")
     out = out.merge(eps_hist, on="symbol", how="inner")
     out = out.merge(market_snapshot, on="symbol", how="left")
+    out = out.merge(prev_q4_data, on="symbol", how="left")
     out["year"] = year
     out["feature_cutoff_date"] = cutoff
     return out
@@ -209,6 +218,10 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
       JOIN balance_sheet b ON i.symbol=b.symbol AND i.date=b.date
       JOIN cash_flow c ON i.symbol=c.symbol AND i.date=c.date
       WHERE i.date='{q1}' AND i.market='{market}'
+    ),
+    prev_q4_data AS (
+      SELECT symbol, net_income_q/NULLIF(revenue_q,0) AS prev_q4_margin
+      FROM income_statement WHERE date='{p4}' AND market='{market}'
     ),
     this_monthly AS (
       SELECT symbol,
@@ -239,8 +252,10 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     )
     SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m4, m.rev_m5, m.rev_m6, m.rev_m4_ly, m.rev_m5_ly, m.rev_m6_ly,
            e.target_eps, e.ly_q3_eps, e.ly_q2_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
-           ms.target_date, ms.target_close, ms.target_volume, ms.pe_current
+           ms.target_date, ms.target_close, ms.target_volume, ms.pe_current,
+           p4.prev_q4_margin
     FROM q1_data q1
+    LEFT JOIN prev_q4_data p4 ON q1.symbol=p4.symbol
     JOIN this_monthly m ON q1.symbol=m.symbol
     JOIN eps_hist e ON q1.symbol=e.symbol
     LEFT JOIN market_snapshot ms ON q1.symbol=ms.symbol
@@ -293,12 +308,21 @@ def main() -> None:
         df = df.merge(industry_df, on="symbol", how="left")
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["q1_ni", TARGET, "year", "q1_eps"])
+    if "prev_q4_margin" not in df.columns:
+        raise RuntimeError("Missing required column: prev_q4_margin")
+    missing_prev_q4_margin = df["prev_q4_margin"].isna()
+    if missing_prev_q4_margin.any():
+        sample_rows = df.loc[missing_prev_q4_margin, ["year", "symbol"]].head(10)
+        raise RuntimeError(
+            "prev_q4_margin has missing values. "
+            f"missing_count={int(missing_prev_q4_margin.sum())}, sample={sample_rows.to_dict(orient='records')}"
+        )
 
     df["anchor_eps"] = df["q1_eps"]
 
     df["q1_ocf_ratio"]  = (df["q1_ocf"] / df["q1_ni"].replace(0, 1e-9)).clip(-5, 5)
     df["q1_re_ratio"]   = df["q1_retained_earnings"] / df["capital"].replace(0, 1e-9)
-    df["margin_momentum"] = df["q1_margin"] - df.groupby(["industry", "year"])["q1_margin"].transform("mean")
+    df["margin_momentum"] = df["q1_margin"] - df["prev_q4_margin"]
 
     df["rev_yoy_m4"]    = (df["rev_m4"] / df["rev_m4_ly"].replace(0, 1e-9)) - 1
     df["rev_yoy_m5"]    = (df["rev_m5"] / df["rev_m5_ly"].replace(0, 1e-9)) - 1
@@ -320,6 +344,7 @@ def main() -> None:
 
     # 公司層級季節性：去年 Q2 / Q1 EPS 比值（預測 Q2，用去年同季對比）
     df["ly_seasonality"] = (df["ly_q2_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
+    df["q1_yoy_eps"] = ((df["q1_eps"] / df["ly_q1_eps"].replace(0, 1e-9)) - 1).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q1_eps"]
     # 7 月視角僅能使用已公告到 Q1 的資訊，避免把當年 Q2（未公告）帶入造成洩漏
