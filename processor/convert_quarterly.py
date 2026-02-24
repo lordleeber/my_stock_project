@@ -2,6 +2,7 @@ import os
 import re
 import sys
 from quarterly.convert_quarterly_reports import main as convert_quarterly_reports_main
+from quarterly.convert_xbrl import main as convert_xbrl_main
 from quarterly.convert_income_statements import main as convert_income_statements_main
 from quarterly.convert_balance_sheet import main as convert_balance_sheet_main
 from quarterly.convert_cash_flow import main as convert_cash_flow_main
@@ -42,13 +43,16 @@ def main():
         print(f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env}).")
         sys.exit(1)
 
-    # QUARTERLY_TASK: reports | statements | all
+    # QUARTERLY_TASK: reports | detail_xbrl | statements | all
     task = os.getenv("QUARTERLY_TASK", "all").strip().lower()
-    if task not in {"reports", "statements", "all"}:
-        raise ValueError("QUARTERLY_TASK must be one of: reports, statements, all")
+    if task not in {"reports", "detail_xbrl", "statements", "all"}:
+        raise ValueError("QUARTERLY_TASK must be one of: reports, detail_xbrl, statements, all")
 
     if task in {"reports", "all"}:
         convert_quarterly_reports_main()
+
+    if task == "detail_xbrl":
+        convert_xbrl_main()
 
     if task in {"statements", "all"}:
         for category in _parse_statement_categories():

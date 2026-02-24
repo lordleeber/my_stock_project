@@ -1,10 +1,10 @@
 # Processor Module Guide
 
-這份文件描述目前 `processor` 的實際架構與操作方式（已移除舊制 `data_quality_checker*` / `convert_shareholding_div.py` 等路徑）。
+This document describes the actual current architecture and operating rules of `processor` (legacy paths like `data_quality_checker*` and `convert_shareholding_div.py` are removed).
 
 ## Overview
 
-Processor 會把 `data/raw` 轉成 `data/processed`，並在轉換後立即進行資料稽核（audit），有錯誤就立刻停止。
+`processor` converts data from `data/raw` to `data/processed`, then runs data audits immediately. If an audit fails, the process must stop.
 
 - Input: `data/raw/...`
 - Output: `data/processed/...`
@@ -12,15 +12,15 @@ Processor 會把 `data/raw` 轉成 `data/processed`，並在轉換後立即進�
 
 ## Entry Points
 
-目前統一入口如下：
+Unified entry points:
 
 - `convert_daily.py`
 - `convert_weekly.py`
 - `convert_monthly.py`
 - `convert_quarterly.py`
-- `audit.py`（可獨立執行稽核）
+- `audit.py` (standalone audit)
 
-Docker `processor` service 預設 command 為：
+Default Docker `processor` service command:
 - `python convert_daily.py`
 
 ## Folder Structure
@@ -49,44 +49,44 @@ Docker `processor` service 預設 command 為：
 
 ## Strict Date Rules (Required)
 
-現在所有 converter 都是「完全新制」：
+All converters now follow strict date rules:
 
-- `START_DATE`、`END_DATE` **必填且缺一不可**
-- 格式錯誤會直接 `exit(1)`
-- `START_DATE > END_DATE` 會直接 `exit(1)`
+- `START_DATE` and `END_DATE` are both required
+- Invalid format must `exit(1)`
+- `START_DATE > END_DATE` must `exit(1)`
 
-各入口格式：
+Expected format by entry point:
 
 - `convert_daily.py`: `YYYYMMDD`
 - `convert_weekly.py`: `YYYYMMDD`
-- `convert_monthly.py`: 至少需有 `YYYYMM` 前綴（可給 `YYYYMMDD`）
+- `convert_monthly.py`: at least `YYYYMM` prefix (can be `YYYYMMDD`)
 - `convert_quarterly.py`: `YYYYQX`
 
-`audit.py` 規則：
+`audit.py` rules:
 
-- `START_DATE`、`END_DATE` 必填（`YYYYMMDD`）
-- 目前只支援單日稽核：`START_DATE == END_DATE`
+- `START_DATE` and `END_DATE` are required (`YYYYMMDD`)
+- Currently supports single-day audit only: `START_DATE == END_DATE`
 
 ## Environment Variables
 
-共用：
+Common:
 
-- `START_DATE`（必填）
-- `END_DATE`（必填）
-- `FORCE_REPROCESS`（可選，`1` 表示重跑）
-- `DEBUG`（可選）
-- `RAW_DIR`（預設 `/app/data/raw`）
-- `PROCESSED_DIR`（預設 `/app/data/processed`）
+- `START_DATE` (required)
+- `END_DATE` (required)
+- `FORCE_REPROCESS` (optional, `1` means reprocess)
+- `DEBUG` (optional)
+- `RAW_DIR` (default `/app/data/raw`)
+- `PROCESSED_DIR` (default `/app/data/processed`)
 
-Quarterly 專用：
+Quarterly-specific:
 
-- `QUARTERLY_TASK`: `reports` | `statements` | `all`（預設 `all`）
-- `QUARTERLY_STATEMENT_CATEGORIES`: `income_statement,balance_sheet,cash_flow`（可選子集合）
+- `QUARTERLY_TASK`: `reports` | `detail_xbrl` | `statements` | `all` (default `all`)
+- `QUARTERLY_STATEMENT_CATEGORIES`: `income_statement,balance_sheet,cash_flow` (optional subset)
 
-Audit 詳細列印控制：
+Audit output controls:
 
-- `AUDIT_PRINT_COLUMNS`（預設 `0`，關閉逐欄列印）
-- `AUDIT_SYMBOL`（預設 `2330`，當開啟逐欄列印時生效）
+- `AUDIT_PRINT_COLUMNS` (default `0`, disables per-column verbose output)
+- `AUDIT_SYMBOL` (default `2330`, used when per-column output is enabled)
 
 ## Common Commands
 
@@ -107,50 +107,56 @@ START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python conve
 QUARTERLY_TASK=statements QUARTERLY_STATEMENT_CATEGORIES=income_statement \
 START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python convert_quarterly.py
 
-# 6) Standalone audit (single date only)
+# 6) Quarterly: detail XBRL facts (raw html -> processed csv)
+QUARTERLY_TASK=detail_xbrl START_DATE=2025Q3 END_DATE=2025Q3 \
+docker compose run --rm processor python convert_quarterly.py
+
+# 7) Standalone audit (single date only)
 START_DATE=20240102 END_DATE=20240102 docker compose run --rm processor python audit.py
 ```
 
 ## Data Lineage & Schema Enforcement
 
-所有 processed CSV 都包含 lineage 欄位：
+All processed CSVs must include lineage columns:
 
-- `pced_file`: raw 檔案路徑
-- `pced_row`: raw 檔案行號（1-based）
-- `pced_col`: 欄位來源映射（例如 `x#x#1#2#...`）
+- `pced_file`: raw file path
+- `pced_row`: raw file row number (1-based)
+- `pced_col`: source-column mapping (for example `x#x#1#2#...`)
 
-**Schema 強制執行 (Single Source of Truth):**
-Processor 在存入 CSV 之前，會引用 `common/schemas.py` 定義的 Schema 進行強制型別轉換。這確保了產出的 CSV 檔案在匯入資料庫前就已經具備正確的資料型別（例如 `symbol` 必為字串，數值欄位必為 `Float64`）。
+**Schema enforcement (single source of truth):**
+Before writing CSV, processor must enforce schema from `common/schemas.py`. This guarantees stable types before DB import (for example, `symbol` must be string, numeric fields must be `Float64`).
 
-**嚴格股票過濾:**
-所有包含 `symbol` 欄位的類別都會執行嚴格過濾：**僅保留 4 碼純數字代號**。這會自動排除 ETF (如 0050)、權證、特別股及 REITs。
+**Strict symbol filtering:**
+For categories with `symbol`, keep only 4-digit numeric symbols. This excludes ETFs, warrants, preferred shares, and REITs.
 
-`audit_*` 會依 `pced_file/pced_row/pced_col` 做欄位級比對，發現 mismatch 即停止流程並寫入 `/app/error_processor.log`。
+`audit_*` modules validate values using `pced_file/pced_row/pced_col`. Any mismatch must stop the pipeline and write to `/app/error_processor.log`.
 
 ## Runtime Behavior
 
-- Convert 成功後會立即執行對應 audit（不是全部存完才檢查）
-- 任一類別 audit 失敗：立刻停止，不繼續後續日期/類別
-- 建議任何程式碼變更後先重建：
+- Convert success is followed by immediate audit (not delayed to end of full batch)
+- Any audit failure must stop the remaining dates/categories
+- After any code change, the official workflow is to rebuild the image:
 
 ```bash
 docker compose build processor
 ```
 
+- Do not manually `cp` code into containers/images to bypass rebuild. That creates mismatch between runtime code and repository state, making results non-reproducible and debugging unreliable.
+
 ## Notes
 
-- 舊制檔名（如 `data_quality_checker*.py`, `convert_shareholding_div.py`, `convert_quarterly_statements.py`）不再使用。
-- Daily quotes 欄位映射採用 `last_*` 命名：
+- Legacy files (for example `data_quality_checker*.py`, `convert_shareholding_div.py`, `convert_quarterly_statements.py`) are no longer used.
+- Daily quotes mapping uses `last_*` naming:
   - `最後買價 -> last_bid`
   - `最後賣價 -> last_ask`
   - `最後買量(千股)/(張數) -> last_bid_volume`
   - `最後賣量(千股)/(張數) -> last_ask_volume`
-- **財務報表雙軌制**: `quarterly_reports`, `income_statement`, `cash_flow` 現在具備 `_q` (單季) 與 `_acc` (累計) 雙軌欄位。
-  - **單季計算邏輯**: Processor 在處理 Q2~Q4 時，會自動讀取前一季的 `processed` CSV 檔案，將當前累計值減去前一季累計值以算出單季值。若無歷史資料則預設 `q = acc`。
-  - **計算順序**: 由於具備時序依賴性，重跑歷史資料時**必須按照時間順序**（如 2024Q1 -> Q2 -> Q3...）執行。
-- **重要變更**: `daily_quotes` 不再包含 `pe_ratio` 欄位（以確保 SII/OTC 一致性）。本益比資料現在統一由獨立的 `pe_ratio` 類別處理。
-- 部分來源會有未命名尾端空欄，目前已納入映射避免 parse 失敗。
-- Shell 腳本目前已對齊新入口：
+- **Financial statements dual-track**: `quarterly_reports`, `income_statement`, `cash_flow` include both `_q` (single quarter) and `_acc` (accumulated) fields.
+  - **Single-quarter logic**: For Q2~Q4, processor reads previous quarter processed CSV and calculates `q = current_acc - prev_acc`. If historical data is missing, fallback is `q = acc`.
+  - **Run order**: Because of temporal dependency, historical backfills must run in chronological order (for example `2024Q1 -> Q2 -> Q3 ...`).
+- **Important change**: `daily_quotes` no longer includes `pe_ratio` (to keep SII/OTC consistent). PE data is handled by standalone `pe_ratio` category.
+- Some sources include trailing unnamed columns; mapping already handles these to avoid parse failures.
+- Shell scripts aligned to new entry points:
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`
   - `schedules/monthly_update.sh`

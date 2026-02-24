@@ -59,6 +59,7 @@ services:
       - ./data:/app/data
       - ./common:/app/common
       - ./scraper:/app/scraper
+      - ./active_stocks.txt:/app/active_stocks.txt:ro
     command: python scraper/scraper_quarterly.py
     environment:
       - OUTPUT_DIR=/app/data
