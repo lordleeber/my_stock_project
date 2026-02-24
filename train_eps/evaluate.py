@@ -37,7 +37,9 @@ FEATURE_TRANSFORM = "quantile"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Shared evaluate for train_eps/<market>/<year>/<month>")
-    parser.add_argument("--month-dir", type=Path, required=True, help="例如 train_eps/sii/2025/08")
+    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser.add_argument("--year", type=int, required=True)
+    parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.975)
@@ -56,9 +58,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_month_context(month_dir_input: Path) -> tuple[Path, Path, Path, str]:
-    month_dir = month_dir_input if month_dir_input.is_absolute() else (Path.cwd() / month_dir_input).resolve()
-    month_name = month_dir.name
+def resolve_month_context(market: str, year: int, month: str) -> tuple[Path, Path, Path, str]:
+    month_name = str(month).zfill(2)
+    if month_name < "01" or month_name > "12":
+        raise ValueError("--month 必須是 01~12")
+    month_dir = (Path.cwd() / "train_eps" / market / str(year) / month_name).resolve()
     dataset_path = month_dir / "dataset_evaluate.csv"
     results_dir = month_dir / "results"
     version_map = {"05": "v10", "06": "v10", "07": "v10", "08": "v10", "09": "v10", "10": "v10"}
@@ -469,7 +473,7 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, results_dir, version_name = resolve_month_context(args.month_dir)
+    month_dir, dataset_path, results_dir, version_name = resolve_month_context(args.market, args.year, args.month)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan)

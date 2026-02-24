@@ -9,7 +9,9 @@ import pandas as pd
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gate and publish monthly EPS model")
-    parser.add_argument("--month-dir", type=Path, required=True, help="例如 train_eps/sii/2025/10")
+    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser.add_argument("--year", type=int, required=True)
+    parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--models-root", type=Path, default=Path("models_eps"))
     parser.add_argument("--eval-file", type=Path, default=None, help="預設 <month-dir>/results/evaluate_by_fold.csv")
     parser.add_argument("--model-file", type=Path, default=None, help="預設 <month-dir>/model.pkl")
@@ -23,34 +25,22 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
-    month_dir = args.month_dir if args.month_dir.is_absolute() else (Path.cwd() / args.month_dir).resolve()
+    month_name = str(args.month).zfill(2)
+    if month_name < "01" or month_name > "12":
+        raise ValueError("--month 必須是 01~12")
+    month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_name).resolve()
     eval_file = args.eval_file if args.eval_file else month_dir / "results" / "evaluate_by_fold.csv"
     model_file = args.model_file if args.model_file else month_dir / "model.pkl"
     models_root = args.models_root if args.models_root.is_absolute() else (Path.cwd() / args.models_root).resolve()
     return month_dir, eval_file, model_file, models_root
 
 
-def parse_market_year_month(month_dir: Path) -> tuple[str, str, str]:
-    # Expect structure: .../train_eps/<market>/<year>/<month>
-    parts = month_dir.parts
-    if len(parts) < 3:
-        raise ValueError(f"invalid month-dir: {month_dir}")
-    market = parts[-3]
-    year = parts[-2]
-    month = parts[-1]
-    if market not in {"sii", "otc"}:
-        raise ValueError(f"invalid market in month-dir: {market} ({month_dir})")
-    if not (year.isdigit() and len(year) == 4):
-        raise ValueError(f"invalid year in month-dir: {year} ({month_dir})")
-    if not (month.isdigit() and len(month) == 2):
-        raise ValueError(f"invalid month in month-dir: {month} ({month_dir})")
-    return market, year, month
-
-
 def main() -> None:
     args = parse_args()
     month_dir, eval_file, model_file, models_root = resolve_paths(args)
-    market, year, month_name = parse_market_year_month(month_dir)
+    market = args.market
+    year = str(args.year)
+    month_name = str(args.month).zfill(2)
 
     if not eval_file.exists():
         raise FileNotFoundError(f"evaluate file not found: {eval_file}")
@@ -142,5 +132,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 

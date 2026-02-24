@@ -18,7 +18,9 @@ BASE_DIR = Path(__file__).resolve().parent
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train shared RF model for train_eps/<market>/<year>/<month>")
-    parser.add_argument("--month-dir", type=Path, required=True, help="例如 train_eps/sii/2025/08")
+    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser.add_argument("--year", type=int, required=True)
+    parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--dataset", type=Path, default=None, help="預設為 <month-dir>/dataset_train.csv")
     parser.add_argument("--model-out", type=Path, default=None, help="預設為 <month-dir>/model.pkl")
     parser.add_argument("--metrics-out", type=Path, default=None, help="預設為 <month-dir>/train_metrics.json")
@@ -30,9 +32,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Path]:
-    month_dir = args.month_dir
-    if not month_dir.is_absolute():
-        month_dir = (Path.cwd() / month_dir).resolve()
+    month_str = str(args.month).zfill(2)
+    if month_str < "01" or month_str > "12":
+        raise ValueError("--month 必須是 01~12")
+    month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_str).resolve()
 
     dataset = args.dataset if args.dataset else month_dir / "dataset_train.csv"
     model_out = args.model_out if args.model_out else month_dir / "model.pkl"
