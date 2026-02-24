@@ -31,9 +31,9 @@ KEEP_OPTIONAL = [
     "symbol",
     "name",
     "industry",
-    "q3_date",
-    "q3_close",
-    "q3_volume",
+    "target_date",
+    "target_close",
+    "target_volume",
     "pe_current",
     "prev_q4_eps",
     "q1_eps",
@@ -117,8 +117,8 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     ly_q2_str = f"{year - 1}Q2"
     m6, m7 = f"{year}M06", f"{year}M07"
     ly_m6, ly_m7 = f"{year - 1}M06", f"{year - 1}M07"
-    month_start = f"{year}-09-01"
-    month_end = f"{year}-09-30"
+    month_start = f"{year}-08-01"
+    month_end = f"{year}-08-31"
     feature_cutoff = f"{year}-08-15"
 
     inc_q2 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q2_str, "end_date": q2_str, "market": market})
@@ -211,7 +211,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                 eps_hist[c] = np.nan
         eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "prev_q4_eps", "q1_eps", "q2_eps_official"]]
 
-    market_snapshot = pd.DataFrame(columns=["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"])
+    market_snapshot = pd.DataFrame(columns=["symbol", "target_date", "target_close", "target_volume", "pe_current"])
     if not dq.empty:
         dq2 = dq.copy()
         dq2["date"] = pd.to_datetime(dq2["date"], errors="coerce")
@@ -222,9 +222,9 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         else:
             dq2["pe_ratio"] = np.nan
         dq2 = dq2.sort_values(["symbol", "date"]).dropna(subset=["date"]).groupby("symbol", as_index=False).tail(1)
-        market_snapshot = dq2.rename(columns={"date": "q3_date", "close": "q3_close", "volume": "q3_volume", "pe_ratio": "pe_current"})
-        market_snapshot["q3_date"] = market_snapshot["q3_date"].dt.strftime("%Y-%m-%d")
-        market_snapshot = market_snapshot[["symbol", "q3_date", "q3_close", "q3_volume", "pe_current"]]
+        market_snapshot = dq2.rename(columns={"date": "target_date", "close": "target_close", "volume": "target_volume", "pe_ratio": "pe_current"})
+        market_snapshot["target_date"] = market_snapshot["target_date"].dt.strftime("%Y-%m-%d")
+        market_snapshot = market_snapshot[["symbol", "target_date", "target_close", "target_volume", "pe_current"]]
 
     out = q2.merge(q1_margin, on="symbol", how="left")
     out = out.merge(this_monthly, on="symbol", how="inner")
@@ -246,8 +246,8 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     ly_m6, ly_m7 = f"{year - 1}M06", f"{year - 1}M07"
     ly_q2_str = f"{year - 1}Q2"
 
-    month_start = f"{year}-09-01"
-    month_end = f"{year}-09-30"
+    month_start = f"{year}-08-01"
+    month_end = f"{year}-08-31"
     feature_cutoff = f"{year}-08-15"
 
     query = f"""
@@ -300,9 +300,9 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     market_snapshot AS (
         SELECT DISTINCT ON (dq.symbol)
                dq.symbol,
-               dq.date AS q3_date,
-               dq.close AS q3_close,
-               dq.volume AS q3_volume,
+               dq.date AS target_date,
+               dq.close AS target_close,
+               dq.volume AS target_volume,
                pr.pe_ratio AS pe_current
         FROM daily_quotes dq
         LEFT JOIN pe_ratio pr
@@ -328,9 +328,9 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
         e.prev_q4_eps,
         e.q1_eps,
         e.q2_eps_official,
-        ms.q3_date,
-        ms.q3_close,
-        ms.q3_volume,
+        ms.target_date,
+        ms.target_close,
+        ms.target_volume,
         ms.pe_current
     FROM q2_data q2
     LEFT JOIN q1_data q1 ON q2.symbol = q1.symbol
@@ -390,12 +390,22 @@ def main() -> None:
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["q2_ni", TARGET, "year", "q2_eps"])
 
+    if "q1_margin" not in df.columns:
+        raise RuntimeError("Missing required column: q1_margin")
+    missing_q1_margin = df["q1_margin"].isna()
+    if missing_q1_margin.any():
+        sample_rows = df.loc[missing_q1_margin, ["year", "symbol"]].head(10)
+        raise RuntimeError(
+            "q1_margin has missing values. "
+            f"missing_count={int(missing_q1_margin.sum())}, sample={sample_rows.to_dict(orient='records')}"
+        )
+
     # anchor_eps = q2_eps（Q2財報模型統一命名）
     df["anchor_eps"] = df["q2_eps"]
 
     df["q2_ocf_ratio"] = (df["q2_ocf"] / df["q2_ni"].replace(0, 1e-9)).clip(-5, 5)
     df["q2_re_ratio"] = df["q2_retained_earnings"] / df["capital"].replace(0, 1e-9)
-    df["margin_momentum"] = df["q2_margin"] - df["q1_margin"].fillna(df["q2_margin"])
+    df["margin_momentum"] = df["q2_margin"] - df["q1_margin"]
 
     # 月營收工程：同比 + 月增率
     df["rev_yoy_m7"] = (df["rev_m7"] / df["rev_m7_ly"].replace(0, 1e-9)) - 1
@@ -425,7 +435,7 @@ def main() -> None:
     if args.apply_trading_filter:
         # 交易門檻：基本面 + 流動性
         ttm_ok = df["ttm_eps_official"] >= float(args.min_ttm_eps)
-        vol_ok = (df["q3_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
+        vol_ok = (df["target_volume"].fillna(0) / 1000.0) >= float(args.min_volume_lots)
         df = df[ttm_ok & vol_ok].copy()
 
     for feature_name in FEATURES:
