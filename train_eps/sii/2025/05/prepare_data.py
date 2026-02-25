@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import os
 from pathlib import Path
 
@@ -8,7 +8,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 
-# v10: 5/14 視角 -> anchor_eps=Q1EPS + 4月營收，含同比與產業標準化
+# v10: 5/14 閬? -> anchor_eps=Q1EPS + 4???塚??怠?瘥??Ｘ平璅???
 FEATURES = [
     "anchor_eps",
     "ly_q2_eps",
@@ -47,8 +47,8 @@ def get_db_url() -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare v10 dataset (5月視角) from DB or API.")
-    parser.add_argument("--start-year", type=int, default=2020)
+    parser = argparse.ArgumentParser(description="Prepare v10 dataset (5??閫? from DB or API.")
+    parser.add_argument("--start-year", type=int, default=2021)
     parser.add_argument("--end-year", type=int, default=2025)
     parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
@@ -140,13 +140,32 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     q1_df = q1_df[["symbol", "name", "q1_rev", "q1_ni", "q1_eps", "q1_margin", "q1_non_op_ratio",
                    "q1_roe", "q1_debt_ratio", "capital", "q1_retained_earnings", "q1_ocf"]]
 
-    prev_q4_data = pd.DataFrame(columns=["symbol", "prev_q4_margin"])
+    prev_q4_data = pd.DataFrame(columns=["symbol", "prev_q4_margin", "prev_q4_revenue_invalid", "prev_q4_row_exists"])
     if not inc_prev_q4.empty:
-        prev_q4_data = inc_prev_q4[["symbol", "revenue_q", "net_income_q"]].copy()
-        prev_q4_data["prev_q4_margin"] = prev_q4_data["net_income_q"] / prev_q4_data["revenue_q"].replace(0, np.nan)
-        prev_q4_data = prev_q4_data[["symbol", "prev_q4_margin"]]
+        prev_q4_raw = inc_prev_q4[["symbol", "revenue_q", "net_income_q"]].copy()
+        prev_q4_raw["revenue_q"] = pd.to_numeric(prev_q4_raw["revenue_q"], errors="coerce")
+        prev_q4_raw["net_income_q"] = pd.to_numeric(prev_q4_raw["net_income_q"], errors="coerce")
+        prev_q4_raw["prev_q4_revenue_invalid"] = (
+            prev_q4_raw["revenue_q"].isna() | (prev_q4_raw["revenue_q"] == 0)
+        ).astype(int)
+        prev_q4_raw["prev_q4_margin"] = prev_q4_raw["net_income_q"] / prev_q4_raw["revenue_q"].replace(0, np.nan)
 
-    # 月營收
+        def summarize_prev_q4(group: pd.DataFrame) -> pd.Series:
+            has_valid_margin = group["prev_q4_margin"].notna().any()
+            has_invalid_revenue = (group["prev_q4_revenue_invalid"] == 1).any()
+            margin_value = group["prev_q4_margin"].dropna().iloc[0] if has_valid_margin else np.nan
+            invalid_flag = 1 if (not has_valid_margin and has_invalid_revenue) else 0
+            return pd.Series(
+                {
+                    "prev_q4_margin": margin_value,
+                    "prev_q4_revenue_invalid": invalid_flag,
+                    "prev_q4_row_exists": 1,
+                }
+            )
+
+        prev_q4_data = prev_q4_raw.groupby("symbol", as_index=False).apply(summarize_prev_q4, include_groups=False)
+
+    # ????
     this_monthly = pd.DataFrame(columns=["symbol", "rev_m3", "rev_m4", "rev_m4_ly"])
     if not mr.empty:
         if "market" in mr.columns:
@@ -160,7 +179,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                     this_monthly[c] = np.nan
             this_monthly = this_monthly[["symbol", "rev_m3", "rev_m4", "rev_m4_ly"]]
 
-    # EPS 歷史
+    # EPS 甇瑕
     eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"])
     if not qr.empty:
         qr2 = qr[qr["date"].isin([q2, lyq3, lyq2, lyq1, p4, q1])].copy()
@@ -174,7 +193,7 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                 eps_hist[c] = np.nan
         eps_hist = eps_hist[["symbol", "target_eps", "ly_q3_eps", "ly_q2_eps", "ly_q1_eps", "prev_q4_eps", "q1_eps_official", "q2_eps_official"]]
 
-    # 市場快照（Q3 期間）
+    # 撣敹怎嚗3 ??嚗?
     market_snapshot = pd.DataFrame(columns=["symbol", "target_date", "target_close", "target_volume", "pe_current"])
     if not dq.empty:
         dq2 = dq.copy()
@@ -222,8 +241,23 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
       WHERE i.date='{q1}' AND i.market='{market}'
     ),
     prev_q4_data AS (
-      SELECT symbol, net_income_q/NULLIF(revenue_q,0) AS prev_q4_margin
-      FROM income_statement WHERE date='{p4}' AND market='{market}'
+      SELECT
+        symbol,
+        MAX(
+          CASE
+            WHEN revenue_q IS NOT NULL AND revenue_q<>0 AND net_income_q IS NOT NULL
+            THEN net_income_q/NULLIF(revenue_q,0)
+          END
+        ) AS prev_q4_margin,
+        1 AS prev_q4_row_exists,
+        CASE
+          WHEN MAX(CASE WHEN revenue_q IS NULL OR revenue_q=0 THEN 1 ELSE 0 END)=1
+               AND MAX(CASE WHEN revenue_q IS NOT NULL AND revenue_q<>0 AND net_income_q IS NOT NULL THEN 1 ELSE 0 END)=0
+          THEN 1 ELSE 0
+        END AS prev_q4_revenue_invalid
+      FROM income_statement
+      WHERE date='{p4}' AND market='{market}'
+      GROUP BY symbol
     ),
     this_monthly AS (
       SELECT symbol,
@@ -254,7 +288,7 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q1.*, m.rev_m3, m.rev_m4, m.rev_m4_ly,
            e.target_eps, e.ly_q3_eps, e.ly_q2_eps, e.ly_q1_eps, e.prev_q4_eps, e.q1_eps_official, e.q2_eps_official,
            ms.target_date, ms.target_close, ms.target_volume, ms.pe_current,
-           p4.prev_q4_margin
+           p4.prev_q4_margin, p4.prev_q4_revenue_invalid, p4.prev_q4_row_exists
     FROM q1_data q1
     LEFT JOIN prev_q4_data p4 ON q1.symbol=p4.symbol
     JOIN this_monthly m ON q1.symbol=m.symbol
@@ -310,6 +344,21 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
 
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["q1_ni", TARGET, "year", "q1_eps"])
+    if "prev_q4_revenue_invalid" not in df.columns:
+        raise RuntimeError("Missing required column: prev_q4_revenue_invalid")
+    if "prev_q4_row_exists" not in df.columns:
+        raise RuntimeError("Missing required column: prev_q4_row_exists")
+
+    missing_prev_q4_row = df["prev_q4_row_exists"].fillna(0).astype(int) == 0
+    rows_excluded_missing_prev_q4 = int(missing_prev_q4_row.sum())
+    if rows_excluded_missing_prev_q4 > 0:
+        df = df.loc[~missing_prev_q4_row].copy()
+
+    invalid_prev_q4_revenue = df["prev_q4_revenue_invalid"].fillna(0).astype(int) == 1
+    rows_excluded_invalid_revenue = int(invalid_prev_q4_revenue.sum())
+    if rows_excluded_invalid_revenue > 0:
+        df = df.loc[~invalid_prev_q4_revenue].copy()
+
     if "prev_q4_margin" not in df.columns:
         raise RuntimeError("Missing required column: prev_q4_margin")
     missing_prev_q4_margin = df["prev_q4_margin"].isna()
@@ -320,7 +369,7 @@ def main() -> None:
             f"missing_count={int(missing_prev_q4_margin.sum())}, sample={sample_rows.to_dict(orient='records')}"
         )
 
-    # anchor_eps = q1_eps（5/6/7月視角模型統一命名）
+    # anchor_eps = q1_eps嚗?/6/7??閫芋?絞銝?賢?嚗?
     df["anchor_eps"] = df["q1_eps"]
 
     df["q1_ocf_ratio"]  = (df["q1_ocf"] / df["q1_ni"].replace(0, 1e-9)).clip(-5, 5)
@@ -328,7 +377,7 @@ def main() -> None:
 
     df["margin_momentum"] = df["q1_margin"] - df["prev_q4_margin"]
 
-    # 月營收工程：4月 YoY + 產業標準化
+    # ???嗅極蝔?4??YoY + ?Ｘ平璅???
     df["rev_yoy_m4"] = (df["rev_m4"] / df["rev_m4_ly"].replace(0, 1e-9)) - 1
     df["rev_mom_m4_m3"] = (df["rev_m4"] / df["rev_m3"].replace(0, 1e-9)) - 1
     add_industry_zscore(df, "rev_yoy_m4", "rev_yoy_m4_z")
@@ -336,12 +385,12 @@ def main() -> None:
     add_cross_section_quantile(df, "rev_yoy_m4_z", "rev_yoy_m4_quantile")
     add_cross_section_quantile(df, "rev_mom_m4_m3_z", "rev_mom_m4_m3_quantile")
 
-    # 公司層級季節性：去年 Q2 / Q1 EPS 比值（預測 Q2，用去年同季對比）
+    # ?砍撅斤?摮???改??餃僑 Q2 / Q1 EPS 瘥潘??葫 Q2嚗?餃僑?迤撠?嚗?
     df["ly_seasonality"] = (df["ly_q2_eps"] / df["ly_q1_eps"].replace(0, 1e-9)).clip(-5, 5)
     df["q1_yoy_eps"] = ((df["q1_eps"] / df["ly_q1_eps"].replace(0, 1e-9)) - 1).clip(-5, 5)
 
     df[TARGET_DELTA] = df[TARGET] - df["q1_eps"]
-    # 5 月視角僅能使用已公告到 Q1 的資訊，避免把當年 Q2（未公告）帶入造成洩漏
+    # 5 ??閫??賭蝙?典歇?砍???Q1 ??閮??踹??撟?Q2嚗?砍?嚗葆?仿?瘣拇?
     q1_official_live = df["q1_eps_official"].fillna(0)
     df["ttm_eps_official"] = (
         df["ly_q2_eps"].fillna(0)
@@ -384,6 +433,8 @@ def main() -> None:
     print(f"- output_meta: {args.output_meta}")
     print(f"- output_evaluate: {args.output_evaluate}")
     print(f"- apply_trading_filter: {args.apply_trading_filter}")
+    print(f"- rows_excluded_missing_prev_q4: {rows_excluded_missing_prev_q4}")
+    print(f"- rows_excluded_prev_q4_revenue_invalid: {rows_excluded_invalid_revenue}")
     if args.apply_trading_filter:
         print(f"- min_ttm_eps: {args.min_ttm_eps}")
         print(f"- rows_before_filter: {rows_before_filter}")
@@ -392,3 +443,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
