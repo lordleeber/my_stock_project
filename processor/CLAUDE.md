@@ -155,6 +155,7 @@ docker compose build processor
   - **Single-quarter logic**: For Q2~Q4, processor reads previous quarter processed CSV and calculates `q = current_acc - prev_acc`. If historical data is missing, fallback is `q = acc`.
   - **Run order**: Because of temporal dependency, historical backfills must run in chronological order (for example `2024Q1 -> Q2 -> Q3 ...`).
 - **Important change**: `daily_quotes` no longer includes `pe_ratio` (to keep SII/OTC consistent). PE data is handled by standalone `pe_ratio` category.
+- `margin_summary` is a derived category: it is generated from `raw/margin_trading/*` and written to `processed/margin_summary/.../all.csv` (there is no `raw/margin_summary` input folder).
 - Some sources include trailing unnamed columns; mapping already handles these to avoid parse failures.
 - Shell scripts aligned to new entry points:
   - `schedules/daily_update.sh`

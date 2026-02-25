@@ -106,7 +106,9 @@ def should_process_category(category, date_str):
         if os.path.exists(output_file):
             return False
 
-        raw_date_dir = _date_dir(RAW_DIR, category, date_str)
+        # margin_summary is derived from raw/margin_trading, not raw/margin_summary.
+        raw_source_category = "margin_trading" if category == "margin_summary" else category
+        raw_date_dir = _date_dir(RAW_DIR, raw_source_category, date_str)
         return any(glob.glob(os.path.join(raw_date_dir, "*.csv")))
 
     # market_indices is special:
