@@ -1,6 +1,7 @@
 import os
 import datetime
 import traceback
+import re
 from pathlib import Path
 import polars as pl
 from .convert_category_base import get_category_date_dir
@@ -49,6 +50,19 @@ def log_processing_error(msg, date_str=None, category=None):
         f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
         f.write("---\n")
     print(f"❌ Error logged to error_processor.log: {msg}")
+
+
+def fail_invalid_params(msg):
+    error_file = Path("/app/error_processor.log")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(error_file, "a", encoding="utf-8") as f:
+        f.write(f"\n## Processor Runtime Error - {timestamp}\n")
+        f.write("**Entry:** daily/convert_institutional_summary.py\n")
+        f.write(f"**Category:** {CATEGORY}\n")
+        f.write(f"**Message:** {msg}\n")
+        f.write("---\n")
+    print(msg)
+    raise SystemExit(1)
 
 
 def _handle_institutional_summary(date_str, raw_dir=RAW_DIR):
@@ -143,6 +157,20 @@ def process_date(date_str, raw_dir=RAW_DIR, processed_dir=PROCESSED_DIR, force_r
 if __name__ == "__main__":
     start_env = os.getenv("START_DATE")
     end_env = os.getenv("END_DATE")
+
+    if not start_env or not end_env:
+        fail_invalid_params(
+            "Error: START_DATE and END_DATE are both required (YYYYMMDD)."
+        )
+    if not (re.match(r"^\d{8}$", start_env) and re.match(r"^\d{8}$", end_env)):
+        fail_invalid_params(
+            f"Error: Invalid date format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYMMDD."
+        )
+    if start_env > end_env:
+        fail_invalid_params(
+            f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
+        )
+
     category_path = os.path.join(RAW_DIR, CATEGORY)
     if not os.path.exists(category_path):
         raise SystemExit(0)
@@ -157,8 +185,8 @@ if __name__ == "__main__":
                         all_dates.add(sub_d)
 
     for date_str in sorted(list(all_dates)):
-        if start_env and date_str < start_env:
+        if date_str < start_env:
             continue
-        if end_env and date_str > end_env:
+        if date_str > end_env:
             continue
         process_date(date_str)

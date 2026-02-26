@@ -80,7 +80,7 @@ Common:
 
 Quarterly-specific:
 
-- `QUARTERLY_TASK`: `reports` | `detail_xbrl` | `statements` | `all` (default `all`)
+- `QUARTERLY_TASK` (required): `reports` | `detail_xbrl` | `statements` | `all`
 - `QUARTERLY_STATEMENT_CATEGORIES`: `income_statement,balance_sheet,cash_flow` (optional subset)
 
 Audit output controls:
@@ -101,7 +101,7 @@ START_DATE=20240105 END_DATE=20240105 docker compose run --rm processor python c
 START_DATE=20240101 END_DATE=20240131 docker compose run --rm processor python convert_monthly.py
 
 # 4) Quarterly: reports + 3 statements
-START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python convert_quarterly.py
+QUARTERLY_TASK=all START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python convert_quarterly.py
 
 # 5) Quarterly: only statements, only income_statement
 QUARTERLY_TASK=statements QUARTERLY_STATEMENT_CATEGORIES=income_statement \

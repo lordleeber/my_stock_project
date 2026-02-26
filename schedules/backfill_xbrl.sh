@@ -48,6 +48,7 @@ year=$((10#$start_year))
 quarter=$((10#$start_q))
 end_year_num=$((10#$end_year))
 end_q_num=$((10#$end_q))
+FAILED_QUARTERS=()
 
 while (( year < end_year_num || (year == end_year_num && quarter <= end_q_num) )); do
     target="${year}Q${quarter}"
@@ -61,7 +62,7 @@ while (( year < end_year_num || (year == end_year_num && quarter <= end_q_num) )
         echo "[OK] $target" | tee -a "$LOG_FILE"
     else
         echo "[FAIL] $target" | tee -a "$LOG_FILE"
-        exit 1
+        FAILED_QUARTERS+=("$target")
     fi
 
     quarter=$((quarter + 1))
@@ -75,4 +76,11 @@ echo "========================================" | tee -a "$LOG_FILE"
 echo "XBRL Backfill Completed" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "Log: $LOG_FILE" | tee -a "$LOG_FILE"
+
+if [ ${#FAILED_QUARTERS[@]} -gt 0 ]; then
+    echo "Failed Quarters (${#FAILED_QUARTERS[@]}): ${FAILED_QUARTERS[*]}" | tee -a "$LOG_FILE"
+    echo "========================================" | tee -a "$LOG_FILE"
+    exit 1
+fi
+
 echo "========================================" | tee -a "$LOG_FILE"

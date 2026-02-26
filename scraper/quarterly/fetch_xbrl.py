@@ -172,7 +172,7 @@ def main():
     for idx, symbol in enumerate(symbols, start=1):
         symbol, status = save_symbol_report(symbol, args.year, args.quarter, out_dir, force=force_reprocess)
         status_count[status] = status_count.get(status, 0) + 1
-        if status == "ok":
+        if status in {"ok", "skipped_exists"}:
             ok += 1
         else:
             fail += 1

@@ -55,7 +55,7 @@ fi
 
 # 2) Processor quarterly
 echo "[2/3] Running processor (convert_quarterly.py)..." | tee -a "$LOG_FILE"
-if docker compose run --rm -e START_DATE=$TARGET_QUARTER -e END_DATE=$TARGET_QUARTER processor python convert_quarterly.py 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose run --rm -e QUARTERLY_TASK=all -e START_DATE=$TARGET_QUARTER -e END_DATE=$TARGET_QUARTER processor python convert_quarterly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Processor completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Processor failed" | tee -a "$LOG_FILE"
