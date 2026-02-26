@@ -54,6 +54,7 @@ All converters now follow strict date rules:
 - `START_DATE` and `END_DATE` are both required
 - Invalid format must `exit(1)`
 - `START_DATE > END_DATE` must `exit(1)`
+- Missing any required parameter must fail fast with `exit(1)` and write an error to `/app/error_processor.log`; silent fallback/default behavior that continues broad or full processing is strictly forbidden.
 
 Expected format by entry point:
 
