@@ -94,16 +94,14 @@ def run():
     # 6. 計算歷史排名 (Percentile)
     # 這是真正的歷史位階：拿今天的 PE 去跟該股票「過去所有歷史 PE」比
     print("Ranking historical percentiles (Point-in-Time)...")
-    def calc_historical_rank(group):
-        group = group.sort_values('date_ts')
-        # 這裡的 rank 必須是 expanding，代表只跟「當天及之前」的歷史比，避免未來偏誤
-        # 但為了效能與簡便，通常做 full-history rank 也可以，只要標註清楚即可
-        # 我們這裡採用全歷史 rank，代表該 PE 在整個 5 年中的位階
-        group['pe_percentile_official'] = group['pe_calculated'].rank(pct=True).round(4) * 100
-        group['pe_percentile_forward'] = group['pe_forward'].rank(pct=True).round(4) * 100
-        return group
-
-    df_final_grouped = df_combined.groupby('symbol', group_keys=False).apply(calc_historical_rank)
+    # Full-history percentile rank within each symbol.
+    df_combined['pe_percentile_official'] = (
+        df_combined.groupby('symbol')['pe_calculated'].rank(pct=True).round(4) * 100
+    )
+    df_combined['pe_percentile_forward'] = (
+        df_combined.groupby('symbol')['pe_forward'].rank(pct=True).round(4) * 100
+    )
+    df_final_grouped = df_combined
 
     # 7. 存入資料庫
     print(f"Writing {len(df_final_grouped)} rows to valuation_daily...")

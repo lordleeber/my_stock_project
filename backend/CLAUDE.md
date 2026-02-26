@@ -11,11 +11,11 @@ This guide covers two main areas:
 ### 🔴 STRICT ENVIRONMENT CONSISTENCY RULE (CORE MANDATE)
 
 **NEVER take shortcuts by manually copying files or relying solely on volume mounts for core logic updates.**
-Whenever you modify code in `processor/`, `importer/`, `scraper/`, or `common/`, you **MUST** rebuild the corresponding Docker image:
+Whenever you modify code in `processor/`, `importer/`, `calculator/`, `scraper/`, or `common/`, you **MUST** rebuild the corresponding Docker image:
 ```bash
 docker compose build <service_name>
 ```
-Failing to do this leads to "Host-Container desync" where the container runs old logic even though the host files look correct. This is especially critical for `processor` and `importer` which handle complex parsing and database schema logic.
+Failing to do this leads to "Host-Container desync" where the container runs old logic even though the host files look correct. This is especially critical for `processor`, `importer`, and `calculator`.
 
 ---
 
@@ -90,8 +90,8 @@ The `backend` service uses a volume mount `./backend:/app` in `docker-compose.ym
 You only need to run `docker compose build backend` if you change `backend/requirements.txt` or the `backend/Dockerfile`.
 
 **Note on other services:** 
-The `processor` and `importer` services **DO NOT** use code volume mounts. You **MUST** rebuild them after any code change:
-`docker compose build processor importer`
+The `processor`, `importer`, and `calculator` services **DO NOT** use code volume mounts. You **MUST** rebuild them after any code change:
+`docker compose build processor importer calculator`
 
 ## Database Connection
 

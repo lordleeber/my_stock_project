@@ -88,6 +88,9 @@ services:
   # ============================================
 
   processor:
+    # IMPORTANT:
+    # - No code volume mount for /app (processor code is baked into image).
+    # - Any code change under processor/ requires: docker compose build processor
     build:
       context: ./processor
     volumes:
@@ -102,6 +105,9 @@ services:
       - TZ=Asia/Taipei
 
   importer:
+    # IMPORTANT:
+    # - No code volume mount for /app (importer code is baked into image).
+    # - Any code change under importer/ requires: docker compose build importer
     build:
       context: ./importer
     volumes:
@@ -122,6 +128,9 @@ services:
       - TZ=Asia/Taipei
 
   calculator:
+    # IMPORTANT:
+    # - No code volume mount for /app (calculator code is baked into image).
+    # - Any code change under calculator/ requires: docker compose build calculator
     build: ./calculator
     environment:
       - DB_USER=user
@@ -132,7 +141,6 @@ services:
       - END_DATE=${END_DATE:-}
       - TZ=Asia/Taipei
     volumes:
-      - ./calculator:/app
       - ./common:/app/common
       - ./error_calculator.log:/error_calculator.log
     depends_on:

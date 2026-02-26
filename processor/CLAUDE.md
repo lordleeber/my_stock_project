@@ -6,6 +6,16 @@ This document describes the actual current architecture and operating rules of `
 
 `processor` converts data from `data/raw` to `data/processed`, then runs data audits immediately. If an audit fails, the process must stop.
 
+### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
+
+`processor` does not mount source code into `/app`. After any code change in `processor/`, you **MUST** rebuild before running:
+
+```bash
+docker compose build processor
+```
+
+If you skip rebuild, container runtime may execute stale code even when host files look updated.
+
 - Input: `data/raw/...`
 - Output: `data/processed/...`
 - Error log: `/app/error_processor.log`

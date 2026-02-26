@@ -14,6 +14,16 @@ The importer loads processed CSV data into PostgreSQL database:
 - Handles deduplication by date+market or date+symbol
 - **Fail-fast**: any import error writes to `error_importer.log` and exits immediately (`SystemExit(1)`)
 
+### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
+
+`importer` does not mount source code into `/app`. After any code change in `importer/`, you **MUST** rebuild before running:
+
+```bash
+docker compose build importer
+```
+
+If you skip rebuild, container runtime may execute stale code even when host files look updated.
+
 **Input**: `data/processed/` (from processor)
 **Output**: PostgreSQL tables in `stock_db`
 

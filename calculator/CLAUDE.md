@@ -15,6 +15,16 @@ Error handling is fail-fast:
 - Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
 - Exits immediately with non-zero status.
 
+### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
+
+`calculator` does not mount source code into `/app`. After any code change in `calculator/`, you **MUST** rebuild before running:
+
+```bash
+docker compose build calculator
+```
+
+If you skip rebuild, container runtime may execute stale code even when host files look updated.
+
 ---
 
 ## Technical Indicators (`calculate_daily.py`)
