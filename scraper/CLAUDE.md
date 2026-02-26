@@ -12,14 +12,17 @@ Scraper 已改成與 processor 一致的頻率分層：`daily/`, `weekly/`, `mon
 Backward compatibility:
 - `scraper/check_daily_outputs.py`, `scraper/check_weekly_outputs.py`, `scraper/check_monthly_outputs.py`, `scraper/check_quarterly_outputs.py` 目前是新分層 checker 的 wrapper。
 
-## Docker Services
-
-`docker-compose.yml` 目前對應：
-
-- `scraper-daily` -> `python scraper/scraper_daily.py`
-- `scraper-weekly` -> `python scraper/scraper_weekly.py`
-- `scraper-monthly` -> `python scraper/scraper_monthly.py`
 - `scraper-quarterly` -> `python scraper/scraper_quarterly.py`
+
+### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
+
+`scraper` services (daily, weekly, monthly, quarterly) do not mount source code into `/app`. After any code change in `scraper/` or `common/`, you **MUST** rebuild before running:
+
+```bash
+docker compose build scraper-daily scraper-weekly scraper-monthly scraper-quarterly
+```
+
+If you skip rebuild, container runtime may execute stale code even when host files look updated.
 
 ## Folder Layout
 
@@ -94,8 +97,4 @@ REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
-- 如有改程式碼，先重建 image：
-
-```bash
-docker compose build scraper-daily scraper-weekly scraper-monthly scraper-quarterly
-```
+- `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。

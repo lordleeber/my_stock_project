@@ -5,11 +5,14 @@ services:
 
   # 每日行情 (交易日執行)
   scraper-daily:
+    # IMPORTANT:
+    # - No code volume mount for /app (scraper code is baked into image).
+    # - Any code change under scraper/ requires: docker compose build scraper-daily
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
-      - ./:/app
+      - ./data:/app/data
     command: python scraper/scraper_daily.py
     environment:
       - OUTPUT_DIR=/app/data
@@ -21,13 +24,14 @@ services:
 
   # 集保股權分散表 (每週日執行)
   scraper-weekly:
+    # IMPORTANT:
+    # - No code volume mount for /app (scraper code is baked into image).
+    # - Any code change under scraper/ requires: docker compose build scraper-weekly
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
-      - ./common:/app/common
-      - ./scraper:/app/scraper
     command: python scraper/scraper_weekly.py
     environment:
       - OUTPUT_DIR=/app/data
@@ -36,13 +40,14 @@ services:
 
   # 月營收 (每月 10 日後執行)
   scraper-monthly:
+    # IMPORTANT:
+    # - No code volume mount for /app (scraper code is baked into image).
+    # - Any code change under scraper/ requires: docker compose build scraper-monthly
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
-      - ./common:/app/common
-      - ./scraper:/app/scraper
     command: python scraper/scraper_monthly.py
     environment:
       - OUTPUT_DIR=/app/data
@@ -52,36 +57,20 @@ services:
 
   # 季報 (每季結束後 45 日執行)
   scraper-quarterly:
+    # IMPORTANT:
+    # - No code volume mount for /app (scraper code is baked into image).
+    # - Any code change under scraper/ requires: docker compose build scraper-quarterly
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
-      - ./common:/app/common
-      - ./scraper:/app/scraper
       - ./active_stocks.txt:/app/active_stocks.txt:ro
     command: python scraper/scraper_quarterly.py
     environment:
       - OUTPUT_DIR=/app/data
       - TZ=Asia/Taipei
 
-  # ============================================
-  # Scanner - 爆量翻多掃描器
-  # ============================================
-  scanner:
-    build:
-      context: ./scanner
-      dockerfile: Dockerfile
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=user
-      - DB_PASSWORD=password
-      - DB_NAME=stock_db
-      - TZ=Asia/Taipei
 
   # ============================================
   # Processor & Importer
@@ -191,7 +180,6 @@ services:
     volumes:
       - ./backend:/app
       - ./strategy:/app/strategy
-      - ./scanner:/app/scanner
       - ./analysis:/app/analysis
       - ./common:/app/common
 
