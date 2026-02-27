@@ -26,24 +26,133 @@ def get_db_url() -> str:
 
 def normalize_month(month: str) -> str:
     m = str(month).zfill(2)
-    if m not in {"11", "12", "01"}:
-        raise ValueError("--month 目前僅支援 11/12/01")
+    if m < "01" or m > "12":
+        raise ValueError("--month 必須是 01~12")
     return m
+
+
+def month_shift(year: int, month: int, delta: int) -> tuple[int, int]:
+    total = year * 12 + (month - 1) + delta
+    return total // 12, (total % 12) + 1
+
+
+def month_token(year: int, month: int) -> str:
+    return f"{year}M{month:02d}"
+
+
+def feature_months_for_calendar_month(month: str) -> list[int]:
+    if month == "01":
+        return [11, 12]
+    if month == "12":
+        return [10, 11]
+    if month in {"02", "03"}:
+        return []
+    return [int(month) - 1]
+
+
+def build_quarter_context(execution_year: int, month: str) -> dict:
+    if month in {"02", "03"}:
+        raise ValueError(f"{month} 月暫不訓練")
+
+    if month == "01":
+        target_year = execution_year - 1
+        regime = "q4"
+    elif month in {"11", "12"}:
+        target_year = execution_year
+        regime = "q4"
+    elif month in {"08", "09", "10"}:
+        target_year = execution_year
+        regime = "q3"
+    elif month in {"05", "06", "07"}:
+        target_year = execution_year
+        regime = "q2"
+    elif month == "04":
+        target_year = execution_year
+        regime = "q1"
+    else:
+        raise ValueError(f"Unsupported month: {month}")
+
+    if regime == "q4":
+        target_q = f"{target_year}Q4"
+        anchor_q = f"{target_year}Q3"
+        prev_q = f"{target_year}Q2"
+        ly_target_q = f"{target_year-1}Q4"
+        ly_anchor_q = f"{target_year-1}Q3"
+    elif regime == "q3":
+        target_q = f"{target_year}Q3"
+        anchor_q = f"{target_year}Q2"
+        prev_q = f"{target_year}Q1"
+        ly_target_q = f"{target_year-1}Q3"
+        ly_anchor_q = f"{target_year-1}Q2"
+    elif regime == "q2":
+        target_q = f"{target_year}Q2"
+        anchor_q = f"{target_year}Q1"
+        prev_q = f"{target_year-1}Q4"
+        ly_target_q = f"{target_year-1}Q2"
+        ly_anchor_q = f"{target_year-1}Q1"
+    else:
+        target_q = f"{target_year}Q1"
+        anchor_q = f"{target_year-1}Q4"
+        prev_q = f"{target_year-1}Q3"
+        ly_target_q = f"{target_year-1}Q1"
+        ly_anchor_q = f"{target_year-2}Q4"
+
+    return {
+        "target_year": target_year,
+        "target_q": target_q,
+        "anchor_q": anchor_q,
+        "prev_q": prev_q,
+        "ly_target_q": ly_target_q,
+        "ly_anchor_q": ly_anchor_q,
+    }
+
+
+def monthly_context(execution_year: int, month: str) -> dict:
+    feature_months = feature_months_for_calendar_month(month)
+    if not feature_months:
+        raise ValueError(f"{month} 月暫不訓練")
+
+    feature_year = execution_year - 1 if month == "01" else execution_year
+    col_to_date: dict[str, str] = {}
+
+    for m in feature_months:
+        prev_y, prev_m = month_shift(feature_year, m, -1)
+        prev_col = f"rev_m{prev_m:02d}"
+        curr_col = f"rev_m{m:02d}"
+        ly_col = f"rev_m{m:02d}_ly"
+        col_to_date.setdefault(prev_col, month_token(prev_y, prev_m))
+        col_to_date.setdefault(curr_col, month_token(feature_year, m))
+        col_to_date.setdefault(ly_col, month_token(feature_year - 1, m))
+
+    month_cols = list(col_to_date.keys())
+    mr_dates = sorted(set(col_to_date.values()))
+    rename_map = {v: k for k, v in col_to_date.items()}
+    sql_exprs = [f"MAX(CASE WHEN date='{d}' THEN revenue_current END) AS {rename_map[d]}" for d in mr_dates]
+
+    return {
+        "feature_months": feature_months,
+        "month_cols": month_cols,
+        "mr_dates": mr_dates,
+        "mr_start": mr_dates[0],
+        "mr_end": mr_dates[-1],
+        "rename_map": rename_map,
+        "sql_exprs": sql_exprs,
+    }
 
 
 def model_features_for_month(month: str) -> list[str]:
     common = [
-        "anchor_eps",  # Published Q3 EPS used as anchor
-        "ly_q4_eps",  # Last-year full-year EPS (Q4)
-        "q3_yoy_eps",  # Q3 EPS year-over-year growth
-        "q3_margin",  # Q3 net income margin
-        "q3_ocf_ratio",  # Q3 operating cash flow to net income ratio
-        "q3_re_ratio",  # Q3 retained earnings to capital ratio
-        "margin_momentum",  # Q3 margin minus Q2 margin
-        "q3_roe",  # Q3 return on equity
-        "q3_debt_ratio",  # Q3 debt-to-assets ratio
-        "q3_non_op_ratio",  # Q3 non-operating income to pre-tax income ratio
-        "ly_seasonality",  # Last-year Q4/Q3 EPS seasonality ratio
+        "anchor_eps",  # Published EPS at anchor quarter
+        "ly_target_eps",  # EPS of last year's same target quarter
+        "anchor_yoy_eps",  # Anchor EPS year-over-year growth (anchor vs last-year anchor)
+        "anchor_margin",  # Anchor-quarter net income margin
+        "anchor_ocf_ratio",  # Anchor-quarter operating cash flow to net income ratio
+        "anchor_re_ratio",  # Anchor-quarter retained earnings to capital ratio
+        "margin_momentum",  # Anchor-quarter margin minus previous-quarter margin
+        "anchor_roe",  # Anchor-quarter return on equity
+        "anchor_debt_ratio",  # Anchor-quarter debt-to-assets ratio
+        "anchor_non_op_ratio",  # Anchor-quarter non-operating income to pre-tax income ratio
+        "ly_seasonality",  # Last-year target/anchor EPS seasonality ratio
         "xbrl_gross_margin_q",  # XBRL gross margin (single quarter)
         "xbrl_op_margin_q",  # XBRL operating margin (single quarter)
         "xbrl_rd_ratio_q",  # XBRL R&D expense to revenue ratio (single quarter)
@@ -54,110 +163,19 @@ def model_features_for_month(month: str) -> list[str]:
         "xbrl_capex_to_revenue_q",  # XBRL capex to revenue ratio (single quarter)
     ]
 
-    if month == "11":
-        monthly = [
-            "rev_yoy_m10_quantile",  # Industry-relative YoY revenue growth quantile at M10
-            "rev_mom_m10_m9_quantile",  # Industry-relative MoM revenue growth quantile (M10 vs M9)
-        ]
-    elif month == "12":
-        monthly = [
-            "rev_yoy_m10_quantile",  # Industry-relative YoY revenue growth quantile at M10
-            "rev_mom_m10_m9_quantile",  # Industry-relative MoM revenue growth quantile (M10 vs M9)
-            "rev_yoy_m11_quantile",  # Industry-relative YoY revenue growth quantile at M11
-            "rev_mom_m11_m10_quantile",  # Industry-relative MoM revenue growth quantile (M11 vs M10)
-        ]
-    else:  # month == "01"
-        monthly = [
-            "rev_yoy_m11_quantile",  # Industry-relative YoY revenue growth quantile at M11
-            "rev_mom_m11_m10_quantile",  # Industry-relative MoM revenue growth quantile (M11 vs M10)
-            "rev_yoy_m12_quantile",  # Industry-relative YoY revenue growth quantile at M12
-            "rev_mom_m12_m11_quantile",  # Industry-relative MoM revenue growth quantile (M12 vs M11)
-        ]
+    monthly: list[str] = []
+    for m in feature_months_for_calendar_month(month):
+        _, prev_m = month_shift(2000, m, -1)
+        monthly.append(f"rev_yoy_m{m:02d}_quantile")
+        monthly.append(f"rev_mom_m{m:02d}_m{prev_m}_quantile")
 
-    return [
-        common[0],
-        common[1],
-        common[2],
-        common[3],
-        common[4],
-        common[5],
-        *monthly,
-        *common[6:],
-    ]
-
-
-def monthly_context(year: int, month: str) -> dict:
-    if month == "11":
-        m9, m10 = f"{year}M09", f"{year}M10"
-        ly_m9, ly_m10 = f"{year-1}M09", f"{year-1}M10"
-        return {
-            "mr_dates": [m9, m10, ly_m9, ly_m10],
-            "mr_start": ly_m9,
-            "mr_end": m10,
-            "month_cols": ["rev_m9", "rev_m10", "rev_m9_ly", "rev_m10_ly"],
-            "rename_map": {m9: "rev_m9", m10: "rev_m10", ly_m9: "rev_m9_ly", ly_m10: "rev_m10_ly"},
-            "sql_exprs": [
-                f"MAX(CASE WHEN date='{m9}' THEN revenue_current END) AS rev_m9",
-                f"MAX(CASE WHEN date='{m10}' THEN revenue_current END) AS rev_m10",
-                f"MAX(CASE WHEN date='{ly_m9}' THEN revenue_current END) AS rev_m9_ly",
-                f"MAX(CASE WHEN date='{ly_m10}' THEN revenue_current END) AS rev_m10_ly",
-            ],
-            "feature_mode": "11",
-        }
-    if month == "12":
-        m9, m10, m11 = f"{year}M09", f"{year}M10", f"{year}M11"
-        ly_m10, ly_m11 = f"{year-1}M10", f"{year-1}M11"
-        return {
-            "mr_dates": [m9, m10, m11, ly_m10, ly_m11],
-            "mr_start": ly_m10,
-            "mr_end": m11,
-            "month_cols": ["rev_m9", "rev_m10", "rev_m11", "rev_m10_ly", "rev_m11_ly"],
-            "rename_map": {
-                m9: "rev_m9",
-                m10: "rev_m10",
-                m11: "rev_m11",
-                ly_m10: "rev_m10_ly",
-                ly_m11: "rev_m11_ly",
-            },
-            "sql_exprs": [
-                f"MAX(CASE WHEN date='{m9}' THEN revenue_current END) AS rev_m9",
-                f"MAX(CASE WHEN date='{m10}' THEN revenue_current END) AS rev_m10",
-                f"MAX(CASE WHEN date='{m11}' THEN revenue_current END) AS rev_m11",
-                f"MAX(CASE WHEN date='{ly_m10}' THEN revenue_current END) AS rev_m10_ly",
-                f"MAX(CASE WHEN date='{ly_m11}' THEN revenue_current END) AS rev_m11_ly",
-            ],
-            "feature_mode": "12",
-        }
-
-    m10, m11, m12 = f"{year}M10", f"{year}M11", f"{year}M12"
-    ly_m11, ly_m12 = f"{year-1}M11", f"{year-1}M12"
-    return {
-        "mr_dates": [m10, m11, m12, ly_m11, ly_m12],
-        "mr_start": ly_m11,
-        "mr_end": m12,
-        "month_cols": ["rev_m10", "rev_m11", "rev_m12", "rev_m11_ly", "rev_m12_ly"],
-        "rename_map": {
-            m10: "rev_m10",
-            m11: "rev_m11",
-            m12: "rev_m12",
-            ly_m11: "rev_m11_ly",
-            ly_m12: "rev_m12_ly",
-        },
-        "sql_exprs": [
-            f"MAX(CASE WHEN date='{m10}' THEN revenue_current END) AS rev_m10",
-            f"MAX(CASE WHEN date='{m11}' THEN revenue_current END) AS rev_m11",
-            f"MAX(CASE WHEN date='{m12}' THEN revenue_current END) AS rev_m12",
-            f"MAX(CASE WHEN date='{ly_m11}' THEN revenue_current END) AS rev_m11_ly",
-            f"MAX(CASE WHEN date='{ly_m12}' THEN revenue_current END) AS rev_m12_ly",
-        ],
-        "feature_mode": "01",
-    }
+    return [*common[:6], *monthly, *common[6:]]
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Shared prepare dataset from DB/API")
     p.add_argument("--year", type=int, required=True)
-    p.add_argument("--month", type=str, required=True, help="11/12/01")
+    p.add_argument("--month", type=str, required=True, help="01~12")
     p.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
     return p.parse_args()
 
@@ -346,15 +364,20 @@ def build_xbrl_feature_frame(
 
 
 def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.DataFrame:
-    q2, q3, q4 = f"{year}Q2", f"{year}Q3", f"{year}Q4"
-    lyq4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
+    qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
+    prev_q = qctx["prev_q"]
+    anchor_q = qctx["anchor_q"]
+    target_q = qctx["target_q"]
+    ly_target_q = qctx["ly_target_q"]
+    ly_anchor_q = qctx["ly_anchor_q"]
 
-    inc_q3 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q3, "end_date": q3, "market": market})
-    inc_q2 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q2, "end_date": q2, "market": market})
-    bs_q3 = fetch_all_rows_api(api_base, "/raw/balance-sheets", {"start_date": q3, "end_date": q3, "market": market})
-    cf_q3 = fetch_all_rows_api(api_base, "/raw/cash-flows", {"start_date": q3, "end_date": q3, "market": market})
-    qr = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": lyq3, "end_date": q4, "market": market})
+    inc_q3 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
+    inc_q2 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": prev_q, "end_date": prev_q, "market": market})
+    bs_q3 = fetch_all_rows_api(api_base, "/raw/balance-sheets", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
+    cf_q3 = fetch_all_rows_api(api_base, "/raw/cash-flows", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
+    eps_dates = sorted({target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q})
+    qr = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": eps_dates[0], "end_date": eps_dates[-1], "market": market})
     mr = fetch_all_rows_api(api_base, "/raw/monthly-revenue", {"start_date": mctx["mr_start"], "end_date": mctx["mr_end"]})
 
     if inc_q3.empty:
@@ -369,19 +392,41 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
         )
     if not cf_q3.empty:
         q3_data = q3_data.merge(cf_q3[["symbol", "date", "cash_flow_operating_q"]], on=["symbol", "date"], how="left")
-    q3_data = q3_data.rename(columns={"revenue_q": "q3_rev", "net_income_q": "q3_ni", "share_capital": "capital", "retained_earnings": "q3_retained_earnings", "cash_flow_operating_q": "q3_ocf"})
-    q3_data["q3_margin"] = safe_col(q3_data, "q3_ni") / safe_col(q3_data, "q3_rev").replace(0, np.nan)
-    q3_data["q3_non_op_ratio"] = safe_col(q3_data, "non_operating_income_q") / safe_col(q3_data, "pretax_income_q").replace(0, np.nan)
-    q3_data["q3_roe"] = safe_col(q3_data, "q3_ni") / safe_col(q3_data, "total_equity").replace(0, np.nan)
-    q3_data["q3_debt_ratio"] = safe_col(q3_data, "total_liabilities") / safe_col(q3_data, "total_assets").replace(0, np.nan)
-    q3_data = q3_data[["symbol", "name", "q3_rev", "q3_ni", "q3_margin", "q3_non_op_ratio", "q3_roe", "q3_debt_ratio", "capital", "q3_retained_earnings", "q3_ocf"]]
+    q3_data = q3_data.rename(
+        columns={
+            "revenue_q": "anchor_rev",
+            "net_income_q": "anchor_ni",
+            "share_capital": "capital",
+            "retained_earnings": "anchor_retained_earnings",
+            "cash_flow_operating_q": "anchor_ocf",
+        }
+    )
+    q3_data["anchor_margin"] = safe_col(q3_data, "anchor_ni") / safe_col(q3_data, "anchor_rev").replace(0, np.nan)
+    q3_data["anchor_non_op_ratio"] = safe_col(q3_data, "non_operating_income_q") / safe_col(q3_data, "pretax_income_q").replace(0, np.nan)
+    q3_data["anchor_roe"] = safe_col(q3_data, "anchor_ni") / safe_col(q3_data, "total_equity").replace(0, np.nan)
+    q3_data["anchor_debt_ratio"] = safe_col(q3_data, "total_liabilities") / safe_col(q3_data, "total_assets").replace(0, np.nan)
+    q3_data = q3_data[
+        [
+            "symbol",
+            "name",
+            "anchor_rev",
+            "anchor_ni",
+            "anchor_margin",
+            "anchor_non_op_ratio",
+            "anchor_roe",
+            "anchor_debt_ratio",
+            "capital",
+            "anchor_retained_earnings",
+            "anchor_ocf",
+        ]
+    ]
 
-    q2_data = pd.DataFrame(columns=["symbol", "q2_margin", "q2_rev", "q2_ni"])
+    q2_data = pd.DataFrame(columns=["symbol", "prev_margin", "prev_rev", "prev_ni"])
     if not inc_q2.empty:
         q2_data = inc_q2[["symbol", "revenue_q", "net_income_q"]].copy()
-        q2_data = q2_data.rename(columns={"revenue_q": "q2_rev", "net_income_q": "q2_ni"})
-        q2_data["q2_margin"] = safe_div_positive(q2_data["q2_ni"], q2_data["q2_rev"])
-        q2_data = q2_data[["symbol", "q2_margin", "q2_rev", "q2_ni"]]
+        q2_data = q2_data.rename(columns={"revenue_q": "prev_rev", "net_income_q": "prev_ni"})
+        q2_data["prev_margin"] = safe_div_positive(q2_data["prev_ni"], q2_data["prev_rev"])
+        q2_data = q2_data[["symbol", "prev_margin", "prev_rev", "prev_ni"]]
 
     this_monthly = pd.DataFrame(columns=["symbol"] + mctx["month_cols"])
     if not mr.empty:
@@ -396,15 +441,23 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
                     this_monthly[c] = np.nan
             this_monthly = this_monthly[["symbol"] + mctx["month_cols"]]
 
-    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"])
+    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"])
     if not qr.empty:
-        qr2 = qr[qr["date"].isin([q4, lyq4, lyq3, q2, q3])].copy()
+        qr2 = qr[qr["date"].isin([target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
-        eps_hist = p.rename(columns={q4: "target_eps", lyq4: "ly_q4_eps", lyq3: "ly_q3_eps", q2: "q2_eps", q3: "q3_eps"})
-        for c in ["target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"]:
+        eps_hist = p.rename(
+            columns={
+                target_q: "target_eps",
+                ly_target_q: "ly_target_eps",
+                ly_anchor_q: "ly_anchor_eps",
+                prev_q: "prev_eps",
+                anchor_q: "anchor_eps",
+            }
+        )
+        for c in ["target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
-        eps_hist = eps_hist[["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"]]
+        eps_hist = eps_hist[["symbol", "target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"]]
 
     out = q3_data.merge(q2_data, on="symbol", how="left")
     out = out.merge(this_monthly, on="symbol", how="inner")
@@ -412,44 +465,48 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
 
     symbol_universe = set(out["symbol"].astype(str).unique())
     try:
-        inc_xbrl = fetch_all_rows_api(api_base, "/raw/income-statements-xbrl", {"start_date": q2, "end_date": q3})
-        bs_xbrl = fetch_all_rows_api(api_base, "/raw/balance-sheets-xbrl", {"start_date": q3, "end_date": q3})
-        cf_xbrl = fetch_all_rows_api(api_base, "/raw/cash-flows-xbrl", {"start_date": q2, "end_date": q3})
-        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=q2, q3=q3, symbols=symbol_universe)
+        inc_xbrl = fetch_all_rows_api(api_base, "/raw/income-statements-xbrl", {"start_date": prev_q, "end_date": anchor_q})
+        bs_xbrl = fetch_all_rows_api(api_base, "/raw/balance-sheets-xbrl", {"start_date": anchor_q, "end_date": anchor_q})
+        cf_xbrl = fetch_all_rows_api(api_base, "/raw/cash-flows-xbrl", {"start_date": prev_q, "end_date": anchor_q})
+        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe)
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:
         print(f"[WARN] skip XBRL feature merge (api) year={year} market={market}: {e}")
 
-    out["year"] = year
+    out["year"] = qctx["target_year"]
     return out
 
 
 def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
-    q2, q3, q4 = f"{year}Q2", f"{year}Q3", f"{year}Q4"
-    lyq4, lyq3 = f"{year-1}Q4", f"{year-1}Q3"
+    qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
+    prev_q = qctx["prev_q"]
+    anchor_q = qctx["anchor_q"]
+    target_q = qctx["target_q"]
+    ly_target_q = qctx["ly_target_q"]
+    ly_anchor_q = qctx["ly_anchor_q"]
 
     sql = f"""
     WITH q3_data AS (
-      SELECT i.symbol, i.name, i.revenue_q AS q3_rev, i.net_income_q AS q3_ni,
-             i.net_income_q/NULLIF(i.revenue_q,0) AS q3_margin,
-             i.non_operating_income_q/NULLIF(i.pretax_income_q,0) AS q3_non_op_ratio,
-             i.net_income_q/NULLIF(b.total_equity,0) AS q3_roe,
-             b.total_liabilities/NULLIF(b.total_assets,0) AS q3_debt_ratio,
-             b.share_capital AS capital, b.retained_earnings AS q3_retained_earnings,
-             c.cash_flow_operating_q AS q3_ocf
+      SELECT i.symbol, i.name, i.revenue_q AS anchor_rev, i.net_income_q AS anchor_ni,
+             i.net_income_q/NULLIF(i.revenue_q,0) AS anchor_margin,
+             i.non_operating_income_q/NULLIF(i.pretax_income_q,0) AS anchor_non_op_ratio,
+             i.net_income_q/NULLIF(b.total_equity,0) AS anchor_roe,
+             b.total_liabilities/NULLIF(b.total_assets,0) AS anchor_debt_ratio,
+             b.share_capital AS capital, b.retained_earnings AS anchor_retained_earnings,
+             c.cash_flow_operating_q AS anchor_ocf
       FROM income_statement i
       JOIN balance_sheet b ON i.symbol=b.symbol AND i.date=b.date
       JOIN cash_flow c ON i.symbol=c.symbol AND i.date=c.date
-      WHERE i.date='{q3}' AND i.market='{market}'
+      WHERE i.date='{anchor_q}' AND i.market='{market}'
     ),
     q2_data AS (
       SELECT
         symbol,
-        revenue_q AS q2_rev,
-        net_income_q AS q2_ni,
-        CASE WHEN revenue_q > 0 THEN net_income_q/revenue_q END AS q2_margin
-      FROM income_statement WHERE date='{q2}' AND market='{market}'
+        revenue_q AS prev_rev,
+        net_income_q AS prev_ni,
+        CASE WHEN revenue_q > 0 THEN net_income_q/revenue_q END AS prev_margin
+      FROM income_statement WHERE date='{prev_q}' AND market='{market}'
     ),
     this_monthly AS (
       SELECT symbol,
@@ -460,15 +517,15 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     ),
     eps_hist AS (
       SELECT qr.symbol, qr.eps_q AS target_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq4}' AND market='{market}') AS ly_q4_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq3}' AND market='{market}') AS ly_q3_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q2}' AND market='{market}') AS q2_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q3}' AND market='{market}') AS q3_eps
-      FROM quarterly_reports qr WHERE qr.date='{q4}' AND qr.market='{market}'
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{ly_target_q}' AND market='{market}') AS ly_target_eps,
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{ly_anchor_q}' AND market='{market}') AS ly_anchor_eps,
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{prev_q}' AND market='{market}') AS prev_eps,
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}') AS anchor_eps
+      FROM quarterly_reports qr WHERE qr.date='{target_q}' AND qr.market='{market}'
     )
-    SELECT {year} AS year, q3.*, q2.q2_margin, q2.q2_rev, q2.q2_ni,
+    SELECT {qctx['target_year']} AS year, q3.*, q2.prev_margin, q2.prev_rev, q2.prev_ni,
            {','.join([f'm.{c}' for c in mctx['month_cols']])},
-           e.target_eps,e.ly_q4_eps,e.ly_q3_eps,e.q2_eps,e.q3_eps
+           e.target_eps,e.ly_target_eps,e.ly_anchor_eps,e.prev_eps,e.anchor_eps
     FROM q3_data q3
     LEFT JOIN q2_data q2 ON q3.symbol=q2.symbol
     JOIN this_monthly m ON q3.symbol=m.symbol
@@ -481,7 +538,7 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
         inc_xbrl = pd.read_sql(
             f"""
             SELECT * FROM income_statement_xbrl
-            WHERE date IN ('{q2}','{q3}')
+            WHERE date IN ('{prev_q}','{anchor_q}')
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -489,7 +546,7 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
         bs_xbrl = pd.read_sql(
             f"""
             SELECT * FROM balance_sheet_xbrl
-            WHERE date = '{q3}'
+            WHERE date = '{anchor_q}'
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -497,12 +554,12 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
         cf_xbrl = pd.read_sql(
             f"""
             SELECT * FROM cash_flow_xbrl
-            WHERE date IN ('{q2}','{q3}')
+            WHERE date IN ('{prev_q}','{anchor_q}')
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
         )
-        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=q2, q3=q3, symbols=symbol_universe)
+        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe)
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:
         print(f"[WARN] skip XBRL feature merge (db) year={year} market={market}: {e}")
@@ -511,47 +568,28 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
 
 
 def add_month_features(df: pd.DataFrame, month: str) -> None:
-    if month == "11":
-        df["rev_yoy_m10"] = safe_div_positive(df["rev_m10"], df["rev_m10_ly"]) - 1
-        df["rev_mom_m10_m9"] = safe_div_positive(df["rev_m10"], df["rev_m9"]) - 1
-        add_industry_zscore(df, "rev_yoy_m10", "rev_yoy_m10_z")
-        add_industry_zscore(df, "rev_mom_m10_m9", "rev_mom_m10_m9_z")
-        add_cross_section_quantile(df, "rev_yoy_m10_z", "rev_yoy_m10_quantile")
-        add_cross_section_quantile(df, "rev_mom_m10_m9_z", "rev_mom_m10_m9_quantile")
-        return
+    for m in feature_months_for_calendar_month(month):
+        _, prev_m = month_shift(2000, m, -1)
+        yoy_raw = f"rev_yoy_m{m:02d}"
+        mom_raw = f"rev_mom_m{m:02d}_m{prev_m}"
+        yoy_z = f"{yoy_raw}_z"
+        mom_z = f"{mom_raw}_z"
+        yoy_q = f"{yoy_raw}_quantile"
+        mom_q = f"{mom_raw}_quantile"
 
-    if month == "12":
-        df["rev_yoy_m10"] = safe_div_positive(df["rev_m10"], df["rev_m10_ly"]) - 1
-        df["rev_mom_m10_m9"] = safe_div_positive(df["rev_m10"], df["rev_m9"]) - 1
-        df["rev_yoy_m11"] = safe_div_positive(df["rev_m11"], df["rev_m11_ly"]) - 1
-        df["rev_mom_m11_m10"] = safe_div_positive(df["rev_m11"], df["rev_m10"]) - 1
-        add_industry_zscore(df, "rev_yoy_m10", "rev_yoy_m10_z")
-        add_industry_zscore(df, "rev_mom_m10_m9", "rev_mom_m10_m9_z")
-        add_industry_zscore(df, "rev_yoy_m11", "rev_yoy_m11_z")
-        add_industry_zscore(df, "rev_mom_m11_m10", "rev_mom_m11_m10_z")
-        add_cross_section_quantile(df, "rev_yoy_m10_z", "rev_yoy_m10_quantile")
-        add_cross_section_quantile(df, "rev_mom_m10_m9_z", "rev_mom_m10_m9_quantile")
-        add_cross_section_quantile(df, "rev_yoy_m11_z", "rev_yoy_m11_quantile")
-        add_cross_section_quantile(df, "rev_mom_m11_m10_z", "rev_mom_m11_m10_quantile")
-        return
-
-    df["rev_yoy_m11"] = safe_div_positive(df["rev_m11"], df["rev_m11_ly"]) - 1
-    df["rev_mom_m11_m10"] = safe_div_positive(df["rev_m11"], df["rev_m10"]) - 1
-    df["rev_yoy_m12"] = safe_div_positive(df["rev_m12"], df["rev_m12_ly"]) - 1
-    df["rev_mom_m12_m11"] = safe_div_positive(df["rev_m12"], df["rev_m11"]) - 1
-    add_industry_zscore(df, "rev_yoy_m11", "rev_yoy_m11_z")
-    add_industry_zscore(df, "rev_mom_m11_m10", "rev_mom_m11_m10_z")
-    add_industry_zscore(df, "rev_yoy_m12", "rev_yoy_m12_z")
-    add_industry_zscore(df, "rev_mom_m12_m11", "rev_mom_m12_m11_z")
-    add_cross_section_quantile(df, "rev_yoy_m11_z", "rev_yoy_m11_quantile")
-    add_cross_section_quantile(df, "rev_mom_m11_m10_z", "rev_mom_m11_m10_quantile")
-    add_cross_section_quantile(df, "rev_yoy_m12_z", "rev_yoy_m12_quantile")
-    add_cross_section_quantile(df, "rev_mom_m12_m11_z", "rev_mom_m12_m11_quantile")
+        df[yoy_raw] = safe_div_positive(df[f"rev_m{m:02d}"], df[f"rev_m{m:02d}_ly"]) - 1
+        df[mom_raw] = safe_div_positive(df[f"rev_m{m:02d}"], df[f"rev_m{prev_m:02d}"]) - 1
+        add_industry_zscore(df, yoy_raw, yoy_z)
+        add_industry_zscore(df, mom_raw, mom_z)
+        add_cross_section_quantile(df, yoy_z, yoy_q)
+        add_cross_section_quantile(df, mom_z, mom_q)
 
 
 def main() -> None:
     args = parse_args()
     month = normalize_month(args.month)
+    if month in {"02", "03"}:
+        raise RuntimeError(f"{month} 月暫不訓練")
     end_year = int(args.year)
     model_features = model_features_for_month(month)
 
@@ -609,21 +647,20 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
     df = df.replace([np.inf, -np.inf], np.nan)
 
-    df["anchor_eps"] = df["q3_eps"]
-    df["q2_margin"] = safe_div_positive(safe_col(df, "q2_ni"), safe_col(df, "q2_rev"))
-    df["q3_margin"] = safe_div_positive(df["q3_ni"], df["q3_rev"])
-    df["q3_ocf_ratio"] = safe_div_positive(df["q3_ocf"], df["q3_ni"]).clip(-5, 5)
-    df["q3_re_ratio"] = safe_div_positive(df["q3_retained_earnings"], df["capital"])
-    df["margin_momentum"] = df["q3_margin"] - df["q2_margin"]
+    df["prev_margin"] = safe_div_positive(safe_col(df, "prev_ni"), safe_col(df, "prev_rev"))
+    df["anchor_margin"] = safe_div_positive(df["anchor_ni"], df["anchor_rev"])
+    df["anchor_ocf_ratio"] = safe_div_positive(df["anchor_ocf"], df["anchor_ni"]).clip(-5, 5)
+    df["anchor_re_ratio"] = safe_div_positive(df["anchor_retained_earnings"], df["capital"])
+    df["margin_momentum"] = df["anchor_margin"] - df["prev_margin"]
 
     add_month_features(df, month)
 
-    df["ly_seasonality"] = safe_div_positive(df["ly_q4_eps"], df["ly_q3_eps"]).clip(-5, 5)
-    df["q3_yoy_eps"] = (safe_div_positive(df["q3_eps"], df["ly_q3_eps"]) - 1).clip(-5, 5)
+    df["ly_seasonality"] = safe_div_positive(df["ly_target_eps"], df["ly_anchor_eps"]).clip(-5, 5)
+    df["anchor_yoy_eps"] = (safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1).clip(-5, 5)
     df[TARGET_DELTA] = df[TARGET] - df["anchor_eps"]
 
     rows_before_filter = len(df)
-    ttm_eps_proxy = safe_col(df, "ly_q4_eps").fillna(0) + safe_col(df, "q2_eps").fillna(0) + safe_col(df, "q3_eps").fillna(0)
+    ttm_eps_proxy = safe_col(df, "ly_target_eps").fillna(0) + safe_col(df, "prev_eps").fillna(0) + safe_col(df, "anchor_eps").fillna(0)
     ttm_ok = ttm_eps_proxy >= float(MIN_TTM_EPS)
     df = df[ttm_ok].copy()
     rows_after_filter = len(df)

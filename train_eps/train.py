@@ -1,6 +1,7 @@
 ﻿import argparse
 import json
 import pickle
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -17,23 +18,17 @@ EXCLUDE_COLUMNS = {"year", TARGET, TARGET_DELTA}
 BASE_DIR = Path(__file__).resolve().parent
 
 FEATURE_CHT_MAP = {
-    "anchor_eps": "錨點每股盈餘（Q3）",
-    "ly_q4_eps": "去年Q4每股盈餘",
-    "q3_yoy_eps": "Q3每股盈餘年增率",
-    "q3_margin": "Q3淨利率",
-    "q3_ocf_ratio": "Q3營業現金流對淨利比",
-    "q3_re_ratio": "Q3保留盈餘對資本比",
-    "rev_yoy_m10_quantile": "10月營收年增分位數",
-    "rev_mom_m10_m9_quantile": "10月相對9月營收月增分位數",
-    "rev_yoy_m11_quantile": "11月營收年增分位數",
-    "rev_mom_m11_m10_quantile": "11月相對10月營收月增分位數",
-    "rev_yoy_m12_quantile": "12月營收年增分位數",
-    "rev_mom_m12_m11_quantile": "12月相對11月營收月增分位數",
-    "margin_momentum": "毛利動能（Q3-Q2）",
-    "q3_roe": "Q3股東權益報酬率",
-    "q3_debt_ratio": "Q3負債比率",
-    "q3_non_op_ratio": "Q3業外損益占稅前淨利比",
-    "ly_seasonality": "去年季節性（Q4/Q3 EPS）",
+    "anchor_eps": "錨點季度每股盈餘",
+    "ly_target_eps": "去年同目標季度每股盈餘",
+    "anchor_yoy_eps": "錨點季度每股盈餘年增率",
+    "anchor_margin": "錨點季度淨利率",
+    "anchor_ocf_ratio": "錨點季度營業現金流對淨利比",
+    "anchor_re_ratio": "錨點季度保留盈餘對資本比",
+    "margin_momentum": "毛利動能（錨點季度-前一季度）",
+    "anchor_roe": "錨點季度股東權益報酬率",
+    "anchor_debt_ratio": "錨點季度負債比率",
+    "anchor_non_op_ratio": "錨點季度業外損益占稅前淨利比",
+    "ly_seasonality": "去年季節性（目標季度/錨點季度 EPS）",
     "xbrl_gross_margin_q": "XBRL單季毛利率",
     "xbrl_op_margin_q": "XBRL單季營業利益率",
     "xbrl_rd_ratio_q": "XBRL單季研發費用率",
@@ -43,6 +38,18 @@ FEATURE_CHT_MAP = {
     "xbrl_cfo_to_ni_q": "XBRL單季營運現金流對淨利比",
     "xbrl_capex_to_revenue_q": "XBRL單季資本支出對營收比",
 }
+
+
+def feature_cht_name(feature: str) -> str | None:
+    if feature in FEATURE_CHT_MAP:
+        return FEATURE_CHT_MAP[feature]
+    m = re.fullmatch(r"rev_yoy_m(\d{2})_quantile", feature)
+    if m:
+        return f"{int(m.group(1))}月營收年增分位數"
+    m = re.fullmatch(r"rev_mom_m(\d{2})_m(\d{1,2})_quantile", feature)
+    if m:
+        return f"{int(m.group(1))}月相對{int(m.group(2))}月營收月增分位數"
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -155,10 +162,10 @@ def main() -> None:
     }
 
     importance_df = pd.DataFrame({"feature": use_features, "importance": model.feature_importances_})
-    missing_cht = sorted(set(importance_df["feature"]) - set(FEATURE_CHT_MAP))
+    importance_df["feature_cht"] = importance_df["feature"].map(feature_cht_name)
+    missing_cht = sorted(importance_df.loc[importance_df["feature_cht"].isna(), "feature"].tolist())
     if missing_cht:
         raise ValueError(f"Missing Chinese label for features: {missing_cht}")
-    importance_df["feature_cht"] = importance_df["feature"].map(FEATURE_CHT_MAP)
     importance_df = importance_df.sort_values("importance", ascending=False)
 
     model_out.parent.mkdir(parents=True, exist_ok=True)
