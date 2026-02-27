@@ -1,4 +1,4 @@
-from import_common import import_xbrl_period_category
+from import_common import import_xbrl_codebook, import_xbrl_period_category
 
 
 XBRL_CATEGORIES = {
@@ -16,7 +16,7 @@ def run(engine, config, import_category=None):
     if import_category and import_category not in supported_categories:
         return False
 
-    imported_any = False
+    imported_any = import_xbrl_codebook(engine)
     for category, file_period_types in XBRL_CATEGORIES.items():
         if import_category and import_category != category:
             continue

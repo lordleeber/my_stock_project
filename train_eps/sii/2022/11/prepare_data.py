@@ -14,28 +14,28 @@ from sqlalchemy import create_engine, text
 # - Predict full-year EPS for `year`; the target quarter key is `f"{year}Q4"`.
 # - Example: predicting 2024 full-year EPS uses `year=2024`.
 MODEL_FEATURES = [
-    "anchor_eps",
-    "ly_q4_eps",
-    "q3_yoy_eps",
-    "q3_margin",
-    "q3_ocf_ratio",
-    "q3_re_ratio",
-    "rev_yoy_m10_quantile",
-    "rev_mom_m10_m9_quantile",
-    "margin_momentum",
-    "q3_roe",
-    "q3_debt_ratio",
-    "q3_non_op_ratio",
-    "ly_seasonality",
+    "anchor_eps",  # Published Q3 EPS used as anchor
+    "ly_q4_eps",  # Last-year full-year EPS (Q4)
+    "q3_yoy_eps",  # Q3 EPS year-over-year growth
+    "q3_margin",  # Q3 net income margin
+    "q3_ocf_ratio",  # Q3 operating cash flow to net income ratio
+    "q3_re_ratio",  # Q3 retained earnings to capital ratio
+    "rev_yoy_m10_quantile",  # Industry-relative YoY revenue growth quantile at M10
+    "rev_mom_m10_m9_quantile",  # Industry-relative MoM revenue growth quantile (M10 vs M9)
+    "margin_momentum",  # Q3 margin minus Q2 margin
+    "q3_roe",  # Q3 return on equity
+    "q3_debt_ratio",  # Q3 debt-to-assets ratio
+    "q3_non_op_ratio",  # Q3 non-operating income to pre-tax income ratio
+    "ly_seasonality",  # Last-year Q4/Q3 EPS seasonality ratio
     # XBRL-enriched features (Q3 snapshot for November prediction)
-    "xbrl_gross_margin_q",
-    "xbrl_op_margin_q",
-    "xbrl_rd_ratio_q",
-    "xbrl_tax_rate_q",
-    "xbrl_current_ratio",
-    "xbrl_cash_to_assets",
-    "xbrl_cfo_to_ni_q",
-    "xbrl_capex_to_revenue_q",
+    "xbrl_gross_margin_q",  # XBRL gross margin (single quarter)
+    "xbrl_op_margin_q",  # XBRL operating margin (single quarter)
+    "xbrl_rd_ratio_q",  # XBRL R&D expense to revenue ratio (single quarter)
+    "xbrl_tax_rate_q",  # XBRL effective tax rate (single quarter)
+    "xbrl_current_ratio",  # XBRL current ratio
+    "xbrl_cash_to_assets",  # XBRL cash to total assets ratio
+    "xbrl_cfo_to_ni_q",  # XBRL operating cash flow to net income ratio (single quarter)
+    "xbrl_capex_to_revenue_q",  # XBRL capex to revenue ratio (single quarter)
 ]
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -47,23 +47,31 @@ EVALUATE_COLUMNS = CONTEXT_COLUMNS + ["year"] + MODEL_FEATURES + [TARGET, TARGET
 
 DEFAULT_OUTPUT_TRAIN = Path(__file__).resolve().parent / "dataset_train.csv"
 DEFAULT_OUTPUT_EVALUATE = Path(__file__).resolve().parent / "dataset_evaluate.csv"
+MIN_TTM_EPS = 1.0
+API_BASE = os.getenv("BACKEND_API_BASE", "http://100.103.191.79:8000")
+MARKETS = ("sii", "otc")
+START_YEAR = 2020
+APPLY_TRADING_FILTER = True
+
+
+def infer_end_year_from_path() -> int:
+    year_text = Path(__file__).resolve().parent.parent.name
+    try:
+        return int(year_text)
+    except ValueError as exc:
+        raise ValueError(f"Unable to infer end year from script path: {year_text}") from exc
+
+
+END_YEAR = infer_end_year_from_path()
 
 
 def get_db_url() -> str:
-    return f"postgresql://{os.getenv('DB_USER','user')}:{os.getenv('DB_PASSWORD','password')}@{os.getenv('DB_HOST','db')}:{os.getenv('DB_PORT','5432')}/{os.getenv('DB_NAME','stock_db')}"
+    return "postgresql://user:password@localhost:5432/stock_db"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Prepare v10_t4 dataset (November view) from DB/API.")
-    p.add_argument("--start-year", type=int, default=2020)
-    p.add_argument("--end-year", type=int, default=2024)
-    p.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
+    p = argparse.ArgumentParser(description="Prepare dataset (November view) from DB/API.")
     p.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
-    p.add_argument("--api-base", type=str, default=os.getenv("BACKEND_API_BASE", "http://100.103.191.79:8000"))
-    p.add_argument("--apply-trading-filter", action="store_true")
-    p.add_argument("--min-ttm-eps", type=float, default=2.0)
-    p.add_argument("--output-train", type=Path, default=DEFAULT_OUTPUT_TRAIN)
-    p.add_argument("--output-evaluate", type=Path, default=DEFAULT_OUTPUT_EVALUATE)
     return p.parse_args()
 
 
@@ -111,7 +119,9 @@ def fetch_all_rows_api(api_base: str, path: str, params: dict, limit: int = 5000
 
 
 def safe_col(df: pd.DataFrame, col: str) -> pd.Series:
-    return df[col] if col in df.columns else pd.Series([np.nan] * len(df), index=df.index)
+    if col not in df.columns:
+        raise KeyError(f"Required column missing: {col}")
+    return df[col]
 
 
 def safe_div_positive(numer: pd.Series, denom: pd.Series) -> pd.Series:
@@ -254,8 +264,6 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     
     m9, m10 = f"{year}M09", f"{year}M10"
     ly_m9, ly_m10 = f"{year-1}M09", f"{year-1}M10"
-    
-    cutoff = f"{year}-11-15"
 
     inc_q3 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q3, "end_date": q3, "market": market})
     inc_q2 = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": q2, "end_date": q2, "market": market})
@@ -278,12 +286,11 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
     if not cf_q3.empty:
         q3_data = q3_data.merge(cf_q3[["symbol", "date", "cash_flow_operating_q"]], on=["symbol", "date"], how="left")
     q3_data = q3_data.rename(columns={"revenue_q": "q3_rev", "net_income_q": "q3_ni", "share_capital": "capital", "retained_earnings": "q3_retained_earnings", "cash_flow_operating_q": "q3_ocf"})
-    q3_data["q3_eps"] = safe_col(q3_data, "eps_q")
     q3_data["q3_margin"] = safe_col(q3_data, "q3_ni") / safe_col(q3_data, "q3_rev").replace(0, np.nan)
     q3_data["q3_non_op_ratio"] = safe_col(q3_data, "non_operating_income_q") / safe_col(q3_data, "pretax_income_q").replace(0, np.nan)
     q3_data["q3_roe"] = safe_col(q3_data, "q3_ni") / safe_col(q3_data, "total_equity").replace(0, np.nan)
     q3_data["q3_debt_ratio"] = safe_col(q3_data, "total_liabilities") / safe_col(q3_data, "total_assets").replace(0, np.nan)
-    q3_data = q3_data[["symbol", "name", "q3_rev", "q3_ni", "q3_eps", "q3_margin", "q3_non_op_ratio", "q3_roe", "q3_debt_ratio", "capital", "q3_retained_earnings", "q3_ocf"]]
+    q3_data = q3_data[["symbol", "name", "q3_rev", "q3_ni", "q3_margin", "q3_non_op_ratio", "q3_roe", "q3_debt_ratio", "capital", "q3_retained_earnings", "q3_ocf"]]
 
     q2_data = pd.DataFrame(columns=["symbol", "q2_margin", "q2_rev", "q2_ni"])
     if not inc_q2.empty:
@@ -305,15 +312,15 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
                     this_monthly[c] = np.nan
             this_monthly = this_monthly[["symbol", "rev_m9", "rev_m10", "rev_m9_ly", "rev_m10_ly"]]
 
-    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps_official"])
+    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"])
     if not qr.empty:
         qr2 = qr[qr["date"].isin([q4, lyq4, lyq3, q2, q3])].copy()
         p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
-        eps_hist = p.rename(columns={q4: "target_eps", lyq4: "ly_q4_eps", lyq3: "ly_q3_eps", q2: "q2_eps", q3: "q3_eps_official"})
-        for c in ["target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps_official"]:
+        eps_hist = p.rename(columns={q4: "target_eps", lyq4: "ly_q4_eps", lyq3: "ly_q3_eps", q2: "q2_eps", q3: "q3_eps"})
+        for c in ["target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
-        eps_hist = eps_hist[["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps_official"]]
+        eps_hist = eps_hist[["symbol", "target_eps", "ly_q4_eps", "ly_q3_eps", "q2_eps", "q3_eps"]]
 
     out = q3_data.merge(q2_data, on="symbol", how="left")
     out = out.merge(this_monthly, on="symbol", how="inner")
@@ -350,7 +357,6 @@ def fetch_one_year_api(api_base: str, year: int, market: str) -> pd.DataFrame:
         print(f"[WARN] skip XBRL feature merge (api) year={year} market={market}: {e}")
 
     out["year"] = year
-    out["feature_cutoff_date"] = cutoff
     return out
 
 
@@ -361,11 +367,9 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
     m9, m10 = f"{year}M09", f"{year}M10"
     ly_m9, ly_m10 = f"{year-1}M09", f"{year-1}M10"
     
-    cutoff = f"{year}-11-15"
-
     sql = f"""
     WITH q3_data AS (
-      SELECT i.symbol, i.name, i.revenue_q AS q3_rev, i.net_income_q AS q3_ni, i.eps_q AS q3_eps,
+      SELECT i.symbol, i.name, i.revenue_q AS q3_rev, i.net_income_q AS q3_ni,
              i.net_income_q/NULLIF(i.revenue_q,0) AS q3_margin,
              i.non_operating_income_q/NULLIF(i.pretax_income_q,0) AS q3_non_op_ratio,
              i.net_income_q/NULLIF(b.total_equity,0) AS q3_roe,
@@ -400,12 +404,12 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq4}' AND market='{market}') AS ly_q4_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{lyq3}' AND market='{market}') AS ly_q3_eps,
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q2}' AND market='{market}') AS q2_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q3}' AND market='{market}') AS q3_eps_official
+             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{q3}' AND market='{market}') AS q3_eps
       FROM quarterly_reports qr WHERE qr.date='{q4}' AND qr.market='{market}'
     )
-    SELECT {year} AS year, '{cutoff}' AS feature_cutoff_date, q3.*, q2.q2_margin, q2.q2_rev, q2.q2_ni,
+    SELECT {year} AS year, q3.*, q2.q2_margin, q2.q2_rev, q2.q2_ni,
            m.rev_m9,m.rev_m10,m.rev_m9_ly,m.rev_m10_ly,
-           e.target_eps,e.ly_q4_eps,e.ly_q3_eps,e.q2_eps,e.q3_eps_official
+           e.target_eps,e.ly_q4_eps,e.ly_q3_eps,e.q2_eps,e.q3_eps
     FROM q3_data q3
     LEFT JOIN q2_data q2 ON q3.symbol=q2.symbol
     JOIN this_monthly m ON q3.symbol=m.symbol
@@ -457,9 +461,10 @@ def fetch_one_year(conn, year: int, market: str) -> pd.DataFrame:
 
 def main() -> None:
     args = parse_args()
-    if args.start_year > args.end_year:
-        raise ValueError("start-year must be <= end-year")
-    fetch_years = list(range(args.start_year, args.end_year + 1))
+    output_train = DEFAULT_OUTPUT_TRAIN
+    output_evaluate = DEFAULT_OUTPUT_EVALUATE
+    api_base = API_BASE
+    fetch_years = list(range(START_YEAR, END_YEAR + 1))
 
     frames = []
     if args.data_source == "db":
@@ -467,31 +472,41 @@ def main() -> None:
         with engine.connect() as conn:
             conn.execute(text("SET max_parallel_workers_per_gather = 0"))
             for year in fetch_years:
-                print(f"fetching v10(11) data from db: year={year}, market={args.market}")
-                y = fetch_one_year(conn, year, args.market)
-                if not y.empty:
-                    frames.append(y)
-            try:
-                industry_df = pd.read_sql(f"SELECT symbol, industry FROM stock_info WHERE market = '{args.market}'", conn)
-            except Exception:
+                for market in MARKETS:
+                    print(f"fetching data from db: year={year}, market={market}")
+                    y = fetch_one_year(conn, year, market)
+                    if not y.empty:
+                        frames.append(y)
+            industry_parts: list[pd.DataFrame] = []
+            for market in MARKETS:
+                part = pd.read_sql(f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'", conn)
+                if not part.empty:
+                    industry_parts.append(part[["symbol", "industry"]])
+            if industry_parts:
+                industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates("symbol")
+            else:
                 industry_df = pd.DataFrame(columns=["symbol", "industry"])
     else:
         for year in fetch_years:
-            print(f"fetching v10(11) data from api: year={year}, market={args.market}")
-            y = fetch_one_year_api(args.api_base, year, args.market)
-            if not y.empty:
-                frames.append(y)
-        try:
-            industry_df = fetch_all_rows_api(args.api_base, "/raw/stock-info", {"market": args.market})
-            if not industry_df.empty:
-                industry_df = industry_df[["symbol", "industry"]].drop_duplicates("symbol")
-            else:
-                industry_df = pd.DataFrame(columns=["symbol", "industry"])
-        except Exception:
+            for market in MARKETS:
+                print(f"fetching data from api: year={year}, market={market}")
+                y = fetch_one_year_api(api_base, year, market)
+                if not y.empty:
+                    frames.append(y)
+        industry_parts: list[pd.DataFrame] = []
+        for market in MARKETS:
+            part = fetch_all_rows_api(api_base, "/raw/stock-info", {"market": market})
+            if not part.empty and "symbol" in part.columns:
+                if "industry" not in part.columns:
+                    part["industry"] = np.nan
+                industry_parts.append(part[["symbol", "industry"]])
+        if industry_parts:
+            industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates("symbol")
+        else:
             industry_df = pd.DataFrame(columns=["symbol", "industry"])
 
     if not frames:
-        raise RuntimeError("No data fetched. Check data source settings, year range, and market.")
+        raise RuntimeError("No data fetched. Check data source settings and year range.")
 
     df = pd.concat(frames, ignore_index=True)
     if not industry_df.empty:
@@ -526,14 +541,14 @@ def main() -> None:
     df[TARGET_DELTA] = df[TARGET] - df["anchor_eps"]
     
     rows_before_filter = len(df)
-    if args.apply_trading_filter:
-        ttm_eps_proxy = (
-            safe_col(df, "ly_q4_eps").fillna(0)
-            + safe_col(df, "q2_eps").fillna(0)
-            + safe_col(df, "q3_eps_official").fillna(0)
-        )
-        ttm_ok = ttm_eps_proxy >= float(args.min_ttm_eps)
-        df = df[ttm_ok].copy()
+    ttm_eps_proxy = (
+        safe_col(df, "ly_q4_eps").fillna(0)
+        + safe_col(df, "q2_eps").fillna(0)
+        + safe_col(df, "q3_eps").fillna(0)
+    )
+    ttm_ok = ttm_eps_proxy >= float(MIN_TTM_EPS)
+    df = df[ttm_ok].copy()
+    rows_after_filter = len(df)
 
     labeled_mask = (
         df[TARGET].notna()
@@ -546,7 +561,7 @@ def main() -> None:
     out["year"] = out["year"].astype(int)
 
     out_labeled = out.loc[labeled_mask].copy()
-    out_labeled = out_labeled[out_labeled["year"].astype(int) <= int(args.end_year)].copy()
+    out_labeled = out_labeled[out_labeled["year"].astype(int) <= END_YEAR].copy()
 
     train_cols = [c for c in TRAIN_COLUMNS if c in out_labeled.columns]
     out_train = out_labeled[train_cols].copy()
@@ -554,21 +569,23 @@ def main() -> None:
     evaluate_labeled_cols = [c for c in EVALUATE_COLUMNS if c in out_labeled.columns]
     out_debug = out_labeled[evaluate_labeled_cols].copy()
 
-    args.output_train.parent.mkdir(parents=True, exist_ok=True)
-    out_train.to_csv(args.output_train, index=False)
-    args.output_evaluate.parent.mkdir(parents=True, exist_ok=True)
-    out_debug.to_csv(args.output_evaluate, index=False)
+    output_train.parent.mkdir(parents=True, exist_ok=True)
+    out_train.to_csv(output_train, index=False)
+    output_evaluate.parent.mkdir(parents=True, exist_ok=True)
+    out_debug.to_csv(output_evaluate, index=False)
 
-    print("v10(11) prepare_data completed")
+    print("prepare_data completed")
     print(f"- data_source: {args.data_source}")
+    print(f"- markets: {','.join(MARKETS)}")
+    print(f"- years: {START_YEAR}~{END_YEAR}")
     if args.data_source == "api":
-        print(f"- api_base: {args.api_base}")
-    print(f"- output_train: {args.output_train}")
-    print(f"- output_evaluate: {args.output_evaluate}")
-    print(f"- apply_trading_filter: {args.apply_trading_filter}")
-    if args.apply_trading_filter:
-        print(f"- min_ttm_eps: {args.min_ttm_eps}")
-        print(f"- rows_before_filter: {rows_before_filter}")
+        print(f"- api_base: {api_base}")
+    print(f"- output_train: {output_train}")
+    print(f"- output_evaluate: {output_evaluate}")
+    print(f"- apply_trading_filter: {APPLY_TRADING_FILTER}")
+    print(f"- min_ttm_eps: {MIN_TTM_EPS}")
+    print(f"- rows_before_filter: {rows_before_filter}")
+    print(f"- rows_after_filter: {rows_after_filter}")
     print(f"- rows_labeled: {len(out_debug)}")
 
 

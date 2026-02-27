@@ -135,6 +135,7 @@ The importer **no longer relies on automatic type inference**. It uses `common/s
   - `balance_sheet_xbrl`: reads `all.csv` (period type `as_of`)
   - `income_statement_xbrl`: reads `all_quarter.csv` + `all_accumulated.csv`
   - `cash_flow_xbrl`: reads `all_accumulated.csv`
+  - `xbrl_codebook`: reads `/app/data/processed/xbrl_codebook.csv`, normalized to `account_name_cht/account_name_eng`, and written to DB with `replace` mode
   - XBRL tables do **not** store `pced_file/pced_row/pced_col`.
 
 ### 6. Row Count VerificationAfter each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.

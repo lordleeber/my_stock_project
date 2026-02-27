@@ -519,8 +519,9 @@ class XbrlStatementRaw(BaseModel):
     period: Optional[str] = None
     period_type: Optional[str] = None
     account_code: Optional[str] = None
+    account_name_cht: Optional[str] = None
+    account_name_eng: Optional[str] = None
     value_text: Optional[str] = None
-    value_num: Optional[float] = None
 
 class DividendRaw(BaseModel):
     date: str
@@ -622,23 +623,173 @@ def get_raw_data(
         # 確保 symbol 是字串
         if 'symbol' in df.columns:
             df['symbol'] = df['symbol'].astype(str)
-                
-        # 終極清理：將所有 dict 中的 NaN/Inf/NA 轉為 None (JSON 友善)
-        raw_list = df.to_dict(orient="records")
-        clean_list = []
-        for row in raw_list:
-            clean_row = {}
-            for k, v in row.items():
-                # 使用 np.isfinite 處理所有 numpy/python 數值型態，並排除 NaN/Inf
-                if isinstance(v, (float, np.floating)) and not np.isfinite(v):
-                    clean_row[k] = None
-                elif pd.isna(v): # 處理 pandas.NA 或其他缺失值
-                    clean_row[k] = None
-                else:
-                    clean_row[k] = v
-            clean_list.append(clean_row)
-            
-        return clean_list
+        return _to_clean_records(df)
+
+    except Exception as e:
+        print(f"Raw Data Error ({table}): {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _to_clean_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """將 DataFrame 轉為 JSON 友善 dict list。"""
+    raw_list = df.to_dict(orient="records")
+    clean_list = []
+    for row in raw_list:
+        clean_row = {}
+        for k, v in row.items():
+            # 使用 np.isfinite 處理所有 numpy/python 數值型態，並排除 NaN/Inf
+            if isinstance(v, (float, np.floating)) and not np.isfinite(v):
+                clean_row[k] = None
+            elif pd.isna(v):  # 處理 pandas.NA 或其他缺失值
+                clean_row[k] = None
+            else:
+                clean_row[k] = v
+        clean_list.append(clean_row)
+    return clean_list
+
+
+XBRL_TABLE_TO_STATEMENT_TYPE = {
+    "income_statement_xbrl": "income_statement",
+    "balance_sheet_xbrl": "balance_sheet",
+    "cash_flow_xbrl": "cash_flow",
+}
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    return bool(
+        conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name = :table_name
+                )
+                """
+            ),
+            {"table_name": table_name},
+        ).scalar()
+    )
+
+
+def _get_table_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).scalars().all()
+    return set(rows)
+
+
+def get_raw_xbrl_data(
+    table: str,
+    start_date: str,
+    end_date: str,
+    symbol: Optional[str] = None,
+    limit: int = 1000,
+    offset: int = 0,
+):
+    """XBRL 專用查詢：補 account_name_cht/account_name_eng，並僅回傳 value_text。"""
+    try:
+        statement_type = XBRL_TABLE_TO_STATEMENT_TYPE.get(table)
+        if not statement_type:
+            raise ValueError(f"Unsupported xbrl table: {table}")
+
+        db_url = get_db_url()
+        engine = create_engine(db_url)
+
+        params = {"start": start_date, "end": end_date, "limit": limit, "offset": offset}
+        where_clauses = ["x.date >= :start", "x.date <= :end"]
+        if symbol:
+            params["symbol"] = symbol
+            where_clauses.append("x.symbol = :symbol")
+
+        with engine.connect() as conn:
+            if _table_exists(conn, "xbrl_codebook"):
+                codebook_columns = _get_table_columns(conn, "xbrl_codebook")
+                cht_expr = "cb.account_name_cht" if "account_name_cht" in codebook_columns else (
+                    "cb.account_name_zh" if "account_name_zh" in codebook_columns else "NULL"
+                )
+                eng_expr = "cb.account_name_eng" if "account_name_eng" in codebook_columns else (
+                    "cb.account_name_en" if "account_name_en" in codebook_columns else "NULL"
+                )
+                join_conditions = ["cb.account_code = x.account_code"]
+                if "statement_type" in codebook_columns:
+                    join_conditions.append("cb.statement_type = :statement_type")
+                    params["statement_type"] = statement_type
+
+                sql = text(
+                    f"""
+                    SELECT
+                        x.date,
+                        x.symbol,
+                        x.period,
+                        x.period_type,
+                        x.account_code,
+                        {cht_expr} AS account_name_cht,
+                        {eng_expr} AS account_name_eng,
+                        x.value_text
+                    FROM {table} x
+                    LEFT JOIN xbrl_codebook cb
+                        ON {' AND '.join(join_conditions)}
+                    WHERE {' AND '.join(where_clauses)}
+                    ORDER BY x.date DESC, x.symbol ASC, x.account_code ASC
+                    LIMIT :limit OFFSET :offset
+                    """
+                )
+            else:
+                sql = text(
+                    f"""
+                    SELECT
+                        x.date,
+                        x.symbol,
+                        x.period,
+                        x.period_type,
+                        x.account_code,
+                        NULL AS account_name_cht,
+                        NULL AS account_name_eng,
+                        x.value_text
+                    FROM {table} x
+                    WHERE {' AND '.join(where_clauses)}
+                    ORDER BY x.date DESC, x.symbol ASC, x.account_code ASC
+                    LIMIT :limit OFFSET :offset
+                    """
+                )
+
+            df = pd.read_sql(sql, conn, params=params)
+
+        if df.empty:
+            return []
+
+        output_cols = [
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+            "account_name_cht",
+            "account_name_eng",
+            "value_text",
+        ]
+        for col in output_cols:
+            if col not in df.columns:
+                df[col] = None
+        df = df[output_cols]
+
+        for col in output_cols:
+            if col in df.columns:
+                df[col] = df[col].where(df[col].notna(), None)
+        if "symbol" in df.columns:
+            df["symbol"] = df["symbol"].astype(str)
+
+        return _to_clean_records(df)
 
     except Exception as e:
         print(f"Raw Data Error ({table}): {e}")
@@ -978,7 +1129,7 @@ def get_raw_income_statements_xbrl(
     import re
     if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("income_statement_xbrl", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_xbrl_data("income_statement_xbrl", start_date, end_date, symbol, limit, offset)
 
 @app.get("/raw/balance-sheets-xbrl", response_model=List[XbrlStatementRaw])
 def get_raw_balance_sheets_xbrl(
@@ -991,7 +1142,7 @@ def get_raw_balance_sheets_xbrl(
     import re
     if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("balance_sheet_xbrl", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_xbrl_data("balance_sheet_xbrl", start_date, end_date, symbol, limit, offset)
 
 @app.get("/raw/cash-flows-xbrl", response_model=List[XbrlStatementRaw])
 def get_raw_cash_flows_xbrl(
@@ -1004,7 +1155,7 @@ def get_raw_cash_flows_xbrl(
     import re
     if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("cash_flow_xbrl", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_xbrl_data("cash_flow_xbrl", start_date, end_date, symbol, limit, offset)
 
 @app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
 def get_volume_spike_scanner(

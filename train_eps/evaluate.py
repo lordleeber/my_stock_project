@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
+from shared_config import load_shared_config
 from sklearn.metrics import mean_absolute_error
 
 TARGET = "target_eps"
@@ -39,41 +40,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--winsor-quantile", type=float, default=0.01)
-    parser.add_argument("--confidence-quantile", type=float, default=0.975)
-    parser.add_argument("--interval-method", type=str, choices=["quantile_model"], default="quantile_model")
-    parser.add_argument("--n-jobs", type=int, default=-1)
-    parser.add_argument("--interval-low-quantile", type=float, default=0.18)
-    parser.add_argument("--interval-high-quantile", type=float, default=0.82)
-    parser.add_argument("--target-coverage", type=float, default=None)
-    parser.add_argument("--calibration-mode", type=str, choices=["global", "latest_year", "regime", "nonlinear"], default="nonlinear")
-    parser.add_argument("--min-calib-samples", type=int, default=100)
-    parser.add_argument("--min-calib-scale", type=float, default=0.5)
-    parser.add_argument("--max-calib-scale", type=float, default=3.0)
-    parser.add_argument("--nonlinear-bins", type=int, default=8)
-    parser.add_argument("--nonlinear-min-bin-samples", type=int, default=50)
-    parser.add_argument("--eps-floor", type=float, default=0.20)
-    parser.add_argument("--n-estimators", type=int, default=800)
-    parser.add_argument("--learning-rate", type=float, default=0.03)
-    parser.add_argument("--num-leaves", type=int, default=31)
-    parser.add_argument("--subsample", type=float, default=0.8)
-    parser.add_argument("--colsample-bytree", type=float, default=0.8)
-    parser.add_argument("--reg-alpha", type=float, default=0.0)
-    parser.add_argument("--reg-lambda", type=float, default=0.0)
     return parser.parse_args()
 
 
-def resolve_month_context(market: str, year: int, month: str) -> tuple[Path, Path, Path, str]:
+def resolve_month_context(market: str, year: int, month: str) -> tuple[Path, Path, Path]:
     month_name = str(month).zfill(2)
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
     month_dir = (Path.cwd() / "train_eps" / market / str(year) / month_name).resolve()
     dataset_path = month_dir / "dataset_evaluate.csv"
     results_dir = month_dir / "results"
-    version_map = {"05": "v10", "06": "v10", "07": "v10", "08": "v10", "09": "v10", "10": "v10"}
-    version_name = version_map.get(month_name, f"v10_{month_name}")
-    return month_dir, dataset_path, results_dir, version_name
+    return month_dir, dataset_path, results_dir
 
 
 def winsorize_train_test(train_df: pd.DataFrame, test_df: pd.DataFrame, cols: list[str], q: float) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -87,13 +64,6 @@ def winsorize_train_test(train_df: pd.DataFrame, test_df: pd.DataFrame, cols: li
         tr[c] = tr[c].clip(lo, hi)
         te[c] = te[c].clip(lo, hi)
     return tr, te
-
-
-def mae_or_nan(values: np.ndarray) -> float:
-    valid = values[~np.isnan(values)]
-    if len(valid) == 0:
-        return float("nan")
-    return float(np.mean(np.abs(valid)))
 
 
 def build_lgb_regressor(args: argparse.Namespace, objective: str = "mae", alpha: float | None = None) -> LGBMRegressor:
@@ -133,38 +103,11 @@ def infer_feature_set(df: pd.DataFrame) -> list[str]:
     return feature_cols
 
 
-def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarray, eps_floor: float) -> dict:
+def evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     abs_err = np.abs(y_true - y_pred)
-    close_col = "target_close" if "target_close" in df_eval.columns else "q3_close"
-    close = df_eval[close_col].to_numpy(dtype=float) if close_col in df_eval.columns else np.full(len(df_eval), np.nan)
-    pe_current = df_eval["pe_current"].to_numpy(dtype=float) if "pe_current" in df_eval.columns else np.full(len(df_eval), np.nan)
-    valid_price = (~np.isnan(close)) & (close > 0)
-    valid_pe = (~np.isnan(pe_current)) & (pe_current > 0)
-
-    true_forward_pe = np.full(len(df_eval), np.nan)
-    pred_forward_pe = np.full(len(df_eval), np.nan)
-    true_ok = np.abs(y_true) >= eps_floor
-    pred_ok = np.abs(y_pred) >= eps_floor
-    true_forward_pe[valid_price & true_ok] = close[valid_price & true_ok] / y_true[valid_price & true_ok]
-    pred_forward_pe[valid_price & pred_ok] = close[valid_price & pred_ok] / y_pred[valid_price & pred_ok]
-
-    true_target_price = np.full(len(df_eval), np.nan)
-    pred_target_price = np.full(len(df_eval), np.nan)
-    true_target_price[valid_pe] = y_true[valid_pe] * pe_current[valid_pe]
-    pred_target_price[valid_pe] = y_pred[valid_pe] * pe_current[valid_pe]
-
-    true_upside = np.full(len(df_eval), np.nan)
-    pred_upside = np.full(len(df_eval), np.nan)
-    mask_up = valid_price & (~np.isnan(true_target_price)) & (~np.isnan(pred_target_price))
-    true_upside[mask_up] = (true_target_price[mask_up] / close[mask_up] - 1.0) * 100.0
-    pred_upside[mask_up] = (pred_target_price[mask_up] / close[mask_up] - 1.0) * 100.0
-
     return {
         "mae": float(mean_absolute_error(y_true, y_pred)),
         "p90_ae": float(np.quantile(abs_err, 0.9)),
-        "pe_forward_err_mae": mae_or_nan(pred_forward_pe - true_forward_pe),
-        "target_price_err_mae": mae_or_nan(pred_target_price - true_target_price),
-        "upside_pct_err_mae": mae_or_nan(pred_upside - true_upside),
     }
 
 
@@ -377,14 +320,37 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, results_dir, version_name = resolve_month_context(args.market, args.year, args.month)
+    month_dir, dataset_path, results_dir = resolve_month_context(args.market, args.year, args.month)
     results_dir.mkdir(parents=True, exist_ok=True)
+    config, _ = load_shared_config()
+    common_cfg = config["common"]
+    lgb_cfg = config["lightgbm-train"]
+    eval_cfg = config["lightgbm-evaluate"]
+    args.seed = int(common_cfg["seed"])
+    args.winsor_quantile = float(common_cfg["winsor_quantile"])
+    args.n_jobs = int(common_cfg["n_jobs"])
+    args.n_estimators = int(lgb_cfg["n_estimators"])
+    args.learning_rate = float(lgb_cfg["learning_rate"])
+    args.num_leaves = int(lgb_cfg["num_leaves"])
+    args.subsample = float(lgb_cfg["subsample"])
+    args.colsample_bytree = float(lgb_cfg["colsample_bytree"])
+    args.reg_alpha = float(lgb_cfg["reg_alpha"])
+    args.reg_lambda = float(lgb_cfg["reg_lambda"])
+    args.confidence_quantile = float(eval_cfg["confidence_quantile"])
+    args.interval_method = str(eval_cfg["interval_method"])
+    args.interval_low_quantile = float(eval_cfg["interval_low_quantile"])
+    args.interval_high_quantile = float(eval_cfg["interval_high_quantile"])
+    args.target_coverage = None if eval_cfg["target_coverage"] is None else float(eval_cfg["target_coverage"])
+    args.calibration_mode = str(eval_cfg["calibration_mode"])
+    args.min_calib_samples = int(eval_cfg["min_calib_samples"])
+    args.min_calib_scale = float(eval_cfg["min_calib_scale"])
+    args.max_calib_scale = float(eval_cfg["max_calib_scale"])
+    args.nonlinear_bins = int(eval_cfg["nonlinear_bins"])
+    args.nonlinear_min_bin_samples = int(eval_cfg["nonlinear_min_bin_samples"])
 
     df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=[TARGET, TARGET_DELTA, "year", "anchor_eps"])
     feature_cols = infer_feature_set(df)
-    for c in feature_cols:
-        df[c] = df[c].fillna(0)
 
     years = sorted(df["year"].astype(int).unique().tolist())
     fold_rows = []
@@ -497,7 +463,7 @@ def main() -> None:
                 n_bins=args.nonlinear_bins,
                 min_bin_samples=args.nonlinear_min_bin_samples,
             )
-        else:
+        elif args.calibration_mode == "global":
             interval_scale = calibrate_interval_scale(
                 train_df[TARGET].to_numpy(dtype=float),
                 train_eps_mid,
@@ -509,6 +475,10 @@ def main() -> None:
                 args.max_calib_scale,
             )
             interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
+        else:
+            raise ValueError(
+                "Invalid calibration_mode. Allowed values: latest_year, regime, nonlinear, global."
+            )
 
         pred_half_width = (pred_eps_high - pred_eps_low) / 2.0
         pred_eps_low = pred_eps_model - pred_half_width * interval_scale_vec
@@ -518,9 +488,8 @@ def main() -> None:
         pred_eps_med = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
 
         for model_name, pred in [("lgb_delta", pred_eps_model), ("baseline_anchor_eps", pred_eps_anchor), ("baseline_train_median", pred_eps_med)]:
-            m = evaluate_metrics(test_df, y_true, pred, args.eps_floor)
+            m = evaluate_metrics(y_true, pred)
             row = {
-                "version": version_name,
                 "protocol": "expanding_by_year",
                 "fold": f"year_{test_year}",
                 "model": model_name,
@@ -546,11 +515,10 @@ def main() -> None:
     if num_cols:
         fold_df[num_cols] = fold_df[num_cols].round(2)
 
-    fold_path = results_dir / "evaluate_by_fold.csv"
+    fold_path = results_dir / "evaluate_by_fold.json"
+    fold_df.to_json(fold_path, orient="records", force_ascii=False, indent=2)
 
-    fold_df.to_csv(fold_path, index=False)
-
-    print(f"{version_name} evaluate completed")
+    print("evaluate completed")
     print(f"- month_dir: {month_dir}")
     print(f"- {fold_path}")
 

@@ -180,7 +180,6 @@ services:
     volumes:
       - ./backend:/app
       - ./strategy:/app/strategy
-      - ./analysis:/app/analysis
       - ./common:/app/common
 
   frontend:

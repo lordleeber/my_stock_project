@@ -33,12 +33,26 @@
 - If any step fails, pipeline stops immediately and writes error details to repo root `error_train_eps.log`.
 
 ## Data Source
-- `prepare_data.py` defaults to DB mode (`--data-source db`, usually `DB_HOST=db`).
+- `prepare_data.py` defaults to DB mode (`--data-source db`).
 - API mode is available with `--data-source api`.
+
+## Monthly Training Calendar
+- 01/10 (announce previous Dec revenue): train previous year `Q4 eps delta`.
+- 02/10 (announce Jan revenue): no training.
+- 03/10 (announce Feb revenue): no training.
+- 04/10 (announce Mar revenue + previous annual report): train current year `Q1 eps delta`.
+- 05/15 (announce Apr revenue + Q1 report): train current year `Q2 eps delta`.
+- 06/10 (announce May revenue): train current year `Q2 eps delta`.
+- 07/10 (announce Jun revenue): train current year `Q2 eps delta`.
+- 08/15 (announce Jul revenue + Q2 report): train current year `Q3 eps delta`.
+- 09/10 (announce Aug revenue): train current year `Q3 eps delta`.
+- 10/10 (announce Sep revenue): train current year `Q3 eps delta`.
+- 11/15 (announce Oct revenue + Q3 report): train current year `Q4 eps delta`.
+- 12/10 (announce Nov revenue): train current year `Q4 eps delta`.
 
 ## Evaluate Output Contract
 - `evaluate.py` writes only:
-  - `results/evaluate_by_fold.csv`
+  - `results/evaluate_by_fold.json`
 - It does not write:
   - `results/predictions.csv`
   - `results/valuation_daily_preview.csv`
@@ -58,7 +72,7 @@
 ## Typical Commands
 ```powershell
 # Step-by-step
-.\.venv\Scripts\python.exe train_eps\sii\2025\11\prepare_data.py --data-source api --start-year 2022 --end-year 2024
+.\.venv\Scripts\python.exe train_eps\sii\2025\11\prepare_data.py --data-source api
 .\.venv\Scripts\python.exe train_eps\train.py --market sii --year 2025 --month 11
 .\.venv\Scripts\python.exe train_eps\evaluate.py --market sii --year 2025 --month 11
 .\.venv\Scripts\python.exe train_eps\gate_and_publish.py --market sii --year 2025 --month 11
@@ -75,12 +89,12 @@
   - After exclusions, if `prev_q4_margin` still has missing values, raise error and stop.
 
 ## Health Metrics
-- After running `evaluate.py`, check `results/evaluate_by_fold.csv`:
+- After running `evaluate.py`, check `results/evaluate_by_fold.json`:
   - Confirm fold count for `lgb_delta` is >= gate `min_folds`.
   - Confirm average `mae` of `lgb_delta` is better than `baseline_anchor_eps`.
   ```python
   import pandas as pd
-  df = pd.read_csv("results/evaluate_by_fold.csv")
+  df = pd.read_json("results/evaluate_by_fold.json")
   x = df[df["model"].isin(["lgb_delta", "baseline_anchor_eps"])]
   print(x.groupby("model")["mae"].mean())
   print("folds:", x["fold"].nunique())
@@ -96,9 +110,7 @@
   - `xbrl_current_ratio`, `xbrl_cash_to_assets`, `xbrl_cfo_to_ni_q`, `xbrl_capex_to_revenue_q`
 - `cash_flow_xbrl` uses accumulated statements and is converted to single-quarter:
   - `Q3 single-quarter = Q3 accumulated - Q2 accumulated`
-- API mode for 11-month script can be slow; prefer narrowing years with
-  - `--start-year` / `--end-year`
-  - DB mode if available
+- API mode for 11-month script can be slow; prefer DB mode if available.
 
 ## Rules
 - Keep feature definitions consistent across `prepare_data.py`, `train.py`, `evaluate.py`.

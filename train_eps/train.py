@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
+from shared_config import load_shared_config
 from sklearn.metrics import mean_absolute_error
 
 TARGET = "target_eps"
@@ -15,26 +16,38 @@ EXCLUDE_COLUMNS = {"year", TARGET, TARGET_DELTA}
 
 BASE_DIR = Path(__file__).resolve().parent
 
+FEATURE_CHT_MAP = {
+    "anchor_eps": "錨點每股盈餘（Q3）",
+    "ly_q4_eps": "去年Q4每股盈餘",
+    "q3_yoy_eps": "Q3每股盈餘年增率",
+    "q3_margin": "Q3淨利率",
+    "q3_ocf_ratio": "Q3營業現金流對淨利比",
+    "q3_re_ratio": "Q3保留盈餘對資本比",
+    "rev_yoy_m10_quantile": "10月營收年增分位數",
+    "rev_mom_m10_m9_quantile": "10月相對9月營收月增分位數",
+    "rev_yoy_m11_quantile": "11月營收年增分位數",
+    "rev_mom_m11_m10_quantile": "11月相對10月營收月增分位數",
+    "margin_momentum": "毛利動能（Q3-Q2）",
+    "q3_roe": "Q3股東權益報酬率",
+    "q3_debt_ratio": "Q3負債比率",
+    "q3_non_op_ratio": "Q3業外損益占稅前淨利比",
+    "ly_seasonality": "去年季節性（Q4/Q3 EPS）",
+    "xbrl_gross_margin_q": "XBRL單季毛利率",
+    "xbrl_op_margin_q": "XBRL單季營業利益率",
+    "xbrl_rd_ratio_q": "XBRL單季研發費用率",
+    "xbrl_tax_rate_q": "XBRL單季有效稅率",
+    "xbrl_current_ratio": "XBRL流動比率",
+    "xbrl_cash_to_assets": "XBRL現金資產比",
+    "xbrl_cfo_to_ni_q": "XBRL單季營運現金流對淨利比",
+    "xbrl_capex_to_revenue_q": "XBRL單季資本支出對營收比",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train shared LightGBM model for train_eps/<market>/<year>/<month>")
     parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
-    parser.add_argument("--dataset", type=Path, default=None, help="預設為 <month-dir>/dataset_train.csv")
-    parser.add_argument("--model-out", type=Path, default=None, help="預設為 <month-dir>/model.pkl")
-    parser.add_argument("--metrics-out", type=Path, default=None, help="預設為 <month-dir>/train_metrics.json")
-    parser.add_argument("--importance-out", type=Path, default=None, help="預設為 <month-dir>/feature_importance.csv")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--winsor-quantile", type=float, default=0.01)
-    parser.add_argument("--n-jobs", type=int, default=-1)
-    parser.add_argument("--n-estimators", type=int, default=800)
-    parser.add_argument("--learning-rate", type=float, default=0.03)
-    parser.add_argument("--num-leaves", type=int, default=31)
-    parser.add_argument("--subsample", type=float, default=0.8)
-    parser.add_argument("--colsample-bytree", type=float, default=0.8)
-    parser.add_argument("--reg-alpha", type=float, default=0.0)
-    parser.add_argument("--reg-lambda", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -44,10 +57,10 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Pat
         raise ValueError("--month 必須是 01~12")
     month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_str).resolve()
 
-    dataset = args.dataset if args.dataset else month_dir / "dataset_train.csv"
-    model_out = args.model_out if args.model_out else month_dir / "model.pkl"
-    metrics_out = args.metrics_out if args.metrics_out else month_dir / "train_metrics.json"
-    importance_out = args.importance_out if args.importance_out else month_dir / "feature_importance.csv"
+    dataset = month_dir / "dataset_train.csv"
+    model_out = month_dir / "model.pkl"
+    metrics_out = month_dir / "train_metrics.json"
+    importance_out = month_dir / "feature_importance.json"
 
     return month_dir, dataset, model_out, metrics_out, importance_out
 
@@ -65,6 +78,20 @@ def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
 def main() -> None:
     args = parse_args()
     month_dir, dataset_path, model_out, metrics_out, importance_out = resolve_paths(args)
+    config, config_path = load_shared_config()
+    common_cfg = config["common"]
+    lgb_cfg = config["lightgbm-train"]
+
+    seed = int(common_cfg["seed"])
+    winsor_quantile = float(common_cfg["winsor_quantile"])
+    n_jobs = int(common_cfg["n_jobs"])
+    n_estimators = int(lgb_cfg["n_estimators"])
+    learning_rate = float(lgb_cfg["learning_rate"])
+    num_leaves = int(lgb_cfg["num_leaves"])
+    subsample = float(lgb_cfg["subsample"])
+    colsample_bytree = float(lgb_cfg["colsample_bytree"])
+    reg_alpha = float(lgb_cfg["reg_alpha"])
+    reg_lambda = float(lgb_cfg["reg_lambda"])
 
     df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan).dropna(subset=[TARGET, TARGET_DELTA])
 
@@ -88,26 +115,23 @@ def main() -> None:
     # prepare_data 已完成特徵轉換，train 只讀取最終特徵
     use_features = feature_cols
 
-    for c in use_features:
-        df[c] = df[c].fillna(0)
-
     winsor_cols = [c for c in use_features if c != "anchor_eps"] + [TARGET_DELTA]
-    winsorize_inplace(df, winsor_cols, args.winsor_quantile)
+    winsorize_inplace(df, winsor_cols, winsor_quantile)
 
     x_data = df[use_features]
     y_delta = df[TARGET_DELTA].astype(float).to_numpy()
 
     model = LGBMRegressor(
         objective="mae",
-        n_estimators=args.n_estimators,
-        learning_rate=args.learning_rate,
-        num_leaves=args.num_leaves,
-        subsample=args.subsample,
-        colsample_bytree=args.colsample_bytree,
-        reg_alpha=args.reg_alpha,
-        reg_lambda=args.reg_lambda,
-        random_state=args.seed,
-        n_jobs=args.n_jobs,
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        num_leaves=num_leaves,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        reg_alpha=reg_alpha,
+        reg_lambda=reg_lambda,
+        random_state=seed,
+        n_jobs=n_jobs,
     )
     model.fit(x_data, y_delta)
 
@@ -117,36 +141,39 @@ def main() -> None:
 
     metrics = {
         "month_dir": str(month_dir),
+        "config_path": str(config_path),
         "n_rows": int(len(df)),
         "main_metric": "mae",
-        "winsor_quantile": float(args.winsor_quantile),
+        "winsor_quantile": winsor_quantile,
         "model_family": "lightgbm",
         "train_mae_lgb_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
-        "train_mae_rf_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
         "train_mae_baseline_anchor_eps": float(mean_absolute_error(y_true, baseline_eps)),
         "feature_transform": "quantile",
         "features": use_features,
     }
 
-    importance_df = pd.DataFrame({"feature": use_features, "importance": model.feature_importances_}).sort_values(
-        "importance", ascending=False
-    )
+    importance_df = pd.DataFrame({"feature": use_features, "importance": model.feature_importances_})
+    missing_cht = sorted(set(importance_df["feature"]) - set(FEATURE_CHT_MAP))
+    if missing_cht:
+        raise ValueError(f"Missing Chinese label for features: {missing_cht}")
+    importance_df["feature_cht"] = importance_df["feature"].map(FEATURE_CHT_MAP)
+    importance_df = importance_df.sort_values("importance", ascending=False)
 
     model_out.parent.mkdir(parents=True, exist_ok=True)
     with open(model_out, "wb") as f:
         pickle.dump(model, f)
     metrics_out.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    importance_df.to_csv(importance_out, index=False)
+    importance_df.to_json(importance_out, orient="records", force_ascii=False, indent=2)
 
     # sanity check: in-sample MAE 應低於 baseline，否則代表訓練有嚴重問題
-    rf_mae = metrics["train_mae_lgb_pred_eps"]
+    lgb_mae = metrics["train_mae_lgb_pred_eps"]
     bl_mae = metrics["train_mae_baseline_anchor_eps"]
-    if rf_mae > bl_mae:
+    if lgb_mae > bl_mae:
         log_path = BASE_DIR.parent / "error_train_eps.log"
         ts = datetime.now().isoformat(timespec="seconds")
         msg = (
             f"[{ts}] SANITY FAIL | {month_dir}\n"
-            f"  train_mae_lgb_pred_eps ({rf_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
+            f"  train_mae_lgb_pred_eps ({lgb_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
             f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
         )
         with log_path.open("a", encoding="utf-8") as f:

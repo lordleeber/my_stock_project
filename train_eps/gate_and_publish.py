@@ -6,21 +6,19 @@ from pathlib import Path
 
 import pandas as pd
 
+MODELS_ROOT = Path("models_eps")
+METRIC = "mae"
+PRIMARY_MODEL = "lgb_delta"
+BASELINE_MODEL = "baseline_anchor_eps"
+MAX_RATIO = 0.975  # Gate passes only if primary_metric <= baseline_metric * MAX_RATIO.
+MIN_FOLDS = 1  # Require at least this many distinct evaluation folds before gating/publishing.
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gate and publish monthly EPS model")
     parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
-    parser.add_argument("--models-root", type=Path, default=Path("models_eps"))
-    parser.add_argument("--eval-file", type=Path, default=None, help="預設 <month-dir>/results/evaluate_by_fold.csv")
-    parser.add_argument("--model-file", type=Path, default=None, help="預設 <month-dir>/model.pkl")
-    parser.add_argument("--metric", type=str, default="mae")
-    parser.add_argument("--primary-model", type=str, default="lgb_delta")
-    parser.add_argument("--baseline-model", type=str, default="baseline_anchor_eps")
-    parser.add_argument("--max-ratio", type=float, default=0.975, help="primary <= baseline * max_ratio 才通過")
-    parser.add_argument("--min-folds", type=int, default=3)
-    parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
@@ -29,9 +27,9 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
     month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_name).resolve()
-    eval_file = args.eval_file if args.eval_file else month_dir / "results" / "evaluate_by_fold.csv"
-    model_file = args.model_file if args.model_file else month_dir / "model.pkl"
-    models_root = args.models_root if args.models_root.is_absolute() else (Path.cwd() / args.models_root).resolve()
+    eval_file = month_dir / "results" / "evaluate_by_fold.json"
+    model_file = month_dir / "model.pkl"
+    models_root = (Path.cwd() / MODELS_ROOT).resolve()
     return month_dir, eval_file, model_file, models_root
 
 
@@ -47,44 +45,45 @@ def main() -> None:
     if not model_file.exists():
         raise FileNotFoundError(f"model file not found: {model_file}")
 
-    df = pd.read_csv(eval_file)
-    if args.metric not in df.columns:
-        raise ValueError(f"metric '{args.metric}' not found in {eval_file}")
+    with eval_file.open("r", encoding="utf-8") as f:
+        df = pd.DataFrame(json.load(f))
+    if METRIC not in df.columns:
+        raise ValueError(f"metric '{METRIC}' not found in {eval_file}")
 
     # 只比較主要模型與 baseline
-    use = df[df["model"].isin([args.primary_model, args.baseline_model])].copy()
+    use = df[df["model"].isin([PRIMARY_MODEL, BASELINE_MODEL])].copy()
     if use.empty:
         raise RuntimeError("no rows for primary/baseline models in evaluate file")
 
     folds = int(use["fold"].nunique())
-    if folds < args.min_folds:
-        raise RuntimeError(f"insufficient folds: {folds} < {args.min_folds}")
+    if folds < MIN_FOLDS:
+        raise RuntimeError(f"insufficient folds: {folds} < {MIN_FOLDS}")
 
-    metric_mean = use.groupby("model", as_index=False)[args.metric].mean()
-    metric_map = {r["model"]: float(r[args.metric]) for _, r in metric_mean.iterrows()}
+    metric_mean = use.groupby("model", as_index=False)[METRIC].mean()
+    metric_map = {r["model"]: float(r[METRIC]) for _, r in metric_mean.iterrows()}
 
-    if args.primary_model not in metric_map or args.baseline_model not in metric_map:
+    if PRIMARY_MODEL not in metric_map or BASELINE_MODEL not in metric_map:
         raise RuntimeError("primary/baseline metric missing after aggregation")
 
-    primary_val = metric_map[args.primary_model]
-    baseline_val = metric_map[args.baseline_model]
-    threshold = baseline_val * float(args.max_ratio)
+    primary_val = metric_map[PRIMARY_MODEL]
+    baseline_val = metric_map[BASELINE_MODEL]
+    threshold = baseline_val * float(MAX_RATIO)
     passed = primary_val <= threshold
 
     result = {
         "month_dir": str(month_dir),
         "evaluate_file": str(eval_file),
         "model_file": str(model_file),
-        "metric": args.metric,
-        "primary_model": args.primary_model,
-        "baseline_model": args.baseline_model,
+        "metric": METRIC,
+        "primary_model": PRIMARY_MODEL,
+        "baseline_model": BASELINE_MODEL,
         "primary_metric": primary_val,
         "baseline_metric": baseline_val,
-        "max_ratio": float(args.max_ratio),
+        "max_ratio": float(MAX_RATIO),
         "threshold": threshold,
         "folds": folds,
         "passed": bool(passed),
-        "dry_run": bool(args.dry_run),
+        "dry_run": False,
         "evaluated_at": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -94,11 +93,6 @@ def main() -> None:
 
     if not passed:
         print("gate failed")
-        print(json.dumps(result, indent=2))
-        return
-
-    if args.dry_run:
-        print("gate passed (dry-run, not published)")
         print(json.dumps(result, indent=2))
         return
 
@@ -132,4 +126,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

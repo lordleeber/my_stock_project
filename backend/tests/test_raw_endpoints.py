@@ -258,7 +258,10 @@ CASES = [
         "columns": ["date", "symbol"],
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
-        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "expected_fields": [
+            "date", "symbol", "period", "period_type", "account_code",
+            "account_name_cht", "account_name_eng", "value_text"
+        ],
         "is_q_format": True,
     },
     {
@@ -267,7 +270,10 @@ CASES = [
         "columns": ["date", "symbol"],
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
-        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "expected_fields": [
+            "date", "symbol", "period", "period_type", "account_code",
+            "account_name_cht", "account_name_eng", "value_text"
+        ],
         "is_q_format": True,
     },
     {
@@ -276,7 +282,10 @@ CASES = [
         "columns": ["date", "symbol"],
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
-        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "expected_fields": [
+            "date", "symbol", "period", "period_type", "account_code",
+            "account_name_cht", "account_name_eng", "value_text"
+        ],
         "is_q_format": True,
     },
 ]
@@ -359,6 +368,8 @@ def test_raw_endpoint_field_types(case, client, engine):
             "period",
             "period_type",
             "account_code",
+            "account_name_cht",
+            "account_name_eng",
             "value_text",
         ):
             assert val is None or isinstance(val, str)
@@ -548,8 +559,18 @@ def test_xbrl_endpoint_returns_rows(table, endpoint, client, engine):
     assert len(data) >= 1
 
     record = data[0]
-    expected_fields = {"date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"}
+    expected_fields = {
+        "date",
+        "symbol",
+        "period",
+        "period_type",
+        "account_code",
+        "account_name_cht",
+        "account_name_eng",
+        "value_text",
+    }
     assert expected_fields.issubset(set(record.keys()))
+    assert "value_num" not in record
     assert isinstance(record["date"], str) and Q_DATE_RE.match(record["date"])
     assert isinstance(record["symbol"], str) and record["symbol"].strip() != ""
 

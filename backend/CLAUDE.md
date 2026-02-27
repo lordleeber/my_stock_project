@@ -181,6 +181,7 @@ AI assistant guardrails:
 - **Data Integrity:** Automatically handles non-JSON values (NaN/Inf) by converting them to `null`.
 - **Sorting:** Defaults to `date DESC` (and `symbol ASC` where applicable).
 - **Date Format:** Financial statements (including XBRL statement endpoints) use **`YYYYQX`** string format (e.g., `2025Q3`). Backend logic is optimized to preserve this format without automatic date conversion.
+- **XBRL Name Enrichment:** XBRL endpoints join `xbrl_codebook` and return `account_name_cht` / `account_name_eng`. The API response intentionally exposes `value_text` (not `value_num`).
 
 **Pagination Example:**
 To fetch the first 1000 records:
@@ -283,7 +284,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 - **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc, cost_of_revenue_q/acc, gross_profit_q/acc, operating_income_q/acc, net_income_q/acc, eps_q/acc, etc.
 - **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, total_assets, total_equity, share_capital, nav_per_share, etc. (No _q/_acc needed for snapshot data).
 - **CashFlowRaw**: date (YYYYQX), symbol, market, name, cash_flow_operating_q/acc, cash_flow_investing_q/acc, cash_flow_financing_q/acc, net_cash_change_q/acc, cash_begin, cash_end
-- **XbrlStatementRaw**: date (YYYYQX), symbol, period, period_type (`quarter`/`accumulated`/`as_of`), account_code, value_text, value_num
+- **XbrlStatementRaw**: date (YYYYQX), symbol, period, period_type (`quarter`/`accumulated`/`as_of`), account_code, account_name_cht, account_name_eng, value_text
 
 ## Database Tables Used
 
@@ -302,6 +303,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 | `income_statement_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/income-statements-xbrl`) |
 | `balance_sheet_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/balance-sheets-xbrl`) |
 | `cash_flow_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/cash-flows-xbrl`) |
+| `xbrl_codebook` | statement_type, account_code, account_name_cht, account_name_eng | Joined by XBRL raw APIs to enrich account names |
 
 **Indexes:**
 - `idx_daily_quotes_date_symbol`, `idx_daily_quotes_symbol_date` (daily_quotes)

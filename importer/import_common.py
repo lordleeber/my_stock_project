@@ -720,3 +720,83 @@ def import_xbrl_period_category(
             abort_with_error(f"Failed to import xbrl {table_name} for {period_token}: {e}", e)
 
     return imported_any
+
+
+def import_xbrl_codebook(engine):
+    """Import /app/data/processed/xbrl_codebook.csv into xbrl_codebook table."""
+    csv_file = "/app/data/processed/xbrl_codebook.csv"
+    if not os.path.exists(csv_file):
+        print("Skipping xbrl_codebook (CSV not found).")
+        return False
+
+    try:
+        print("Processing xbrl_codebook...")
+        codebook_schema = get_polars_schema("xbrl_codebook") or {
+            "statement_type": pl.Utf8,
+            "account_code": pl.Utf8,
+            "account_name_cht": pl.Utf8,
+            "account_name_eng": pl.Utf8,
+        }
+        df = pl.read_csv(
+            csv_file,
+            schema_overrides={
+                "statement_type": pl.Utf8,
+                "account_code": pl.Utf8,
+                "account_name_zh": pl.Utf8,
+                "account_name_en": pl.Utf8,
+                "account_name_cht": pl.Utf8,
+                "account_name_eng": pl.Utf8,
+            },
+        )
+        if df.height == 0:
+            print("  -> Empty file, skipping.")
+            return False
+
+        # Normalize to backend API naming (cht/eng) and remove duplicates by key.
+        rename_map = {}
+        if "account_name_zh" in df.columns:
+            rename_map["account_name_zh"] = "account_name_cht"
+        if "account_name_en" in df.columns:
+            rename_map["account_name_en"] = "account_name_eng"
+        if rename_map:
+            df = df.rename(rename_map)
+
+        normalized_cols = list(codebook_schema.keys())
+        for col in normalized_cols:
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(None).cast(codebook_schema[col]).alias(col))
+
+        df = (
+            df.select(normalized_cols)
+            .with_columns(
+                [pl.col(col).cast(dtype, strict=False).alias(col) for col, dtype in codebook_schema.items()]
+            )
+            .with_columns(
+                [
+                    pl.col("statement_type").str.strip_chars(),
+                    pl.col("account_code").str.strip_chars(),
+                    pl.col("account_name_cht").str.strip_chars(),
+                    pl.col("account_name_eng").str.strip_chars(),
+                ]
+            )
+            .filter(
+                pl.col("statement_type").is_not_null()
+                & (pl.col("statement_type") != "")
+                & pl.col("account_code").is_not_null()
+                & (pl.col("account_code") != "")
+            )
+            .unique(subset=["statement_type", "account_code"], keep="first")
+        )
+
+        expected_count = df.height
+        df.to_pandas().to_sql(
+            name="xbrl_codebook",
+            con=engine,
+            if_exists="replace",
+            index=False,
+            chunksize=5000,
+        )
+        print(f"  -> Imported {expected_count} rows into xbrl_codebook.")
+        return True
+    except Exception as e:
+        abort_with_error(f"Failed to import xbrl_codebook: {e}", e)

@@ -13,10 +13,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
-    parser.add_argument("--python-exe", type=str, default=sys.executable)
-    parser.add_argument("--prepare-start-year", type=int, default=None, help="optional pass-through for prepare_data.py")
-    parser.add_argument("--prepare-end-year", type=int, default=None, help="optional pass-through for prepare_data.py")
-    parser.add_argument("--prepare-live-year", type=int, default=None, help="optional pass-through for prepare_data.py")
     return parser.parse_args()
 
 
@@ -61,6 +57,17 @@ def run_step(step_name: str, cmd: list[str], cwd: Path, log_path: Path) -> None:
     print(f"[OK] {step_name}")
 
 
+def resolve_python_executable(repo_root: Path) -> str:
+    preferred = [
+        repo_root / ".venv" / "bin" / "python",
+        repo_root / "venv" / "bin" / "python",
+    ]
+    for candidate in preferred:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
 def main() -> None:
     args = parse_args()
     month = normalize_month(args.month)
@@ -73,7 +80,7 @@ def main() -> None:
         raise FileNotFoundError(f"prepare_data.py not found: {prepare_script}")
 
     log_path = repo_root / "error_train_eps.log"
-    py = args.python_exe
+    py = resolve_python_executable(repo_root)
 
     prepare_cmd = [
         py,
@@ -81,12 +88,6 @@ def main() -> None:
         "--data-source",
         args.data_source,
     ]
-    if args.prepare_start_year is not None:
-        prepare_cmd.extend(["--start-year", str(args.prepare_start_year)])
-    if args.prepare_end_year is not None:
-        prepare_cmd.extend(["--end-year", str(args.prepare_end_year)])
-    if args.prepare_live_year is not None:
-        prepare_cmd.extend(["--live-year", str(args.prepare_live_year)])
 
     steps = [
         (
