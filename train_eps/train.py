@@ -27,6 +27,8 @@ FEATURE_CHT_MAP = {
     "rev_mom_m10_m9_quantile": "10月相對9月營收月增分位數",
     "rev_yoy_m11_quantile": "11月營收年增分位數",
     "rev_mom_m11_m10_quantile": "11月相對10月營收月增分位數",
+    "rev_yoy_m12_quantile": "12月營收年增分位數",
+    "rev_mom_m12_m11_quantile": "12月相對11月營收月增分位數",
     "margin_momentum": "毛利動能（Q3-Q2）",
     "q3_roe": "Q3股東權益報酬率",
     "q3_debt_ratio": "Q3負債比率",
@@ -44,8 +46,7 @@ FEATURE_CHT_MAP = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train shared LightGBM model for train_eps/<market>/<year>/<month>")
-    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Train shared LightGBM model for train_eps/output/<year>/<month>")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -55,12 +56,13 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Pat
     month_str = str(args.month).zfill(2)
     if month_str < "01" or month_str > "12":
         raise ValueError("--month 必須是 01~12")
-    month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_str).resolve()
+    month_dir = (Path.cwd() / "train_eps" / "output" / str(args.year) / month_str).resolve()
 
     dataset = month_dir / "dataset_train.csv"
-    model_out = month_dir / "model.pkl"
-    metrics_out = month_dir / "train_metrics.json"
-    importance_out = month_dir / "feature_importance.json"
+    train_results_dir = month_dir / "results_train"
+    model_out = train_results_dir / "model.pkl"
+    metrics_out = train_results_dir / "train_metrics.json"
+    importance_out = train_results_dir / "feature_importance.json"
 
     return month_dir, dataset, model_out, metrics_out, importance_out
 

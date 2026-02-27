@@ -16,7 +16,6 @@ MIN_FOLDS = 1  # Require at least this many distinct evaluation folds before gat
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gate and publish monthly EPS model")
-    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -26,9 +25,9 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
     month_name = str(args.month).zfill(2)
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
-    month_dir = (Path.cwd() / "train_eps" / args.market / str(args.year) / month_name).resolve()
-    eval_file = month_dir / "results" / "evaluate_by_fold.json"
-    model_file = month_dir / "model.pkl"
+    month_dir = (Path.cwd() / "train_eps" / "output" / str(args.year) / month_name).resolve()
+    eval_file = month_dir / "results_eval" / "evaluate_by_fold.json"
+    model_file = month_dir / "results_train" / "model.pkl"
     models_root = (Path.cwd() / MODELS_ROOT).resolve()
     return month_dir, eval_file, model_file, models_root
 
@@ -36,7 +35,6 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
 def main() -> None:
     args = parse_args()
     month_dir, eval_file, model_file, models_root = resolve_paths(args)
-    market = args.market
     year = str(args.year)
     month_name = str(args.month).zfill(2)
 
@@ -88,7 +86,8 @@ def main() -> None:
     }
 
     # 先寫一份 gate 結果在月份資料夾，方便追蹤
-    gate_out = month_dir / "gate_result.json"
+    gate_out = month_dir / "results_gate" / "gate_result.json"
+    gate_out.parent.mkdir(parents=True, exist_ok=True)
     gate_out.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     if not passed:
@@ -96,12 +95,14 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         return
 
-    target_dir = models_root / market / year / month_name
+    target_dir = models_root / year / month_name
     target_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    published_model = target_dir / f"{ts}.pkl"
-    published_meta = target_dir / f"{ts}.json"
+    primary_metric_text = f"{primary_val:.6f}".rstrip("0").rstrip(".")
+    filename_stem = f"{ts}_{primary_metric_text}"
+    published_model = target_dir / f"{filename_stem}.pkl"
+    published_meta = target_dir / f"{filename_stem}.json"
 
     shutil.copy2(model_file, published_model)
 
@@ -110,7 +111,7 @@ def main() -> None:
     meta_payload.update(
         {
             "published_model": str(published_model),
-            "source_train_metrics": str(month_dir / "train_metrics.json"),
+            "source_train_metrics": str(month_dir / "results_train" / "train_metrics.json"),
             "source_evaluate_by_fold": str(eval_file),
         }
     )

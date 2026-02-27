@@ -36,20 +36,19 @@ FEATURE_TRANSFORM = "quantile"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Shared evaluate for train_eps/<market>/<year>/<month>")
-    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Shared evaluate for train_eps/output/<year>/<month>")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
 
 
-def resolve_month_context(market: str, year: int, month: str) -> tuple[Path, Path, Path]:
+def resolve_month_context(year: int, month: str) -> tuple[Path, Path, Path]:
     month_name = str(month).zfill(2)
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
-    month_dir = (Path.cwd() / "train_eps" / market / str(year) / month_name).resolve()
+    month_dir = (Path.cwd() / "train_eps" / "output" / str(year) / month_name).resolve()
     dataset_path = month_dir / "dataset_evaluate.csv"
-    results_dir = month_dir / "results"
+    results_dir = month_dir / "results_eval"
     return month_dir, dataset_path, results_dir
 
 
@@ -320,7 +319,7 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, results_dir = resolve_month_context(args.market, args.year, args.month)
+    month_dir, dataset_path, results_dir = resolve_month_context(args.year, args.month)
     results_dir.mkdir(parents=True, exist_ok=True)
     config, _ = load_shared_config()
     common_cfg = config["common"]

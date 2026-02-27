@@ -8,8 +8,7 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run full train_eps pipeline for one market/year/month")
-    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Run full train_eps pipeline for one year/month")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
@@ -73,11 +72,9 @@ def main() -> None:
     month = normalize_month(args.month)
 
     repo_root = Path(__file__).resolve().parent.parent
-    month_dir = repo_root / "train_eps" / args.market / str(args.year) / month
-    prepare_script = month_dir / "prepare_data.py"
-
+    prepare_script = repo_root / "train_eps" / "prepare_data.py"
     if not prepare_script.exists():
-        raise FileNotFoundError(f"prepare_data.py not found: {prepare_script}")
+        raise FileNotFoundError(f"shared prepare_data.py not found: {prepare_script}")
 
     log_path = repo_root / "error_train_eps.log"
     py = resolve_python_executable(repo_root)
@@ -85,6 +82,10 @@ def main() -> None:
     prepare_cmd = [
         py,
         str(prepare_script),
+        "--year",
+        str(args.year),
+        "--month",
+        month,
         "--data-source",
         args.data_source,
     ]
@@ -99,8 +100,6 @@ def main() -> None:
             [
                 py,
                 str(repo_root / "train_eps" / "train.py"),
-                "--market",
-                args.market,
                 "--year",
                 str(args.year),
                 "--month",
@@ -112,8 +111,6 @@ def main() -> None:
             [
                 py,
                 str(repo_root / "train_eps" / "evaluate.py"),
-                "--market",
-                args.market,
                 "--year",
                 str(args.year),
                 "--month",
@@ -125,8 +122,6 @@ def main() -> None:
             [
                 py,
                 str(repo_root / "train_eps" / "gate_and_publish.py"),
-                "--market",
-                args.market,
                 "--year",
                 str(args.year),
                 "--month",
