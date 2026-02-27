@@ -1,0 +1,55 @@
+common:
+  # Global random seed for reproducible training/evaluation behavior.
+  seed: 42
+  # Winsorization tail ratio applied to selected features/target_delta (e.g., 0.01 clips 1% tails).
+  winsor_quantile: 0.01
+  # Parallel worker count for LightGBM (-1 means use all available CPU cores).
+  n_jobs: -1
+
+lightgbm-train:
+  # Number of boosting rounds (trees).
+  n_estimators: 800
+  # Shrinkage rate per tree; lower values usually need more trees.
+  learning_rate: 0.03
+  # Maximum leaves per tree; larger values increase model complexity.
+  num_leaves: 31
+  # Row sampling ratio per tree (bagging fraction).
+  subsample: 0.8
+  # Feature sampling ratio per tree.
+  colsample_bytree: 0.8
+  # L1 regularization strength.
+  reg_alpha: 0.0
+  # L2 regularization strength.
+  reg_lambda: 0.0
+
+lightgbm-evaluate:
+  # Quantile threshold for uncertainty gating; higher means stricter filtering of high-uncertainty predictions.
+  confidence_quantile: 0.975
+  # Interval construction method; currently quantile LightGBM models are used.
+  interval_method: quantile_model
+  # Lower quantile for delta-EPS prediction interval.
+  interval_low_quantile: 0.18
+  # Upper quantile for delta-EPS prediction interval.
+  interval_high_quantile: 0.82
+  # target_coverage controls interval coverage calibration:
+  # e.g., 0.8 means calibrate interval width so about 80% of true EPS fall inside [pred_low, pred_high].
+  # null means disable coverage calibration and keep the model's raw interval scaling.
+  target_coverage: null
+  # calibration_mode choices:
+  # - latest_year: calibrate interval scale using only the latest training year.
+  # - regime: calibrate per (industry + uncertainty bucket) regime.
+  # - nonlinear: calibrate scale by uncertainty bins with monotonic scaling.
+  # - global: calibrate one shared scale using all training samples.
+  calibration_mode: nonlinear
+  # Minimum number of training samples required to run coverage calibration.
+  min_calib_samples: 100
+  # Lower bound for calibrated interval scale (prevents intervals from collapsing too much).
+  min_calib_scale: 0.5
+  # Upper bound for calibrated interval scale (prevents intervals from becoming too wide).
+  max_calib_scale: 3.0
+  # Number of uncertainty quantile bins used in nonlinear calibration mode.
+  nonlinear_bins: 8
+  # Minimum samples required in each nonlinear calibration bin.
+  nonlinear_min_bin_samples: 50
+  # Small-EPS guardrail used in PE-style calculations; ignored in current EPS-only evaluation metrics.
+  eps_floor: 0.20
