@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-file", type=Path, default=None, help="預設 <month-dir>/results/evaluate_by_fold.csv")
     parser.add_argument("--model-file", type=Path, default=None, help="預設 <month-dir>/model.pkl")
     parser.add_argument("--metric", type=str, default="mae")
-    parser.add_argument("--primary-model", type=str, default="rf_delta")
+    parser.add_argument("--primary-model", type=str, default="lgb_delta")
     parser.add_argument("--baseline-model", type=str, default="baseline_anchor_eps")
     parser.add_argument("--max-ratio", type=float, default=0.975, help="primary <= baseline * max_ratio 才通過")
     parser.add_argument("--min-folds", type=int, default=3)

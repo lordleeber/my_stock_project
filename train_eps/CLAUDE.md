@@ -15,9 +15,12 @@
   - `run_pipeline.py`
 
 ## Per-Month Data Files
-- `dataset_train.csv`
-- `dataset_evaluate.csv`
-- `dataset_meta.csv`
+- Required for `train/evaluate/gate`:
+  - `dataset_train.csv`
+  - `dataset_evaluate.csv`
+- Optional month-specific artifacts (not required by `train/evaluate/gate`):
+  - `dataset_meta.csv`
+  - `dataset_live.csv`
 
 ## Standard Flow
 1. Run month-specific `prepare_data.py`
@@ -33,9 +36,17 @@
 - `prepare_data.py` defaults to DB mode (`--data-source db`, usually `DB_HOST=db`).
 - API mode is available with `--data-source api`.
 
+## Evaluate Output Contract
+- `evaluate.py` writes only:
+  - `results/evaluate_by_fold.csv`
+- It does not write:
+  - `results/predictions.csv`
+  - `results/valuation_daily_preview.csv`
+  - `results/valuation_quality_report.json`
+
 ## Current Gate Rule (Default)
 - Metric: `mae`
-- Compare model: `rf_delta` vs baseline `baseline_anchor_eps`
+- Compare model: `lgb_delta` vs baseline `baseline_anchor_eps`
 - Pass condition: `primary <= baseline * 0.975`
 
 ## Published Artifacts
@@ -47,13 +58,13 @@
 ## Typical Commands
 ```powershell
 # Step-by-step
-.\.venv\Scripts\python.exe train_eps\sii\2025\10\prepare_data.py --data-source api
-.\.venv\Scripts\python.exe train_eps\train.py --market sii --year 2025 --month 10
-.\.venv\Scripts\python.exe train_eps\evaluate.py --market sii --year 2025 --month 10
-.\.venv\Scripts\python.exe train_eps\gate_and_publish.py --market sii --year 2025 --month 10
+.\.venv\Scripts\python.exe train_eps\sii\2025\11\prepare_data.py --data-source api --start-year 2022 --end-year 2024
+.\.venv\Scripts\python.exe train_eps\train.py --market sii --year 2025 --month 11
+.\.venv\Scripts\python.exe train_eps\evaluate.py --market sii --year 2025 --month 11
+.\.venv\Scripts\python.exe train_eps\gate_and_publish.py --market sii --year 2025 --month 11
 
 # One command pipeline
-.\.venv\Scripts\python.exe train_eps\run_pipeline.py --market sii --year 2025 --month 10 --data-source api
+.\.venv\Scripts\python.exe train_eps\run_pipeline.py --market sii --year 2025 --month 11 --data-source api
 ```
 
 ## 05/06/07 Specific Rules
@@ -64,17 +75,31 @@
   - After exclusions, if `prev_q4_margin` still has missing values, raise error and stop.
 
 ## Health Metrics
-- After running `evaluate.py`, check zeroed-prediction ratio in `results/predictions.csv`:
+- After running `evaluate.py`, check `results/evaluate_by_fold.csv`:
+  - Confirm fold count for `lgb_delta` is >= gate `min_folds`.
+  - Confirm average `mae` of `lgb_delta` is better than `baseline_anchor_eps`.
   ```python
-  df = pd.read_csv("results/predictions.csv")
-  ratio = (df["pred_delta_std"] > df["confidence_threshold"]).mean()
+  import pandas as pd
+  df = pd.read_csv("results/evaluate_by_fold.csv")
+  x = df[df["model"].isin(["lgb_delta", "baseline_anchor_eps"])]
+  print(x.groupby("model")["mae"].mean())
+  print("folds:", x["fold"].nunique())
   ```
-  - Normal: around 10% (observed)
-  - Warning: >50% (model confidence degraded)
+
+## 2025/11 Notes
+- `train_eps/sii/2025/11/prepare_data.py` is intentionally lean:
+  - Outputs only `dataset_train.csv` and `dataset_evaluate.csv`.
+  - No `dataset_meta.csv` or `dataset_live.csv` output in this month script.
+  - No `daily_quotes` / `pe_ratio` fetch path in this month script.
+- XBRL features are included for 11-month model:
+  - `xbrl_gross_margin_q`, `xbrl_op_margin_q`, `xbrl_rd_ratio_q`, `xbrl_tax_rate_q`
+  - `xbrl_current_ratio`, `xbrl_cash_to_assets`, `xbrl_cfo_to_ni_q`, `xbrl_capex_to_revenue_q`
+- `cash_flow_xbrl` uses accumulated statements and is converted to single-quarter:
+  - `Q3 single-quarter = Q3 accumulated - Q2 accumulated`
+- API mode for 11-month script can be slow; prefer narrowing years with
+  - `--start-year` / `--end-year`
+  - DB mode if available
 
 ## Rules
 - Keep feature definitions consistent across `prepare_data.py`, `train.py`, `evaluate.py`.
-- If schema changes, verify compatibility with:
-  - `strategies/predict_published.py`
-  - `strategies/build_candidates.py`
 - Do not commit model binaries and generated csv/json unless explicitly requested.

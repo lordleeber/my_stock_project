@@ -1,10 +1,9 @@
 ﻿import argparse
-import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error
 
 TARGET = "target_eps"
@@ -43,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--confidence-quantile", type=float, default=0.975)
-    parser.add_argument("--interval-method", type=str, choices=["tree_quantile", "quantile_model"], default="quantile_model")
+    parser.add_argument("--interval-method", type=str, choices=["quantile_model"], default="quantile_model")
     parser.add_argument("--n-jobs", type=int, default=-1)
     parser.add_argument("--interval-low-quantile", type=float, default=0.18)
     parser.add_argument("--interval-high-quantile", type=float, default=0.82)
@@ -55,6 +54,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nonlinear-bins", type=int, default=8)
     parser.add_argument("--nonlinear-min-bin-samples", type=int, default=50)
     parser.add_argument("--eps-floor", type=float, default=0.20)
+    parser.add_argument("--n-estimators", type=int, default=800)
+    parser.add_argument("--learning-rate", type=float, default=0.03)
+    parser.add_argument("--num-leaves", type=int, default=31)
+    parser.add_argument("--subsample", type=float, default=0.8)
+    parser.add_argument("--colsample-bytree", type=float, default=0.8)
+    parser.add_argument("--reg-alpha", type=float, default=0.0)
+    parser.add_argument("--reg-lambda", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -90,26 +96,22 @@ def mae_or_nan(values: np.ndarray) -> float:
     return float(np.mean(np.abs(valid)))
 
 
-def percentile_rank(series: pd.Series, value: float) -> float:
-    if series.empty or np.isnan(value):
-        return float("nan")
-    return float((series <= value).mean())
-
-
-def predict_with_uncertainty(
-    model: RandomForestRegressor,
-    x_data: pd.DataFrame,
-    q_low: float,
-    q_high: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    x_np = x_data.to_numpy(dtype=float)
-    tree_preds = np.vstack([tree.predict(x_np) for tree in model.estimators_])
-    return (
-        tree_preds.mean(axis=0),
-        tree_preds.std(axis=0),
-        np.quantile(tree_preds, q_low, axis=0),
-        np.quantile(tree_preds, q_high, axis=0),
-    )
+def build_lgb_regressor(args: argparse.Namespace, objective: str = "mae", alpha: float | None = None) -> LGBMRegressor:
+    kwargs: dict[str, float | int | str] = {
+        "objective": objective,
+        "n_estimators": args.n_estimators,
+        "learning_rate": args.learning_rate,
+        "num_leaves": args.num_leaves,
+        "subsample": args.subsample,
+        "colsample_bytree": args.colsample_bytree,
+        "reg_alpha": args.reg_alpha,
+        "reg_lambda": args.reg_lambda,
+        "random_state": args.seed,
+        "n_jobs": args.n_jobs,
+    }
+    if objective == "quantile":
+        kwargs["alpha"] = float(alpha if alpha is not None else 0.5)
+    return LGBMRegressor(**kwargs)
 
 
 def infer_feature_set(df: pd.DataFrame) -> list[str]:
@@ -129,104 +131,6 @@ def infer_feature_set(df: pd.DataFrame) -> list[str]:
             "dataset_evaluate.csv 缺少 *_quantile 特徵。請先執行新版 prepare_data.py。"
         )
     return feature_cols
-
-
-def build_valuation_daily_frame(
-    df_eval: pd.DataFrame,
-    pred_eps_mid: np.ndarray,
-    pred_eps_low: np.ndarray,
-    pred_eps_high: np.ndarray,
-    month_name: str,
-    model_version: str,
-    source_file: str,
-) -> pd.DataFrame:
-    out = pd.DataFrame()
-    date_col = "target_date" if "target_date" in df_eval.columns else "q3_date"
-    close_col = "target_close" if "target_close" in df_eval.columns else "q3_close"
-    volume_col = "target_volume" if "target_volume" in df_eval.columns else "q3_volume"
-
-    out["date"] = df_eval[date_col] if date_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-    out["symbol"] = df_eval["symbol"] if "symbol" in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-    out["close"] = df_eval[close_col] if close_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-    out["volume"] = df_eval[volume_col] if volume_col in df_eval.columns else pd.Series([np.nan] * len(df_eval))
-
-    ttm_official = df_eval["ttm_eps_official"].to_numpy(dtype=float)
-    target_eps = df_eval[TARGET].to_numpy(dtype=float)
-    ttm_forward = ttm_official - target_eps + pred_eps_mid
-    ttm_forward_low = ttm_official - target_eps + pred_eps_low
-    ttm_forward_high = ttm_official - target_eps + pred_eps_high
-
-    out["ttm_eps_official"] = ttm_official
-    out["ttm_eps_forward"] = ttm_forward
-    out["ttm_eps_forward_low"] = ttm_forward_low
-    out["ttm_eps_forward_high"] = ttm_forward_high
-
-    close = out["close"].to_numpy(dtype=float)
-    pe_official = np.full(len(out), np.nan, dtype=float)
-    pe_forward = np.full(len(out), np.nan, dtype=float)
-
-    mask_off = (~np.isnan(close)) & (np.abs(ttm_official) > 1e-9)
-    mask_fwd = (~np.isnan(close)) & (np.abs(ttm_forward) > 1e-9)
-    pe_official[mask_off] = close[mask_off] / ttm_official[mask_off]
-    pe_forward[mask_fwd] = close[mask_fwd] / ttm_forward[mask_fwd]
-
-    out["pe_official"] = pe_official
-    out["pe_forward"] = pe_forward
-    out["pe_percentile_official"] = [percentile_rank(pd.Series(pe_official).dropna(), v) for v in pe_official]
-    out["pe_percentile_forward"] = [percentile_rank(pd.Series(pe_forward).dropna(), v) for v in pe_forward]
-
-    pe_current = df_eval["pe_current"].to_numpy(dtype=float) if "pe_current" in df_eval.columns else np.full(len(df_eval), np.nan)
-    target_price = pred_eps_mid * pe_current
-    target_price_low = pred_eps_low * pe_current
-    target_price_high = pred_eps_high * pe_current
-    upside_pct = np.where((~np.isnan(close)) & (close > 0), (target_price / close - 1.0) * 100.0, np.nan)
-    upside_pct_low = np.where((~np.isnan(close)) & (close > 0), (target_price_low / close - 1.0) * 100.0, np.nan)
-    upside_pct_high = np.where((~np.isnan(close)) & (close > 0), (target_price_high / close - 1.0) * 100.0, np.nan)
-
-    out["predict_target_price"] = target_price
-    out["predict_target_price_low"] = target_price_low
-    out["predict_target_price_high"] = target_price_high
-    out["upside_pct"] = upside_pct
-    out["upside_pct_low"] = upside_pct_low
-    out["upside_pct_high"] = upside_pct_high
-    # 依月份視角決定 ROE 基準：05~07 用 Q1，08~10 用 Q2
-    if month_name in {"05", "06", "07"}:
-        roe_col = "q1_roe"
-    elif month_name in {"08", "09", "10"}:
-        roe_col = "q2_roe"
-    else:
-        roe_col = "q2_roe"
-
-    if roe_col not in df_eval.columns:
-        raise ValueError(f"dataset_evaluate.csv 缺少必要欄位: {roe_col} (month={month_name})")
-
-    out["roe_official"] = df_eval[roe_col] if roe_col is not None else np.nan
-
-    roe_forward = np.full(len(out), np.nan, dtype=float)
-    if "anchor_eps" in df_eval.columns:
-        anchor_eps = df_eval["anchor_eps"].to_numpy(dtype=float)
-        roe_base = df_eval[roe_col].to_numpy(dtype=float)
-        ok = np.abs(anchor_eps) > 1e-9
-        roe_forward[ok] = (pred_eps_mid[ok] / anchor_eps[ok]) * roe_base[ok]
-    out["roe_forward"] = roe_forward
-
-    out["pced_file"] = source_file
-    out["pced_row"] = np.arange(len(out))
-    out["pced_col"] = "pred_rf_delta"
-    out["model_version"] = model_version
-    return out
-
-
-def quality_check_and_report(df_val: pd.DataFrame, report_path: Path) -> None:
-    checks = {}
-    for col in ["date", "symbol", "close", "ttm_eps_official", "ttm_eps_forward", "pe_official", "pe_forward", "predict_target_price", "upside_pct"]:
-        if col in df_val.columns:
-            checks[f"null_rate__{col}"] = float(df_val[col].isna().mean())
-    for col in [c for c in df_val.columns if pd.api.types.is_numeric_dtype(df_val[c])]:
-        checks[f"inf_rate__{col}"] = float(np.mean(np.isinf(df_val[col].to_numpy(dtype=float))))
-    checks["rows"] = int(len(df_val))
-    checks["symbols"] = int(df_val["symbol"].nunique()) if "symbol" in df_val.columns else 0
-    report_path.write_text(json.dumps(checks, indent=2), encoding="utf-8")
 
 
 def evaluate_metrics(df_eval: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarray, eps_floor: float) -> dict:
@@ -363,7 +267,7 @@ def calibrate_interval_scale_by_regime(
         )
 
     if len(scales) == 0:
-        return np.full(len(test_df), global_scale, dtype=float), "regime_fallback_global_no_group", global_scale
+        raise RuntimeError("Calibration failed: no valid regime groups for regime mode.")
 
     out_scale = np.full(len(test_df), global_scale, dtype=float)
     for i, key in enumerate(test_reg["regime_key"].astype(str).tolist()):
@@ -401,12 +305,12 @@ def calibrate_interval_scale_nonlinear(
         return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_disabled_target_none", global_scale
 
     if len(y_true_train) < max(min_samples, min_bin_samples * 2):
-        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_small_train", global_scale
+        raise RuntimeError("Calibration failed: nonlinear mode requires more training samples.")
 
     half_width = (y_high_train - y_low_train) / 2.0
     valid = (~np.isnan(y_true_train)) & (~np.isnan(y_mid_train)) & (~np.isnan(half_width)) & (~np.isnan(pred_std_train))
     if int(np.sum(valid)) < max(min_samples, min_bin_samples * 2):
-        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_invalid_train", global_scale
+        raise RuntimeError("Calibration failed: nonlinear mode has insufficient valid training rows.")
 
     std_v = pred_std_train[valid]
     y_true_v = y_true_train[valid]
@@ -419,7 +323,7 @@ def calibrate_interval_scale_nonlinear(
     edges = np.quantile(std_v, quantiles)
     edges = np.unique(edges)
     if len(edges) < 3:
-        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_flat_std", global_scale
+        raise RuntimeError("Calibration failed: nonlinear mode has degenerated uncertainty distribution.")
 
     bin_scales = []
     bin_left = []
@@ -440,7 +344,7 @@ def calibrate_interval_scale_nonlinear(
         bin_scales.append(s)
 
     if len(bin_scales) < 2:
-        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_fallback_global_small_bins", global_scale
+        raise RuntimeError("Calibration failed: nonlinear mode has insufficient populated bins.")
 
     bin_scales = np.maximum.accumulate(np.array(bin_scales, dtype=float))
 
@@ -483,7 +387,7 @@ def main() -> None:
         df[c] = df[c].fillna(0)
 
     years = sorted(df["year"].astype(int).unique().tolist())
-    fold_rows, pred_rows, valuation_rows = [], [], []
+    fold_rows = []
 
     for test_year in years[1:]:
         train_raw = df[df["year"].astype(int) < test_year].copy()
@@ -499,48 +403,28 @@ def main() -> None:
         # prepare_data 已完成特徵轉換，evaluate 只讀取最終特徵
         use_features = feature_cols
 
-        model = RandomForestRegressor(n_estimators=400, max_depth=12, random_state=args.seed, criterion="absolute_error", n_jobs=args.n_jobs)
+        model = build_lgb_regressor(args, objective="mae")
         model.fit(train_df[use_features], train_df[TARGET_DELTA])
 
         y_true = test_df[TARGET].to_numpy(dtype=float)
-        pred_delta_raw, pred_delta_std, pred_delta_low_tree, pred_delta_high_tree = predict_with_uncertainty(
-            model, test_df[use_features], args.interval_low_quantile, args.interval_high_quantile
-        )
-        train_delta_raw, pred_delta_train_std, train_delta_low_tree, train_delta_high_tree = predict_with_uncertainty(
-            model, train_df[use_features], args.interval_low_quantile, args.interval_high_quantile
-        )
+        pred_delta_raw = model.predict(test_df[use_features])
+        train_delta_raw = model.predict(train_df[use_features])
+
+        q_low_model = build_lgb_regressor(args, objective="quantile", alpha=float(args.interval_low_quantile))
+        q_high_model = build_lgb_regressor(args, objective="quantile", alpha=float(args.interval_high_quantile))
+        q_low_model.fit(train_df[use_features], train_df[TARGET_DELTA])
+        q_high_model.fit(train_df[use_features], train_df[TARGET_DELTA])
+
+        pred_delta_low = q_low_model.predict(test_df[use_features])
+        pred_delta_high = q_high_model.predict(test_df[use_features])
+        train_delta_low = q_low_model.predict(train_df[use_features])
+        train_delta_high = q_high_model.predict(train_df[use_features])
+
+        # 用 quantile 區間寬度當作不確定性代理，沿用原有 confidence gating 機制。
+        pred_delta_std = np.maximum(0.0, (pred_delta_high - pred_delta_low) / 2.0)
+        pred_delta_train_std = np.maximum(0.0, (train_delta_high - train_delta_low) / 2.0)
         threshold = float(np.quantile(pred_delta_train_std, effective_conf_q))
         pred_delta = np.where(pred_delta_std > threshold, 0.0, pred_delta_raw)
-
-        if args.interval_method == "quantile_model":
-            q_low_model = GradientBoostingRegressor(
-                loss="quantile",
-                alpha=float(args.interval_low_quantile),
-                n_estimators=300,
-                learning_rate=0.03,
-                max_depth=3,
-                random_state=args.seed,
-            )
-            q_high_model = GradientBoostingRegressor(
-                loss="quantile",
-                alpha=float(args.interval_high_quantile),
-                n_estimators=300,
-                learning_rate=0.03,
-                max_depth=3,
-                random_state=args.seed,
-            )
-            q_low_model.fit(train_df[use_features], train_df[TARGET_DELTA])
-            q_high_model.fit(train_df[use_features], train_df[TARGET_DELTA])
-
-            pred_delta_low = q_low_model.predict(test_df[use_features])
-            pred_delta_high = q_high_model.predict(test_df[use_features])
-            train_delta_low = q_low_model.predict(train_df[use_features])
-            train_delta_high = q_high_model.predict(train_df[use_features])
-        else:
-            pred_delta_low = np.where(pred_delta_std > threshold, 0.0, pred_delta_low_tree)
-            pred_delta_high = np.where(pred_delta_std > threshold, 0.0, pred_delta_high_tree)
-            train_delta_low = np.where(pred_delta_train_std > threshold, 0.0, train_delta_low_tree)
-            train_delta_high = np.where(pred_delta_train_std > threshold, 0.0, train_delta_high_tree)
 
         pred_lo = np.minimum(pred_delta_low, pred_delta_high)
         pred_hi = np.maximum(pred_delta_low, pred_delta_high)
@@ -551,7 +435,7 @@ def main() -> None:
         train_delta_low = np.minimum(train_lo, train_delta_raw)
         train_delta_high = np.maximum(train_hi, train_delta_raw)
 
-        pred_eps_rf    = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
+        pred_eps_model = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
         pred_eps_low   = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_low
         pred_eps_high  = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_high
 
@@ -578,17 +462,10 @@ def main() -> None:
                 )
                 calib_source = f"latest_year_{latest_year}"
             else:
-                interval_scale = calibrate_interval_scale(
-                    train_df[TARGET].to_numpy(dtype=float),
-                    train_eps_mid,
-                    train_eps_low,
-                    train_eps_high,
-                    args.target_coverage,
-                    args.min_calib_samples,
-                    args.min_calib_scale,
-                    args.max_calib_scale,
+                raise RuntimeError(
+                    f"Calibration failed: latest_year mode requires >= {args.min_calib_samples} rows in latest year "
+                    f"(latest_year={latest_year}, rows={int(np.sum(latest_mask))})."
                 )
-                calib_source = f"fallback_global_from_latest_year_{latest_year}"
             interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
         elif args.calibration_mode == "regime":
             interval_scale_vec, calib_source, interval_scale = calibrate_interval_scale_by_regime(
@@ -634,13 +511,13 @@ def main() -> None:
             interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
 
         pred_half_width = (pred_eps_high - pred_eps_low) / 2.0
-        pred_eps_low = pred_eps_rf - pred_half_width * interval_scale_vec
-        pred_eps_high = pred_eps_rf + pred_half_width * interval_scale_vec
+        pred_eps_low = pred_eps_model - pred_half_width * interval_scale_vec
+        pred_eps_high = pred_eps_model + pred_half_width * interval_scale_vec
 
         pred_eps_anchor = test_df["anchor_eps"].to_numpy(dtype=float)
         pred_eps_med = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
 
-        for model_name, pred in [("rf_delta", pred_eps_rf), ("baseline_anchor_eps", pred_eps_anchor), ("baseline_train_median", pred_eps_med)]:
+        for model_name, pred in [("lgb_delta", pred_eps_model), ("baseline_anchor_eps", pred_eps_anchor), ("baseline_train_median", pred_eps_med)]:
             m = evaluate_metrics(test_df, y_true, pred, args.eps_floor)
             row = {
                 "version": version_name,
@@ -659,79 +536,19 @@ def main() -> None:
                 "n_train": len(train_df),
                 "n_test": len(test_df),
             }
-            if model_name == "rf_delta":
+            if model_name == "lgb_delta":
                 row.update(interval_metrics(y_true, pred_eps_low, pred_eps_high))
             fold_rows.append(row)
 
-        keep_cols = [
-            c
-            for c in [
-                "year",
-                "symbol",
-                "name",
-                "industry",
-                "feature_cutoff_date",
-                "target_date",
-                "target_close",
-                "target_volume",
-                "q3_date",
-                "q3_close",
-                "q3_volume",
-                "pe_current",
-                "ttm_eps_official",
-            ]
-            if c in test_df.columns
-        ]
-        tmp = test_df[keep_cols].copy()
-        tmp["y_true"] = y_true
-        tmp["pred_rf_delta"] = pred_eps_rf
-        tmp["pred_rf_delta_low"] = pred_eps_low
-        tmp["pred_rf_delta_high"] = pred_eps_high
-        tmp["pred_delta_std"] = pred_delta_std
-        tmp["confidence_threshold"] = threshold
-        tmp["pred_baseline_anchor_eps"] = pred_eps_anchor
-        tmp["pred_baseline_train_median"] = pred_eps_med
-        tmp["feature_transform"] = FEATURE_TRANSFORM
-        tmp["interval_method"] = args.interval_method
-        tmp["effective_winsor_q"] = effective_winsor_q
-        tmp["effective_confidence_q"] = effective_conf_q
-        tmp["target_coverage"] = args.target_coverage if args.target_coverage is not None else np.nan
-        tmp["calibration_mode"] = args.calibration_mode
-        tmp["calibration_source"] = calib_source
-        tmp["interval_scale"] = interval_scale_vec
-        tmp["fold"] = f"year_{test_year}"
-        pred_rows.append(tmp)
-
-        val = build_valuation_daily_frame(
-            test_df,
-            pred_eps_rf,
-            pred_eps_low,
-            pred_eps_high,
-            month_dir.name,
-            f"{version_name}_{FEATURE_TRANSFORM}",
-            str(results_dir / "predictions.csv"),
-        )
-        val["fold"] = f"year_{test_year}"
-        valuation_rows.append(val)
-
     fold_df = pd.DataFrame(fold_rows)
-    pred_df = pd.concat(pred_rows, ignore_index=True) if pred_rows else pd.DataFrame()
-    val_df = pd.concat(valuation_rows, ignore_index=True) if valuation_rows else pd.DataFrame()
 
-    for frame, nd in [(fold_df, 2), (pred_df, 2), (val_df, 4)]:
-        num_cols = frame.select_dtypes(include=[np.number]).columns.tolist()
-        if num_cols:
-            frame[num_cols] = frame[num_cols].round(nd)
+    num_cols = fold_df.select_dtypes(include=[np.number]).columns.tolist()
+    if num_cols:
+        fold_df[num_cols] = fold_df[num_cols].round(2)
 
     fold_path = results_dir / "evaluate_by_fold.csv"
-    pred_path = results_dir / "predictions.csv"
-    val_path = results_dir / "valuation_daily_preview.csv"
-    q_path = results_dir / "valuation_quality_report.json"
 
     fold_df.to_csv(fold_path, index=False)
-    pred_df.to_csv(pred_path, index=False)
-    val_df.to_csv(val_path, index=False)
-    quality_check_and_report(val_df, q_path)
 
     print(f"{version_name} evaluate completed")
     print(f"- month_dir: {month_dir}")

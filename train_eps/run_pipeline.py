@@ -14,6 +14,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
     parser.add_argument("--python-exe", type=str, default=sys.executable)
+    parser.add_argument("--prepare-start-year", type=int, default=None, help="optional pass-through for prepare_data.py")
+    parser.add_argument("--prepare-end-year", type=int, default=None, help="optional pass-through for prepare_data.py")
+    parser.add_argument("--prepare-live-year", type=int, default=None, help="optional pass-through for prepare_data.py")
     return parser.parse_args()
 
 
@@ -72,15 +75,23 @@ def main() -> None:
     log_path = repo_root / "error_train_eps.log"
     py = args.python_exe
 
+    prepare_cmd = [
+        py,
+        str(prepare_script),
+        "--data-source",
+        args.data_source,
+    ]
+    if args.prepare_start_year is not None:
+        prepare_cmd.extend(["--start-year", str(args.prepare_start_year)])
+    if args.prepare_end_year is not None:
+        prepare_cmd.extend(["--end-year", str(args.prepare_end_year)])
+    if args.prepare_live_year is not None:
+        prepare_cmd.extend(["--live-year", str(args.prepare_live_year)])
+
     steps = [
         (
             "prepare_data",
-            [
-                py,
-                str(prepare_script),
-                "--data-source",
-                args.data_source,
-            ],
+            prepare_cmd,
         ),
         (
             "train",

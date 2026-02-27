@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error
 
 TARGET = "target_eps"
@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train shared RF model for train_eps/<market>/<year>/<month>")
+    parser = argparse.ArgumentParser(description="Train shared LightGBM model for train_eps/<market>/<year>/<month>")
     parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
@@ -28,6 +28,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--winsor-quantile", type=float, default=0.01)
     parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument("--n-estimators", type=int, default=800)
+    parser.add_argument("--learning-rate", type=float, default=0.03)
+    parser.add_argument("--num-leaves", type=int, default=31)
+    parser.add_argument("--subsample", type=float, default=0.8)
+    parser.add_argument("--colsample-bytree", type=float, default=0.8)
+    parser.add_argument("--reg-alpha", type=float, default=0.0)
+    parser.add_argument("--reg-lambda", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -90,11 +97,16 @@ def main() -> None:
     x_data = df[use_features]
     y_delta = df[TARGET_DELTA].astype(float).to_numpy()
 
-    model = RandomForestRegressor(
-        n_estimators=400,
-        max_depth=12,
+    model = LGBMRegressor(
+        objective="mae",
+        n_estimators=args.n_estimators,
+        learning_rate=args.learning_rate,
+        num_leaves=args.num_leaves,
+        subsample=args.subsample,
+        colsample_bytree=args.colsample_bytree,
+        reg_alpha=args.reg_alpha,
+        reg_lambda=args.reg_lambda,
         random_state=args.seed,
-        criterion="absolute_error",
         n_jobs=args.n_jobs,
     )
     model.fit(x_data, y_delta)
@@ -108,6 +120,8 @@ def main() -> None:
         "n_rows": int(len(df)),
         "main_metric": "mae",
         "winsor_quantile": float(args.winsor_quantile),
+        "model_family": "lightgbm",
+        "train_mae_lgb_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
         "train_mae_rf_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
         "train_mae_baseline_anchor_eps": float(mean_absolute_error(y_true, baseline_eps)),
         "feature_transform": "quantile",
@@ -124,15 +138,15 @@ def main() -> None:
     metrics_out.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     importance_df.to_csv(importance_out, index=False)
 
-    # sanity check: in-sample RF MAE 應低於 baseline，否則代表訓練有嚴重問題
-    rf_mae = metrics["train_mae_rf_pred_eps"]
+    # sanity check: in-sample MAE 應低於 baseline，否則代表訓練有嚴重問題
+    rf_mae = metrics["train_mae_lgb_pred_eps"]
     bl_mae = metrics["train_mae_baseline_anchor_eps"]
     if rf_mae > bl_mae:
         log_path = BASE_DIR.parent / "error_train_eps.log"
         ts = datetime.now().isoformat(timespec="seconds")
         msg = (
             f"[{ts}] SANITY FAIL | {month_dir}\n"
-            f"  train_mae_rf_pred_eps ({rf_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
+            f"  train_mae_lgb_pred_eps ({rf_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
             f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
         )
         with log_path.open("a", encoding="utf-8") as f:
