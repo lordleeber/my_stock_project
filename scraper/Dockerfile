@@ -16,8 +16,8 @@ RUN useradd -m appuser
 # 複製 Common 模組
 COPY common /app/common
 
-# 複製 Scraper 程式碼
-COPY scraper/ .
+# 複製 Scraper 程式碼（保留 /app/scraper 套件結構）
+COPY scraper /app/scraper
 
 # 建立資料存放目錄並設定權限
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
@@ -33,4 +33,4 @@ ENV FETCH_DELAY=3.0
 ENV MARKET_TYPE=ALL
 
 # 執行腳本
-CMD ["python", "scraper_daily.py"]
+CMD ["python", "scraper/scraper_daily.py"]
