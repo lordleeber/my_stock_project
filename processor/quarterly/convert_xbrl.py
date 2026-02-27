@@ -83,7 +83,7 @@ def log_duplicate_and_exit(category: str, row: dict[str, str]):
     raise SystemExit(1)
 
 
-def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]]):
+def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]], period_mode: str = "auto"):
     grouped: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
     for row in rows:
         grouped[(row.get("date", ""), row.get("symbol", ""))].append(row)
@@ -115,6 +115,10 @@ def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]]):
 
         if category == BALANCE_CATEGORY:
             return q_end_date
+        if period_mode == "accumulated":
+            return f"{y_start}-{q_end_date}"
+        if period_mode == "quarter":
+            return f"{q_start_date}-{q_end_date}"
         if category == CASHFLOW_CATEGORY:
             return f"{y_start}-{q_end_date}"
         return f"{q_start_date}-{q_end_date}"
@@ -301,6 +305,145 @@ def keep_current_period_row(statement_category: str, context_ref: str, date_str:
         # Interim reports are generally presented YTD to quarter-end.
         return start == y_start
     return False
+
+
+def income_period_flags(context_ref: str, date_str: str) -> tuple[bool, bool]:
+    """
+    Return (is_quarter, is_accumulated) for income statement contexts.
+    - quarter: From q_start to q_end
+    - accumulated: From y_start to q_end
+    For Q1, both flags can be True (same range 01/01~03/31).
+    """
+    q_start, q_end = quarter_range(date_str)
+    y_start = f"{date_str[:4]}0101"
+    m_from = re.match(r"^From(\d{8})To(\d{8})", context_ref)
+    if not m_from:
+        return False, False
+    start, end = m_from.group(1), m_from.group(2)
+    if end != q_end:
+        return False, False
+    return start == q_start, start == y_start
+
+
+def cashflow_period_flags(context_ref: str, date_str: str) -> tuple[bool, bool]:
+    """
+    Return (is_quarter, is_accumulated) for cash flow contexts.
+    - quarter: From q_start to q_end
+    - accumulated: From y_start to q_end
+    For Q1, both flags can be True (same range 01/01~03/31).
+    """
+    q_start, q_end = quarter_range(date_str)
+    y_start = f"{date_str[:4]}0101"
+    m_from = re.match(r"^From(\d{8})To(\d{8})", context_ref)
+    if not m_from:
+        return False, False
+    start, end = m_from.group(1), m_from.group(2)
+    if end != q_end:
+        return False, False
+    return start == q_start, start == y_start
+
+
+def parse_float_text(value: str) -> float | None:
+    s = (value or "").strip().replace(",", "")
+    if not s or s in {"--", "-"}:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def format_numeric_text(value: float) -> str:
+    if abs(value - round(value)) < 1e-9:
+        return str(int(round(value)))
+    return f"{value:.10f}".rstrip("0").rstrip(".")
+
+
+def load_income_accum_map_from_wide_csv(csv_path: Path) -> dict[tuple[str, str], float]:
+    """
+    Read wide income_statement_xbrl accumulated CSV and return:
+    {(symbol, account_code): numeric_value}
+    """
+    result: dict[tuple[str, str], float] = {}
+    if not csv_path.exists():
+        return result
+
+    with csv_path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            symbol = (row.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            for key, code in row.items():
+                if not key.startswith("code"):
+                    continue
+                idx = key[4:]
+                code_text = (code or "").strip()
+                if not code_text:
+                    continue
+                value_text = (row.get(f"value{idx}") or "").strip()
+                value_num = parse_float_text(value_text)
+                if value_num is None:
+                    continue
+                result[(symbol, code_text)] = value_num
+    return result
+
+
+def derive_q4_income_quarter_rows(
+    date_str: str,
+    quarter_rows: list[dict[str, str]],
+    accumulated_rows: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], int, int]:
+    """
+    For Q4, fill missing single-quarter rows via:
+      Q4 quarter = Q4 accumulated - Q3 accumulated
+    If prior Q3 accumulated is unavailable, fallback to Q4 accumulated.
+    Returns: (merged_rows, generated_count, fallback_count)
+    """
+    if not date_str.endswith("Q4"):
+        return quarter_rows, 0, 0
+
+    year = date_str[:4]
+    prev_q = f"{year}Q3"
+    prev_acc_path = Path(PROCESSED_DIR) / INCOME_CATEGORY / year / prev_q / "all_accumulated.csv"
+    prev_acc_map = load_income_accum_map_from_wide_csv(prev_acc_path)
+
+    out_rows = list(quarter_rows)
+    existing_keys: set[tuple[str, str]] = set()
+    for row in out_rows:
+        existing_keys.add((row.get("symbol", ""), row.get("account_code", "")))
+
+    generated_count = 0
+    fallback_count = 0
+    for row in accumulated_rows:
+        symbol = row.get("symbol", "")
+        account_code = row.get("account_code", "")
+        if not symbol or not account_code:
+            continue
+        key = (symbol, account_code)
+        if key in existing_keys:
+            continue
+
+        current_val = parse_float_text(row.get("value_num", "") or row.get("value_text", ""))
+        if current_val is None:
+            continue
+
+        prev_val = prev_acc_map.get(key)
+        if prev_val is None:
+            quarter_val = current_val
+            fallback_count += 1
+        else:
+            quarter_val = current_val - prev_val
+
+        quarter_text = format_numeric_text(quarter_val)
+        derived = dict(row)
+        derived["value_text"] = quarter_text
+        derived["value_num"] = quarter_text
+        out_rows.append(derived)
+        existing_keys.add(key)
+        generated_count += 1
+
+    return out_rows, generated_count, fallback_count
 
 
 def extract_income_statement_code_map(html_text: str) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
@@ -568,9 +711,20 @@ def main():
 
         output_paths = {
             BALANCE_CATEGORY: Path(PROCESSED_DIR) / BALANCE_CATEGORY / date_str[:4] / date_str / "all.csv",
-            INCOME_CATEGORY: Path(PROCESSED_DIR) / INCOME_CATEGORY / date_str[:4] / date_str / "all.csv",
-            CASHFLOW_CATEGORY: Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all.csv",
+            "income_statement_quarter": Path(PROCESSED_DIR) / INCOME_CATEGORY / date_str[:4] / date_str / "all_quarter.csv",
+            "income_statement_accumulated": Path(PROCESSED_DIR) / INCOME_CATEGORY / date_str[:4] / date_str / "all_accumulated.csv",
+            CASHFLOW_CATEGORY: Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all_accumulated.csv",
         }
+
+        # Remove legacy cash-flow outputs to avoid stale files being misread.
+        legacy_cashflow_paths = [
+            Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all.csv",
+            Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all_quarter.csv",
+        ]
+        for legacy_path in legacy_cashflow_paths:
+            if legacy_path.exists():
+                legacy_path.unlink()
+
         for output_path in output_paths.values():
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -579,12 +733,14 @@ def main():
         blocked_files = 0
         fact_rows_by_category = {
             BALANCE_CATEGORY: 0,
-            INCOME_CATEGORY: 0,
+            "income_statement_quarter": 0,
+            "income_statement_accumulated": 0,
             CASHFLOW_CATEGORY: 0,
         }
         emitted_keys = {
             BALANCE_CATEGORY: set(),
-            INCOME_CATEGORY: set(),
+            "income_statement_quarter": set(),
+            "income_statement_accumulated": set(),
             CASHFLOW_CATEGORY: set(),
         }
         income_codebook_by_symbol: dict[str, dict[str, tuple[str, str]]] = {}
@@ -593,7 +749,8 @@ def main():
 
         statement_rows_by_category = {
             BALANCE_CATEGORY: [],
-            INCOME_CATEGORY: [],
+            "income_statement_quarter": [],
+            "income_statement_accumulated": [],
             CASHFLOW_CATEGORY: [],
         }
 
@@ -617,8 +774,6 @@ def main():
                         if cashflow_codebook:
                             cashflow_codebook_by_symbol[symbol] = cashflow_codebook
                         if statement_category in (BALANCE_CATEGORY, INCOME_CATEGORY, CASHFLOW_CATEGORY):
-                            if not keep_current_period_row(statement_category, row.get("context_ref", ""), date_str):
-                                continue
                             if not row.get("account_code"):
                                 continue
                             statement_row = {k: row.get(k, "") for k in STATEMENT_COLUMNS}
@@ -632,24 +787,84 @@ def main():
                                 statement_row.get("value_num", ""),
                                 row.get("context_ref", ""),
                             )
-                            if dedup_key in emitted_keys[statement_category]:
-                                log_duplicate_and_exit(statement_category, statement_row)
-                            emitted_keys[statement_category].add(dedup_key)
-                            statement_rows_by_category[statement_category].append(statement_row)
-                            fact_rows_by_category[statement_category] += 1
+                            if statement_category == INCOME_CATEGORY:
+                                is_quarter, is_accumulated = income_period_flags(row.get("context_ref", ""), date_str)
+                                if not (is_quarter or is_accumulated):
+                                    continue
+
+                                if is_quarter:
+                                    bucket = "income_statement_quarter"
+                                    if dedup_key in emitted_keys[bucket]:
+                                        log_duplicate_and_exit(bucket, statement_row)
+                                    emitted_keys[bucket].add(dedup_key)
+                                    statement_rows_by_category[bucket].append(statement_row)
+                                    fact_rows_by_category[bucket] += 1
+
+                                if is_accumulated:
+                                    bucket = "income_statement_accumulated"
+                                    if dedup_key in emitted_keys[bucket]:
+                                        log_duplicate_and_exit(bucket, statement_row)
+                                    emitted_keys[bucket].add(dedup_key)
+                                    statement_rows_by_category[bucket].append(statement_row)
+                                    fact_rows_by_category[bucket] += 1
+                            elif statement_category == CASHFLOW_CATEGORY:
+                                _, is_accumulated = cashflow_period_flags(row.get("context_ref", ""), date_str)
+                                if not is_accumulated:
+                                    continue
+
+                                if dedup_key in emitted_keys[CASHFLOW_CATEGORY]:
+                                    log_duplicate_and_exit(CASHFLOW_CATEGORY, statement_row)
+                                emitted_keys[CASHFLOW_CATEGORY].add(dedup_key)
+                                statement_rows_by_category[CASHFLOW_CATEGORY].append(statement_row)
+                                fact_rows_by_category[CASHFLOW_CATEGORY] += 1
+                            else:
+                                if not keep_current_period_row(statement_category, row.get("context_ref", ""), date_str):
+                                    continue
+                                if dedup_key in emitted_keys[statement_category]:
+                                    log_duplicate_and_exit(statement_category, statement_row)
+                                emitted_keys[statement_category].add(dedup_key)
+                                statement_rows_by_category[statement_category].append(statement_row)
+                                fact_rows_by_category[statement_category] += 1
                 except Exception as e:
                     print(f"  [WARN] failed to parse {html_path}: {e}")
         finally:
             pass
 
+        q4_generated = 0
+        q4_fallback = 0
+        if date_str.endswith("Q4"):
+            merged_rows, q4_generated, q4_fallback = derive_q4_income_quarter_rows(
+                date_str,
+                statement_rows_by_category["income_statement_quarter"],
+                statement_rows_by_category["income_statement_accumulated"],
+            )
+            statement_rows_by_category["income_statement_quarter"] = merged_rows
+            fact_rows_by_category["income_statement_quarter"] = len(merged_rows)
+
         write_wide_all_csv(output_paths[BALANCE_CATEGORY], statement_rows_by_category[BALANCE_CATEGORY])
-        write_wide_all_csv(output_paths[INCOME_CATEGORY], statement_rows_by_category[INCOME_CATEGORY])
-        write_wide_all_csv(output_paths[CASHFLOW_CATEGORY], statement_rows_by_category[CASHFLOW_CATEGORY])
+        write_wide_all_csv(
+            output_paths["income_statement_quarter"],
+            statement_rows_by_category["income_statement_quarter"],
+            period_mode="quarter",
+        )
+        write_wide_all_csv(
+            output_paths["income_statement_accumulated"],
+            statement_rows_by_category["income_statement_accumulated"],
+            period_mode="accumulated",
+        )
+        write_wide_all_csv(
+            output_paths[CASHFLOW_CATEGORY],
+            statement_rows_by_category[CASHFLOW_CATEGORY],
+            period_mode="accumulated",
+        )
 
         print(f"  Files={total_files}, blocked={blocked_files}")
         print(f"  [+] Saved {output_paths[BALANCE_CATEGORY]} (facts={fact_rows_by_category[BALANCE_CATEGORY]})")
-        print(f"  [+] Saved {output_paths[INCOME_CATEGORY]} (facts={fact_rows_by_category[INCOME_CATEGORY]})")
+        print(f"  [+] Saved {output_paths['income_statement_quarter']} (facts={fact_rows_by_category['income_statement_quarter']})")
+        print(f"  [+] Saved {output_paths['income_statement_accumulated']} (facts={fact_rows_by_category['income_statement_accumulated']})")
         print(f"  [+] Saved {output_paths[CASHFLOW_CATEGORY]} (facts={fact_rows_by_category[CASHFLOW_CATEGORY]})")
+        if date_str.endswith("Q4"):
+            print(f"  [i] Q4 income quarter derived rows={q4_generated}, fallback_to_acc={q4_fallback}")
 
         def _merge_codebook(statement_type: str, codebook_by_symbol: dict[str, dict[str, tuple[str, str]]]):
             merged: dict[str, tuple[str, str]] = {}

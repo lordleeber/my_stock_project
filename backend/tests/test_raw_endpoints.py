@@ -252,6 +252,33 @@ CASES = [
         "expected_fields": ["date", "symbol", "cash_flow_operating", "net_cash_change"],
         "is_q_format": True,
     },
+    {
+        "endpoint": "/raw/income-statements-xbrl",
+        "table": "income_statement_xbrl",
+        "columns": ["date", "symbol"],
+        "params": ["symbol"],
+        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "is_q_format": True,
+    },
+    {
+        "endpoint": "/raw/balance-sheets-xbrl",
+        "table": "balance_sheet_xbrl",
+        "columns": ["date", "symbol"],
+        "params": ["symbol"],
+        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "is_q_format": True,
+    },
+    {
+        "endpoint": "/raw/cash-flows-xbrl",
+        "table": "cash_flow_xbrl",
+        "columns": ["date", "symbol"],
+        "params": ["symbol"],
+        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "expected_fields": ["date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"],
+        "is_q_format": True,
+    },
 ]
 
 
@@ -319,7 +346,21 @@ def test_raw_endpoint_field_types(case, client, engine):
                 assert DATE_RE.match(val)
             continue
 
-        if field in ("symbol", "market", "name", "direction", "institution", "item", "level_name", "bid", "ask"):
+        if field in (
+            "symbol",
+            "market",
+            "name",
+            "direction",
+            "institution",
+            "item",
+            "level_name",
+            "bid",
+            "ask",
+            "period",
+            "period_type",
+            "account_code",
+            "value_text",
+        ):
             assert val is None or isinstance(val, str)
             continue
 
@@ -477,3 +518,50 @@ def test_raw_endpoint_required_non_empty_fields(case, client, engine):
     for field in case["required_non_empty"]:
         val = record.get(field)
         assert isinstance(val, str) and val.strip() != ""
+
+
+XBRL_ENDPOINT_CASES = [
+    ("income_statement_xbrl", "/raw/income-statements-xbrl"),
+    ("balance_sheet_xbrl", "/raw/balance-sheets-xbrl"),
+    ("cash_flow_xbrl", "/raw/cash-flows-xbrl"),
+]
+
+
+@pytest.mark.parametrize("table,endpoint", XBRL_ENDPOINT_CASES)
+def test_xbrl_endpoint_returns_rows(table, endpoint, client, engine):
+    row = _sample_row(engine, table, ["date", "symbol"])
+    if not row:
+        pytest.skip(f"no data in {table}")
+
+    resp = client.get(
+        endpoint,
+        params={
+            "start_date": row["date"],
+            "end_date": row["date"],
+            "symbol": row["symbol"],
+            "limit": 3,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+
+    record = data[0]
+    expected_fields = {"date", "symbol", "period", "period_type", "account_code", "value_text", "value_num"}
+    assert expected_fields.issubset(set(record.keys()))
+    assert isinstance(record["date"], str) and Q_DATE_RE.match(record["date"])
+    assert isinstance(record["symbol"], str) and record["symbol"].strip() != ""
+
+
+@pytest.mark.parametrize("endpoint", [item[1] for item in XBRL_ENDPOINT_CASES])
+def test_xbrl_endpoint_rejects_bad_date(endpoint, client):
+    resp = client.get(
+        endpoint,
+        params={
+            "start_date": "2025-01-01",
+            "end_date": "2025Q1",
+            "limit": 1,
+        },
+    )
+    assert resp.status_code == 400

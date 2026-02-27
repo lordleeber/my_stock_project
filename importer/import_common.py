@@ -15,6 +15,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from common.schemas import get_polars_schema
 
 
+CODE_COL_RE = re.compile(r"^code(\d+)$")
+VALUE_COL_RE = re.compile(r"^value(\d+)$")
+
+
 def abort_with_error(message, exception=None):
     """Write error to error_importer.log and exit immediately."""
     error_file = "/app/error_importer.log"
@@ -568,3 +572,151 @@ def import_period_category(
 
     return imported_any
 
+
+def _xbrl_pair_columns(columns):
+    code_cols = {}
+    value_cols = {}
+    for col in columns:
+        m_code = CODE_COL_RE.match(col)
+        if m_code:
+            code_cols[int(m_code.group(1))] = col
+            continue
+        m_value = VALUE_COL_RE.match(col)
+        if m_value:
+            value_cols[int(m_value.group(1))] = col
+
+    indices = sorted(set(code_cols.keys()) & set(value_cols.keys()))
+    return [(code_cols[i], value_cols[i]) for i in indices]
+
+
+def _empty_xbrl_long_df():
+    return pl.DataFrame(
+        schema={
+            "date": pl.Utf8,
+            "symbol": pl.Utf8,
+            "period": pl.Utf8,
+            "period_type": pl.Utf8,
+            "account_code": pl.Utf8,
+            "value_text": pl.Utf8,
+            "value_num": pl.Float64,
+        }
+    )
+
+
+def _expand_xbrl_wide_csv(csv_file, period_type):
+    df_wide = pl.read_csv(
+        csv_file,
+        infer_schema_length=0,
+        schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8, "period": pl.Utf8},
+    )
+    if df_wide.height == 0:
+        return _empty_xbrl_long_df()
+
+    required_cols = {"date", "symbol"}
+    missing_cols = sorted(required_cols - set(df_wide.columns))
+    if missing_cols:
+        raise RuntimeError(f"Missing required columns in {csv_file}: {', '.join(missing_cols)}")
+
+    if "period" not in df_wide.columns:
+        df_wide = df_wide.with_columns(pl.lit(None).cast(pl.Utf8).alias("period"))
+
+    pairs = _xbrl_pair_columns(df_wide.columns)
+    if not pairs:
+        return _empty_xbrl_long_df()
+
+    parts = []
+    for code_col, value_col in pairs:
+        part = (
+            df_wide.select(
+                [
+                    pl.col("date").cast(pl.Utf8).alias("date"),
+                    pl.col("symbol").cast(pl.Utf8).alias("symbol"),
+                    pl.col("period").cast(pl.Utf8).alias("period"),
+                    pl.lit(period_type).cast(pl.Utf8).alias("period_type"),
+                    pl.col(code_col).cast(pl.Utf8).str.strip_chars().alias("account_code"),
+                    pl.col(value_col).cast(pl.Utf8).str.strip_chars().alias("value_text"),
+                ]
+            )
+            .filter(
+                pl.col("account_code").is_not_null()
+                & (pl.col("account_code") != "")
+                & pl.col("value_text").is_not_null()
+                & (pl.col("value_text") != "")
+            )
+            .with_columns(pl.col("value_text").cast(pl.Float64, strict=False).alias("value_num"))
+        )
+        parts.append(part)
+
+    if not parts:
+        return _empty_xbrl_long_df()
+    return pl.concat(parts, how="vertical")
+
+
+def import_xbrl_period_category(
+    engine,
+    category,
+    table_name,
+    config,
+    file_period_types,
+    chunksize=5000,
+    apply_etf_filter=True,
+):
+    cat_path = f"/app/data/processed/{category}"
+    imported_any = False
+
+    for period_token, period_dir in iter_period_dirs(cat_path):
+        if not in_period_range(period_token, config):
+            continue
+
+        sources = []
+        for filename, period_type in file_period_types:
+            csv_file = os.path.join(period_dir, filename)
+            if os.path.exists(csv_file):
+                sources.append((csv_file, period_type))
+
+        if not sources:
+            continue
+
+        try:
+            if not config["force_reimport"] and date_exists_in_db(engine, table_name, period_token):
+                print(f"Skipping {table_name} - {period_token} (already in DB)")
+                continue
+
+            print(f"Processing {table_name} - {period_token}...")
+            dfs = []
+            for csv_file, period_type in sources:
+                df_part = _expand_xbrl_wide_csv(csv_file, period_type)
+                if df_part.height == 0:
+                    print(f"  -> Empty or no code/value pairs in {csv_file}, skipping.")
+                    continue
+                dfs.append(df_part)
+
+            if not dfs:
+                continue
+
+            df = pl.concat(dfs, how="vertical")
+            if apply_etf_filter:
+                df = filter_etf(df)
+                if df.height == 0:
+                    print("  -> No data after filtering ETFs, skipping.")
+                    continue
+
+            if config["force_reimport"]:
+                delete_by_date(engine, table_name, period_token)
+
+            expected_count = df.height
+            df.to_pandas().to_sql(
+                name=table_name,
+                con=engine,
+                if_exists="append",
+                index=False,
+                chunksize=chunksize,
+            )
+            print(f"  -> Imported {expected_count} rows.")
+            verify_row_count(engine, table_name, expected_count, period_token)
+            run_lineage_validation(engine, table_name, period_token)
+            imported_any = True
+        except Exception as e:
+            abort_with_error(f"Failed to import xbrl {table_name} for {period_token}: {e}", e)
+
+    return imported_any

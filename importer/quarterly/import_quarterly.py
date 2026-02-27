@@ -7,7 +7,6 @@ QUARTERLY_CATEGORIES = (
     "cash_flow",
 )
 
-
 def run(engine, config, import_category=None):
     if import_category and import_category not in QUARTERLY_CATEGORIES:
         return False

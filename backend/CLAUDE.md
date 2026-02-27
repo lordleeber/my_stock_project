@@ -37,9 +37,6 @@ backend/
 ├── Dockerfile
 └── requirements.txt
 
-scanner/                 # Imported by backend at runtime
-├── volume_spike_scanner.py   # SQL-based volume spike detection
-└── plot_candlestick.py       # CLI charting (not used by API)
 
 strategy/                # Imported by backend at runtime
 ├── core.py              # Backtest engine (StrategyConfig, run_backtest)
@@ -106,13 +103,6 @@ All queries use raw SQL via `sqlalchemy.text()`. No ORM models — just `engine.
 
 ## API Endpoints
 
-### Scanner
-
-| Endpoint | Method | Key Params | Response Model |
-|----------|--------|-----------|----------------|
-| `/scanner/volume-spike` | GET | `date` (YYYY-MM-DD), `min_volume` (5000000), `volume_ratio` (4.0), `avg_days` (10), `filter_long_shadow` (true) | `List[VolumeSpikeResult]` |
-| `/scanner/candlestick/{symbol}` | GET | `date`, `days_before` (30), `days_after` (10) | `List[CandlestickData]` |
-| `/scanner/institutional/{symbol}` | GET | `date`, `days_before` (90), `days_after` (90) | `List[InstitutionalData]` |
 
 ### Backtest
 
@@ -151,7 +141,7 @@ AI assistant guardrails:
 - Date formats:
   - Daily-style endpoints (including `/raw/shareholding`, `/raw/valuation-analysis`): `YYYY-MM-DD`
   - `/raw/monthly-revenue`: `YYYYMXX` (example: `2026M01`)
-  - Quarterly endpoints (`/raw/quarterly-reports`, `/raw/income-statements`, `/raw/balance-sheets`, `/raw/cash-flows`): `YYYYQX` (example: `2025Q1`)
+  - Quarterly endpoints (`/raw/quarterly-reports`, `/raw/income-statements`, `/raw/balance-sheets`, `/raw/cash-flows`, `/raw/income-statements-xbrl`, `/raw/balance-sheets-xbrl`, `/raw/cash-flows-xbrl`): `YYYYQX` (example: `2025Q1`)
 - Quick valid examples:
   - `GET /raw/shareholding?symbol=2308&start_date=2026-01-30&end_date=2026-01-30`
   - `GET /raw/monthly-revenue?symbol=2330&start_date=2026M01&end_date=2026M01`
@@ -182,12 +172,15 @@ AI assistant guardrails:
 | `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` |
 | `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` |
 | `/raw/cash-flows` | GET | Same as quarterly-reports | `List[CashFlowRaw]` |
+| `/raw/income-statements-xbrl` | GET | `start_date` (YYYYQX), `end_date`, `symbol?`, `limit`, `offset` | `List[XbrlStatementRaw]` |
+| `/raw/balance-sheets-xbrl` | GET | Same as income-statements-xbrl | `List[XbrlStatementRaw]` |
+| `/raw/cash-flows-xbrl` | GET | Same as income-statements-xbrl | `List[XbrlStatementRaw]` |
 
 **Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
 - **Features:** Supports pagination via `limit` (max 5000) & `offset`. 
 - **Data Integrity:** Automatically handles non-JSON values (NaN/Inf) by converting them to `null`.
 - **Sorting:** Defaults to `date DESC` (and `symbol ASC` where applicable).
-- **Date Format:** Financial statements (`quarterly-reports`, `income-statements`, etc.) use **`YYYYQX`** string format (e.g., `2025Q3`). Backend logic is optimized to preserve this format without automatic date conversion.
+- **Date Format:** Financial statements (including XBRL statement endpoints) use **`YYYYQX`** string format (e.g., `2025Q3`). Backend logic is optimized to preserve this format without automatic date conversion.
 
 **Pagination Example:**
 To fetch the first 1000 records:
@@ -259,7 +252,8 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 ### Raw Data Models
 
 **Important Notes:**
-- All `date` fields return YYYY-MM-DD format strings (not datetime objects)
+- `date` fields are returned as strings (not datetime objects)
+- Most raw tables use `YYYY-MM-DD`; quarterly and XBRL statement tables use `YYYYQX`; monthly revenue uses `YYYYMXX`
 - Database schema uses TEXT type for all date columns across raw tables
 - All `symbol` fields use **TEXT** type and strictly contain **4-digit numeric symbols** only.
 - `bid` and `ask` fields in DailyQuoteRaw are strings (stored as TEXT in database)
@@ -289,6 +283,7 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 - **IncomeStatementRaw**: date (YYYYQX), symbol, market, name, revenue_q/acc, cost_of_revenue_q/acc, gross_profit_q/acc, operating_income_q/acc, net_income_q/acc, eps_q/acc, etc.
 - **BalanceSheetRaw**: date (YYYYQX), symbol, market, name, current_assets, total_assets, total_equity, share_capital, nav_per_share, etc. (No _q/_acc needed for snapshot data).
 - **CashFlowRaw**: date (YYYYQX), symbol, market, name, cash_flow_operating_q/acc, cash_flow_investing_q/acc, cash_flow_financing_q/acc, net_cash_change_q/acc, cash_begin, cash_end
+- **XbrlStatementRaw**: date (YYYYQX), symbol, period, period_type (`quarter`/`accumulated`/`as_of`), account_code, value_text, value_num
 
 ## Database Tables Used
 
@@ -304,6 +299,9 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 | `short_interest_analysis` | date, symbol, market, sbl/margin short metrics, short_pressure_score | Raw API (`/raw/short-interest-analysis`) |
 | `margin_pressure_analysis` | date, symbol, market, margin usage/cover pressure metrics | Raw API (`/raw/margin-pressure-analysis`) |
 | `margin_summary` | date, market, item, buy, sell, cash_repay, today_balance | Market analysis |
+| `income_statement_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/income-statements-xbrl`) |
+| `balance_sheet_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/balance-sheets-xbrl`) |
+| `cash_flow_xbrl` | date, symbol, period, period_type, account_code, value_text, value_num | Raw API (`/raw/cash-flows-xbrl`) |
 
 **Indexes:**
 - `idx_daily_quotes_date_symbol`, `idx_daily_quotes_symbol_date` (daily_quotes)
@@ -318,15 +316,6 @@ large_holder_ratio_wow?, small_holder_ratio_wow?, concentration_spread_wow?
 
 The composite indexes on `(symbol, date)` optimize JOIN performance for the ML training data endpoint.
 
-## Scanner Filter Logic (volume-spike)
-
-The scanner SQL in `scanner/volume_spike_scanner.py` applies these filters:
-1. `volume >= min_volume` (default 5M shares)
-2. `volume >= avg_volume_Nd * volume_ratio` (default 4x vs 10-day avg)
-3. `close > open` (red candle / bullish close)
-4. `close >= MA60` (above 60-day moving average; stocks without MA60 are excluded)
-5. `close >= 90-day highest close` (near-term high)
-6. Optional: upper shadow ratio < 1.0 (filter long upper shadows)
 
 ## Strategy / Backtest Logic
 
@@ -368,14 +357,6 @@ except Exception as e:
 # Health check
 curl http://localhost:8000/health
 
-# Volume spike scanner
-curl "http://localhost:8000/scanner/volume-spike?date=2025-10-03"
-
-# Candlestick chart data
-curl "http://localhost:8000/scanner/candlestick/6548?date=2025-10-03"
-
-# Institutional data
-curl "http://localhost:8000/scanner/institutional/2330?date=2025-12-01"
 
 # Backtest
 curl -X POST http://localhost:8000/backtest/run \
@@ -419,6 +400,15 @@ curl "http://localhost:8000/raw/income-statements?symbol=2330&start_date=2025Q3&
 
 # Get raw balance sheets
 curl "http://localhost:8000/raw/balance-sheets?symbol=2330&start_date=2025Q3&end_date=2025Q3"
+
+# Get raw income statement XBRL rows
+curl "http://localhost:8000/raw/income-statements-xbrl?symbol=2330&start_date=2025Q3&end_date=2025Q3&limit=5"
+
+# Get raw balance sheet XBRL rows
+curl "http://localhost:8000/raw/balance-sheets-xbrl?symbol=2330&start_date=2025Q3&end_date=2025Q3&limit=5"
+
+# Get raw cash flow XBRL rows
+curl "http://localhost:8000/raw/cash-flows-xbrl?symbol=2330&start_date=2025Q3&end_date=2025Q3&limit=5"
 ```
 
 ## Adding a New Endpoint

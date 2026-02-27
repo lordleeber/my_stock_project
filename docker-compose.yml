@@ -227,7 +227,7 @@ services:
       - db
 
   validator:
-    image: stock-processor
+    image: my_stock_project-processor-validator
     build:
       context: ./processor
     volumes:

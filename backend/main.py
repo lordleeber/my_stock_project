@@ -108,6 +108,7 @@ class BacktestResult(BaseModel):
     trades: List[TradeRecord]
 
 # --- Scanner Models ---
+
 class VolumeSpikeResult(BaseModel):
     symbol: str
     name: str
@@ -512,6 +513,15 @@ class CashFlowRaw(BaseModel):
     cash_begin: Optional[float] = None
     cash_end: Optional[float] = None
 
+class XbrlStatementRaw(BaseModel):
+    date: str
+    symbol: str
+    period: Optional[str] = None
+    period_type: Optional[str] = None
+    account_code: Optional[str] = None
+    value_text: Optional[str] = None
+    value_num: Optional[float] = None
+
 class DividendRaw(BaseModel):
     date: str
     symbol: str
@@ -595,7 +605,16 @@ def get_raw_data(
         
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
         # 註：季報、財報與月營收使用 YYYYQX/YYYYMXX 格式，應跳過轉換
-        periodic_tables = ["quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"]
+        periodic_tables = [
+            "quarterly_reports",
+            "income_statement",
+            "balance_sheet",
+            "cash_flow",
+            "income_statement_xbrl",
+            "balance_sheet_xbrl",
+            "cash_flow_xbrl",
+            "monthly_revenue",
+        ]
         if 'date' in df.columns and table not in periodic_tables:
             df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['date'] = df['date'].where(df['date'].notnull(), None)
@@ -948,6 +967,45 @@ def get_raw_cash_flows(
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
     return get_raw_data("cash_flow", start_date, end_date, symbol, market, limit, offset)
 
+@app.get("/raw/income-statements-xbrl", response_model=List[XbrlStatementRaw])
+def get_raw_income_statements_xbrl(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("income_statement_xbrl", start_date, end_date, symbol, None, limit, offset)
+
+@app.get("/raw/balance-sheets-xbrl", response_model=List[XbrlStatementRaw])
+def get_raw_balance_sheets_xbrl(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("balance_sheet_xbrl", start_date, end_date, symbol, None, limit, offset)
+
+@app.get("/raw/cash-flows-xbrl", response_model=List[XbrlStatementRaw])
+def get_raw_cash_flows_xbrl(
+    start_date: str = Query(..., description="Format: YYYYQX"),
+    end_date: str = Query(..., description="Format: YYYYQX"),
+    symbol: Optional[str] = None,
+    limit: int = Query(1000, gt=0, le=5000),
+    offset: int = Query(0, ge=0)
+):
+    import re
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+        raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
+    return get_raw_data("cash_flow_xbrl", start_date, end_date, symbol, None, limit, offset)
+
 @app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
 def get_volume_spike_scanner(
     date: str = Query(..., description="Scan date in YYYY-MM-DD format"),
@@ -1134,6 +1192,7 @@ def get_institutional_data(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/health")
 def health_check():

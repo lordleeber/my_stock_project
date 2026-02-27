@@ -65,6 +65,9 @@ docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer pyt
 
 # Quarterly import
 docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
+
+# Quarterly XBRL import
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly_xbrl.py
 ```
 
 **Important Notes**:
@@ -79,6 +82,7 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python 
 | `import_weekly.py` | Weekly categories | shareholding |
 | `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
 | `import_quarterly.py` | Quarterly categories | quarterly_reports, income_statement, balance_sheet, cash_flow |
+| `import_quarterly_xbrl.py` | Quarterly XBRL categories | balance_sheet_xbrl, income_statement_xbrl, cash_flow_xbrl |
 
 `import_daily.py` runs all daily categories in sequence for the date range.  
 For long ranges (for example a full year), runtime can be very long; this is expected and not a hang.
@@ -127,6 +131,11 @@ The importer **no longer relies on automatic type inference**. It uses `common/s
 - Every `pl.read_csv` call uses `schema_overrides` from the shared schema.
 - This prevents numeric symbols from being incorrectly detected as integers (bigint).
 - **Dual-Column Support**: For flow statements (`income_statement`, `cash_flow`, `quarterly_reports`), the importer correctly handles both single-quarter (`_q`) and accumulated (`_acc`) fields as defined in the schema.
+- **XBRL Wide-to-Long Import**: Quarterly XBRL exports are converted from wide `codeN/valueN` CSV into row-based records before DB import:
+  - `balance_sheet_xbrl`: reads `all.csv` (period type `as_of`)
+  - `income_statement_xbrl`: reads `all_quarter.csv` + `all_accumulated.csv`
+  - `cash_flow_xbrl`: reads `all_accumulated.csv`
+  - XBRL tables do **not** store `pced_file/pced_row/pced_col`.
 
 ### 6. Row Count VerificationAfter each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
 
@@ -162,6 +171,12 @@ docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer pyt
 ```bash
 # Use YYYYQX format for quarterly reports
 docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
+```
+
+### Import Quarterly XBRL
+```bash
+# Use YYYYQX format for quarterly xbrl
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly_xbrl.py
 ```
 
 ### Force Reimport TDCC Data
@@ -333,7 +348,7 @@ START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer python im
 
 **Files**:
 - `validator.py`: Statistical validation logic
-- `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_quarterly.py`: Frequency-based import entry points
+- `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_quarterly.py`, `import_quarterly_xbrl.py`: Frequency-based import entry points
 
 **Key Functions**:
 ```python

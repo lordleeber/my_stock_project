@@ -126,6 +126,13 @@ docker compose run --rm processor python convert_quarterly.py
 START_DATE=20240102 END_DATE=20240102 docker compose run --rm processor python audit.py
 ```
 
+For `QUARTERLY_TASK=detail_xbrl`, outputs are:
+- `processed/balance_sheet_xbrl/.../all.csv`
+- `processed/cash_flow_xbrl/.../all_accumulated.csv`
+- `processed/income_statement_xbrl/.../all_quarter.csv` (Q4 is derived by `Q4_acc - Q3_acc`; fallback to `Q4_acc` if prior data is missing)
+- `processed/income_statement_xbrl/.../all_accumulated.csv`
+- `processed/xbrl_codebook.csv`
+
 ## Data Lineage & Schema Enforcement
 
 All processed CSVs must include lineage columns:
