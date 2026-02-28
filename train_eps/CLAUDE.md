@@ -83,10 +83,10 @@
 
 ## 05/06/07 Specific Rules
 - For 05/06/07 prepare scripts:
-  - Default `--start-year` is `2021`.
-  - Exclude rows where previous Q4 income-statement row does not exist.
-  - Exclude rows where previous Q4 `revenue_q` is `NaN` or `0`.
-  - After exclusions, if `prev_q4_margin` still has missing values, raise error and stop.
+  - Default `--start-year` is `2020` (same as global fetch range).
+  - For 2020 rows, features that depend on 2019 historical quarters may be missing (`NaN`), including previous-Q4-related fields.
+  - Current pipeline does **not** force-drop 05/06/07 rows only because previous-Q4 fields are missing.
+  - Missing feature values are allowed in training (LightGBM handles `NaN` natively).
 
 ## Health Metrics
 - After running `evaluate.py`, check `results_eval/evaluate_by_fold.json`:
