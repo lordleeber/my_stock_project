@@ -104,11 +104,15 @@
 - `train_eps/prepare_data.py` outputs only `dataset_train.csv` and `dataset_evaluate.csv` into `train_eps/output/<year>/<month>/`.
 - No `dataset_meta.csv` or `dataset_live.csv` output.
 - No `daily_quotes` / `pe_ratio` fetch path.
+- For both DB and API paths, anchor-quarter samples must have `income_statement + balance_sheet + cash_flow`; otherwise rows are excluded.
+- Monthly revenue is handled with full-market scope (`sii + otc`) in pipeline output.
 - XBRL features are included for 11-month model:
   - `xbrl_gross_margin_q`, `xbrl_op_margin_q`, `xbrl_rd_ratio_q`, `xbrl_tax_rate_q`
   - `xbrl_current_ratio`, `xbrl_cash_to_assets`, `xbrl_cfo_to_ni_q`, `xbrl_capex_to_revenue_q`
 - `cash_flow_xbrl` uses accumulated statements and is converted to single-quarter:
   - `Q3 single-quarter = Q3 accumulated - Q2 accumulated`
+- In quantile feature flow, missing values are preserved (no fill to `0`/`0.5`) and remain `NaN` for model-side handling.
+- `APPLY_TRADING_FILTER` flag has been removed (no trading-filter switch in current prepare pipeline).
 - API mode can be slow; prefer DB mode if available.
 
 ## Rules
