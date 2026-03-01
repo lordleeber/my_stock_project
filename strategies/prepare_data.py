@@ -333,8 +333,14 @@ def main() -> None:
     if not train_eval_path.exists():
         raise FileNotFoundError(f"train_eps evaluate dataset not found: {train_eval_path}")
     train_eval = pd.read_csv(train_eval_path)
+    selected_model_year = None
     if "year" in train_eval.columns:
-        train_eval = train_eval[pd.to_numeric(train_eval["year"], errors="coerce") == year].copy()
+        y = pd.to_numeric(train_eval["year"], errors="coerce")
+        valid_years = y.dropna().astype(int)
+        if valid_years.empty:
+            raise RuntimeError(f"No valid year values found in: {train_eval_path}")
+        selected_model_year = int(valid_years.max())
+        train_eval = train_eval[y == selected_model_year].copy()
     model_out = train_eval.drop(columns=["target_eps", "delta_eps"], errors="ignore")
     model_out = model_out.sort_values(["symbol"]).reset_index(drop=True)
 
@@ -349,6 +355,8 @@ def main() -> None:
     print(f"- model_output: {model_output_path}")
     print(f"- strategy_output: {strategy_output_path}")
     print(f"- model_source: {model_source}")
+    if selected_model_year is not None:
+        print(f"- model_input_year_selected: {selected_model_year}")
     print(f"- rows_model: {len(model_out)}")
     print(f"- rows_strategy: {len(strategy_out)}")
     print(f"- rows_before_ttm_filter: {rows_before_ttm_filter}")

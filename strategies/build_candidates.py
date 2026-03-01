@@ -39,9 +39,26 @@ def main() -> None:
 
     pred = pd.read_csv(pred_path)
     ds = pd.read_csv(ds_path)
+    pred_year = pred.copy()
+    ds_year = ds.copy()
 
-    pred_year = pred[pred["fold"] == f"year_{year}"].copy()
-    ds_year = ds[ds["year"].astype(int) == year].copy()
+    selected_data_year = None
+    if "year" in pred.columns:
+        py = pd.to_numeric(pred["year"], errors="coerce")
+        pred_valid = py.dropna().astype(int)
+        if not pred_valid.empty:
+            selected_data_year = int(pred_valid.max())
+            pred_year = pred[py == selected_data_year].copy()
+
+    if selected_data_year is not None and "year" in ds.columns:
+        dy = pd.to_numeric(ds["year"], errors="coerce")
+        ds_year = ds[dy == selected_data_year].copy()
+    elif "year" in ds.columns:
+        dy = pd.to_numeric(ds["year"], errors="coerce")
+        ds_valid = dy.dropna().astype(int)
+        if not ds_valid.empty:
+            selected_data_year = int(ds_valid.max())
+            ds_year = ds[dy == selected_data_year].copy()
 
     use_cols = [
         "symbol",
@@ -147,6 +164,8 @@ def main() -> None:
     print(f"- month: {month}")
     print(f"- predictions: {pred_path}")
     print(f"- dataset: {ds_path}")
+    if selected_data_year is not None:
+        print(f"- data_year_selected: {selected_data_year}")
     print(f"- output: {output_path}")
     print(f"- rows: {len(out)}")
 
