@@ -5,23 +5,23 @@ Walk-forward backtest runner that uses:
 - real historical quotes from DB (`daily_quotes`)
 
 ## Required monthly inputs
-For each month in range:
+For each month:
 - `strategies/output/<year>/<month>/trade_candidates.csv`
 - `strategies/output/<year>/<month>/results_optimize/best_strategy.json`
 
 ## Run
-Strict mode (default, missing input -> fail):
+Single month (`run.py`):
 ```bash
-venv/bin/python backtester/run.py --start_year 2023 --start_month 8 --end_year 2023 --end_month 8
+venv/bin/python backtester/run.py --year 2023 --month 8
 ```
 
-Allow missing months and mark skipped:
+Batch month range (`batch_run.py`) — runs month by month, missing inputs are skipped without interrupting:
 ```bash
-venv/bin/python backtester/run.py --start_year 2023 --start_month 1 --end_year 2023 --end_month 12 --allow-missing-input
+venv/bin/python backtester/batch_run.py --start_year 2023 --start_month 1 --end_year 2023 --end_month 12
 ```
 
 ## Outputs
-Written to `backtester/output/<startYYYYMM>_<endYYYYMM>/`:
+Single-month outputs are written to `backtester/output/<year>/<month>/`:
 - `trades.csv`
 - `monthly_summary.csv`
 - `equity_curve.csv`

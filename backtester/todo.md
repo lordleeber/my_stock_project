@@ -30,7 +30,7 @@
 - [x] 輸出完整交易欄位：entry/exit/return/pnl/exit_reason
 
 ## Phase 4: 月度 Walk-forward 執行
-- [x] 建立 `run.py`：支援 `--start_year --start_month --end_year --end_month`（I/O contract skeleton）
+- [x] 建立 `run.py`：支援單月 `--year --month`，批次由 `batch_run.py` 逐月執行
 - [x] 逐月讀取該月候選股與最佳策略參數
 - [x] 逐月查行情並執行模擬
 - [x] 彙整月度結果與全期間結果
