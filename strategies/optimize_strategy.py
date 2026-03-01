@@ -29,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--min-entered-count", type=int, default=1,
                         help="minimum entered trades to avoid overfitting")
+    parser.add_argument(
+        "--max-stop-loss-ratio",
+        type=float,
+        default=0.5,
+        help="maximum allowed stop_loss ratio among sold trades (0~1)",
+    )
     parser.add_argument("--max-hold-days", type=int, default=20,
                         help="maximum trading days to hold a position")
     return parser.parse_args()
@@ -47,7 +53,8 @@ def build_base_config(strategy_name: str) -> dict[str, Any]:
     return {
         "strategy_name": strategy_name,
         "position": {"shares_per_lot": 1000, "max_position_amount": 200000},
-        "entry_rule": {"type": "all"},
+        # Never use entry_rule=all; always keep a gating condition.
+        "entry_rule": {"type": "target_above_entry_ratio", "ratio": 1.02},
         "take_profit_rule": {"type": "fixed_pct", "pct": 0.08},
         "exit_rule": {
             "stop_loss_pct": 0.05,
@@ -63,6 +70,19 @@ def sample_config(rng: np.random.Generator) -> dict[str, Any]:
     cfg = build_base_config(strategy_name=f"auto_{family}")
 
     if family == "A":
+        # Momentum entry: target must be above entry by threshold.
+        cfg["entry_rule"] = {
+            "type": "target_above_entry_ratio",
+            "ratio": float(rng.choice(np.arange(1.01, 1.131, 0.01))),
+        }
+    else:
+        # Pullback entry: require pullback vs reference close.
+        cfg["entry_rule"] = {
+            "type": "pullback_from_ref_close",
+            "ratio": float(rng.choice(np.arange(0.90, 0.991, 0.01))),
+        }
+
+    if family == "A":
         cfg["take_profit_rule"] = {"type": "fixed_pct", "pct": float(rng.choice(np.arange(0.01, 0.151, 0.01)))}
         cfg["exit_rule"]["stop_loss_pct"] = float(rng.choice(np.arange(0.01, 0.101, 0.01)))
         cfg["exit_rule"]["max_hold_days"] = int(rng.choice([5, 7, 10, 12, 15, 20, 30]))
@@ -72,13 +92,6 @@ def sample_config(rng: np.random.Generator) -> dict[str, Any]:
         cfg["exit_rule"]["trailing_stop_pct"] = float(rng.choice(np.arange(0.01, 0.081, 0.01)))
         cfg["exit_rule"]["max_hold_days"] = int(rng.choice([7, 10, 12, 15, 20, 30]))
     else:
-        entry_type = rng.choice(["target_above_entry_ratio", "pullback_from_ref_close"])
-        if entry_type == "target_above_entry_ratio":
-            ratio = float(rng.choice(np.arange(1.00, 1.121, 0.01)))
-        else:
-            ratio = float(rng.choice(np.arange(0.90, 1.001, 0.01)))
-        cfg["entry_rule"] = {"type": entry_type, "ratio": ratio}
-
         tp_type = rng.choice(["target_price_if_above_entry", "fixed_pct"])
         if tp_type == "fixed_pct":
             cfg["take_profit_rule"] = {"type": tp_type, "pct": float(rng.choice(np.arange(0.04, 0.121, 0.01)))}
@@ -190,6 +203,7 @@ def _empty_result(cfg: dict[str, Any]) -> dict[str, Any]:
         "total_picks": 0, "entered_count": 0, "skipped_count": 0,
         "sold_count": 0, "open_until_end_count": 0,
         "sold_win_count": 0, "sold_loss_count": 0,
+        "stop_loss_count": 0, "stop_loss_ratio": np.nan,
         "total_capital": 0.0, "total_revenue": 0.0, "return_percent": 0.0,
     }
 
@@ -202,6 +216,8 @@ def _aggregate_result(cfg: dict[str, Any], out: pd.DataFrame) -> dict[str, Any]:
     total_capital = float(sold["capital_used"].sum()) if (not sold.empty and "capital_used" in sold.columns) else 0.0
     total_revenue = float(sold["pnl_amount"].sum()) if (not sold.empty and "pnl_amount" in sold.columns) else 0.0
     return_percent = (total_revenue / total_capital * 100.0) if total_capital > 0 else 0.0
+    stop_loss_count = int((sold.get("exit_reason", pd.Series(dtype=str)) == "stop_loss").sum()) if not sold.empty else 0
+    stop_loss_ratio = (stop_loss_count / len(sold)) if len(sold) > 0 else np.nan
 
     return {
         "strategy_name": cfg["strategy_name"],
@@ -215,10 +231,27 @@ def _aggregate_result(cfg: dict[str, Any], out: pd.DataFrame) -> dict[str, Any]:
         "open_until_end_count": int(len(open_until_end)),
         "sold_win_count": int((sold["pnl_amount"] > 0).sum()) if not sold.empty else 0,
         "sold_loss_count": int((sold["pnl_amount"] < 0).sum()) if not sold.empty else 0,
+        "stop_loss_count": stop_loss_count,
+        "stop_loss_ratio": round(float(stop_loss_ratio), 6) if np.isfinite(stop_loss_ratio) else np.nan,
         "total_capital": round(total_capital, 2),
         "total_revenue": round(total_revenue, 2),
         "return_percent": round(return_percent, 4),
     }
+
+
+def score_trial(row: dict[str, Any], min_entered_count: int, max_stop_loss_ratio: float) -> float:
+    entered = int(row.get("entered_count", 0) or 0)
+    sold_count = int(row.get("sold_count", 0) or 0)
+    stop_loss_ratio = row.get("stop_loss_ratio", np.nan)
+    ret = float(row.get("return_percent", 0.0) or 0.0)
+
+    if entered < int(min_entered_count):
+        return -999.0
+    if sold_count <= 0:
+        return -998.0
+    if np.isfinite(stop_loss_ratio) and float(stop_loss_ratio) > float(max_stop_loss_ratio):
+        return -500.0 + ret
+    return ret
 
 
 def find_quotes_csv(base_dir: Path, year: int, month: int) -> Path | None:
@@ -266,6 +299,8 @@ def prev_month(year: int, month: int) -> tuple[int, int]:
 
 def main() -> None:
     args = parse_args()
+    if args.max_stop_loss_ratio < 0.0 or args.max_stop_loss_ratio > 1.0:
+        raise ValueError("--max-stop-loss-ratio must be in [0, 1]")
     year = int(args.year)
     month = str(args.month).zfill(2)
     month_int = int(month)
@@ -347,7 +382,11 @@ def main() -> None:
             simulate_one_fn=simulate_one,
         )
         row["trial_number"] = i
-        row["score"] = row["return_percent"] if row["entered_count"] >= args.min_entered_count else -999.0
+        row["score"] = score_trial(
+            row=row,
+            min_entered_count=args.min_entered_count,
+            max_stop_loss_ratio=args.max_stop_loss_ratio,
+        )
         rows.append(row)
 
     all_df = pd.DataFrame(rows)
@@ -401,6 +440,7 @@ def main() -> None:
                 "n_trials": args.n_trials,
                 "seed": args.seed,
                 "min_entered_count": args.min_entered_count,
+                "max_stop_loss_ratio": args.max_stop_loss_ratio,
                 "hist_candidates_count": int(len(hist_candidates)),
                 "hist_quotes_rows": int(len(hist_quotes)),
                 "best_trial_number": int(best["trial_number"]),
