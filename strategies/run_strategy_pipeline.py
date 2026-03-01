@@ -7,9 +7,9 @@ from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Automation pipeline for strategy workflow.")
-    parser.add_argument("--market", type=str, required=True, choices=["sii", "otc"])
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 08")
+    parser.add_argument("--n-trials", type=int, default=None, help="optional passthrough to optimize_strategy.py")
     return parser.parse_args()
 
 
@@ -42,7 +42,6 @@ def run_command(command_list, step_name):
 
 def main():
     args = parse_args()
-    market = args.market
     year = str(args.year)
     month = str(args.month).zfill(2)
 
@@ -50,36 +49,40 @@ def main():
     python_exe = sys.executable
 
     print(f"\n{'='*60}")
-    print(f"Strategy Pipeline: {market.upper()} {year}/{month}")
+    print(f"Strategy Pipeline: {year}/{month}")
     print(f"{'='*60}")
     print("Pipeline flow (look-ahead bias free):")
-    print("  Step 1: Predict EPS using published model")
-    print("  Step 2: Build candidates + fetch per-stock revenue publish dates")
-    print("  Step 3: Cache quotes for current month AND historical periods")
-    print("          (last-year same month + last month)")
-    print("  Step 4: Optimize params on HISTORICAL data; apply to current month")
+    print("  Step 1: Prepare strategy datasets from DB")
+    print("  Step 2: Predict EPS using published model")
+    print("  Step 3: Build trade candidates")
+    print("  Step 4: Cache quotes for current + required historical periods")
+    print("  Step 5: Optimize params on historical data; apply to current month")
     print(f"{'='*60}\n")
+
+    optimize_cmd = [python_exe, "strategies/optimize_strategy.py", "--year", year, "--month", month]
+    if args.n_trials is not None:
+        optimize_cmd.extend(["--n-trials", str(args.n_trials)])
 
     steps = [
         {
-            "name": "Step 1 — Predict Published EPS",
-            "cmd": [python_exe, "strategies/predict_published.py",
-                    "--market", market, "--year", year, "--month", month],
+            "name": "Step 1 — Prepare Data",
+            "cmd": [python_exe, "strategies/prepare_data.py", "--year", year, "--month", month],
         },
         {
-            "name": "Step 2 — Build Candidates (with revenue_publish_date)",
-            "cmd": [python_exe, "strategies/build_candidates.py",
-                    "--market", market, "--year", year, "--month", month],
+            "name": "Step 2 — Predict Published EPS",
+            "cmd": [python_exe, "strategies/predict_published.py", "--year", year, "--month", month],
         },
         {
-            "name": "Step 3 — Cache Daily Quotes (current + historical)",
-            "cmd": [python_exe, "strategies/cache_daily_quotes.py",
-                    "--market", market, "--year", year, "--month", month],
+            "name": "Step 3 — Build Candidates",
+            "cmd": [python_exe, "strategies/build_candidates.py", "--year", year, "--month", month],
         },
         {
-            "name": "Step 4 — Optimize Strategy (train on history, apply to current)",
-            "cmd": [python_exe, "strategies/optimize_strategy.py",
-                    "--market", market, "--year", year, "--month", month],
+            "name": "Step 4 — Cache Daily Quotes (current + historical)",
+            "cmd": [python_exe, "strategies/cache_daily_quotes.py", "--year", year, "--month", month],
+        },
+        {
+            "name": "Step 5 — Optimize Strategy (train on history, apply to current)",
+            "cmd": optimize_cmd,
         },
     ]
 

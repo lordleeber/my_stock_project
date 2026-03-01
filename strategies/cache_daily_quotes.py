@@ -2,34 +2,32 @@
 cache_daily_quotes.py — Cache daily OHLC quotes for strategy backtesting.
 
 This script fetches daily quotes for TWO purposes:
-  1. [Historical training] Last-year same month + last month → used to optimize strategy params
-  2. [Current month]       Current {year}/{month}           → used to apply best params
-
-Historical period quotes are cached to their own month directories so optimize_strategy.py
-can load them without look-ahead bias.
+  1. [Historical training] Last-year same month + last month
+  2. [Current month]       Current {year}/{month}
 """
+from __future__ import annotations
+
 import argparse
 import calendar
+import sys
+import time
 from pathlib import Path
 
 import pandas as pd
-import requests
+from sqlalchemy import bindparam, create_engine, text
 
-API_BASE_DEFAULT = "http://100.103.191.79:8000"
+# Ensure repo root is importable when running this script directly.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from train_eps import prepare_data as tp
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Cache daily quotes by market/year/month.")
-    parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Cache daily quotes by year/month.")
     parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="e.g. 09")
-    parser.add_argument("--api-base", type=str, default=API_BASE_DEFAULT)
-    parser.add_argument(
-        "--skip-historical",
-        action="store_true",
-        help="Skip caching historical periods (last-year same month + last month). "
-             "Only cache the current month.",
-    )
+    parser.add_argument("--month", type=str, required=True, help="e.g. 08")
     return parser.parse_args()
 
 
@@ -41,86 +39,23 @@ def month_date_range(year: int, month: int) -> tuple[str, str]:
 
 
 def add_trading_day_buffer(year: int, month: int, buffer_days: int = 30) -> str:
-    """
-    Return an end_date that is roughly `buffer_days` calendar days after month-end.
-    This covers up to 20 trading days of max-hold after the last possible publish date.
-    """
-    last_day = calendar.monthrange(year, month)[1]
-    end_dt = pd.Timestamp(f"{year:04d}-{month:02d}-{last_day:02d}") + pd.Timedelta(days=buffer_days)
+    end_dt = pd.Timestamp(f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}") + pd.Timedelta(days=buffer_days)
     return end_dt.strftime("%Y-%m-%d")
 
 
-def fetch_quotes(api_base: str, market: str, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    url = f"{api_base.rstrip('/')}/raw/daily-quotes"
-    params = {
-        "market": market,
-        "symbol": symbol,
-        "start_date": start_date,
-        "end_date": end_date,
-        "limit": 500,
-    }
-    resp = requests.get(url, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if not data:
-        return pd.DataFrame()
-    return pd.DataFrame(data)
-
-
-def fetch_and_save_quotes(
-    api_base: str,
-    market: str,
-    symbols: list[str],
-    start_date: str,
-    end_date: str,
-    output_path: Path,
-) -> None:
-    """Fetch quotes for all symbols in [start_date, end_date] and save to output_path."""
-    keep_cols = [
-        "date", "symbol", "name", "market",
-        "open", "high", "low", "close", "volume",
-        "value", "transactions", "change", "direction", "bid", "ask",
-    ]
-
-    frames: list[pd.DataFrame] = []
-    for i, symbol in enumerate(symbols, start=1):
-        print(f"  [{i}/{len(symbols)}] fetch {symbol} ({start_date} ~ {end_date})")
-        q = fetch_quotes(api_base=api_base, market=market, symbol=symbol,
-                         start_date=start_date, end_date=end_date)
-        if q.empty:
-            continue
-        q["symbol"] = q["symbol"].astype(str).str.strip()
-        frames.append(q)
-
-    if frames:
-        out = pd.concat(frames, ignore_index=True)
-    else:
-        out = pd.DataFrame(columns=keep_cols)
-
-    out = out[[c for c in keep_cols if c in out.columns]].copy()
-    out = (
-        out.sort_values(["symbol", "date"])
-        .drop_duplicates(subset=["symbol", "date"], keep="last")
-        .reset_index(drop=True)
-    )
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(output_path, index=False)
-    print(f"  → saved {len(out)} rows to {output_path}")
-
-
-def get_output_path(base_dir: Path, market: str, year: int, month: int,
-                    start_date: str, end_date: str) -> Path:
-    s = start_date.replace("-", "")  # YYYYMMDD
+def get_output_path(base_dir: Path, year: int, month: int, start_date: str, end_date: str) -> Path:
+    s = start_date.replace("-", "")
     e = end_date.replace("-", "")
-    filename = f"daily_quotes_{s}_{e}_{market}.csv"
-    return base_dir / market / f"{year:04d}" / f"{month:02d}" / filename
+    filename = f"daily_quotes_{s}_{e}.csv"
+    return base_dir / f"{year:04d}" / f"{month:02d}" / filename
 
 
 def load_symbols_from_candidates(candidates_path: Path) -> list[str]:
     if not candidates_path.exists():
         return []
     df = pd.read_csv(candidates_path)
+    if "symbol" not in df.columns:
+        return []
     return sorted(df["symbol"].astype(str).str.strip().unique().tolist())
 
 
@@ -130,85 +65,108 @@ def prev_month(year: int, month: int) -> tuple[int, int]:
     return year, month - 1
 
 
+def fetch_quotes_from_db(conn, symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
+    keep_cols = [
+        "date",
+        "symbol",
+        "name",
+        "market",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "value",
+        "transactions",
+        "change",
+        "direction",
+        "bid",
+        "ask",
+    ]
+    if not symbols:
+        return pd.DataFrame(columns=keep_cols)
+
+    stmt = text(
+        """
+        SELECT
+          date, symbol, name, market, open, high, low, close, volume,
+          value, transactions, change, direction, bid, ask
+        FROM daily_quotes
+        WHERE symbol IN :symbols
+          AND date >= :start_date
+          AND date <= :end_date
+        """
+    ).bindparams(bindparam("symbols", expanding=True))
+
+    t0 = time.perf_counter()
+    out = pd.read_sql(
+        stmt,
+        conn,
+        params={
+            "symbols": symbols,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
+    print(
+        f"  [db] fetched quotes {start_date}~{end_date}: "
+        f"symbols={len(symbols)}, rows={len(out)}, elapsed={time.perf_counter() - t0:.2f}s"
+    )
+
+    out = out[[c for c in keep_cols if c in out.columns]].copy()
+    out = (
+        out.sort_values(["symbol", "date"])
+        .drop_duplicates(subset=["symbol", "date"], keep="last")
+        .reset_index(drop=True)
+    )
+    return out
+
+
+def fetch_and_save_quotes(conn, symbols: list[str], start_date: str, end_date: str, output_path: Path) -> None:
+    out = fetch_quotes_from_db(conn=conn, symbols=symbols, start_date=start_date, end_date=end_date)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(output_path, index=False)
+    print(f"  -> saved {len(out)} rows to {output_path}")
+
+
+def cache_one_period(conn, base_dir: Path, year: int, month: int, label: str) -> None:
+    month_s = f"{month:02d}"
+    print(f"\n=== [{label}] {year}/{month_s} ===")
+    candidates_path = base_dir / f"{year:04d}" / month_s / "trade_candidates.csv"
+    symbols = load_symbols_from_candidates(candidates_path)
+
+    if not candidates_path.exists():
+        print(f"  [warn] candidates not found: {candidates_path}")
+        return
+    if not symbols:
+        print(f"  [warn] no symbols in candidates: {candidates_path}")
+        return
+
+    start_date, _ = month_date_range(year, month)
+    end_date = add_trading_day_buffer(year, month, buffer_days=30)
+    output_path = get_output_path(base_dir, year, month, start_date, end_date)
+    fetch_and_save_quotes(conn=conn, symbols=symbols, start_date=start_date, end_date=end_date, output_path=output_path)
+
+
 def main() -> None:
     args = parse_args()
-    market = args.market
     year = int(args.year)
     month = int(args.month)
     month_s = f"{month:02d}"
-    base_dir = (Path.cwd() / "strategies").resolve()
+    base_dir = (Path.cwd() / "strategies" / "output").resolve()
 
-    # ── 1. Current month ──────────────────────────────────────────────────────
-    print(f"\n=== [Current month] {year}/{month_s} ===")
-    current_candidates_path = base_dir / market / f"{year:04d}" / month_s / "trade_candidates.csv"
-    current_symbols = load_symbols_from_candidates(current_candidates_path)
-    if not current_candidates_path.exists():
-        raise FileNotFoundError(f"candidates not found: {current_candidates_path}")
+    engine = create_engine(tp.get_db_url())
+    with engine.connect() as conn:
+        cache_one_period(conn=conn, base_dir=base_dir, year=year, month=month, label="Current month")
 
-    cur_start, cur_end = month_date_range(year, month)
-    # Add 30-day buffer so 20-trading-day holds after month-end are covered
-    cur_end_buffered = add_trading_day_buffer(year, month, buffer_days=30)
-    cur_output = get_output_path(base_dir, market, year, month, cur_start, cur_end_buffered)
+        ly_year, ly_month = year - 1, month
+        cache_one_period(conn=conn, base_dir=base_dir, year=ly_year, month=ly_month, label="Historical A (last-year same month)")
 
-    fetch_and_save_quotes(
-        api_base=args.api_base,
-        market=market,
-        symbols=current_symbols,
-        start_date=cur_start,
-        end_date=cur_end_buffered,
-        output_path=cur_output,
-    )
-
-    if args.skip_historical:
-        print("\n[skip-historical] Skipping historical period caching.")
-        return
-
-    # ── 2. Historical period A: Last-year same month ──────────────────────────
-    ly_year, ly_month = year - 1, month
-    ly_month_s = f"{ly_month:02d}"
-    print(f"\n=== [Historical A] Last-year same month: {ly_year}/{ly_month_s} ===")
-    ly_candidates_path = base_dir / market / f"{ly_year:04d}" / ly_month_s / "trade_candidates.csv"
-    ly_symbols = load_symbols_from_candidates(ly_candidates_path)
-
-    if not ly_symbols:
-        print(f"  [warn] No candidates found at {ly_candidates_path}. Skipping period A.")
-    else:
-        ly_start, _ = month_date_range(ly_year, ly_month)
-        ly_end_buffered = add_trading_day_buffer(ly_year, ly_month, buffer_days=30)
-        ly_output = get_output_path(base_dir, market, ly_year, ly_month, ly_start, ly_end_buffered)
-        fetch_and_save_quotes(
-            api_base=args.api_base,
-            market=market,
-            symbols=ly_symbols,
-            start_date=ly_start,
-            end_date=ly_end_buffered,
-            output_path=ly_output,
-        )
-
-    # ── 3. Historical period B: Last month ────────────────────────────────────
-    lm_year, lm_month = prev_month(year, month)
-    lm_month_s = f"{lm_month:02d}"
-    print(f"\n=== [Historical B] Last month: {lm_year}/{lm_month_s} ===")
-    lm_candidates_path = base_dir / market / f"{lm_year:04d}" / lm_month_s / "trade_candidates.csv"
-    lm_symbols = load_symbols_from_candidates(lm_candidates_path)
-
-    if not lm_symbols:
-        print(f"  [warn] No candidates found at {lm_candidates_path}. Skipping period B.")
-    else:
-        lm_start, _ = month_date_range(lm_year, lm_month)
-        lm_end_buffered = add_trading_day_buffer(lm_year, lm_month, buffer_days=30)
-        lm_output = get_output_path(base_dir, market, lm_year, lm_month, lm_start, lm_end_buffered)
-        fetch_and_save_quotes(
-            api_base=args.api_base,
-            market=market,
-            symbols=lm_symbols,
-            start_date=lm_start,
-            end_date=lm_end_buffered,
-            output_path=lm_output,
-        )
+        lm_year, lm_month = prev_month(year, month)
+        cache_one_period(conn=conn, base_dir=base_dir, year=lm_year, month=lm_month, label="Historical B (last month)")
 
     print("\ncache_daily_quotes done")
-    print(f"- market: {market}, year: {year}, month: {month_s}")
+    print(f"- year: {year}, month: {month_s}")
 
 
 if __name__ == "__main__":

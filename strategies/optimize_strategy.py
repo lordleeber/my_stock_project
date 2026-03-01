@@ -3,7 +3,7 @@ optimize_strategy.py — Optimize strategy parameters without look-ahead bias.
 
 Flow:
   1. Load HISTORICAL candidates+quotes (last-year same month + last month)
-     → Each stock's entry_date = its revenue_publish_date (actual publish date)
+     → Each stock's entry_date = entry_date
      → end_date = entry_date + 20 trading days (max hold), NOT month-end
   2. Run random-search grid over 300 trials on historical data → find best params
   3. Apply best params to CURRENT month's candidates → current_month_backtest.csv
@@ -22,8 +22,7 @@ import pandas as pd
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Optimize strategy using market/year/month paths")
-    parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Optimize strategy using year/month paths")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 09")
     parser.add_argument("--n-trials", type=int, default=300, help="random search trial count")
@@ -125,12 +124,12 @@ def evaluate_config_historical(
 ) -> dict[str, Any]:
     """
     Evaluate a config on HISTORICAL candidates.
-    Each stock's entry_date = its revenue_publish_date.
+    Each stock's entry_date = its entry_date.
     Each stock's end_date   = entry_date + max_hold_days trading days.
     """
     rows = []
     for _, row in candidates.iterrows():
-        pub_date_raw = row.get("revenue_publish_date")
+        pub_date_raw = row.get("entry_date")
         if pd.isna(pub_date_raw) or pub_date_raw == "":
             continue
         entry_dt = pd.to_datetime(pub_date_raw)
@@ -165,7 +164,7 @@ def evaluate_config_current(
     """
     rows = []
     for _, row in candidates.iterrows():
-        pub_date_raw = row.get("revenue_publish_date")
+        pub_date_raw = row.get("entry_date")
         if pd.isna(pub_date_raw) or pub_date_raw == "":
             continue
         entry_dt = pd.to_datetime(pub_date_raw)
@@ -222,10 +221,10 @@ def _aggregate_result(cfg: dict[str, Any], out: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def find_quotes_csv(base_dir: Path, market: str, year: int, month: int) -> Path | None:
+def find_quotes_csv(base_dir: Path, year: int, month: int) -> Path | None:
     """Find the daily_quotes_*.csv file in the given month directory."""
     month_s = f"{month:02d}"
-    pattern = str(base_dir / market / f"{year:04d}" / month_s / f"daily_quotes_*_{market}.csv")
+    pattern = str(base_dir / f"{year:04d}" / month_s / "daily_quotes_*.csv")
     matches = glob.glob(pattern)
     if not matches:
         return None
@@ -234,31 +233,25 @@ def find_quotes_csv(base_dir: Path, market: str, year: int, month: int) -> Path 
 
 
 def load_historical_data(
-    base_dir: Path, market: str, year: int, month: int, normalize_quotes_fn
+    base_dir: Path, year: int, month: int, normalize_quotes_fn
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load trade_candidates + daily_quotes for a given period.
     Returns (candidates_df, quotes_df) — empty DataFrames if not found.
     """
     month_s = f"{month:02d}"
-    cand_path = base_dir / market / f"{year:04d}" / month_s / "trade_candidates.csv"
-    quotes_path = find_quotes_csv(base_dir, market, year, month)
+    cand_path = base_dir / f"{year:04d}" / month_s / "trade_candidates.csv"
+    quotes_path = find_quotes_csv(base_dir, year, month)
 
     if not cand_path.exists():
         print(f"  [warn] candidates not found: {cand_path}")
         return pd.DataFrame(), pd.DataFrame()
     if quotes_path is None:
-        print(f"  [warn] quotes not found in: {base_dir / market / f'{year:04d}' / month_s}")
+        print(f"  [warn] quotes not found in: {base_dir / f'{year:04d}' / month_s}")
         return pd.DataFrame(), pd.DataFrame()
 
     cand = pd.read_csv(cand_path)
     cand["symbol"] = cand["symbol"].astype(str).str.strip()
-
-    # Ensure revenue_publish_date column exists
-    if "revenue_publish_date" not in cand.columns:
-        # Fallback: use day 10 of the month
-        cand["revenue_publish_date"] = f"{year:04d}-{month_s}-10"
-        print(f"  [warn] revenue_publish_date missing in {cand_path}. Using {year}-{month_s}-10 as fallback.")
 
     quotes = normalize_quotes_fn(pd.read_csv(quotes_path))
     print(f"  loaded {len(cand)} candidates, {len(quotes)} quote rows from {year}/{month_s}")
@@ -273,19 +266,18 @@ def prev_month(year: int, month: int) -> tuple[int, int]:
 
 def main() -> None:
     args = parse_args()
-    market = args.market
     year = int(args.year)
     month = str(args.month).zfill(2)
     month_int = int(month)
-    base_dir = (Path.cwd() / "strategies").resolve()
+    base_dir = (Path.cwd() / "strategies" / "output").resolve()
 
     backtest_module = load_backtest_module(Path(__file__).resolve().parent / "multi_strategy_backtest.py")
     normalize_quotes = backtest_module.normalize_quotes
     simulate_one = backtest_module.simulate_one
 
     # ── Load current month ────────────────────────────────────────────────────
-    current_cand_path = base_dir / market / f"{year:04d}" / month / "trade_candidates.csv"
-    current_quotes_path = find_quotes_csv(base_dir, market, year, month_int)
+    current_cand_path = base_dir / f"{year:04d}" / month / "trade_candidates.csv"
+    current_quotes_path = find_quotes_csv(base_dir, year, month_int)
     if not current_cand_path.exists():
         raise FileNotFoundError(f"candidates not found: {current_cand_path}")
     if current_quotes_path is None:
@@ -295,10 +287,6 @@ def main() -> None:
     current_candidates["symbol"] = current_candidates["symbol"].astype(str).str.strip()
     current_quotes = normalize_quotes(pd.read_csv(current_quotes_path))
 
-    if "revenue_publish_date" not in current_candidates.columns:
-        current_candidates["revenue_publish_date"] = f"{year}-{month}-10"
-        print(f"[warn] revenue_publish_date missing in current candidates. Using {year}-{month}-10.")
-
     # ── Load historical training set ──────────────────────────────────────────
     # Period A: last-year same month
     ly_year, ly_month = year - 1, month_int
@@ -306,32 +294,40 @@ def main() -> None:
     lm_year, lm_month = prev_month(year, month_int)
 
     training_periods = []
+    required_periods = [
+        (ly_year, ly_month, "last-year same month"),
+        (lm_year, lm_month, "last month"),
+    ]
     hist_cands_list: list[pd.DataFrame] = []
     hist_quotes_list: list[pd.DataFrame] = []
+    loaded_period_keys: set[tuple[int, int]] = set()
 
-    for (hy, hm, label) in [(ly_year, ly_month, "last-year same month"), (lm_year, lm_month, "last month")]:
+    for (hy, hm, label) in required_periods:
         print(f"\n[training] Loading {label}: {hy}/{hm:02d}")
-        cand, quotes = load_historical_data(base_dir, market, hy, hm, normalize_quotes)
+        cand, quotes = load_historical_data(base_dir, hy, hm, normalize_quotes)
         if not cand.empty and not quotes.empty:
             hist_cands_list.append(cand)
             hist_quotes_list.append(quotes)
             training_periods.append(f"{hy}-{hm:02d}")
+            loaded_period_keys.add((hy, hm))
 
-    if not hist_cands_list:
-        print("\n[warn] No historical training data found. Falling back to current month for optimization.")
-        # Last resort: use current month (same old behaviour, with proper per-stock entry dates)
-        hist_candidates = current_candidates.copy()
-        hist_quotes = current_quotes.copy()
-        training_periods = [f"{year}-{month} (current, fallback)"]
-    else:
-        hist_candidates = pd.concat(hist_cands_list, ignore_index=True)
-        hist_quotes = pd.concat(hist_quotes_list, ignore_index=True)
-        # Deduplicate quotes by symbol+date (keep last)
-        hist_quotes = (
-            hist_quotes.sort_values(["symbol", "date"])
-            .drop_duplicates(subset=["symbol", "date"], keep="last")
-            .reset_index(drop=True)
+    missing = [(hy, hm, label) for (hy, hm, label) in required_periods if (hy, hm) not in loaded_period_keys]
+    if missing:
+        missing_text = ", ".join([f"{hy}-{hm:02d} ({label})" for (hy, hm, label) in missing])
+        raise RuntimeError(
+            "Missing required historical training periods: "
+            f"{missing_text}. "
+            "Please prepare trade_candidates and daily_quotes for both periods."
         )
+
+    hist_candidates = pd.concat(hist_cands_list, ignore_index=True)
+    hist_quotes = pd.concat(hist_quotes_list, ignore_index=True)
+    # Deduplicate quotes by symbol+date (keep last)
+    hist_quotes = (
+        hist_quotes.sort_values(["symbol", "date"])
+        .drop_duplicates(subset=["symbol", "date"], keep="last")
+        .reset_index(drop=True)
+    )
 
     print(f"\n[training] Combined: {len(hist_candidates)} candidates, {len(hist_quotes)} quote rows")
     print(f"[training] Periods:  {training_periods}")
@@ -361,7 +357,7 @@ def main() -> None:
     ).reset_index(drop=True)
 
     best = ranked.iloc[0].to_dict()
-    output_dir = current_cand_path.parent
+    output_dir = current_cand_path.parent / "results_optimize"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Apply best params to current month ────────────────────────────────────
@@ -398,7 +394,6 @@ def main() -> None:
     summary_path.write_text(
         json.dumps(
             {
-                "market": market,
                 "year": year,
                 "month": month,
                 "training_periods": training_periods,
@@ -412,7 +407,7 @@ def main() -> None:
                 "best_return_percent": float(best["return_percent"]),
                 "best_score": float(best["score"]),
                 "current_month_candidates": int(len(current_candidates)),
-                "note": "entry_date=revenue_publish_date per stock; end_date=entry+max_hold_days trading days",
+                "note": "entry_date per stock; end_date=entry+max_hold_days trading days",
             },
             ensure_ascii=False,
             indent=2,
@@ -421,7 +416,7 @@ def main() -> None:
     )
 
     print("\noptimize_strategy done")
-    print(f"- market: {market}, year: {year}, month: {month}")
+    print(f"- year: {year}, month: {month}")
     print(f"- training_periods: {training_periods}")
     print(f"- out_all:          {all_path}")
     print(f"- out_top20:        {top20_path}")

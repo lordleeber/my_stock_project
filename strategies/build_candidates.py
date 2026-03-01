@@ -1,97 +1,34 @@
 import argparse
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build trade candidates using market/year/month paths.")
-    parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Build trade candidates using year/month paths.")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 09")
-    parser.add_argument("--min-ttm-eps", type=float, default=2.0)
-    parser.add_argument("--min-volume-lots", type=float, default=500.0)
-    parser.add_argument("--api-base", type=str, default="http://100.103.191.79:8000")
+    parser.add_argument("--min-volume-lots", type=float, default=200.0)
     return parser.parse_args()
 
 
-def fetch_revenue_publish_dates(
-    api_base: str,
-    market: str,
-    year: int,
-    month: str,
-    symbols: list[str],
-    fallback_day: str = "10",
-) -> dict[str, str]:
-    """
-    Fetch the actual publish date (publish_time) of monthly revenue for each symbol.
-
-    month=09 means the strategy uses August monthly revenue (published in early September).
-    We query start_date=YYYY-1M{prev_month}M, i.e. 2025M08.
-
-    NOTE: The API requires a 'symbol' parameter to return results;
-          querying by market only returns an empty list.
-          We therefore query each symbol individually.
-
-    Returns:
-        dict[symbol → "YYYY-MM-DD"]
-        Fallback to {year}-{month}-{fallback_day} if not found.
-    """
-    # compute the revenue month: model month 09 → 8月營收 → 2025M08
-    rev_month = int(month) - 1
-    if rev_month == 0:
-        rev_year = year - 1
-        rev_month = 12
-    else:
-        rev_year = year
-    date_str = f"{rev_year}M{rev_month:02d}"
-
-    fallback = f"{year}-{month}-{fallback_day}"
-    result: dict[str, str] = {}
-    found = 0
-
-    for sym in symbols:
-        try:
-            resp = requests.get(
-                f"{api_base.rstrip('/')}/raw/monthly-revenue",
-                params={"start_date": date_str, "end_date": date_str, "symbol": sym, "limit": 5},
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception:
-            result[sym] = fallback
-            continue
-
-        if not data:
-            result[sym] = fallback
-            continue
-
-        pt = data[0].get("publish_time")
-        if pt:
-            pt_str = str(pt).strip()
-            if len(pt_str) == 8 and pt_str.isdigit():
-                result[sym] = f"{pt_str[:4]}-{pt_str[4:6]}-{pt_str[6:8]}"
-                found += 1
-            else:
-                result[sym] = fallback
-        else:
-            result[sym] = fallback
-
-    print(f"[info] publish_date: {found}/{len(symbols)} symbols found (revenue month: {date_str}), fallback={fallback}")
-    return result
+def strategy_release_and_entry_dates(year: int, month: str) -> tuple[date, date]:
+    m_int = int(month)
+    release_day = 15 if m_int in {5, 8, 11} else 10
+    release_dt = date(year, m_int, release_day)
+    earliest_entry_dt = release_dt + timedelta(days=1)
+    return release_dt, earliest_entry_dt
 
 
 def main() -> None:
     args = parse_args()
-    market = args.market
     year = int(args.year)
     month = str(args.month).zfill(2)
 
-    default_pred = (Path.cwd() / "strategies" / market / f"{year:04d}" / month / "predictions_published.csv").resolve()
-    default_ds = (Path.cwd() / "train_eps" / market / f"{year:04d}" / month / "dataset_evaluate.csv").resolve()
-    output_path = (Path.cwd() / "strategies" / market / f"{year:04d}" / month / "trade_candidates.csv").resolve()
+    default_pred = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "predictions_published.csv").resolve()
+    default_ds = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "dataset_strategy.csv").resolve()
+    output_path = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "trade_candidates.csv").resolve()
 
     pred_path = default_pred
     ds_path = default_ds
@@ -110,20 +47,35 @@ def main() -> None:
         "symbol",
         "name",
         "industry",
+        "anchor_eps",
+        "pe_current",
+        "ttm_eps_official",
+        "target_volume",
+        "q3_volume",
+        "q3_date",
+        "q3_close",
+        "ly_q1_eps",
         "ly_q2_eps",
         "ly_q3_eps",
-        "prev_q4_eps",
+        "ly_q4_eps",
         "q1_eps",
         "q2_eps",
-        "q2_eps_official",
     ]
     ds_year = ds_year[[c for c in use_cols if c in ds_year.columns]].copy()
 
     df = pred_year.merge(ds_year, on="symbol", how="left", suffixes=("", "_ds"))
+    # Keep a single set of display columns; drop duplicated *_ds columns from merge.
+    for col in ["name", "industry"]:
+        ds_col = f"{col}_ds"
+        if col not in df.columns and ds_col in df.columns:
+            df[col] = df[ds_col]
+        if ds_col in df.columns:
+            df = df.drop(columns=[ds_col])
     df["symbol"] = df["symbol"].astype(str).str.strip()
 
     anchor = pd.to_numeric(df.get("anchor_eps", 0), errors="coerce")
-    pred_delta = pd.to_numeric(df["pred_rf_delta"], errors="coerce")
+    pred_col = "pred_lgb_delta" if "pred_lgb_delta" in df.columns else "pred_rf_delta"
+    pred_delta = pd.to_numeric(df[pred_col], errors="coerce")
     df["predict_target_eps"] = anchor + pred_delta
 
     # 統一讀取 prepare_data.py 已嚴謹計算好的最近四季真實 EPS
@@ -145,22 +97,29 @@ def main() -> None:
     # 月份視角決定「最舊一季」:
     #   05~07 預測 Q2 → TTM = [LY-Q2, LY-Q3, LY-Q4, Q1]    → 替換最舊一季 ly_q2_eps
     #   08~10 預測 Q3 → TTM = [LY-Q3, LY-Q4,  Q1,  Q2]    → 替換最舊一季 ly_q3_eps
+    #   11~01 預測 Q4 → TTM = [LY-Q4,  Q1,   Q2,  Q3]    → 替換最舊一季 ly_q4_eps
+    #   04    預測 Q1 → TTM = [LY-Q1, LY-Q2, LY-Q3, LY-Q4] → 替換最舊一季 ly_q1_eps
     if month in {"05", "06", "07"}:
         oldest_q_eps = pd.to_numeric(df.get("ly_q2_eps", float("nan")), errors="coerce")
-    else:  # 08, 09, 10
+    elif month in {"08", "09", "10"}:
         oldest_q_eps = pd.to_numeric(df.get("ly_q3_eps", float("nan")), errors="coerce")
+    elif month in {"11", "12", "01"}:
+        oldest_q_eps = pd.to_numeric(df.get("ly_q4_eps", float("nan")), errors="coerce")
+    else:
+        oldest_q_eps = pd.to_numeric(df.get("ly_q1_eps", float("nan")), errors="coerce")
 
     df["ttm_eps_forward_live"] = df["ttm_eps_official_live"] - oldest_q_eps + df["predict_target_eps"]
 
     df["predict_target_price_live"] = pd.to_numeric(df.get("pe_current"), errors="coerce") * df["predict_target_eps"]
     df["volume_lots"] = pd.to_numeric(df.get("target_volume", df.get("q3_volume")), errors="coerce") / 1000.0
 
-    ttm_ok = df["ttm_eps_forward_live"] >= float(args.min_ttm_eps)
     vol_ok = df["volume_lots"] >= float(args.min_volume_lots)
     forward_not_worse = df["ttm_eps_forward_live"] >= df["ttm_eps_official_live"]
 
-    out = df[ttm_ok & vol_ok & forward_not_worse].copy()
+    out = df[vol_ok & forward_not_worse].copy()
     out = out.sort_values(["symbol"]).reset_index(drop=True)
+    if "fold" in out.columns:
+        out = out.drop(columns=["fold"])
     out = out.rename(
         columns={
             "q3_date": "date",
@@ -170,17 +129,11 @@ def main() -> None:
         }
     )
 
-    # ── 新增：取得各股實際月營收公布日（消除前視偏差） ──────────────────────────
-    symbols = out["symbol"].astype(str).str.strip().tolist()
-    publish_dates = fetch_revenue_publish_dates(
-        api_base=args.api_base,
-        market=market,
-        year=year,
-        month=month,
-        symbols=symbols,
-    )
-    out["revenue_publish_date"] = out["symbol"].astype(str).str.strip().map(publish_dates)
-    # ──────────────────────────────────────────────────────────────────────────────
+    _, earliest_entry_dt = strategy_release_and_entry_dates(year, month)
+    out["entry_date"] = earliest_entry_dt.strftime("%Y-%m-%d")
+
+    minimal_cols = ["symbol", "predict_target_price", "close", "entry_date"]
+    out = out[[c for c in minimal_cols if c in out.columns]].copy()
 
     num_cols = out.select_dtypes(include=["number"]).columns.tolist()
     if num_cols:
@@ -190,15 +143,12 @@ def main() -> None:
     out.to_csv(output_path, index=False)
 
     print("build_candidates done")
-    print(f"- market: {market}")
     print(f"- year: {year}")
     print(f"- month: {month}")
     print(f"- predictions: {pred_path}")
     print(f"- dataset: {ds_path}")
     print(f"- output: {output_path}")
     print(f"- rows: {len(out)}")
-    if "revenue_publish_date" in out.columns:
-        print(f"- publish_date distribution:\n{out['revenue_publish_date'].value_counts().to_string()}")
 
 
 if __name__ == "__main__":

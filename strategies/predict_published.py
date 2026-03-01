@@ -8,12 +8,11 @@ import pandas as pd
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Predict EPS with published model in models_eps/<market>")
-    parser.add_argument("--market", type=str, default="sii", choices=["sii", "otc"])
+    parser = argparse.ArgumentParser(description="Predict EPS with published model in models_eps/<year>/<month>")
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--month", type=str, required=True, help="e.g. 10")
-    parser.add_argument("--input", type=Path, default=None, help="default: train_eps/<market>/<year>/<month>/dataset_evaluate.csv")
-    parser.add_argument("--train-root", type=Path, default=Path("train_eps"))
+    parser.add_argument("--input", type=Path, default=None, help="default: strategies/output/<year>/<month>/dataset_model_input.csv")
+    parser.add_argument("--data-root", type=Path, default=Path("strategies/output"))
     parser.add_argument("--models-root", type=Path, default=Path("models_eps"))
     return parser.parse_args()
 
@@ -28,15 +27,14 @@ def add_cross_section_quantiles(df: pd.DataFrame, z_cols: list[str]) -> None:
 
 def main() -> None:
     args = parse_args()
-    market = args.market
     year = int(args.year)
     month = args.month.zfill(2)
 
-    train_root = args.train_root if args.train_root.is_absolute() else (Path.cwd() / args.train_root).resolve()
+    data_root = args.data_root if args.data_root.is_absolute() else (Path.cwd() / args.data_root).resolve()
     models_root = args.models_root if args.models_root.is_absolute() else (Path.cwd() / args.models_root).resolve()
 
-    month_dir = (train_root / market / f"{year:04d}" / month).resolve()
-    latest_path = models_root / market / f"{year:04d}" / month / "latest.json"
+    month_dir = (data_root / f"{year:04d}" / month).resolve()
+    latest_path = models_root / f"{year:04d}" / month / "latest.json"
     if not latest_path.exists():
         raise FileNotFoundError(f"latest.json not found: {latest_path}")
 
@@ -45,8 +43,8 @@ def main() -> None:
     if not model_path.exists():
         raise FileNotFoundError(f"published model not found: {model_path}")
 
-    input_path = args.input if args.input else (month_dir / "dataset_evaluate.csv")
-    output_path = (Path.cwd() / "strategies" / market / f"{year:04d}" / month / "predictions_published.csv").resolve()
+    input_path = args.input if args.input else (month_dir / "dataset_model_input.csv")
+    output_path = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "predictions_published.csv").resolve()
     if not input_path.exists():
         raise FileNotFoundError(f"input file not found: {input_path}")
 
@@ -54,8 +52,6 @@ def main() -> None:
         model = pickle.load(f)
 
     df = pd.read_csv(input_path).replace([np.inf, -np.inf], np.nan)
-    if "q2_eps" not in df.columns:
-        raise ValueError("input must contain q2_eps")
 
     # 與 train/evaluate 對齊：統一生成 quantile 特徵
     z_cols = [c for c in df.columns if c.endswith("_z")]
@@ -108,7 +104,7 @@ def main() -> None:
             out[c] = df[c]
     if "target_eps" in df.columns:
         out["y_true"] = df["target_eps"]
-    out["pred_rf_delta"] = pred_delta
+    out["pred_lgb_delta"] = pred_delta
     if "year" in out.columns:
         out["fold"] = "year_" + out["year"].astype(int).astype(str)
     else:
@@ -118,7 +114,6 @@ def main() -> None:
     out.to_csv(output_path, index=False)
 
     print("prediction completed")
-    print(f"- market: {market}")
     print(f"- year: {year}")
     print(f"- month: {month}")
     print(f"- model: {model_path}")

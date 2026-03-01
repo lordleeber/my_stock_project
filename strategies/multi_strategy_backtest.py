@@ -15,8 +15,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--candidates", type=Path, default=DEFAULT_CANDIDATES)
     parser.add_argument("--quotes-cache", type=Path, default=DEFAULT_QUOTES_CACHE)
-    parser.add_argument("--entry-date", type=str, default="2025-10-13")
-    parser.add_argument("--end-date", type=str, default="2025-11-20")
+    parser.add_argument("--entry-date", type=str, required=True)
+    parser.add_argument("--end-date", type=str, required=True)
     return parser.parse_args()
 
 
