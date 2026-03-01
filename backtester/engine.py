@@ -1,293 +1,299 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+try:
+    from backtester.data_loader import next_trading_day
+except ModuleNotFoundError:
+    from data_loader import next_trading_day
+
 
 @dataclass
-class BacktestConfig:
-    start_date: str
-    end_date: str
-    force_exit_date: str
-    no_pyramiding: bool = True
-    max_position_amount: float = 200000.0
-    shares_per_lot: int = 1000
-    stop_loss_pct: float | None = None
-    take_profit_pct: float | None = None
-    trailing_stop_pct: float | None = None
-    max_hold_days: int | None = None
+class CostConfig:
+    commission_rate: float = 0.001425
+    commission_discount: float = 1.0
+    tax_rate: float = 0.003
+    min_commission: float | None = None
+    entry_slippage_bps: float = 0.0
+    exit_slippage_bps: float = 0.0
 
 
-def _calc_shares(entry_open: float, max_position_amount: float, shares_per_lot: int) -> int:
-    lot_cost = entry_open * shares_per_lot
-    if lot_cost <= max_position_amount:
-        return int(shares_per_lot)
-    return max(int(max_position_amount // entry_open), 1)
+def _apply_slippage(price: float, bps: float, side: str) -> float:
+    if np.isnan(price):
+        return price
+    if side == "buy":
+        return float(price * (1.0 + bps / 10000.0))
+    return float(price * (1.0 - bps / 10000.0))
 
 
-def _next_trade_date(calendar: list[pd.Timestamp], current: pd.Timestamp) -> pd.Timestamp | None:
-    for d in calendar:
-        if d > current:
-            return d
+def _commission(notional: float, cost: CostConfig) -> float:
+    fee = float(notional) * float(cost.commission_rate) * float(cost.commission_discount)
+    if cost.min_commission is not None:
+        fee = max(fee, float(cost.min_commission))
+    return float(fee)
+
+
+def _transaction_cost(entry_price: float, exit_price: float, shares: int, cost: CostConfig) -> dict[str, float]:
+    buy_notional = float(entry_price) * int(shares)
+    sell_notional = float(exit_price) * int(shares)
+    buy_fee = _commission(buy_notional, cost)
+    sell_fee = _commission(sell_notional, cost)
+    sell_tax = sell_notional * float(cost.tax_rate)
+    total_cost = buy_fee + sell_fee + sell_tax
+    return {
+        "buy_notional": buy_notional,
+        "sell_notional": sell_notional,
+        "buy_fee": buy_fee,
+        "sell_fee": sell_fee,
+        "sell_tax": sell_tax,
+        "total_cost": total_cost,
+    }
+
+
+def build_position_size(entry_open: float, max_position_amount: float, shares_per_lot: int) -> tuple[int, float]:
+    lot_cost = float(entry_open) * int(shares_per_lot)
+    if lot_cost <= float(max_position_amount):
+        shares = int(shares_per_lot)
+    else:
+        shares = int(float(max_position_amount) // float(entry_open))
+        shares = max(shares, 1)
+    return shares, float(shares * float(entry_open))
+
+
+def check_entry_allowed(row: pd.Series, entry_open: float, entry_rule: dict[str, Any]) -> tuple[bool, str]:
+    rule_type = entry_rule.get("type", "all")
+    if rule_type == "all":
+        return True, "entry_all"
+
+    if rule_type == "target_above_entry_ratio":
+        ratio = float(entry_rule.get("ratio", 1.0))
+        target_price = float(row.get("predict_target_price", np.nan))
+        if np.isnan(target_price):
+            return False, "skip_no_target"
+        ok = target_price >= entry_open * ratio
+        return ok, f"entry_target_ge_{ratio}"
+
+    if rule_type == "pullback_from_ref_close":
+        ratio = float(entry_rule.get("ratio", 1.0))
+        ref_close = float(row.get("close", np.nan))
+        if np.isnan(ref_close):
+            return False, "skip_no_ref_close"
+        ok = entry_open <= ref_close * ratio
+        return ok, f"entry_pullback_le_{ratio}"
+
+    return True, "entry_unknown_rule_default_true"
+
+
+def resolve_take_profit_price(row: pd.Series, entry_open: float, tp_rule: dict[str, Any]) -> float | None:
+    tp_type = tp_rule.get("type", "target_price")
+    if tp_type == "target_price":
+        v = float(row.get("predict_target_price", np.nan))
+        return None if np.isnan(v) else v
+
+    if tp_type == "fixed_pct":
+        pct = float(tp_rule.get("pct", 0.0))
+        return float(entry_open * (1.0 + pct))
+
+    if tp_type == "target_price_if_above_entry":
+        v = float(row.get("predict_target_price", np.nan))
+        if np.isnan(v) or v <= entry_open:
+            return None
+        return v
+
     return None
 
 
-def run_backtest(
-    signals_df: pd.DataFrame,
-    quotes_df: pd.DataFrame,
-    cfg: BacktestConfig,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
-    # signals_df 需要欄位: symbol, signal_date, side(buy/sell), reason(optional)
-    # quotes_df 需要欄位: date, symbol, open, high, low, close
-    signals = signals_df.copy()
-    quotes = quotes_df.copy()
+def get_nth_trading_day_after(
+    quotes: pd.DataFrame,
+    entry_date: pd.Timestamp,
+    n: int,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    if quotes.empty:
+        return None, None
+    trading_dates = sorted(quotes["date"].dropna().unique())
+    future_dates = [d for d in trading_dates if d >= entry_date]
+    if not future_dates:
+        return None, None
+    actual_entry = pd.Timestamp(future_dates[0])
+    if len(future_dates) <= n:
+        actual_end = pd.Timestamp(future_dates[-1])
+    else:
+        actual_end = pd.Timestamp(future_dates[n])
+    return actual_entry, actual_end
 
-    signals["symbol"] = signals["symbol"].astype(str).str.strip()
-    signals["signal_date"] = pd.to_datetime(signals["signal_date"], errors="coerce")
-    signals["side"] = signals["side"].astype(str).str.lower().str.strip()
-    signals = signals.dropna(subset=["symbol", "signal_date", "side"]).copy()
 
-    quotes["symbol"] = quotes["symbol"].astype(str).str.strip()
-    quotes["date"] = pd.to_datetime(quotes["date"], errors="coerce")
-    for c in ["open", "high", "low", "close"]:
-        quotes[c] = pd.to_numeric(quotes[c], errors="coerce")
-    quotes = quotes.dropna(subset=["date", "symbol", "open", "high", "low", "close"]).copy()
-    quotes = quotes.sort_values(["date", "symbol"]).reset_index(drop=True)
-
-    start_dt = pd.to_datetime(cfg.start_date)
-    end_dt = pd.to_datetime(cfg.end_date)
-    force_exit_dt = pd.to_datetime(cfg.force_exit_date)
-
-    quotes = quotes[(quotes["date"] >= start_dt) & (quotes["date"] <= end_dt)].copy()
-    calendar = sorted(quotes["date"].dropna().unique().tolist())
-    calendar = [pd.Timestamp(x) for x in calendar]
-    if not calendar:
-        summary = {
-            "start_date": cfg.start_date,
-            "end_date": cfg.end_date,
-            "force_exit_date": cfg.force_exit_date,
-            "trading_days": 0,
-            "total_buy_capital": 0.0,
-            "realized_pnl": 0.0,
-            "return_percent": 0.0,
-            "trade_count": 0,
-            "win_count": 0,
-            "loss_count": 0,
-            "open_positions_end": 0,
-        }
-        return pd.DataFrame(), pd.DataFrame(), summary
-
-    quote_map: dict[tuple[str, pd.Timestamp], dict[str, Any]] = {}
-    for _, r in quotes.iterrows():
-        quote_map[(str(r["symbol"]), pd.Timestamp(r["date"]))] = r.to_dict()
-
-    pending_orders: list[dict[str, Any]] = []
-    positions: dict[str, dict[str, Any]] = {}
-    trades: list[dict[str, Any]] = []
-
-    realized_pnl = 0.0
-    total_buy_capital = 0.0
-
-    for d in calendar:
-        # 1) 執行當天開盤單（由前一日訊號觸發）
-        today_orders = [o for o in pending_orders if o["exec_date"] == d]
-        pending_orders = [o for o in pending_orders if o["exec_date"] != d]
-        for od in today_orders:
-            symbol = od["symbol"]
-            q = quote_map.get((symbol, d))
-            if q is None:
-                continue
-            fill_px = float(q["open"])
-            side = od["side"]
-            if side == "buy":
-                if cfg.no_pyramiding and symbol in positions and positions[symbol]["status"] == "open":
-                    continue
-                shares = _calc_shares(fill_px, cfg.max_position_amount, cfg.shares_per_lot)
-                cap = shares * fill_px
-                total_buy_capital += cap
-                positions[symbol] = {
-                    "symbol": symbol,
-                    "entry_date": d,
-                    "entry_price": fill_px,
-                    "shares": shares,
-                    "capital_used": cap,
-                    "highest_high": fill_px,
-                    "holding_days": 0,
-                    "status": "open",
-                }
-                trades.append(
-                    {
-                        "symbol": symbol,
-                        "side": "buy",
-                        "signal_date": od["signal_date"].strftime("%Y-%m-%d"),
-                        "exec_date": d.strftime("%Y-%m-%d"),
-                        "price": round(fill_px, 4),
-                        "shares": shares,
-                        "capital_used": round(cap, 2),
-                        "reason": od.get("reason", "signal_buy"),
-                    }
-                )
-            elif side == "sell":
-                pos = positions.get(symbol)
-                if pos is None or pos["status"] != "open":
-                    continue
-                pnl = (fill_px - float(pos["entry_price"])) * int(pos["shares"])
-                realized_pnl += pnl
-                pos["status"] = "closed"
-                trades.append(
-                    {
-                        "symbol": symbol,
-                        "side": "sell",
-                        "signal_date": od["signal_date"].strftime("%Y-%m-%d"),
-                        "exec_date": d.strftime("%Y-%m-%d"),
-                        "price": round(fill_px, 4),
-                        "shares": int(pos["shares"]),
-                        "capital_used": round(float(pos["capital_used"]), 2),
-                        "pnl_amount": round(pnl, 2),
-                        "return_pct": round((fill_px / float(pos["entry_price"]) - 1.0) * 100.0, 4),
-                        "reason": od.get("reason", "signal_sell"),
-                    }
-                )
-
-        # 2) 收盤前判斷部位是否觸發風控，若觸發 -> 下一交易日開盤賣
-        next_d = _next_trade_date(calendar, d)
-        for symbol, pos in list(positions.items()):
-            if pos["status"] != "open":
-                continue
-            q = quote_map.get((symbol, d))
-            if q is None:
-                continue
-            day_high = float(q["high"])
-            day_low = float(q["low"])
-            pos["highest_high"] = max(float(pos["highest_high"]), day_high)
-            pos["holding_days"] = int(pos["holding_days"]) + 1
-
-            hit = False
-            reason = None
-            if cfg.take_profit_pct is not None:
-                tp_price = float(pos["entry_price"]) * (1.0 + float(cfg.take_profit_pct))
-                if day_high >= tp_price:
-                    hit = True
-                    reason = "take_profit_trigger"
-
-            fixed_stop = None
-            if cfg.stop_loss_pct is not None:
-                fixed_stop = float(pos["entry_price"]) * (1.0 - float(cfg.stop_loss_pct))
-            trail_stop = None
-            if cfg.trailing_stop_pct is not None:
-                trail_stop = float(pos["highest_high"]) * (1.0 - float(cfg.trailing_stop_pct))
-            if fixed_stop is not None or trail_stop is not None:
-                stops = [x for x in [fixed_stop, trail_stop] if x is not None]
-                if stops:
-                    effective_stop = max(stops)
-                    if day_low <= effective_stop:
-                        hit = True
-                        reason = "stop_or_trailing_trigger"
-
-            if cfg.max_hold_days is not None and int(pos["holding_days"]) >= int(cfg.max_hold_days):
-                hit = True
-                reason = f"time_stop_{int(cfg.max_hold_days)}d_trigger"
-
-            if hit and next_d is not None:
-                dup = any(
-                    (x["side"] == "sell" and x["symbol"] == symbol and x["exec_date"] == next_d)
-                    for x in pending_orders
-                )
-                if not dup:
-                    pending_orders.append(
-                        {
-                            "symbol": symbol,
-                            "side": "sell",
-                            "signal_date": d,
-                            "exec_date": next_d,
-                            "reason": reason,
-                        }
-                    )
-
-        # 3) 當日訊號 -> 下一交易日開盤生效
-        day_sig = signals[signals["signal_date"] == d]
-        if next_d is not None and not day_sig.empty:
-            for _, s in day_sig.iterrows():
-                symbol = str(s["symbol"])
-                side = str(s["side"])
-                if side == "buy" and cfg.no_pyramiding and symbol in positions and positions[symbol]["status"] == "open":
-                    continue
-                pending_orders.append(
-                    {
-                        "symbol": symbol,
-                        "side": side,
-                        "signal_date": d,
-                        "exec_date": next_d,
-                        "reason": s.get("reason", f"signal_{side}"),
-                    }
-                )
-
-        # 4) 強制平倉：force_exit_date 以收盤價直接平倉
-        if d == force_exit_dt:
-            for symbol, pos in list(positions.items()):
-                if pos["status"] != "open":
-                    continue
-                q = quote_map.get((symbol, d))
-                if q is None:
-                    continue
-                close_px = float(q["close"])
-                pnl = (close_px - float(pos["entry_price"])) * int(pos["shares"])
-                realized_pnl += pnl
-                pos["status"] = "closed_force"
-                trades.append(
-                    {
-                        "symbol": symbol,
-                        "side": "sell",
-                        "signal_date": d.strftime("%Y-%m-%d"),
-                        "exec_date": d.strftime("%Y-%m-%d"),
-                        "price": round(close_px, 4),
-                        "shares": int(pos["shares"]),
-                        "capital_used": round(float(pos["capital_used"]), 2),
-                        "pnl_amount": round(pnl, 2),
-                        "return_pct": round((close_px / float(pos["entry_price"]) - 1.0) * 100.0, 4),
-                        "reason": "force_exit_close",
-                    }
-                )
-
-    positions_rows = []
-    for symbol, p in positions.items():
-        positions_rows.append(
-            {
-                "symbol": symbol,
-                "entry_date": pd.Timestamp(p["entry_date"]).strftime("%Y-%m-%d"),
-                "entry_price": round(float(p["entry_price"]), 4),
-                "shares": int(p["shares"]),
-                "capital_used": round(float(p["capital_used"]), 2),
-                "highest_high": round(float(p["highest_high"]), 4),
-                "holding_days": int(p["holding_days"]),
-                "status": p["status"],
-            }
-        )
-
-    trades_df = pd.DataFrame(trades)
-    positions_df = pd.DataFrame(positions_rows)
-
-    sell_df = trades_df[trades_df["side"] == "sell"].copy() if not trades_df.empty else pd.DataFrame()
-    win_count = int((sell_df.get("pnl_amount", pd.Series(dtype=float)) > 0).sum()) if not sell_df.empty else 0
-    loss_count = int((sell_df.get("pnl_amount", pd.Series(dtype=float)) < 0).sum()) if not sell_df.empty else 0
-    return_pct = (realized_pnl / total_buy_capital * 100.0) if total_buy_capital > 0 else 0.0
-
-    summary = {
-        "start_date": cfg.start_date,
-        "end_date": cfg.end_date,
-        "force_exit_date": cfg.force_exit_date,
-        "trading_days": len(calendar),
-        "no_pyramiding": cfg.no_pyramiding,
-        "total_buy_capital": round(float(total_buy_capital), 2),
-        "realized_pnl": round(float(realized_pnl), 2),
-        "return_percent": round(float(return_pct), 4),
-        "trade_count": int(len(trades_df)),
-        "sell_count": int(len(sell_df)),
-        "win_count": win_count,
-        "loss_count": loss_count,
-        "open_positions_end": int((positions_df.get("status", pd.Series(dtype=str)) == "open").sum()) if not positions_df.empty else 0,
+def _result_base(
+    row: pd.Series,
+    cfg: dict[str, Any],
+    cost: CostConfig,
+    signal_entry_date: pd.Timestamp,
+) -> dict[str, Any]:
+    return {
+        "symbol": str(row.get("symbol", "")).strip(),
+        "strategy_name": str(cfg.get("strategy_name", "unknown")),
+        "signal_entry_date": signal_entry_date.strftime("%Y-%m-%d"),
+        "target_price": float(row.get("predict_target_price", np.nan)),
+        "cost_config": asdict(cost),
     }
-    return trades_df, positions_df, summary
+
+
+def simulate_one_trade(
+    row: pd.Series,
+    quote_df: pd.DataFrame,
+    cfg: dict[str, Any],
+    *,
+    cost: CostConfig | None = None,
+) -> dict[str, Any]:
+    cost = cost or CostConfig()
+    symbol = str(row.get("symbol", "")).strip()
+    signal_entry_raw = row.get("entry_date")
+    signal_entry_dt = pd.to_datetime(signal_entry_raw, errors="coerce")
+    if pd.isna(signal_entry_dt):
+        return {
+            **_result_base(row, cfg, cost, pd.Timestamp("1970-01-01")),
+            "status": "invalid_signal",
+            "exit_reason": "invalid_entry_date",
+        }
+
+    base = _result_base(row, cfg, cost, signal_entry_dt)
+    sym_quotes = quote_df[quote_df["symbol"].astype(str).str.strip() == symbol].copy()
+    if sym_quotes.empty:
+        return {**base, "status": "no_quote_for_symbol", "exit_reason": "no_quote_for_symbol"}
+
+    sym_quotes = sym_quotes.sort_values("date").reset_index(drop=True)
+    actual_entry_dt = next_trading_day(sym_quotes, on_or_after=signal_entry_dt, symbol=symbol)
+    if actual_entry_dt is None:
+        return {**base, "status": "no_quote_in_window", "exit_reason": "no_quote_in_window"}
+
+    max_hold_days = int(cfg.get("exit_rule", {}).get("max_hold_days", 20))
+    _, end_dt = get_nth_trading_day_after(sym_quotes, actual_entry_dt, n=max_hold_days)
+    if end_dt is None:
+        return {**base, "status": "no_quote_in_window", "exit_reason": "no_quote_in_window"}
+
+    q = sym_quotes[(sym_quotes["date"] >= actual_entry_dt) & (sym_quotes["date"] <= end_dt)].copy()
+    if q.empty:
+        return {**base, "status": "no_quote_in_window", "exit_reason": "no_quote_in_window"}
+
+    entry_rows = q[q["date"] == actual_entry_dt]
+    if entry_rows.empty or pd.isna(entry_rows.iloc[0]["open"]):
+        return {**base, "status": "no_entry_open", "exit_reason": "no_entry_open"}
+
+    entry_open_raw = float(entry_rows.iloc[0]["open"])
+    entry_ok, entry_reason = check_entry_allowed(row, entry_open_raw, cfg.get("entry_rule", {}))
+    if not entry_ok:
+        return {
+            **base,
+            "status": "skipped",
+            "exit_reason": entry_reason,
+            "actual_entry_date": actual_entry_dt.strftime("%Y-%m-%d"),
+            "entry_open_raw": entry_open_raw,
+        }
+
+    entry_open = _apply_slippage(entry_open_raw, cost.entry_slippage_bps, "buy")
+    shares_per_lot = int(cfg.get("position", {}).get("shares_per_lot", 1000))
+    max_position_amount = float(cfg.get("position", {}).get("max_position_amount", 200000.0))
+    shares_bought, capital_used = build_position_size(entry_open, max_position_amount, shares_per_lot)
+
+    stop_loss_pct = float(cfg.get("exit_rule", {}).get("stop_loss_pct", 0.05))
+    fixed_stop = entry_open_raw * (1.0 - stop_loss_pct)
+    trailing_stop_pct = cfg.get("exit_rule", {}).get("trailing_stop_pct")
+    trailing_stop_pct = None if trailing_stop_pct is None else float(trailing_stop_pct)
+    prefer_stop_when_both = bool(cfg.get("exit_rule", {}).get("prefer_stop_when_both", True))
+
+    take_profit_price = resolve_take_profit_price(row, entry_open_raw, cfg.get("take_profit_rule", {}))
+    highest_high = entry_open_raw
+
+    exit_price_raw = np.nan
+    exit_reason = "end_of_window"
+    exit_date = pd.Timestamp(q.iloc[-1]["date"])
+
+    q = q.sort_values("date").reset_index(drop=True)
+    for i, day in q.iterrows():
+        day_high = float(day["high"]) if pd.notna(day["high"]) else np.nan
+        day_low = float(day["low"]) if pd.notna(day["low"]) else np.nan
+        day_close = float(day["close"]) if pd.notna(day["close"]) else np.nan
+        day_date = pd.Timestamp(day["date"])
+
+        if pd.notna(day_high):
+            highest_high = max(highest_high, day_high)
+
+        effective_stop = fixed_stop
+        if trailing_stop_pct is not None:
+            trailing_stop = highest_high * (1.0 - trailing_stop_pct)
+            effective_stop = max(effective_stop, trailing_stop)
+
+        hit_sl = pd.notna(day_low) and day_low <= effective_stop
+        hit_tp = (take_profit_price is not None) and pd.notna(day_high) and day_high >= take_profit_price
+
+        if hit_sl and hit_tp:
+            if prefer_stop_when_both:
+                exit_reason = "both_hit_same_day_stop_first"
+                exit_price_raw = effective_stop
+            else:
+                exit_reason = "both_hit_same_day_target_first"
+                exit_price_raw = float(take_profit_price)
+            exit_date = day_date
+            break
+        if hit_sl:
+            exit_reason = "stop_loss"
+            exit_price_raw = effective_stop
+            exit_date = day_date
+            break
+        if hit_tp:
+            exit_reason = "hit_target_price"
+            exit_price_raw = float(take_profit_price)
+            exit_date = day_date
+            break
+
+        if i + 1 >= max_hold_days:
+            exit_reason = f"time_stop_{max_hold_days}d"
+            exit_price_raw = day_close
+            exit_date = day_date
+            break
+
+    if np.isnan(exit_price_raw):
+        # Close at the end of available window.
+        last = q.iloc[-1]
+        exit_price_raw = float(last["close"]) if pd.notna(last["close"]) else np.nan
+        exit_date = pd.Timestamp(last["date"])
+        exit_reason = "end_of_window"
+
+    exit_price = _apply_slippage(exit_price_raw, cost.exit_slippage_bps, "sell")
+    tx_cost = _transaction_cost(entry_open, exit_price, shares_bought, cost)
+    gross_pnl = (exit_price - entry_open) * shares_bought
+    net_pnl = gross_pnl - tx_cost["total_cost"]
+    capital_with_buy_fee = tx_cost["buy_notional"] + tx_cost["buy_fee"]
+    ret_pct_gross = (gross_pnl / tx_cost["buy_notional"] * 100.0) if tx_cost["buy_notional"] > 0 else np.nan
+    ret_pct_net = (net_pnl / capital_with_buy_fee * 100.0) if capital_with_buy_fee > 0 else np.nan
+
+    return {
+        **base,
+        "status": "closed",
+        "entry_reason": entry_reason,
+        "exit_reason": exit_reason,
+        "actual_entry_date": actual_entry_dt.strftime("%Y-%m-%d"),
+        "exit_date": exit_date.strftime("%Y-%m-%d"),
+        "window_end_date": end_dt.strftime("%Y-%m-%d"),
+        "entry_open_raw": float(entry_open_raw),
+        "entry_open_exec": float(entry_open),
+        "exit_price_raw": float(exit_price_raw),
+        "exit_price_exec": float(exit_price),
+        "take_profit_price_raw": None if take_profit_price is None else float(take_profit_price),
+        "shares_bought": int(shares_bought),
+        "shares_per_lot": int(shares_per_lot),
+        "capital_used": float(capital_used),
+        "buy_notional": float(tx_cost["buy_notional"]),
+        "sell_notional": float(tx_cost["sell_notional"]),
+        "buy_fee": float(tx_cost["buy_fee"]),
+        "sell_fee": float(tx_cost["sell_fee"]),
+        "sell_tax": float(tx_cost["sell_tax"]),
+        "total_cost": float(tx_cost["total_cost"]),
+        "pnl_amount_gross": float(gross_pnl),
+        "pnl_amount_net": float(net_pnl),
+        "return_pct_gross": float(ret_pct_gross),
+        "return_pct_net": float(ret_pct_net),
+    }
