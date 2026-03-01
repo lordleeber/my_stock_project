@@ -81,13 +81,6 @@
 .\.venv\Scripts\python.exe train_eps\run_pipeline.py --year 2025 --month 11 --data-source api
 ```
 
-## 05/06/07 Specific Rules
-- For 05/06/07 prepare scripts:
-  - Default `--start-year` is `2020` (same as global fetch range).
-  - For 2020 rows, features that depend on 2019 historical quarters may be missing (`NaN`), including previous-Q4-related fields.
-  - Current pipeline does **not** force-drop 05/06/07 rows only because previous-Q4 fields are missing.
-  - Missing feature values are allowed in training (LightGBM handles `NaN` natively).
-
 ## Health Metrics
 - After running `evaluate.py`, check `results_eval/evaluate_by_fold.json`:
   - Confirm fold count for `lgb_delta` is >= gate `min_folds`.
@@ -104,6 +97,9 @@
 - `train_eps/prepare_data.py` outputs only `dataset_train.csv` and `dataset_evaluate.csv` into `train_eps/output/<year>/<month>/`.
 - No `dataset_meta.csv` or `dataset_live.csv` output.
 - No `daily_quotes` / `pe_ratio` fetch path.
+- Default `--start-year` is `2020` (same as global fetch range).
+- For 2020 rows, features that depend on 2019 historical quarters may be missing (`NaN`), including previous-Q4-related fields.
+- Missing feature values are allowed in training (LightGBM handles `NaN` natively).
 - For both DB and API paths, anchor-quarter samples must have `income_statement + balance_sheet + cash_flow`; otherwise rows are excluded.
 - Monthly revenue is handled with full-market scope (`sii + otc`) in pipeline output.
 - XBRL features are included for 11-month model:

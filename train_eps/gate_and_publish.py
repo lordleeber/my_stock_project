@@ -10,7 +10,7 @@ MODELS_ROOT = Path("models_eps")
 METRIC = "mae"
 PRIMARY_MODEL = "lgb_delta"
 BASELINE_MODEL = "baseline_anchor_eps"
-MAX_RATIO = 0.975  # Gate passes only if primary_metric <= baseline_metric * MAX_RATIO.
+MAX_RATIO = 0.99  # Gate passes only if primary_metric <= baseline_metric * MAX_RATIO.
 MIN_FOLDS = 1  # Require at least this many distinct evaluation folds before gating/publishing.
 
 

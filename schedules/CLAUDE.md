@@ -56,7 +56,7 @@
 
 `com.poyilee.stock-weekly-update`：
 - Script: `schedules/weekly_update.sh`
-- Time: 每週六 `14:10`
+- Time: 每週日 `10:20`
 
 ## Common Commands
 
