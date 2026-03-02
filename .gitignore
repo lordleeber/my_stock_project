@@ -213,7 +213,7 @@ StockDailyUpdate.app/
 # Project specific
 data/
 strategy/fundamental/*.csv
-strategies/deprecated/
+*deprecated/
 
 # Generated artifacts
 *.csv
