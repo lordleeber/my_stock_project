@@ -1,0 +1,156 @@
+# Strategies Template Strategy Blueprint
+
+## 目標
+- 建立可重複執行的策略開發流程：資料準備 -> 候選建構 -> 參數優化 -> 回測驗收。
+- 確保最終輸出可直接給 `backtester` 使用，避免缺檔或欄位不一致。
+
+## 範圍（Template）
+- 允許替換策略邏輯（因子、過濾規則、評分方式）。
+- 固定保留輸出介面（`trade_candidates.csv` + `best_strategy.json`）。
+- 不改動 `backtester` 的讀檔契約。
+
+## 固定慣例（執行前先遵守）
+- 不在策略流程中重新訓練 EPS 模型；僅使用已發布模型做推論。
+- 策略流程不做 `market` 拆分。
+- 除非有明確需求，輸出檔名與欄位契約不可任意更動。
+- `02`、`03` 視為非執行月份（沿用既有 EPS 發布節奏）。
+
+## 月度 entry_date 規則（預設）
+- `05`、`08`、`11`：模型於 `15` 日收盤後發布，最早進場日為 `16` 日。
+- 其他可執行月份：模型於 `10` 日收盤後發布，最早進場日為 `11` 日。
+- `build_candidates` 應以此規則生成該月 `entry_date`（若遇休市，順延至下一交易日）。
+
+## 策略邏輯來源與指定版本
+- [ ] 先閱讀 `strategies_template/ideas/` 下既有企劃（`idea_01.md`、`idea_02.md`、`idea_03.md`）。
+- [ ] 比較既有企劃的優缺點，提出「更好的策略邏輯」並寫成新檔（不可覆蓋舊檔，需保留歷史）。
+  - 檔名規則：`idea_XX.md`（遞增編號）。
+  - 新檔最上方必填三段：
+    - `參考來源`：列出參考了哪些 `idea_XX.md`。
+    - `優缺點比較`：逐一寫出參考版本的優點與缺點。
+    - `為何此版更好`：明確說明改進點、預期改善的指標與可能 trade-off。
+- [ ] 在本文件明確填寫本次實作採用的策略邏輯檔案（只能填一個）。
+- [ ] 若未完成「指定策略邏輯檔案」，不得進入 Step 1。
+- 本次指定策略邏輯：`<TO_BE_FILLED_BY_EXECUTOR>`（範例：`strategies_template/ideas/idea_04.md`）。
+
+## 標準 Pipeline（模板建議）
+1. `prepare_data`
+2. `predict_published`
+3. `build_candidates`
+4. `cache_daily_quotes`
+5. `optimize_strategy`
+- 建議提供一鍵腳本（例如 `run_strategy_pipeline.py`）串接以上步驟，並在任一步失敗時中止。
+
+## Step 0: 前置作業（必填）
+- [ ] 確認 Python 環境與套件
+  - Python 執行檔：`venv/bin/python`
+  - 需可匯入：`pandas`, `numpy`, `sqlalchemy`, `lightgbm`
+- [ ] 確認 DB 與資料表
+  - 至少可查詢：`daily_quotes`, `technical_indicators`, `institutional_investors`, `quarterly_reports`, `monthly_revenue`
+- [ ] 確認模型可讀取
+  - `models_eps/<year>/<month>/latest.json` 存在且可指向有效模型檔（例如 `.pkl`）
+- [ ] 確認執行月份規則
+  - 明確記錄哪些月份不執行（例如 `02`、`03`）
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`
+  - 產出路徑：`models_eps/2023/08/`、`strategies_template/output/2023/08/`
+  - 產出檔案（用途）：
+    - `models_eps/2023/08/latest.json`：模型索引
+    - `models_eps/2023/08/*.pkl`：推論模型
+    - `strategies_template/output/2023/08/`：策略輸出根目錄
+
+## Step 1: 資料集與欄位定義
+- [ ] 定義本版策略使用欄位（建議 4~10 個核心欄位）
+- [ ] 定義每個欄位口徑、時間對齊方式與缺值處理
+- [ ] 輸出模型輸入資料集
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`
+  - 產出路徑：`strategies_template/output/2023/08/`
+  - 產出檔案（用途）：
+    - `dataset_model_input.csv`：供 `predict_published.py` 使用
+    - `dataset_strategy.csv`：供候選建構與策略計分使用
+
+## Step 2: 候選建構與硬過濾
+- [ ] 實作候選池生成（含必要硬過濾）
+- [ ] 輸出過濾前後筆數與各條件 impact
+- [ ] 確認最小交易必要欄位完整
+- [ ] 缺值處理規則要可追溯（缺值是否剔除、補值或降權）
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`
+  - 產出路徑：`strategies_template/output/2023/08/`
+  - 產出檔案（用途）：
+    - `trade_candidates_raw.csv`：過濾前候選（除錯用）
+    - `trade_candidates.csv`：過濾後候選（後續 optimize/backtester 主輸入）
+
+## Step 3: 候選排序與選股控制
+- [ ] 建立 `entry_score`（可拆解為多個子分數）
+- [ ] 設定候選保留策略（top N / top pct / tier）
+- [ ] 將必要診斷欄位寫入候選輸出
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`
+  - 產出路徑：`strategies_template/output/2023/08/`
+  - 產出檔案（用途）：
+    - `trade_candidates.csv`：最終候選清單（至少含 `symbol,predict_target_price,close,entry_date`）
+    - `candidates_diagnostics.csv`：分數拆解與篩選診斷
+
+## Step 4: 參數優化（optimize）
+- [ ] 禁用明顯不合理策略空間（例如 `entry_rule=all`）
+- [ ] 加入風險/可交易性約束（stop-loss、最小成交筆數等）
+- [ ] 輸出 Top-K 供人工比對
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`
+  - 產出路徑：`strategies_template/output/2023/08/results_optimize/`
+  - 產出檔案（用途）：
+    - `optimization_results_all.csv`：全部 trial
+    - `optimization_results_top20.csv`：前 20 名策略
+    - `best_strategy.json`：當月最佳策略（backtester 必要檔）
+    - `current_month_backtest.csv`：最佳策略單月模擬結果
+    - `optimization_summary.json`：優化摘要
+
+## Step 5: 回測與對帳
+- [ ] 單月回測（sanity check）
+- [ ] 區間回測（before/after）
+- [ ] 比對 optimize 與 backtester 方向一致性
+- [ ] 嚴禁 look-ahead bias（不得用當月資料覆蓋歷史訓練期間）
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08` + 區間參數（例如 `2025/05~2025/10`）
+  - 產出路徑：`backtester/output/2023/08/`、`backtester/output/diagnostics/`
+  - 產出檔案（用途）：
+    - `trades.csv`：逐筆交易
+    - `monthly_summary.csv`：單月彙總
+    - `equity_curve.csv`：資金曲線
+    - `summary.json`：單月摘要
+    - `before_after_summary.json`：前後比較摘要
+    - `before_after_metrics.csv`：前後比較明細
+
+## Step 6: 文件與交接
+- [ ] 更新策略文件（欄位定義、參數、限制、調校順序）
+- [ ] 補上失敗排查流程（coverage、exit_reason、stop-loss）
+- [ ] 文件需包含最小執行指令（單步 + 一鍵 pipeline）
+- [ ] 測試
+  - 測試參數：`--year 2023 --month 08`（重跑整條流程）
+  - 產出路徑：`strategies_template/`
+  - 產出檔案（用途）：
+    - `README.md` 或 `CLAUDE.md`：流程與參數說明文件
+
+## 最終驗收（給 Backtester 使用）
+- [ ] 每月必要輸入檔完整存在於 `strategies_template/output/<year>/<month>/`
+- [ ] `trade_candidates.csv` 欄位檢查通過（至少）：
+  - `symbol`, `predict_target_price`, `close`, `entry_date`
+- [ ] `results_optimize/best_strategy.json` 可被 `backtester/run.py` 正常讀取
+- [ ] 缺檔時有明確錯誤訊息或跳過機制
+
+### Backtester 最低交付檔案（Gate）
+1. `strategies_template/output/<year>/<month>/trade_candidates.csv`
+2. `strategies_template/output/<year>/<month>/results_optimize/best_strategy.json`
+
+## 執行順序（建議）
+1. Step 0 -> Step 1（先確保資料與欄位可用）。
+2. Step 2 -> Step 3（先有候選，再做排序與容量控制）。
+3. Step 4（固定產出最佳策略與完整 optimize 結果）。
+4. Step 5 -> Step 6（回測驗收後再更新文件）。
+
+## 失效診斷順序（固定）
+1. 先看候選覆蓋是否異常下降（`build_candidates` 的 filter impact）。
+2. 再看 `optimization_results_top20.csv` 的 `stop_loss_ratio`、`entered_count`。
+3. 檢查 `best_strategy.json` 是否過度嚴格。
+4. 最後看 backtester `trades.csv` 的 `exit_reason` 分布。
