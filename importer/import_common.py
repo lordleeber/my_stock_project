@@ -594,6 +594,7 @@ def _empty_xbrl_long_df():
         schema={
             "date": pl.Utf8,
             "symbol": pl.Utf8,
+            "publish_time": pl.Utf8,
             "period": pl.Utf8,
             "period_type": pl.Utf8,
             "account_code": pl.Utf8,
@@ -607,12 +608,12 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
     df_wide = pl.read_csv(
         csv_file,
         infer_schema_length=0,
-        schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8, "period": pl.Utf8},
+        schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8, "publish_time": pl.Utf8, "period": pl.Utf8},
     )
     if df_wide.height == 0:
         return _empty_xbrl_long_df()
 
-    required_cols = {"date", "symbol"}
+    required_cols = {"date", "symbol", "publish_time"}
     missing_cols = sorted(required_cols - set(df_wide.columns))
     if missing_cols:
         raise RuntimeError(f"Missing required columns in {csv_file}: {', '.join(missing_cols)}")
@@ -631,6 +632,7 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
                 [
                     pl.col("date").cast(pl.Utf8).alias("date"),
                     pl.col("symbol").cast(pl.Utf8).alias("symbol"),
+                    pl.col("publish_time").cast(pl.Utf8).alias("publish_time"),
                     pl.col("period").cast(pl.Utf8).alias("period"),
                     pl.lit(period_type).cast(pl.Utf8).alias("period_type"),
                     pl.col(code_col).cast(pl.Utf8).str.strip_chars().alias("account_code"),
@@ -640,6 +642,8 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
             .filter(
                 pl.col("account_code").is_not_null()
                 & (pl.col("account_code") != "")
+                & pl.col("publish_time").is_not_null()
+                & (pl.col("publish_time") != "")
                 & pl.col("value_text").is_not_null()
                 & (pl.col("value_text") != "")
             )

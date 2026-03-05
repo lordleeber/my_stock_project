@@ -8,7 +8,7 @@ The importer loads processed CSV data into PostgreSQL database:
 - Recalculates lineage columns (`src_file`, `src_row`, `src_col` → `pced_file`, `pced_row`, `pced_col`) to point to processed CSV positions
 - Validates and filters data before import (ETF/preferred stocks, OHLCV validation)
 - Preserves lineage metadata in database for traceability
-- Performs per-date lineage-based validation after import
+- Performs per-date validation after import (lineage-based when `pced_*` exists; fallback row-count validation otherwise)
 - Uses delete-before-insert strategy for data updates
 - Supports incremental and full refresh modes
 - Handles deduplication by date+market or date+symbol
@@ -82,7 +82,8 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python 
 | `import_weekly.py` | Weekly categories | shareholding |
 | `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
 | `import_quarterly.py` | Quarterly categories | quarterly_reports, income_statement, balance_sheet, cash_flow |
-| `import_quarterly_xbrl.py` | Quarterly XBRL categories | balance_sheet_xbrl, income_statement_xbrl, cash_flow_xbrl |
+| `import_quarterly_xbrl.py` | Quarterly XBRL report table | quarterly_reports_xbrl (from `processed/quarterly_reports_xbrl/.../all_quarter.csv` + `all_accumulated.csv`) |
+| `import_xbrl.py` | Quarterly XBRL statement tables | balance_sheet_xbrl, income_statement_xbrl, cash_flow_xbrl (+ xbrl_codebook) |
 
 `import_daily.py` runs all daily categories in sequence for the date range.  
 For long ranges (for example a full year), runtime can be very long; this is expected and not a hang.
@@ -131,12 +132,17 @@ The importer **no longer relies on automatic type inference**. It uses `common/s
 - Every `pl.read_csv` call uses `schema_overrides` from the shared schema.
 - This prevents numeric symbols from being incorrectly detected as integers (bigint).
 - **Dual-Column Support**: For flow statements (`income_statement`, `cash_flow`, `quarterly_reports`), the importer correctly handles both single-quarter (`_q`) and accumulated (`_acc`) fields as defined in the schema.
-- **XBRL Wide-to-Long Import**: Quarterly XBRL exports are converted from wide `codeN/valueN` CSV into row-based records before DB import:
+- **XBRL statement import (`import_xbrl.py`)**: Quarterly statement XBRL exports are converted from wide `codeN/valueN` CSV into row-based records before DB import:
   - `balance_sheet_xbrl`: reads `all.csv` (period type `as_of`)
   - `income_statement_xbrl`: reads `all_quarter.csv` + `all_accumulated.csv`
   - `cash_flow_xbrl`: reads `all_accumulated.csv`
   - `xbrl_codebook`: reads `/app/data/processed/xbrl_codebook.csv`, normalized to `account_name_cht/account_name_eng`, and written to DB with `replace` mode
   - XBRL tables do **not** store `pced_file/pced_row/pced_col`.
+- **Quarterly report XBRL import (`import_quarterly_xbrl.py`)**:
+  - reads `processed/quarterly_reports_xbrl/YYYY/YYYYQX/all_quarter.csv` and `all_accumulated.csv`
+  - writes both into one table `quarterly_reports_xbrl`
+  - adds `period_type` (`quarter` / `accumulated`) during import
+  - does **not** add `pced_file/pced_row/pced_col`
 
 ### 6. Row Count VerificationAfter each `to_sql()` call (except `stock_info`/`stock_tags` which use `replace` mode), the importer runs `verify_row_count()` to compare the number of rows just imported against `SELECT COUNT(*) FROM table WHERE date = ...`. Mismatches are logged with `❌ Row count mismatch`.
 
@@ -176,8 +182,11 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python 
 
 ### Import Quarterly XBRL
 ```bash
-# Use YYYYQX format for quarterly xbrl
+# Import quarterly_reports_xbrl table
 docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly_xbrl.py
+
+# Import statement-level xbrl tables (income/balance/cashflow + codebook)
+docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_xbrl.py
 ```
 
 ### Force Reimport TDCC Data
@@ -247,10 +256,13 @@ Importer automatically validates imported data to ensure database content matche
 
 ### Lineage-Based Validation (Per-Date, Always Enabled)
 
-After importing each date, the importer performs **lineage-based validation** using the `pced_*` columns stored in the database:
+After importing each date, the importer validates DB rows against imported scope:
+
+- If table has `pced_*`, run lineage-based row/column validation.
+- If table has no `pced_*` (for example xbrl statement tables or `quarterly_reports_xbrl`), fallback to row-count validation for that date/period.
 
 **How it works:**
-1. Queries all rows for the imported date from database (includes `pced_file`, `pced_row`, `pced_col`)
+1. Queries all rows for the imported date from database (includes `pced_file`, `pced_row`, `pced_col` when available)
 2. Groups by `pced_file` to minimize file I/O
 3. For each file:
    - Reads the processed CSV **without filtering** (preserves original row positions)
