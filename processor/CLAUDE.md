@@ -133,6 +133,52 @@ For `QUARTERLY_TASK=detail_xbrl`, outputs are:
 - `processed/income_statement_xbrl/.../all_accumulated.csv`
 - `processed/xbrl_codebook.csv`
 
+`detail_xbrl` raw filename rules (strict, fail-fast):
+
+- Only allow `YYYYQX_symbol_YYYYMMDD.html`.
+- Any raw html that does not match this format must stop conversion immediately.
+- For the same quarter and symbol, multiple html files are forbidden; detect and stop immediately.
+- `publish_time` in detail_xbrl outputs comes from the filename suffix `YYYYMMDD`.
+
+### `quarterly_reports_xbrl` (current experimental status)
+
+- Current builder script: `processor/quarterly/convert_quarterly_reports_xbrl.py`
+- Current outputs:
+  - `processed/quarterly_reports_xbrl/YYYY/YYYYQX/all_quarter.csv`
+  - `processed/quarterly_reports_xbrl/YYYY/YYYYQX/all_accumulated.csv`
+- Output columns include `publish_time` and `period`.
+- `publish_time` source rule (strict):
+  - Do not read publish_time from `income_statement_xbrl` / `balance_sheet_xbrl` / `cash_flow_xbrl`.
+  - Resolve from raw html filename only (`YYYYQX_symbol_YYYYMMDD.html`).
+  - If only legacy `YYYYQX_symbol.html` exists (missing `_YYYYMMDD`), stop conversion immediately.
+- Symbol inclusion rule (important): if a symbol is missing in `income_statement_xbrl/.../all_quarter.csv`, it is skipped.
+
+Known limitations / potentially inaccurate fields:
+
+- `name`:
+  - currently not populated in `quarterly_reports_xbrl` output (left empty).
+- `nav_per_share`:
+  - currently approximated by `3XXX / (3110/10)` (rounded to 2 decimals).
+  - this is a practical approximation, not guaranteed to exactly match `quarterly_reports` for all symbols.
+- `equity_to_assets_ratio`:
+  - may differ slightly from `quarterly_reports` due to calculation source/rounding differences.
+- `current_ratio`:
+  - usually very close to `quarterly_reports`, but may still show tiny floating-point precision differences.
+- `quick_ratio`:
+  - currently the largest systematic mismatch; formula/available XBRL components do not fully reproduce `quarterly_reports` values.
+- `market`:
+  - normalized from XBRL market text (`listed* -> sii`, `otc|over-the-counter -> otc`), but rare mismatches can still occur.
+- `period`:
+  - intentionally exists in `quarterly_reports_xbrl` (`all_quarter.csv` / `all_accumulated.csv`) but not in legacy `quarterly_reports`.
+- lineage columns:
+  - `src_file`, `src_row`, `src_col` are currently not populated in `quarterly_reports_xbrl`.
+
+`*_acc_ly` and `*_acc_yoy` notes:
+
+- For normal years, values are derived from prior-year same-quarter XBRL accumulated data.
+- For early-history quarters with no prior-year XBRL baseline (for example 2020Q1), these fields can be empty.
+- In current batch workflow, empty `*_acc_ly` / `*_acc_yoy` may be backfilled from `processed/quarterly_reports/.../all.csv` after generation.
+
 ## Data Lineage & Schema Enforcement
 
 All processed CSVs must include lineage columns:

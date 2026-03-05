@@ -20,12 +20,13 @@ PROCESSED_DIR = os.environ.get("PROCESSED_DIR", "data/processed")
 STATEMENT_COLUMNS = [
     "date",
     "symbol",
+    "publish_time",
     "account_code",
     "value_text",
     "value_num",
 ]
 
-FILE_RE = re.compile(r"^(?P<date>\d{4}Q[1-4])_(?P<symbol>\d{4})\.html$")
+FILE_RE = re.compile(r"^(?P<date>\d{4}Q[1-4])_(?P<symbol>\d{4})_(?P<run_date>\d{8})\.html$")
 FACT_RE = re.compile(r"<ix:(nonFraction|nonNumeric)\b([^>]*)>(.*?)</ix:\1>", re.IGNORECASE | re.DOTALL)
 ATTR_RE = re.compile(r'([:\w-]+)\s*=\s*([\'"])(.*?)\2', re.DOTALL)
 CONTEXT_RE = re.compile(
@@ -84,13 +85,13 @@ def log_duplicate_and_exit(category: str, row: dict[str, str]):
 
 
 def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]], period_mode: str = "auto"):
-    grouped: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str], list[dict[str, str]]] = defaultdict(list)
     for row in rows:
-        grouped[(row.get("date", ""), row.get("symbol", ""))].append(row)
+        grouped[(row.get("date", ""), row.get("symbol", ""), row.get("publish_time", ""))].append(row)
 
     max_pairs = max((len(v) for v in grouped.values()), default=0)
     category = output_path.parts[-4] if len(output_path.parts) >= 4 else ""
-    header = ["date", "symbol", "period"]
+    header = ["date", "symbol", "publish_time", "period"]
     for i in range(1, max_pairs + 1):
         header.extend([f"code{i}", f"value{i}"])
 
@@ -126,9 +127,9 @@ def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]], period_mod
     with output_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
-        for (date_str, symbol), items in sorted(grouped.items()):
+        for (date_str, symbol, publish_time), items in sorted(grouped.items()):
             items_sorted = sorted(items, key=lambda x: x.get("account_code", ""))
-            out = [date_str, symbol, _period_text(date_str)]
+            out = [date_str, symbol, publish_time, _period_text(date_str)]
             for item in items_sorted:
                 out.append(item.get("account_code", ""))
                 out.append(item.get("value_num", "") or item.get("value_text", ""))
@@ -596,7 +597,7 @@ def extract_equity_changes_code_map(html_text: str) -> tuple[dict[tuple[str, str
     return key_map, codebook
 
 
-def iter_fact_rows(date_str: str, symbol: str, html_text: str):
+def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str):
     company_id = extract_company_id(html_text)
     company_name = extract_company_name(html_text)
     market = extract_market(html_text)
@@ -619,6 +620,7 @@ def iter_fact_rows(date_str: str, symbol: str, html_text: str):
         row = {
             "date": date_str,
             "symbol": symbol,
+            "publish_time": publish_time,
             "company_id": company_id,
             "name": company_name,
             "market": market,
@@ -662,6 +664,27 @@ def iter_fact_rows(date_str: str, symbol: str, html_text: str):
                 row["account_code"] = mapped[0]
                 row["account_name"] = mapped[1]
         yield row, statement_category, income_codebook, balance_codebook, cashflow_codebook, equity_codebook
+
+
+def collect_strict_html_per_symbol(date_dir: Path) -> list[tuple[Path, str, str]]:
+    chosen: dict[str, tuple[Path, str]] = {}
+    for html_path in sorted(date_dir.glob("*.html")):
+        m = FILE_RE.match(html_path.name)
+        if not m:
+            raise ValueError(
+                f"Invalid raw xbrl filename: {html_path}. "
+                "Expected format: YYYYQX_symbol_YYYYMMDD.html"
+            )
+        symbol = m.group("symbol")
+        run_date = m.group("run_date") or ""
+        prev = chosen.get(symbol)
+        if prev is not None:
+            raise ValueError(
+                f"Duplicate raw xbrl html for {date_dir.name} symbol={symbol}: "
+                f"{prev[0].name} and {html_path.name}"
+            )
+        chosen[symbol] = (html_path, run_date)
+    return [(v[0], symbol, v[1]) for symbol, v in sorted(chosen.items())]
 
 
 def main():
@@ -755,18 +778,20 @@ def main():
         }
 
         try:
-            for html_path in sorted(date_dir.glob("*.html")):
-                total_files += 1
-                m = FILE_RE.match(html_path.name)
-                if not m:
-                    continue
-                symbol = m.group("symbol")
+            target_html_files = collect_strict_html_per_symbol(date_dir)
+            total_files = len(target_html_files)
+            for html_path, symbol, publish_time in target_html_files:
                 try:
                     html_text = read_html_text(html_path)
                     if is_blocked_page(html_text):
                         blocked_files += 1
                         continue
-                    for row, statement_category, income_codebook, balance_codebook, cashflow_codebook, equity_codebook in iter_fact_rows(date_str, symbol, html_text):
+                    for row, statement_category, income_codebook, balance_codebook, cashflow_codebook, equity_codebook in iter_fact_rows(
+                        date_str,
+                        symbol,
+                        publish_time,
+                        html_text,
+                    ):
                         if income_codebook:
                             income_codebook_by_symbol[symbol] = income_codebook
                         if balance_codebook:
