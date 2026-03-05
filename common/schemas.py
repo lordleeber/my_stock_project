@@ -388,16 +388,28 @@ SCHEMA_COLS = {
         "current_ratio", "quick_ratio",
         "pced_file", "pced_row", "pced_col"
     ],
+    "quarterly_reports_xbrl": [
+        "date", "symbol", "market",
+        "revenue_q", "revenue_acc", "revenue_acc_ly", "revenue_acc_yoy",
+        "op_income_q", "op_income_acc", "op_income_acc_ly", "op_income_acc_yoy",
+        "non_op_income_q", "non_op_income_acc", "non_op_income_acc_ly", "non_op_income_acc_yoy",
+        "pretax_income_q", "pretax_income_acc", "pretax_income_acc_ly", "pretax_income_acc_yoy",
+        "net_income_q", "net_income_acc", "net_income_acc_ly", "net_income_acc_yoy",
+        "eps_q", "eps_acc", "eps_acc_ly", "eps_acc_yoy",
+        "capital", "nav_per_share", "equity_to_assets_ratio",
+        "current_ratio", "quick_ratio",
+        "publish_time", "period", "period_type"
+    ],
     "balance_sheet_xbrl": [
-        "date", "symbol", "account_code",
+        "date", "symbol", "publish_time", "account_code",
         "value_text", "value_num"
     ],
     "income_statement_xbrl": [
-        "date", "symbol", "account_code",
+        "date", "symbol", "publish_time", "account_code",
         "value_text", "value_num"
     ],
     "cash_flow_xbrl": [
-        "date", "symbol", "account_code",
+        "date", "symbol", "publish_time", "account_code",
         "value_text", "value_num"
     ],
     "xbrl_codebook": [
@@ -455,6 +467,8 @@ COLUMN_TYPES = {
     "value_text": pl.Utf8,
     "comment": pl.Utf8,
     "publish_time": pl.Utf8,
+    "period": pl.Utf8,
+    "period_type": pl.Utf8,
     "account_code": pl.Utf8,
     "account_name": pl.Utf8,
     "account_name_cht": pl.Utf8,

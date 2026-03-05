@@ -22,6 +22,16 @@
   - 流程：`scraper-quarterly -> processor(convert_quarterly) -> importer(quarterly categories)`
   - 參數：可選 `YYYYQX`（不給則用上一季）
 
+- `schedules/xbrl_update.sh`
+  - 流程：`scraper-quarterly python3 scraper/quarterly/fetch_xbrl.py`
+  - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
+  - 規則（不傳參數時，用今天日期判斷）：
+    - `02/01~03/31`：抓「前一年 Q4」
+    - `04/01~05/15`：抓「同年 Q1」
+    - `07/01~08/15`：抓「同年 Q2」
+    - `10/01~11/15`：抓「同年 Q3」
+    - 其他日期：直接 skip
+
 ## Logging
 
 - 腳本都會將執行結果寫到 `logs/`：
@@ -72,6 +82,15 @@
 
 # 手動執行 quarterly（指定季度）
 ./schedules/quarterly_update.sh 2025Q3
+
+# 手動執行 xbrl window update（以今天判斷）
+./schedules/xbrl_update.sh
+
+# 手動執行 xbrl window update（指定日期判斷）
+./schedules/xbrl_update.sh 20260304
+
+# 手動執行 xbrl window update（直接指定季度）
+./schedules/xbrl_update.sh 2025Q4
 ```
 
 ```bash

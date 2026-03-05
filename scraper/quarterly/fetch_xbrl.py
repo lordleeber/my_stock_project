@@ -100,18 +100,33 @@ def detect_blocked_reason(html_text: str) -> str | None:
     return None
 
 
-def save_symbol_report(symbol: str, year: int, quarter: int, out_dir: Path, force: bool = False) -> tuple[str, str]:
-    filename = f"{year}Q{quarter}_{symbol}.html"
+def strip_run_date_suffix(filename: str) -> str:
+    # Convert YYYYQX_1234_YYYYMMDD.html -> YYYYQX_1234.html
+    return re.sub(r"_\d{8}(?=\.html$)", "", filename)
+
+
+def load_existing_report_names(out_dir: Path) -> set[str]:
+    names: set[str] = set()
+    for path in out_dir.glob("*.html"):
+        names.add(strip_run_date_suffix(path.name))
+    return names
+
+
+def save_symbol_report(
+    symbol: str,
+    year: int,
+    quarter: int,
+    run_date: str,
+    out_dir: Path,
+    existing_report_names: set[str],
+    force: bool = False,
+) -> tuple[str, str]:
+    base_filename = f"{year}Q{quarter}_{symbol}.html"
+    filename = f"{year}Q{quarter}_{symbol}_{run_date}.html"
     out_path = out_dir / filename
-    if out_path.exists() and not force:
-        try:
-            existing_html = out_path.read_text(encoding="utf-8", errors="replace")
-            if not detect_blocked_reason(existing_html):
-                print(f"[SKIP] {symbol} -> skipped_exists")
-                return symbol, "skipped_exists"
-        except Exception:
-            print(f"[SKIP] {symbol} -> skipped_exists (unreadable existing file)")
-            return symbol, "skipped_exists"
+    if not force and base_filename in existing_report_names:
+        print(f"[SKIP] {symbol} -> skipped_exists ({base_filename})")
+        return symbol, "skipped_exists"
 
     attempts = MAX_RETRIES + 1
     last_status = "error:unknown"
@@ -130,6 +145,7 @@ def save_symbol_report(symbol: str, year: int, quarter: int, out_dir: Path, forc
                     print(f"[FAIL] {symbol} -> {last_status}")
                 else:
                     out_path.write_text(html_text, encoding="utf-8")
+                    existing_report_names.add(base_filename)
                     return symbol, "ok"
         except Exception as e:
             last_status = f"error:{e}"
@@ -157,11 +173,13 @@ def main():
     quarter_key = f"{args.year}Q{args.quarter}"
     out_dir = OUTPUT_ROOT / str(args.year) / quarter_key
     out_dir.mkdir(parents=True, exist_ok=True)
+    existing_report_names = load_existing_report_names(out_dir)
 
     print(f"Target quarter: {quarter_key}")
     print(f"Symbols: {len(symbols)}")
     print(f"Output: {out_dir}")
     print(f"run_date: {run_date}")
+    print(f"existing_reports: {len(existing_report_names)}")
     print(f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)")
 
     ok = 0
@@ -170,7 +188,15 @@ def main():
     failures: list[tuple[str, str]] = []
 
     for idx, symbol in enumerate(symbols, start=1):
-        symbol, status = save_symbol_report(symbol, args.year, args.quarter, out_dir, force=force_reprocess)
+        symbol, status = save_symbol_report(
+            symbol,
+            args.year,
+            args.quarter,
+            run_date,
+            out_dir,
+            existing_report_names,
+            force=force_reprocess,
+        )
         status_count[status] = status_count.get(status, 0) + 1
         if status in {"ok", "skipped_exists"}:
             ok += 1

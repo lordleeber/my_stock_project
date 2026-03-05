@@ -516,6 +516,7 @@ class CashFlowRaw(BaseModel):
 class XbrlStatementRaw(BaseModel):
     date: str
     symbol: str
+    publish_time: Optional[str] = None
     period: Optional[str] = None
     period_type: Optional[str] = None
     account_code: Optional[str] = None
@@ -730,6 +731,7 @@ def get_raw_xbrl_data(
                     SELECT
                         x.date,
                         x.symbol,
+                        x.publish_time,
                         x.period,
                         x.period_type,
                         x.account_code,
@@ -750,6 +752,7 @@ def get_raw_xbrl_data(
                     SELECT
                         x.date,
                         x.symbol,
+                        x.publish_time,
                         x.period,
                         x.period_type,
                         x.account_code,
@@ -771,6 +774,7 @@ def get_raw_xbrl_data(
         output_cols = [
             "date",
             "symbol",
+            "publish_time",
             "period",
             "period_type",
             "account_code",
