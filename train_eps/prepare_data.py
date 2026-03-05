@@ -41,21 +41,39 @@ def month_token(year: int, month: int) -> str:
 
 def feature_months_for_calendar_month(month: str) -> list[int]:
     if month == "01":
-        return [11, 12]
+        return [10, 11, 12]
+    if month == "02":
+        return [1]
+    if month == "03":
+        return [1, 2]
+    if month == "04":
+        return [1, 2, 3]
+    if month == "05":
+        return [4]
+    if month == "06":
+        return [4, 5]
+    if month == "07":
+        return [4, 5, 6]
+    if month == "08":
+        return [7]
+    if month == "09":
+        return [7, 8]
+    if month == "10":
+        return [7, 8, 9]
+    if month == "11":
+        return [10]
     if month == "12":
         return [10, 11]
-    if month in {"02", "03"}:
-        return []
-    return [int(month) - 1]
+    raise ValueError(f"Unsupported month: {month}")
 
 
 def build_quarter_context(execution_year: int, month: str) -> dict:
-    if month in {"02", "03"}:
-        raise ValueError(f"{month} 月暫不訓練")
-
     if month == "01":
         target_year = execution_year - 1
         regime = "q4"
+    elif month in {"02", "03", "04"}:
+        target_year = execution_year
+        regime = "q1"
     elif month in {"11", "12"}:
         target_year = execution_year
         regime = "q4"
@@ -65,9 +83,6 @@ def build_quarter_context(execution_year: int, month: str) -> dict:
     elif month in {"05", "06", "07"}:
         target_year = execution_year
         regime = "q2"
-    elif month == "04":
-        target_year = execution_year
-        regime = "q1"
     else:
         raise ValueError(f"Unsupported month: {month}")
 
@@ -597,8 +612,6 @@ def add_month_features(df: pd.DataFrame, month: str) -> None:
 def main() -> None:
     args = parse_args()
     month = normalize_month(args.month)
-    if month in {"02", "03"}:
-        raise RuntimeError(f"{month} 月暫不訓練")
     end_year = int(args.year)
     model_features = model_features_for_month(month)
 

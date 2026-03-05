@@ -38,8 +38,8 @@
 
 ## Monthly Training Calendar
 - 01/10 (announce previous Dec revenue): train previous year `Q4 eps delta`.
-- 02/10 (announce Jan revenue): no training.
-- 03/10 (announce Feb revenue): no training.
+- 02/10 (announce Jan revenue): train current year `Q1 eps delta`.
+- 03/10 (announce Feb revenue): train current year `Q1 eps delta`.
 - 04/10 (announce Mar revenue + previous annual report): train current year `Q1 eps delta`.
 - 05/15 (announce Apr revenue + Q1 report): train current year `Q2 eps delta`.
 - 06/10 (announce May revenue): train current year `Q2 eps delta`.
