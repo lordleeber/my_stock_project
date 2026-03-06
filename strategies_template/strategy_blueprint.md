@@ -6,14 +6,43 @@
 
 ## 範圍（Template）
 - 允許替換策略邏輯（因子、過濾規則、評分方式）。
-- 固定保留輸出介面（`trade_candidates.csv` + `best_strategy.json`）。
+- 固定保留輸出介面（`trade_candidates_<release_yyyymmdd>.csv` + `best_strategy.json`）。
 - 不改動 `backtester` 的讀檔契約。
+
+## 目前 Production 規格（strategies）
+- Candidates 輸出：
+  - `build_candidates.py` 寫入 `strategies/output/<year>/<month>/results_candidates/trade_candidates_<release_yyyymmdd>.csv`
+  - `release_yyyymmdd` 規則：`05/08/11` 為 `15` 日，其他月份為 `10` 日
+  - 不再使用舊檔名 `trade_candidates.csv`
+- Quotes cache 輸出：
+  - `cache_daily_quotes.py` 針對 current / historical A / historical B，各自寫回該 period 目錄：
+    - `strategies/output/<period_year>/<period_month>/results_quotes_cache/daily_quotes_*.csv`
+  - 若目的檔已存在，視為該 period cache 已完成並直接 skip
+- Optimize 讀檔：
+  - candidates：`<period>/results_candidates/trade_candidates_<release_yyyymmdd>.csv`
+  - quotes：`<period>/results_quotes_cache/daily_quotes_*.csv`
+  - 不保留舊路徑 fallback，缺檔直接報錯中止
+- 時間切斷（avoid look-ahead）：
+  - `optimize_strategy.py` 使用本次執行月份 release date 當 as-of cutoff（例：`2023/08 -> 2023-08-15`）
+  - 同一個 cutoff 套用在 current / historical A / historical B
+- Fail-fast：
+  - candidates 檔缺失：`FileNotFoundError`
+  - quotes cache 缺失：`FileNotFoundError`
+  - candidates 存在但 symbol 為空（cache 階段）：`RuntimeError`
+- 候選保底：
+  - `build_candidates.py` 若篩選後 0 檔，強制放入 `2330`
+  - 若連 `2330` 都不存在，直接報錯
+- 目標價公式：
+  - `predict_target_price = pe_current * ttm_eps_forward_live`
+  - 不再使用 `pe_current * predict_target_eps`
+- 月份執行：
+  - `prepare_data.py` 已移除 `02/03` 月阻擋
+  - 批次流程是否失敗，改由前置檔案存在性決定
 
 ## 固定慣例（執行前先遵守）
 - 不在策略流程中重新訓練 EPS 模型；僅使用已發布模型做推論。
 - 策略流程不做 `market` 拆分。
 - 除非有明確需求，輸出檔名與欄位契約不可任意更動。
-- `02`、`03` 視為非執行月份（沿用既有 EPS 發布節奏）。
 
 ## 月度 entry_date 規則（預設）
 - `05`、`08`、`11`：模型於 `15` 日收盤後發布，最早進場日為 `16` 日。
@@ -49,7 +78,7 @@
 - [ ] 確認模型可讀取
   - `models_eps/<year>/<month>/latest.json` 存在且可指向有效模型檔（例如 `.pkl`）
 - [ ] 確認執行月份規則
-  - 明確記錄哪些月份不執行（例如 `02`、`03`）
+  - 明確記錄 release date 規則（`05/08/11 -> 15`；其他月份 `-> 10`）
 - [ ] 測試
   - 測試參數：`--year 2023 --month 08`
   - 產出路徑：`models_eps/2023/08/`、`strategies_template/output/2023/08/`
@@ -79,7 +108,7 @@
   - 產出路徑：`strategies_template/output/2023/08/`
   - 產出檔案（用途）：
     - `trade_candidates_raw.csv`：過濾前候選（除錯用）
-    - `trade_candidates.csv`：過濾後候選（後續 optimize/backtester 主輸入）
+    - `results_candidates/trade_candidates_20230815.csv`：過濾後候選（後續 optimize/backtester 主輸入）
 
 ## Step 3: 候選排序與選股控制
 - [ ] 建立 `entry_score`（可拆解為多個子分數）
@@ -89,7 +118,7 @@
   - 測試參數：`--year 2023 --month 08`
   - 產出路徑：`strategies_template/output/2023/08/`
   - 產出檔案（用途）：
-    - `trade_candidates.csv`：最終候選清單（至少含 `symbol,predict_target_price,close,entry_date`）
+    - `results_candidates/trade_candidates_20230815.csv`：最終候選清單（至少含 `symbol,predict_target_price,close,entry_date`）
     - `candidates_diagnostics.csv`：分數拆解與篩選診斷
 
 ## Step 4: 參數優化（optimize）
@@ -134,13 +163,13 @@
 
 ## 最終驗收（給 Backtester 使用）
 - [ ] 每月必要輸入檔完整存在於 `strategies_template/output/<year>/<month>/`
-- [ ] `trade_candidates.csv` 欄位檢查通過（至少）：
+- [ ] `results_candidates/trade_candidates_<release_yyyymmdd>.csv` 欄位檢查通過（至少）：
   - `symbol`, `predict_target_price`, `close`, `entry_date`
 - [ ] `results_optimize/best_strategy.json` 可被 `backtester/run.py` 正常讀取
 - [ ] 缺檔時有明確錯誤訊息或跳過機制
 
 ### Backtester 最低交付檔案（Gate）
-1. `strategies_template/output/<year>/<month>/trade_candidates.csv`
+1. `strategies_template/output/<year>/<month>/results_candidates/trade_candidates_<release_yyyymmdd>.csv`
 2. `strategies_template/output/<year>/<month>/results_optimize/best_strategy.json`
 
 ## 執行順序（建議）

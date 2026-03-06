@@ -43,11 +43,11 @@ def add_trading_day_buffer(year: int, month: int, buffer_days: int = 30) -> str:
     return end_dt.strftime("%Y-%m-%d")
 
 
-def get_output_path(base_dir: Path, year: int, month: int, start_date: str, end_date: str) -> Path:
+def get_output_path(output_dir: Path, start_date: str, end_date: str) -> Path:
     s = start_date.replace("-", "")
     e = end_date.replace("-", "")
     filename = f"daily_quotes_{s}_{e}.csv"
-    return base_dir / f"{year:04d}" / f"{month:02d}" / filename
+    return output_dir / filename
 
 
 def load_symbols_from_candidates(candidates_path: Path) -> list[str]:
@@ -63,6 +63,16 @@ def prev_month(year: int, month: int) -> tuple[int, int]:
     if month == 1:
         return year - 1, 12
     return year, month - 1
+
+
+def candidate_release_date(year: int, month: int) -> str:
+    release_day = 15 if month in {5, 8, 11} else 10
+    return f"{year:04d}{month:02d}{release_day:02d}"
+
+
+def get_candidates_path(base_dir: Path, year: int, month: int) -> Path:
+    ymd = candidate_release_date(year, month)
+    return base_dir / f"{year:04d}" / f"{month:02d}" / "results_candidates" / f"trade_candidates_{ymd}.csv"
 
 
 def fetch_quotes_from_db(conn, symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
@@ -132,19 +142,20 @@ def fetch_and_save_quotes(conn, symbols: list[str], start_date: str, end_date: s
 def cache_one_period(conn, base_dir: Path, year: int, month: int, label: str) -> None:
     month_s = f"{month:02d}"
     print(f"\n=== [{label}] {year}/{month_s} ===")
-    candidates_path = base_dir / f"{year:04d}" / month_s / "trade_candidates.csv"
-    symbols = load_symbols_from_candidates(candidates_path)
-
+    candidates_path = get_candidates_path(base_dir, year, month)
     if not candidates_path.exists():
-        print(f"  [warn] candidates not found: {candidates_path}")
-        return
+        raise FileNotFoundError(f"candidates not found: {candidates_path}")
+    symbols = load_symbols_from_candidates(candidates_path)
     if not symbols:
-        print(f"  [warn] no symbols in candidates: {candidates_path}")
-        return
+        raise RuntimeError(f"no symbols in candidates: {candidates_path}")
 
     start_date, _ = month_date_range(year, month)
     end_date = add_trading_day_buffer(year, month, buffer_days=30)
-    output_path = get_output_path(base_dir, year, month, start_date, end_date)
+    output_dir = base_dir / f"{year:04d}" / month_s / "results_quotes_cache"
+    output_path = get_output_path(output_dir, start_date, end_date)
+    if output_path.exists():
+        print(f"  [skip] cache exists: {output_path}")
+        return
     fetch_and_save_quotes(conn=conn, symbols=symbols, start_date=start_date, end_date=end_date, output_path=output_path)
 
 
@@ -160,10 +171,22 @@ def main() -> None:
         cache_one_period(conn=conn, base_dir=base_dir, year=year, month=month, label="Current month")
 
         ly_year, ly_month = year - 1, month
-        cache_one_period(conn=conn, base_dir=base_dir, year=ly_year, month=ly_month, label="Historical A (last-year same month)")
+        cache_one_period(
+            conn=conn,
+            base_dir=base_dir,
+            year=ly_year,
+            month=ly_month,
+            label="Historical A (last-year same month)",
+        )
 
         lm_year, lm_month = prev_month(year, month)
-        cache_one_period(conn=conn, base_dir=base_dir, year=lm_year, month=lm_month, label="Historical B (last month)")
+        cache_one_period(
+            conn=conn,
+            base_dir=base_dir,
+            year=lm_year,
+            month=lm_month,
+            label="Historical B (last month)",
+        )
 
     print("\ncache_daily_quotes done")
     print(f"- year: {year}, month: {month_s}")

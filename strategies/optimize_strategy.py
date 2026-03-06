@@ -255,9 +255,15 @@ def score_trial(row: dict[str, Any], min_entered_count: int, max_stop_loss_ratio
 
 
 def find_quotes_csv(base_dir: Path, year: int, month: int) -> Path | None:
-    """Find the daily_quotes_*.csv file in the given month directory."""
+    """Find daily_quotes_*.csv for the given month.
+
+    Search path:
+    - strategies/output/<year>/<month>/results_quotes_cache/
+    """
     month_s = f"{month:02d}"
-    pattern = str(base_dir / f"{year:04d}" / month_s / "daily_quotes_*.csv")
+    month_dir = base_dir / f"{year:04d}" / month_s
+
+    pattern = str(month_dir / "results_quotes_cache" / "daily_quotes_*.csv")
     matches = glob.glob(pattern)
     if not matches:
         return None
@@ -265,28 +271,50 @@ def find_quotes_csv(base_dir: Path, year: int, month: int) -> Path | None:
     return Path(sorted(matches)[-1])
 
 
+def candidate_release_date(year: int, month: int) -> str:
+    release_day = 15 if month in {5, 8, 11} else 10
+    return f"{year:04d}{month:02d}{release_day:02d}"
+
+
+def release_cutoff_timestamp(year: int, month: int) -> pd.Timestamp:
+    ymd = candidate_release_date(year, month)
+    return pd.Timestamp(f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}")
+
+
+def clip_quotes_to_cutoff(quotes: pd.DataFrame, cutoff: pd.Timestamp, label: str) -> pd.DataFrame:
+    before = len(quotes)
+    out = quotes[quotes["date"] <= cutoff].copy()
+    print(f"  [cutoff] {label} <= {cutoff.strftime('%Y-%m-%d')}: {before} -> {len(out)} rows")
+    return out
+
+
+def get_candidates_path(base_dir: Path, year: int, month: int) -> Path:
+    month_s = f"{month:02d}"
+    ymd = candidate_release_date(year, month)
+    return base_dir / f"{year:04d}" / month_s / "results_candidates" / f"trade_candidates_{ymd}.csv"
+
+
 def load_historical_data(
-    base_dir: Path, year: int, month: int, normalize_quotes_fn
+    base_dir: Path, year: int, month: int, normalize_quotes_fn, asof_cutoff: pd.Timestamp
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load trade_candidates + daily_quotes for a given period.
     Returns (candidates_df, quotes_df) — empty DataFrames if not found.
     """
     month_s = f"{month:02d}"
-    cand_path = base_dir / f"{year:04d}" / month_s / "trade_candidates.csv"
+    cand_path = get_candidates_path(base_dir, year, month)
     quotes_path = find_quotes_csv(base_dir, year, month)
 
     if not cand_path.exists():
-        print(f"  [warn] candidates not found: {cand_path}")
-        return pd.DataFrame(), pd.DataFrame()
+        raise FileNotFoundError(f"candidates not found: {cand_path}")
     if quotes_path is None:
-        print(f"  [warn] quotes not found in: {base_dir / f'{year:04d}' / month_s}")
-        return pd.DataFrame(), pd.DataFrame()
+        raise FileNotFoundError(f"quotes not found in: {base_dir / f'{year:04d}' / month_s / 'results_quotes_cache'}")
 
     cand = pd.read_csv(cand_path)
     cand["symbol"] = cand["symbol"].astype(str).str.strip()
 
     quotes = normalize_quotes_fn(pd.read_csv(quotes_path))
+    quotes = clip_quotes_to_cutoff(quotes, asof_cutoff, f"{year}/{month_s}")
     print(f"  loaded {len(cand)} candidates, {len(quotes)} quote rows from {year}/{month_s}")
     return cand, quotes
 
@@ -305,13 +333,14 @@ def main() -> None:
     month = str(args.month).zfill(2)
     month_int = int(month)
     base_dir = (Path.cwd() / "strategies" / "output").resolve()
+    asof_cutoff = release_cutoff_timestamp(year, month_int)
 
     backtest_module = load_backtest_module(Path(__file__).resolve().parent / "multi_strategy_backtest.py")
     normalize_quotes = backtest_module.normalize_quotes
     simulate_one = backtest_module.simulate_one
 
     # ── Load current month ────────────────────────────────────────────────────
-    current_cand_path = base_dir / f"{year:04d}" / month / "trade_candidates.csv"
+    current_cand_path = get_candidates_path(base_dir, year, month_int)
     current_quotes_path = find_quotes_csv(base_dir, year, month_int)
     if not current_cand_path.exists():
         raise FileNotFoundError(f"candidates not found: {current_cand_path}")
@@ -321,6 +350,9 @@ def main() -> None:
     current_candidates = pd.read_csv(current_cand_path)
     current_candidates["symbol"] = current_candidates["symbol"].astype(str).str.strip()
     current_quotes = normalize_quotes(pd.read_csv(current_quotes_path))
+    current_quotes = clip_quotes_to_cutoff(current_quotes, asof_cutoff, f"{year}/{month}")
+    if current_quotes.empty:
+        raise RuntimeError(f"quotes empty after cutoff for {year}/{month}")
 
     # ── Load historical training set ──────────────────────────────────────────
     # Period A: last-year same month
@@ -339,7 +371,7 @@ def main() -> None:
 
     for (hy, hm, label) in required_periods:
         print(f"\n[training] Loading {label}: {hy}/{hm:02d}")
-        cand, quotes = load_historical_data(base_dir, hy, hm, normalize_quotes)
+        cand, quotes = load_historical_data(base_dir, hy, hm, normalize_quotes, asof_cutoff)
         if not cand.empty and not quotes.empty:
             hist_cands_list.append(cand)
             hist_quotes_list.append(quotes)
@@ -396,7 +428,7 @@ def main() -> None:
     ).reset_index(drop=True)
 
     best = ranked.iloc[0].to_dict()
-    output_dir = current_cand_path.parent / "results_optimize"
+    output_dir = base_dir / f"{year:04d}" / month / "results_optimize"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Apply best params to current month ────────────────────────────────────
