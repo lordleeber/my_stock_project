@@ -70,6 +70,21 @@
 5. `optimize_strategy`
 - 建議提供一鍵腳本（例如 `run_strategy_pipeline.py`）串接以上步驟，並在任一步失敗時中止。
 
+## Batch 腳本規範（固定）
+- `strategies_template/` 底下提供 5 個 batch 腳本：
+  - `batch_prepare_data.py`
+  - `batch_predict_published.py`
+  - `batch_build_candidates.py`
+  - `batch_cache_daily_quotes.py`
+  - `batch_optimize_strategy.py`
+- 這 5 個 batch 腳本的月份範圍參數固定使用：
+  - `--start_year`
+  - `--start_month`
+  - `--end_year`
+  - `--end_month`
+- 上述 4 個參數名稱與語意不准更改（對齊既有操作慣例與排程腳本）。
+- 需要在正式策略路徑使用時，直接複製到 `strategies/` 即可使用。
+
 ## Step 0: 前置作業（必填）
 - [ ] 確認 Python 環境與套件
   - Python 執行檔：`venv/bin/python`
@@ -125,6 +140,7 @@
 ## Step 4: 參數優化（optimize）
 - [ ] 禁用明顯不合理策略空間（例如 `entry_rule=all`）
 - [ ] 加入風險/可交易性約束（stop-loss、最小成交筆數等）
+- [ ] 部位口徑固定為每檔預算制（預設 `100000`），不可使用固定 `1000` 股假設
 - [ ] 輸出 Top-K 供人工比對
 - [ ] 測試
   - 測試參數：`--year 2023 --month 08`
@@ -140,6 +156,7 @@
 - [ ] 區間回測（before/after）
 - [ ] 比對 optimize 與 backtester 方向一致性
 - [ ] 嚴禁 look-ahead bias（不得用當月資料覆蓋歷史訓練期間）
+- [ ] 回測部位口徑固定為每檔預算制（預設 `100000`），且 optimize/backtester 必須一致
 - [ ] 測試
   - 測試參數：`--year 2023 --month 08` + 區間參數（例如 `2025/05~2025/10`）
   - 產出路徑：`backtester/output/2023/08/`、`backtester/output/diagnostics/`
