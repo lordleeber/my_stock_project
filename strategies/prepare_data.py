@@ -232,8 +232,6 @@ def compute_ttm_official(df: pd.DataFrame, month: str) -> pd.Series:
 def main() -> None:
     args = parse_args()
     month = tp.normalize_month(args.month)
-    if month in {"02", "03"}:
-        raise RuntimeError(f"{month} 月暫不訓練/不推論")
 
     year = int(args.year)
     cutoff_date = model_release_date(year, month)

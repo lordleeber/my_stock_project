@@ -72,13 +72,13 @@
 ## Typical Commands
 ```powershell
 # Step-by-step
-.\.venv\Scripts\python.exe train_eps\prepare_data.py --year 2025 --month 11 --data-source api
-.\.venv\Scripts\python.exe train_eps\train.py --year 2025 --month 11
-.\.venv\Scripts\python.exe train_eps\evaluate.py --year 2025 --month 11
-.\.venv\Scripts\python.exe train_eps\gate_and_publish.py --year 2025 --month 11
+venv/bin/python train_eps\prepare_data.py --year 2025 --month 11 --data-source api
+venv/bin/python train_eps\train.py --year 2025 --month 11
+venv/bin/python train_eps\evaluate.py --year 2025 --month 11
+venv/bin/python train_eps\gate_and_publish.py --year 2025 --month 11
 
 # One command pipeline
-.\.venv\Scripts\python.exe train_eps\run_pipeline.py --year 2025 --month 11 --data-source api
+venv/bin/python train_eps\run_pipeline.py --year 2025 --month 11 --data-source api
 ```
 
 ## Health Metrics

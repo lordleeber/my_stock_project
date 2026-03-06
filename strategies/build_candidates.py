@@ -146,10 +146,20 @@ def main() -> None:
     args = parse_args()
     year = int(args.year)
     month = str(args.month).zfill(2)
+    release_dt, _ = strategy_release_and_entry_dates(year, month)
+    release_yyyymmdd = release_dt.strftime("%Y%m%d")
 
     default_pred = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "predictions_published.csv").resolve()
     default_ds = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "dataset_strategy.csv").resolve()
-    output_path = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "trade_candidates.csv").resolve()
+    output_path = (
+        Path.cwd()
+        / "strategies"
+        / "output"
+        / f"{year:04d}"
+        / month
+        / "results_candidates"
+        / f"trade_candidates_{release_yyyymmdd}.csv"
+    ).resolve()
 
     pred_path = default_pred
     ds_path = default_ds
@@ -250,7 +260,8 @@ def main() -> None:
 
     df["ttm_eps_forward_live"] = df["ttm_eps_official_live"] - oldest_q_eps + df["predict_target_eps"]
 
-    df["predict_target_price_live"] = pd.to_numeric(df.get("pe_current"), errors="coerce") * df["predict_target_eps"]
+    # Use forward TTM EPS with current PE; multiplying single-quarter EPS by PE is dimensionally inconsistent.
+    df["predict_target_price_live"] = pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward_live"]
     df["volume_lots"] = pd.to_numeric(df.get("target_volume", df.get("q3_volume")), errors="coerce") / 1000.0
 
     with create_engine(tp.get_db_url()).connect() as conn:
@@ -304,6 +315,12 @@ def main() -> None:
             top_n = max(1, int(np.ceil(len(out) * top_pct)))
             out = out.nlargest(top_n, "entry_score").copy()
             print(f"- top entry_score selected: {len(out)} rows (pct={top_pct})")
+    else:
+        fallback = df[df["symbol"].astype(str).str.strip() == "2330"].copy()
+        if fallback.empty:
+            raise RuntimeError("no candidates after filters and fallback symbol 2330 not found")
+        out = fallback.head(1).copy()
+        print("- fallback applied: no candidates after filters, force include symbol 2330")
 
     out = out.sort_values(["symbol"]).reset_index(drop=True)
     if "fold" in out.columns:
