@@ -5,9 +5,7 @@ Flow:
   1. Load HISTORICAL candidates+quotes (last-year same month + last month)
      → Each stock's entry_date = entry_date
      → end_date = entry_date + 20 trading days (max hold), NOT month-end
-  2. Run random-search grid over 300 trials on historical data → find best params
-  3. Apply best params to CURRENT month's candidates → current_month_backtest.csv
-     (This represents the forward strategy we would actually execute)
+  2. Run random-search grid over historical data → find best params
 """
 import argparse
 import calendar
@@ -164,36 +162,6 @@ def evaluate_config_historical(
     return _aggregate_result(cfg, out)
 
 
-def evaluate_config_current(
-    cfg: dict[str, Any],
-    candidates: pd.DataFrame,
-    quotes: pd.DataFrame,
-    max_hold_days: int,
-    simulate_one_fn,
-) -> pd.DataFrame:
-    """
-    Apply best config to CURRENT month's candidates.
-    Returns a per-stock result DataFrame (not aggregated).
-    """
-    rows = []
-    for _, row in candidates.iterrows():
-        pub_date_raw = row.get("entry_date")
-        if pd.isna(pub_date_raw) or pub_date_raw == "":
-            continue
-        entry_dt = pd.to_datetime(pub_date_raw)
-
-        sym = str(row["symbol"]).strip()
-        sym_quotes = quotes[quotes["symbol"] == sym].copy()
-        if sym_quotes.empty:
-            sym_quotes = quotes
-
-        actual_entry, end_dt = get_nth_trading_day_after(sym_quotes, entry_dt, n=max_hold_days)
-        r = simulate_one_fn(row=row, quote_df=quotes, entry_date=actual_entry, end_date=end_dt, cfg=cfg)
-        rows.append(r)
-
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
-
-
 def _empty_result(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "strategy_name": cfg["strategy_name"],
@@ -339,21 +307,6 @@ def main() -> None:
     normalize_quotes = backtest_module.normalize_quotes
     simulate_one = backtest_module.simulate_one
 
-    # ── Load current month ────────────────────────────────────────────────────
-    current_cand_path = get_candidates_path(base_dir, year, month_int)
-    current_quotes_path = find_quotes_csv(base_dir, year, month_int)
-    if not current_cand_path.exists():
-        raise FileNotFoundError(f"candidates not found: {current_cand_path}")
-    if current_quotes_path is None:
-        raise FileNotFoundError(f"quotes cache not found for {year}/{month}")
-
-    current_candidates = pd.read_csv(current_cand_path)
-    current_candidates["symbol"] = current_candidates["symbol"].astype(str).str.strip()
-    current_quotes = normalize_quotes(pd.read_csv(current_quotes_path))
-    current_quotes = clip_quotes_to_cutoff(current_quotes, asof_cutoff, f"{year}/{month}")
-    if current_quotes.empty:
-        raise RuntimeError(f"quotes empty after cutoff for {year}/{month}")
-
     # ── Load historical training set ──────────────────────────────────────────
     # Period A: last-year same month
     ly_year, ly_month = year - 1, month_int
@@ -431,36 +384,15 @@ def main() -> None:
     output_dir = base_dir / f"{year:04d}" / month / "results_optimize"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Apply best params to current month ────────────────────────────────────
-    print(f"\n[apply] Applying best strategy to current month {year}/{month}...")
-    best_cfg = {
-        "strategy_name": best["strategy_name"],
-        "position": {"shares_per_lot": 1000, "max_position_amount": 200000},
-        "entry_rule": json.loads(best["entry_rule"]),
-        "take_profit_rule": json.loads(best["take_profit_rule"]),
-        "exit_rule": json.loads(best["exit_rule"]),
-    }
-    current_result_df = evaluate_config_current(
-        cfg=best_cfg,
-        candidates=current_candidates,
-        quotes=current_quotes,
-        max_hold_days=args.max_hold_days,
-        simulate_one_fn=simulate_one,
-    )
-
     # ── Save outputs ──────────────────────────────────────────────────────────
     all_path = output_dir / "optimization_results_all.csv"
     top20_path = output_dir / "optimization_results_top20.csv"
     best_path = output_dir / "best_strategy.json"
-    current_bt_path = output_dir / "current_month_backtest.csv"
     summary_path = output_dir / "optimization_summary.json"
 
     all_df.to_csv(all_path, index=False, encoding="utf-8-sig")
     ranked.head(20).to_csv(top20_path, index=False, encoding="utf-8-sig")
     best_path.write_text(json.dumps(best, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    if not current_result_df.empty:
-        current_result_df.to_csv(current_bt_path, index=False, encoding="utf-8-sig")
 
     summary_path.write_text(
         json.dumps(
@@ -478,7 +410,6 @@ def main() -> None:
                 "best_trial_number": int(best["trial_number"]),
                 "best_return_percent": float(best["return_percent"]),
                 "best_score": float(best["score"]),
-                "current_month_candidates": int(len(current_candidates)),
                 "note": "entry_date per stock; end_date=entry+max_hold_days trading days",
             },
             ensure_ascii=False,
@@ -493,7 +424,6 @@ def main() -> None:
     print(f"- out_all:          {all_path}")
     print(f"- out_top20:        {top20_path}")
     print(f"- out_best:         {best_path}")
-    print(f"- out_current_bt:   {current_bt_path}")
     print(f"- out_summary:      {summary_path}")
     print(f"- best_return_percent (historical): {best['return_percent']}")
 

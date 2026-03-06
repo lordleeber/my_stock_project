@@ -21,10 +21,11 @@
 - Optimize 讀檔：
   - candidates：`<period>/results_candidates/trade_candidates_<release_yyyymmdd>.csv`
   - quotes：`<period>/results_quotes_cache/daily_quotes_*.csv`
+  - 優化期間僅使用 historical A / B（去年同月 + 上月），不做當月套用回測
   - 不保留舊路徑 fallback，缺檔直接報錯中止
 - 時間切斷（avoid look-ahead）：
   - `optimize_strategy.py` 使用本次執行月份 release date 當 as-of cutoff（例：`2023/08 -> 2023-08-15`）
-  - 同一個 cutoff 套用在 current / historical A / historical B
+  - 同一個 cutoff 套用在 historical A / historical B
 - Fail-fast：
   - candidates 檔缺失：`FileNotFoundError`
   - quotes cache 缺失：`FileNotFoundError`
@@ -132,7 +133,6 @@
     - `optimization_results_all.csv`：全部 trial
     - `optimization_results_top20.csv`：前 20 名策略
     - `best_strategy.json`：當月最佳策略（backtester 必要檔）
-    - `current_month_backtest.csv`：最佳策略單月模擬結果
     - `optimization_summary.json`：優化摘要
 
 ## Step 5: 回測與對帳
