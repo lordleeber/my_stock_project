@@ -179,7 +179,6 @@ services:
     # 同樣修正 volume 掛載
     volumes:
       - ./backend:/app
-      - ./strategy:/app/strategy
       - ./common:/app/common
 
   frontend:

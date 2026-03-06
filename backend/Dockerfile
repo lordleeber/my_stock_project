@@ -6,12 +6,6 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製 Strategy 模組
-COPY strategy /app/strategy
-
-# 複製 Scanner 模組
-COPY scanner /app/scanner
-
 # 複製 Backend 程式碼
 COPY backend/ .
 

@@ -1011,8 +1011,6 @@ def get_raw_monthly_revenue(
     limit: int = Query(1000, gt=0, le=5000),
     offset: int = Query(0, ge=0)
 ):
-    import re
-    m_pattern = re.compile(r"^\d{4}M\d{2}$")
     # 如果是 YYYYMXX 格式則直接傳入，否則保持原樣
     return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
 
@@ -1161,65 +1159,65 @@ def get_raw_cash_flows_xbrl(
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
     return get_raw_xbrl_data("cash_flow_xbrl", start_date, end_date, symbol, limit, offset)
 
-@app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
-def get_volume_spike_scanner(
-    date: str = Query(..., description="Scan date in YYYY-MM-DD format"),
-    min_volume: int = Query(5000000, description="Minimum volume threshold"),
-    volume_ratio: float = Query(4.0, description="Volume spike ratio vs average"),
-    avg_days: int = Query(10, description="Days for average volume calculation"),
-    filter_long_shadow: bool = Query(True, description="Filter long upper shadow candles")
-):
-    """
-    Run volume spike scanner for a specific date
-    Returns stocks with significant volume breakouts
-    """
-    try:
-        from scanner.volume_spike_scanner import scan_volume_spike
+# @app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
+# def get_volume_spike_scanner(
+#     date: str = Query(..., description="Scan date in YYYY-MM-DD format"),
+#     min_volume: int = Query(5000000, description="Minimum volume threshold"),
+#     volume_ratio: float = Query(4.0, description="Volume spike ratio vs average"),
+#     avg_days: int = Query(10, description="Days for average volume calculation"),
+#     filter_long_shadow: bool = Query(True, description="Filter long upper shadow candles")
+# ):
+#     """
+#     Run volume spike scanner for a specific date
+#     Returns stocks with significant volume breakouts
+#     """
+#     try:
+#         from scanner.volume_spike_scanner import scan_volume_spike
 
-        df = scan_volume_spike(
-            scan_date=date,
-            min_volume=min_volume,
-            volume_ratio=volume_ratio,
-            avg_days=avg_days,
-            filter_long_shadow=filter_long_shadow
-        )
+#         df = scan_volume_spike(
+#             scan_date=date,
+#             min_volume=min_volume,
+#             volume_ratio=volume_ratio,
+#             avg_days=avg_days,
+#             filter_long_shadow=filter_long_shadow
+#         )
 
-        if df.empty:
-            return []
+#         if df.empty:
+#             return []
 
-        results = []
-        for _, row in df.iterrows():
-            results.append(VolumeSpikeResult(
-                symbol=row['symbol'],
-                name=row['name'],
-                date=row['date'],
-                open=float(row['open']),
-                high=float(row['high']),
-                low=float(row['low']),
-                close=float(row['close']),
-                volume=float(row['volume']),
-                volume_ratio=float(row['volume_ratio']),
-                distance_from_high_pct=float(row['distance_from_high_pct']) if pd.notna(row['distance_from_high_pct']) else None,
-                upper_shadow_ratio=float(row['upper_shadow_ratio']) if pd.notna(row['upper_shadow_ratio']) else None,
-                ma5=float(row['ma5']) if pd.notna(row['ma5']) else None,
-                ma10=float(row['ma10']) if pd.notna(row['ma10']) else None,
-                ma20=float(row['ma20']) if pd.notna(row['ma20']) else None,
-                ma60=float(row['ma60']) if pd.notna(row['ma60']) else None,
-                k=float(row['k']) if pd.notna(row['k']) else None,
-                d=float(row['d']) if pd.notna(row['d']) else None,
-                rsi6=float(row['rsi6']) if pd.notna(row['rsi6']) else None,
-                rsi12=float(row['rsi12']) if pd.notna(row['rsi12']) else None,
-                macd_dif=float(row['macd_dif']) if pd.notna(row['macd_dif']) else None,
-                macd_dea=float(row['macd_dea']) if pd.notna(row['macd_dea']) else None
-            ))
+#         results = []
+#         for _, row in df.iterrows():
+#             results.append(VolumeSpikeResult(
+#                 symbol=row['symbol'],
+#                 name=row['name'],
+#                 date=row['date'],
+#                 open=float(row['open']),
+#                 high=float(row['high']),
+#                 low=float(row['low']),
+#                 close=float(row['close']),
+#                 volume=float(row['volume']),
+#                 volume_ratio=float(row['volume_ratio']),
+#                 distance_from_high_pct=float(row['distance_from_high_pct']) if pd.notna(row['distance_from_high_pct']) else None,
+#                 upper_shadow_ratio=float(row['upper_shadow_ratio']) if pd.notna(row['upper_shadow_ratio']) else None,
+#                 ma5=float(row['ma5']) if pd.notna(row['ma5']) else None,
+#                 ma10=float(row['ma10']) if pd.notna(row['ma10']) else None,
+#                 ma20=float(row['ma20']) if pd.notna(row['ma20']) else None,
+#                 ma60=float(row['ma60']) if pd.notna(row['ma60']) else None,
+#                 k=float(row['k']) if pd.notna(row['k']) else None,
+#                 d=float(row['d']) if pd.notna(row['d']) else None,
+#                 rsi6=float(row['rsi6']) if pd.notna(row['rsi6']) else None,
+#                 rsi12=float(row['rsi12']) if pd.notna(row['rsi12']) else None,
+#                 macd_dif=float(row['macd_dif']) if pd.notna(row['macd_dif']) else None,
+#                 macd_dea=float(row['macd_dea']) if pd.notna(row['macd_dea']) else None
+#             ))
 
-        return results
+#         return results
 
-    except Exception as e:
-        print(f"Scanner Error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+#     except Exception as e:
+#         print(f"Scanner Error: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/scanner/candlestick/{symbol}", response_model=List[CandlestickData])
 def get_candlestick_data(
@@ -1556,7 +1554,8 @@ def get_ml_training_data(
             s_list = [s.strip() for s in symbols.split(",")]
             placeholders = ", ".join([f":s{i}" for i in range(len(s_list))])
             where.append(f"dq.symbol IN ({placeholders})")
-            for i, s in enumerate(s_list): params[f"s{i}"] = s
+            for i, s in enumerate(s_list):
+                params[f"s{i}"] = s
 
         query = text(f"SELECT {', '.join(select_fields)} FROM daily_quotes dq {' '.join(joins)} WHERE {' AND '.join(where)} ORDER BY dq.date, dq.symbol")
 
