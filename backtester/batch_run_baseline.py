@@ -9,12 +9,12 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from backtester.run import CostConfig, run_month
+from backtester.run_baseline import CostConfig, run_month_baseline
 from backtester.utils import month_iter
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Batch run backtester by month range.")
+    parser = argparse.ArgumentParser(description="Batch run baseline backtester by month range.")
     parser.add_argument("--start_year", type=int, required=True)
     parser.add_argument("--start_month", type=int, required=True)
     parser.add_argument("--end_year", type=int, required=True)
@@ -41,7 +41,7 @@ def main() -> None:
     for y, m in month_iter(args.start_year, args.start_month, args.end_year, args.end_month):
         ym = f"{y:04d}-{m:02d}"
         try:
-            out = run_month(year=y, month=m, cost_cfg=cost_cfg, position_amount=args.position_amount)
+            out = run_month_baseline(year=y, month=m, cost_cfg=cost_cfg, position_amount=args.position_amount)
             rows.append({"year_month": ym, "status": "ok", "reason": "", "output_dir": out["output_dir"]})
             print(f"[ok] {ym}")
         except FileNotFoundError as e:
@@ -53,9 +53,9 @@ def main() -> None:
 
     out_dir = (Path.cwd() / "backtester" / "output").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = out_dir / "batch_summary.json"
+    summary_path = out_dir / "batch_summary_baseline.json"
     summary_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"batch_summary": str(summary_path), "months": len(rows)}, ensure_ascii=False, indent=2))
+    print(json.dumps({"batch_summary_baseline": str(summary_path), "months": len(rows)}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

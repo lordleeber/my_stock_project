@@ -1,54 +1,114 @@
-# Backtester 實作計畫
+# Backtester TODO
 
-## 目標
-在 `backtester/` 使用真實歷史資料做 walk-forward 回測：
-每個月份只用當時可得的策略輸出（候選股 + 最佳參數）做交易模擬，最後輸出月度與全期間績效。
+## Scope
+- Build a month-by-month walk-forward backtester for production strategy outputs.
+- Use `strategies/strategy_blueprint.md` as the source of truth when conflicts exist.
 
-## Phase 1: 規格定義（先鎖契約）
-- [x] 定義輸入來源：`strategies/output/<year>/<month>/trade_candidates.csv`
-- [x] 定義參數來源：`strategies/output/<year>/<month>/results_optimize/best_strategy.json`
-- [x] 定義輸出目錄：`backtester/output/<start>_<end>/`
-- [x] 定義必要輸出檔：
+## Input/Output Contract
+- Input candidates path:
+  - `strategies/output/<year>/<month>/results_candidates/trade_candidates_<release_yyyymmdd>.csv`
+- Input strategy path:
+  - `strategies/output/<year>/<month>/results_optimize/best_strategy.json`
+- Output dir:
+  - `backtester/output/<year>/<month>/`
+- Output files:
   - `trades.csv`
   - `monthly_summary.csv`
   - `equity_curve.csv`
   - `summary.json`
+- Baseline output files:
+  - `trades_baseline.csv`
+  - `monthly_summary_baseline.csv`
+  - `equity_curve_baseline.csv`
+  - `summary_baseline.json`
 
-## Phase 2: 資料層（DB 真實行情）
-- [x] 建立 `data_loader.py`：直接從 DB 讀 `daily_quotes`
-- [x] 提供按 symbol + date range 抓取行情的函式
-- [x] 建立交易日工具：
-  - 下一個交易日
-  - 區間交易日列表
-- [x] 建立資料品質處理：缺 open/high/low/close 的規則
+## Phase 1: Core Utilities
+- [x] Add `backtester/utils.py`
+- [x] Implement release-date rule (`05/08/11 -> 15`, others -> 10)
+- [x] Implement candidate file resolver by release suffix (no legacy fallback)
+- [x] Implement strict file checks (`FileNotFoundError` when missing)
+- [x] Implement month calendar helpers (next month rollover)
 
-## Phase 3: 交易引擎
-- [x] 建立 `engine.py` 單筆模擬函式（沿用 strategies 核心邏輯）
-- [x] 進場規則：`entry_date` 不可交易則順延到下一交易日 open
-- [x] 出場規則：stop loss / take profit / trailing / max_hold_days
-- [x] 成本模型（可配置）：手續費、證交稅、滑價
-- [x] 輸出完整交易欄位：entry/exit/return/pnl/exit_reason
+## Phase 2: Data Loading Layer
+- [x] Add `backtester/data_loader.py`
+- [x] Read candidate CSV (`symbol,predict_target_price,close,entry_date` at minimum)
+- [x] Read and parse `best_strategy.json` (`entry_rule`, `take_profit_rule`, `exit_rule`)
+- [x] Validate `entry_date` exists and is parseable
+- [x] Load quotes from DB `daily_quotes` for required symbol/date windows
+- [x] Add defensive validation for duplicate rows / null critical prices
 
-## Phase 4: 月度 Walk-forward 執行
-- [x] 建立 `run.py`：支援單月 `--year --month`，批次由 `batch_run.py` 逐月執行
-- [x] 逐月讀取該月候選股與最佳策略參數
-- [x] 逐月查行情並執行模擬
-- [x] 彙整月度結果與全期間結果
-- [x] 對 2/3 月等無候選月份標記 `skipped`
+## Phase 3: Simulation Engine
+- [x] Add `backtester/simulator.py`
+- [ ] Entry logic:
+  - [x] Use candidate `entry_date` as signal date
+  - [x] Snap to next trading day as actual entry if needed
+  - [x] Enforce look-ahead guard: `actual_entry_date >= signal_entry_date`
+- [ ] Exit logic:
+  - [x] Stop loss from `exit_rule.stop_loss_pct`
+  - [x] Take profit from `take_profit_rule`
+  - [x] Optional trailing stop when present
+  - [x] Time stop from `exit_rule.max_hold_days` (trading-day based)
+  - [x] Deterministic tie-break when stop/target hit same day (`prefer_stop_when_both`)
+- [ ] Cost model:
+  - [x] Apply commission/tax/slippage to return net PnL
+- [ ] Result schema for each trade:
+  - [x] symbol, signal_entry_date, actual_entry_date, entry_price
+  - [x] exit_date, exit_price, exit_reason
+  - [ ] gross_pnl, net_pnl, return_pct, holding_days
+- [x] Position sizing: budget-based per stock (`--position-amount`, default `100000`)
 
-## Phase 5: 防前視偏誤檢查（必做）
-- [x] 僅使用該月 `trade_candidates` 與 `best_strategy`
-- [x] 禁止讀取未來月份檔案
-- [x] 確保交易使用的行情日期 >= 訊號日期
-- [x] 檢查失敗時直接 fail
+## Phase 4: Monthly Runner
+- [x] Add `backtester/run.py`
+- [x] CLI: `--year --month`
+- [x] Wire data loading + simulation + result writing
+- [ ] Generate:
+  - [x] `trades.csv`
+  - [x] `monthly_summary.csv`
+  - [x] `equity_curve.csv`
+  - [x] `summary.json` (including violations/errors)
+- [x] Fail-fast for required input missing (no old-path fallback)
+- [x] Add `--position-amount`
 
-## Phase 6: 驗證與上線
-- [x] 單月對帳：結果對齊 `current_month_backtest.csv`（同參數下合理接近）
-- [x] 12 個月 smoke test（不中斷）
-- [x] 輸出統計檢查：交易數、勝率、MDD、累積報酬
-- [x] 補上 README/操作指令
+## Phase 5: Batch Runner
+- [x] Add `backtester/batch_run.py`
+- [x] CLI: `--start_year --start_month --end_year --end_month`
+- [x] Iterate months in order and run single-month pipeline
+- [x] Skip month on missing inputs, continue next month, record skip reason
+- [x] Generate batch-level summary report under `backtester/output/`
+- [x] Add `--position-amount`
 
-## 建議實作順序（最短路徑）
-1. 先做單月可跑通版本（Phase 2 + 3 + 單月 run）。
-2. 再做多月 walk-forward（Phase 4）。
-3. 最後補完整報表與防前視檢查（Phase 5 + 6）。
+## Phase 5B: Baseline Runner
+- [x] Add `backtester/run_baseline.py` for single-month baseline output
+- [x] Add `backtester/batch_run_baseline.py` for month-range baseline output
+- [x] Baseline rules implemented:
+  - [x] Buy trigger: `price <= target_price * 0.9` (after signal entry date)
+  - [x] Stop loss: `price <= entry_price * 0.9`
+  - [x] Take profit: `price >= target_price`
+  - [x] Final exit: last trading day close in quotes cache
+- [x] Baseline uses budget-based position sizing (`--position-amount`, default `100000`)
+
+## Phase 6: Validation & Tests
+- [ ] Add unit tests for:
+  - [ ] release-date calculation
+  - [ ] candidate path resolver
+  - [ ] max-hold trading-day end-date calculation
+  - [ ] same-day stop/target tie-break
+  - [ ] look-ahead violation detection
+- [ ] Add integration test for one known month (`2023-08`) with fixed fixtures
+- [ ] Verify core expectations:
+  - [x] earliest entry aligns with candidate `entry_date` (manual validation done)
+  - [x] end-date respects `max_hold_days` trading-day window (manual validation done)
+  - [x] output schemas stable and reproducible (manual rerun validation done)
+
+## Phase 7: Documentation
+- [x] Update `backtester/CLAUDE.md` runbook after implementation
+- [x] Document assumptions and edge-case handling
+- [ ] Add troubleshooting section (missing inputs, missing quotes, DB connectivity)
+- [x] Add summary tool: `backtester/summarize_range.py` (main + baseline)
+
+## Acceptance Criteria
+- [x] `venv/bin/python backtester/run.py --year 2023 --month 8` runs successfully when required inputs exist
+- [x] `venv/bin/python backtester/batch_run.py ...` can process a month range without crashing on missing month inputs
+- [x] Output files are generated with expected columns and valid dates
+- [x] No look-ahead violation passes silently
+- [x] Backtester behavior is aligned with `strategies/strategy_blueprint.md`
