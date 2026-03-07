@@ -83,7 +83,9 @@
   - `--end_year`
   - `--end_month`
 - 上述 4 個參數名稱與語意不准更改（對齊既有操作慣例與排程腳本）。
-- 需要在正式策略路徑使用時，直接複製到 `strategies/` 即可使用。
+- 這 5 個 batch 腳本固定留在 `strategies_template/`。
+- 執行時由 `strategies_template/batch_xxx.py` 直接呼叫 `strategies/` 底下對應主腳本。
+- 因此不需要再把 batch 腳本複製到 `strategies/`。
 
 ## Step 0: 前置作業（必填）
 - [ ] 確認 Python 環境與套件

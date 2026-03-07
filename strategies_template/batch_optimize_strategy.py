@@ -40,7 +40,7 @@ def main() -> None:
     if ym_to_int(args.start_year, args.start_month) > ym_to_int(args.end_year, args.end_month):
         raise ValueError("start year/month must be <= end year/month")
 
-    optimize_script = (Path(__file__).resolve().parent / "optimize_strategy.py").resolve()
+    optimize_script = (Path(__file__).resolve().parent.parent / "strategies" / "optimize_strategy.py").resolve()
     python_exe = sys.executable
 
     total = 0

@@ -36,7 +36,7 @@ def main() -> None:
     if ym_to_int(args.start_year, args.start_month) > ym_to_int(args.end_year, args.end_month):
         raise ValueError("start year/month must be <= end year/month")
 
-    prepare_script = (Path(__file__).resolve().parent / "prepare_data.py").resolve()
+    prepare_script = (Path(__file__).resolve().parent.parent / "strategies" / "prepare_data.py").resolve()
     python_exe = sys.executable
 
     total = 0
