@@ -8,6 +8,9 @@
 - 允許替換策略邏輯（因子、過濾規則、評分方式）。
 - 固定保留輸出介面（`trade_candidates_<release_yyyymmdd>.csv` + `best_strategy.json`）。
 - 不改動 `backtester` 的讀檔契約。
+- 每次建立 `strategies/` 新版實作時，都必須明確指定一個既有可運作版本作為 base implementation。
+  - 不可從空白目錄直接自由發揮。
+  - base implementation 一旦指定，需在本文件或衍生文件中寫清楚來源路徑。
 
 ## 目前 Production 規格（strategies）
 - Candidates 輸出：
@@ -70,6 +73,35 @@
 5. `optimize_strategy`
 - 建議提供一鍵腳本（例如 `run_strategy_pipeline.py`）串接以上步驟，並在任一步失敗時中止。
 
+## 實作基底與檔案要求（模板固定）
+- `strategies/` 底下至少必須存在以下主腳本：
+  - `prepare_data.py`
+  - `predict_published.py`
+  - `build_candidates.py`
+  - `cache_daily_quotes.py`
+  - `optimize_strategy.py`
+  - `run_strategy_pipeline.py`
+- 若 `strategies/` 尚無主腳本，應先從指定 base implementation 複製第一版，再做策略化調整。
+- `strategies_template/` 的 batch 腳本只負責逐月呼叫 `strategies/` 主腳本，不負責實作策略邏輯。
+
+## 歷史依賴規則（模板固定）
+- 任何月份 `Y/M` 要執行 `optimize_strategy.py` 前，必須先確認以下兩個歷史期間已完整存在：
+  - historical A：`Y-1 / M`
+  - historical B：`Y / M-1`（若 `M=01` 則為 `Y-1 / 12`）
+- 上述兩個歷史期間都必須先完成以下產物：
+  - `dataset_model_input.csv`
+  - `dataset_strategy.csv`
+  - `predictions_published.csv`
+  - `results_candidates/trade_candidates_<release_yyyymmdd>.csv`
+  - `results_quotes_cache/daily_quotes_*.csv`
+- 若 historical A / B 任一缺檔，`cache_daily_quotes.py` 或 `optimize_strategy.py` 必須直接 fail-fast，並在錯誤訊息中明確指出：
+  - 缺的是哪個年月
+  - 缺的是哪個檔案
+- 因此單跑某個月份前，執行者必須先判斷是否需要補跑歷史月份的前置三步：
+  1. `prepare_data`
+  2. `predict_published`
+  3. `build_candidates`
+
 ## Batch 腳本規範（固定）
 - `strategies_template/` 底下提供 5 個 batch 腳本：
   - `batch_prepare_data.py`
@@ -104,6 +136,10 @@
     - `models_eps/2023/08/latest.json`：模型索引
     - `models_eps/2023/08/*.pkl`：推論模型
     - `strategies_template/output/2023/08/`：策略輸出根目錄
+- [ ] 語法驗證
+  - 首次建立或大改 `strategies/*.py` 後，必須先做最小語法檢查
+  - 建議指令：
+    - `python3 -m py_compile strategies/prepare_data.py strategies/predict_published.py strategies/build_candidates.py strategies/cache_daily_quotes.py strategies/optimize_strategy.py strategies/run_strategy_pipeline.py`
 
 ## Step 1: 資料集與欄位定義
 - [ ] 定義本版策略使用欄位（建議 4~10 個核心欄位）
@@ -127,6 +163,10 @@
   - 產出檔案（用途）：
     - `trade_candidates_raw.csv`：過濾前候選（除錯用）
     - `results_candidates/trade_candidates_20230815.csv`：過濾後候選（後續 optimize/backtester 主輸入）
+- [ ] diagnostics 路徑固定
+  - `candidates_diagnostics.csv` 固定輸出至：
+    - `strategies/output/<year>/<month>/candidates_diagnostics.csv`
+  - 不放在 `results_candidates/` 子目錄，避免和主交付檔混淆
 
 ## Step 3: 候選排序與選股控制
 - [ ] 建立 `entry_score`（可拆解為多個子分數）
@@ -152,6 +192,11 @@
     - `optimization_results_top20.csv`：前 20 名策略
     - `best_strategy.json`：當月最佳策略（backtester 必要檔）
     - `optimization_summary.json`：優化摘要
+- [ ] 執行前檢查 historical 依賴
+  - 若 `2023/08` 要 optimize，必須先確認：
+    - `2022/08` candidates + quotes 已存在
+    - `2023/07` candidates + quotes 已存在
+  - 若缺檔，不得硬跑 optimize；應先補跑缺少月份的前置步驟
 
 ## Step 5: 回測與對帳
 - [ ] 單月回測（sanity check）
@@ -196,6 +241,22 @@
 2. Step 2 -> Step 3（先有候選，再做排序與容量控制）。
 3. Step 4（固定產出最佳策略與完整 optimize 結果）。
 4. Step 5 -> Step 6（回測驗收後再更新文件）。
+
+## 最小驗證流程（模板固定）
+1. 先確認 `strategies/` 主腳本已從指定 base implementation 建立完成。
+2. 執行 `py_compile`，先排除語法錯誤。
+3. 先跑目標月份的：
+   - `prepare_data.py`
+   - `predict_published.py`
+   - `build_candidates.py`
+4. 檢查 optimize 所需的 historical A / B 是否已有 candidates。
+5. 若 historical A / B 缺候選或缺 quotes，先補跑缺少月份的前置步驟與 cache。
+6. 再跑目標月份的：
+   - `cache_daily_quotes.py`
+   - `optimize_strategy.py`
+7. 最後確認兩個 gate 檔案存在：
+   - `results_candidates/trade_candidates_<release_yyyymmdd>.csv`
+   - `results_optimize/best_strategy.json`
 
 ## 失效診斷順序（固定）
 1. 先看候選覆蓋是否異常下降（`build_candidates` 的 filter impact）。
