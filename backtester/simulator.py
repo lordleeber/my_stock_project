@@ -11,7 +11,6 @@ import pandas as pd
 class CostConfig:
     commission_rate: float = 0.001425
     tax_rate: float = 0.003
-    slippage_rate: float = 0.0005
 
 
 def build_position_size(entry_open: float, max_position_amount: float, shares_per_lot: int) -> tuple[int, float]:
@@ -63,8 +62,7 @@ def _cost_amount(entry_price: float, exit_price: float, shares: int, cost_cfg: C
     sell = exit_price * shares
     commission = (buy + sell) * cost_cfg.commission_rate
     tax = sell * cost_cfg.tax_rate
-    slippage = (buy + sell) * cost_cfg.slippage_rate
-    return float(commission + tax + slippage)
+    return float(commission + tax)
 
 
 def simulate_one(

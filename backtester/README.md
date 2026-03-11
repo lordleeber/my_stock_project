@@ -1,0 +1,134 @@
+# Backtester
+
+Rolling monthly portfolio backtester. Consumes monthly strategy outputs from `strategies/`,
+applies walk-forward ML scoring, and simulates buy/sell decisions using real historical prices.
+
+---
+
+## Pipeline Overview
+
+```
+strategies/output/<year>/<month>/dataset_strategy.csv
+      ↓
+run_rolling.py    walk-forward 打分 → 市場判斷 → 調整持倉 → 記錄損益
+      ↓
+backtester/output/rolling/
+  rolling_trades.csv     每筆交易紀錄
+  rolling_monthly.csv    每月摘要
+  rolling_summary.json   整體統計
+```
+
+---
+
+## Rolling Portfolio 邏輯（每月）
+
+1. 讀取當月 `dataset_strategy.csv`，用 walk-forward 模型即時打分（`ml_score`）
+2. 取 top-N 候選股（`--top-n`）
+3. 判斷市場狀態（Bull / Sideways / Bear）
+4. **Bear**：全部出場，不進新倉
+5. **Bull / Sideways**：
+   - 不在新名單的持股 → 出場
+   - 新名單中未持有的股票 → 進場
+   - 兩邊都有的股票 → 繼續持有
+
+所有買賣價格使用 DB 真實開盤價（`daily_quotes.open`）。
+
+---
+
+## 市場狀態判斷
+
+來源：`market_indices` 表（大盤指數）
+
+| 狀態 | 條件 |
+|------|------|
+| Bull | MA20 > MA60 |
+| Bear | MA20 < MA60 且 close < MA20 |
+| Sideways | 其他 |
+
+---
+
+## Walk-Forward 模型選擇
+
+回測月份 M → 使用 `models_selection/` 中 cutoff < M 的最新模型。
+例如：回測 2024/07 → 用 `models_selection/2024/06/`（若存在）。
+
+若無任何 versioned 模型，fallback 到 `models_selection/latest/`。
+
+---
+
+## 交易成本
+
+| 項目 | 預設值 |
+|------|--------|
+| 手續費（買 + 賣） | 0.1425%（各單邊） |
+| 證交稅（賣方） | 0.3% |
+
+---
+
+## Files
+
+| 檔案 | 說明 |
+|------|------|
+| `run_rolling.py` | 主回測程式 |
+| `score_candidates.py` | 當月手動打分工具（production 用） |
+| `summarize_range.py` | 回測結果統計摘要 |
+| `data_loader.py` | DB 行情查詢 |
+| `simulator.py` | 交易成本計算 |
+| `utils.py` | 共用工具函式 |
+
+---
+
+## Usage
+
+### 回測
+```bash
+venv/bin/python3 backtester/run_rolling.py \
+  --start_year 2022 --start_month 7 \
+  --end_year 2025 --end_month 10 \
+  --top-n 10
+```
+
+### 查看結果
+```bash
+venv/bin/python3 backtester/summarize_range.py
+venv/bin/python3 backtester/summarize_range.py --show-monthly
+```
+
+### 當月推薦（production）
+```bash
+venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
+```
+
+### 參數說明
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `--start_year/month` | 必填 | 回測起始月份 |
+| `--end_year/month` | 必填 | 回測結束月份 |
+| `--top-n` | 無限制 | 每月取前 N 名候選股 |
+| `--position-amount` | 100,000 | 每檔固定投入金額（TWD） |
+| `--models-root` | `models_selection/` | ML 模型根目錄 |
+| `--commission-rate` | 0.001425 | 手續費率 |
+| `--tax-rate` | 0.003 | 證交稅率 |
+
+---
+
+## Output
+
+### rolling_trades.csv
+每筆已結清或仍持有的交易紀錄。
+
+| 欄位 | 說明 |
+|------|------|
+| `symbol` | 股票代號 |
+| `entry_date` / `exit_date` | 進出場日期 |
+| `entry_price` / `exit_price` | 進出場價格 |
+| `shares` | 股數 |
+| `gross_pnl` | 毛損益 |
+| `cost` | 手續費 + 稅 |
+| `net_pnl` | 淨損益 |
+| `return_pct` | 報酬率（% of capital_used） |
+| `exit_reason` | `not_reselected` / `bear_market_exit` / `still_open` |
+
+### rolling_monthly.csv
+每月持倉狀況與損益摘要。
