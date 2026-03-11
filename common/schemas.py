@@ -324,9 +324,9 @@ SCHEMA_COLS = {
     ],
     "shareholding_concentration": [
         "date", "symbol",
-        "large_holder_ratio", "small_holder_ratio", "concentration_spread",
+        "large_holder_ratio", "small_holder_ratio", "mid_holder_ratio", "concentration_spread",
         "large_holder_count", "small_holder_count",
-        "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow",
+        "large_holder_ratio_wow", "small_holder_ratio_wow", "mid_holder_ratio_wow", "concentration_spread_wow",
         "pced_file", "pced_row", "pced_col"
     ],
     "monthly_revenue": [

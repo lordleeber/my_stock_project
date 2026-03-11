@@ -55,6 +55,7 @@ def run():
                 symbol,
                 SUM(CASE WHEN level BETWEEN 1 AND 8 THEN COALESCE(percentage, 0) ELSE 0 END) AS small_holder_ratio,
                 SUM(CASE WHEN level BETWEEN 12 AND 15 THEN COALESCE(percentage, 0) ELSE 0 END) AS large_holder_ratio,
+                SUM(CASE WHEN level BETWEEN 9 AND 11 THEN COALESCE(percentage, 0) ELSE 0 END) AS mid_holder_ratio,
                 SUM(CASE WHEN level BETWEEN 1 AND 8 THEN COALESCE(holders, 0) ELSE 0 END) AS small_holder_count,
                 SUM(CASE WHEN level BETWEEN 12 AND 15 THEN COALESCE(holders, 0) ELSE 0 END) AS large_holder_count
             FROM shareholding
@@ -66,11 +67,13 @@ def run():
                 symbol,
                 large_holder_ratio,
                 small_holder_ratio,
+                mid_holder_ratio,
                 (large_holder_ratio - small_holder_ratio) AS concentration_spread,
                 large_holder_count,
                 small_holder_count,
                 large_holder_ratio - LAG(large_holder_ratio) OVER (PARTITION BY symbol ORDER BY date) AS large_holder_ratio_wow,
                 small_holder_ratio - LAG(small_holder_ratio) OVER (PARTITION BY symbol ORDER BY date) AS small_holder_ratio_wow,
+                mid_holder_ratio - LAG(mid_holder_ratio) OVER (PARTITION BY symbol ORDER BY date) AS mid_holder_ratio_wow,
                 (large_holder_ratio - small_holder_ratio) - LAG(large_holder_ratio - small_holder_ratio) OVER (PARTITION BY symbol ORDER BY date) AS concentration_spread_wow
             FROM agg
         )
@@ -84,7 +87,9 @@ def run():
             small_holder_count,
             ROUND(large_holder_ratio_wow::numeric, 4) AS large_holder_ratio_wow,
             ROUND(small_holder_ratio_wow::numeric, 4) AS small_holder_ratio_wow,
+            ROUND(mid_holder_ratio_wow::numeric, 4) AS mid_holder_ratio_wow,
             ROUND(concentration_spread_wow::numeric, 4) AS concentration_spread_wow,
+            ROUND(mid_holder_ratio::numeric, 4) AS mid_holder_ratio,
             'calculated_shareholding_concentration'::text AS pced_file,
             0::bigint AS pced_row,
             'x'::text AS pced_col
