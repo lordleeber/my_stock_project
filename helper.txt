@@ -1,0 +1,105 @@
+# strategies
+# 預設範圍是 2021/08 ~ 2025/10，共 51 個月。
+venv/bin/python3 strategies/batch_prepare_data.py
+
+# Step 2：跑 EPS 預測
+venv/bin/python3 strategies/batch_predict_published.py
+
+# Step 3：finalize（merge 預測 + entry_date + 技術面）
+venv/bin/python3 strategies/batch_finalize_strategy.py
+
+# Step 4：產生訓練資料
+venv/bin/python3 strategies/analyze_feature_returns.py
+
+---------------------------------------------------------------------------------------------------------------------
+# Step 5：訓練 ML 模型
+# Walk-forward 驗證（用 2024/06 之前的資料訓練，之後的評估）
+venv/bin/python3 strategies/train_selection_model.py --cutoff-year 2024 --cutoff-month 6
+
+
+下一步要跑正式訓練（用全部資料），再跑回測驗證：
+
+# 正式模型（全資料）
+venv/bin/python3 strategies/train_selection_model.py
+
+# 全部跑（2022-06 ~ 2025-08，共 39 個 cutoff）
+venv/bin/python3 strategies/batch_train_selection_model.py
+
+# 先 dry-run 確認指令正確
+venv/bin/python3 strategies/batch_train_selection_model.py --dry-run
+
+# 跳過已有模型的月份（斷點續跑）
+venv/bin/python3 strategies/batch_train_selection_model.py --skip-existing
+
+# 自訂範圍
+venv/bin/python3 strategies/batch_train_selection_model.py --start-year 2023 --start-month 1 --end-year 2025
+--end-month 8
+
+----------------------------------------------------------------------------------------------------------------------
+
+# 接著跑回測
+venv/bin/python3 backtester/run_rolling.py --start_year 2022 --start_month 7 --end_year 2025 --end_month 10 --top-n 10 --position-amount 100000
+
+當回測執行到 2023/08 時，會去讀取 2023/07 的 models_selection，然後在 2023/08/11 open 買入，2023/09/10 open賣出
+我這樣敘述正確嗎？                                                                                                                                                               
+                                                                                                                                                                                    
+⏺ 大部分正確，但進場日期有一個地方需要修正：                                                                                                                                        
+                                                                                                                                                                                    
+  模型 → ✅ 正確，使用 models_selection/2023/07/                                                                                                                                    
+   
+  進場日期 → ❌ 應該是 2023-08-16 open                                                                                                                                              
+                                                                                                                                                                                  
+  day = 15 if m in {5, 8, 11} else 10
+
+  8 月在 {5, 8, 11} 裡，所以 release date = 2023-08-15，entry = 08-15 隔天第一個交易日 = 2023-08-16。08-11 是非 5/8/11 月份的情況（release = 10th）。
+
+  出場日期 → ✅ 正確，2023-09-10 open
+
+  9 月 release = 2023-09-10，entry = 2023-09-11，依新定義 exit = entry 前一個交易日 = 2023-09-10 open。
+
+  ---
+  完整修正後：
+
+  ┌──────┬───────────────────────────┐
+  │ 步驟 │           日期            │
+  ├──────┼───────────────────────────┤
+  │ 模型 │ models_selection/2023/07/ │
+  ├──────┼───────────────────────────┤
+  │ 進場 │ 2023-08-16 open           │
+  ├──────┼───────────────────────────┤
+  │ 出場 │ 2023-09-10 open           │
+  └──────┴───────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+venv/bin/python3 backtester/summarize_range.py --show-monthly 2>&1
+
+# 尚未加入中實戶
+closed trades    : 184
+  win / loss     : 118 / 66  (win_rate=64.1%)
+  avg return     : 7.65%
+  median return  : 4.34%
+gross pnl        : +1,519,971 TWD
+total cost       : 114,220 TWD
+net pnl          : +1,405,751 TWD
+still open       : 10
+no-quote skipped : 0
+
+# 加入中實戶之後
+closed trades    : 209
+  win / loss     : 145 / 64  (win_rate=69.4%)
+  avg return     : 8.47%
+  median return  : 4.79%
+gross pnl        : +1,897,381 TWD
+total cost       : 130,515 TWD
+net pnl          : +1,766,866 TWD
+still open       : 10
+no-quote skipped : 1
