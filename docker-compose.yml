@@ -180,6 +180,8 @@ services:
     volumes:
       - ./backend:/app
       - ./common:/app/common
+      - ./strategies:/app/strategies:ro
+      - ./models_selection:/app/models_selection:ro
 
   frontend:
     build:
