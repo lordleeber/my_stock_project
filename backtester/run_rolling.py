@@ -165,15 +165,14 @@ def load_candidates_safe(
 
     # Walk-forward scoring: use the latest model trained before this month.
     model_dir = resolve_model_for_month(models_root, year, month)
-    if model_dir is not None:
-        try:
-            df = score_dataset_strategy(df, model_dir)
-            df["_model_used"] = model_dir.name
-        except Exception as exc:
-            print(f"[WARN] scoring failed for {year}/{month_s}: {exc}")
-    else:
-        print(f"[WARN] no model found for {year}/{month_s}, falling back to pred_upside_pct")
-
+    if model_dir is None:
+        raise FileNotFoundError(
+            f"No selection model found for {year}/{month_s} "
+            f"(need cutoff < {year}/{month_s} in {models_root}). "
+            f"Run: venv/bin/python3 strategies/batch_train_selection_model.py"
+        )
+    df = score_dataset_strategy(df, model_dir)
+    df["_model_used"] = model_dir.name
     return df
 
 
@@ -295,16 +294,8 @@ def main() -> None:
         # Exits happen at the open of the trading day before entry_date.
         exit_date_str = prev_trading_day(entry_date_str)
 
-        # Rank candidates: prefer ml_score if available, else pred_upside_pct.
-        candidates_df = candidates_df.copy()
-        if "ml_score" in candidates_df.columns:
-            candidates_df = candidates_df.sort_values("ml_score", ascending=False)
-        elif "predict_target_price" in candidates_df.columns and "close" in candidates_df.columns:
-            candidates_df["pred_upside_pct"] = (
-                pd.to_numeric(candidates_df["predict_target_price"], errors="coerce")
-                - pd.to_numeric(candidates_df["close"], errors="coerce")
-            ) / pd.to_numeric(candidates_df["close"], errors="coerce") * 100.0
-            candidates_df = candidates_df.sort_values("pred_upside_pct", ascending=False)
+        # Rank candidates by ml_score (guaranteed present — load_candidates_safe raises if model missing).
+        candidates_df = candidates_df.copy().sort_values("ml_score", ascending=False)
         if top_n is not None:
             candidates_df = candidates_df.head(top_n)
 
