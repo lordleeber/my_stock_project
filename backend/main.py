@@ -1623,8 +1623,11 @@ class ScoredStock(BaseModel):
     name: Optional[str] = None
     pred_upside_pct: Optional[float] = None
     pe_current: Optional[float] = None
-    close: Optional[float] = None
     entry_date: Optional[str] = None
+    entry_price: Optional[float] = None
+    exit_date: Optional[str] = None
+    exit_price: Optional[float] = None
+    net_pnl: Optional[float] = None
     model_used: str
 
 
@@ -1666,7 +1669,7 @@ def get_selection_score(
     year: int = Query(..., ge=2020, le=2030),
     month: int = Query(..., ge=1, le=12),
 ):
-    """Run LambdaRank model on dataset_strategy.csv and return ranked stocks."""
+    """Return pre-scored stocks from candidates_scored.csv (pre-computed by ML pipeline)."""
     try:
         app_dir = Path(__file__).resolve().parent  # /app in Docker, backend/ locally
         # In Docker: strategies mounted at /app/strategies
@@ -1674,42 +1677,27 @@ def get_selection_score(
         strategies_root = app_dir / "strategies"
         if not strategies_root.exists():
             strategies_root = app_dir.parent / "strategies"
-        models_root_path = app_dir / "models_selection"
-        if not models_root_path.exists():
-            models_root_path = app_dir.parent / "models_selection"
 
         month_str = f"{month:02d}"
-        ds_path = strategies_root / "output" / f"{year:04d}" / month_str / "dataset_strategy.csv"
-        if not ds_path.exists():
-            raise HTTPException(status_code=404, detail=f"dataset_strategy.csv not found for {year}/{month_str}")
+        scored_path = strategies_root / "output" / f"{year:04d}" / month_str / "candidates_scored.csv"
+        if not scored_path.exists():
+            raise HTTPException(status_code=404, detail=f"candidates_scored.csv not found for {year}/{month_str}")
 
-        models_root = models_root_path
-        model_dir = _resolve_model_for_month(models_root, year, month)
-        if model_dir is None:
-            raise HTTPException(status_code=404, detail="No selection model found")
+        ds = pd.read_csv(scored_path)
+        ds["symbol"] = ds["symbol"].astype(str)
+        ds = ds.sort_values("ml_rank").reset_index(drop=True)
+        model_used = f"pre-computed {year}/{month_str}"
 
-        # Determine model label
-        if model_dir.name == "latest":
-            model_used = "latest"
-        else:
-            model_used = f"{model_dir.parent.name}/{model_dir.name}"
-
-        # Load model
-        with open(model_dir / "selection_model.pkl", "rb") as f:
-            payload = pickle.load(f)
-        model = payload["model"]
-        feature_cols = payload["feature_cols"]
-
-        # Load dataset and score
-        ds = pd.read_csv(ds_path)
-        for c in feature_cols:
-            if c not in ds.columns:
-                ds[c] = 0.0
-        X = ds[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
-        ds = ds.copy()
-        ds["ml_score"] = model.predict(X)
-        ds = ds.sort_values("ml_score", ascending=False).reset_index(drop=True)
-        ds["ml_rank"] = ds.index + 1
+        # Join with rolling_trades for entry/exit price and net_pnl
+        trades_path = app_dir / "backtester" / "output" / "rolling" / "rolling_trades.csv"
+        if not trades_path.exists():
+            trades_path = app_dir.parent / "backtester" / "output" / "rolling" / "rolling_trades.csv"
+        trades_lookup: dict = {}
+        if trades_path.exists():
+            trades = pd.read_csv(trades_path)
+            trades["symbol"] = trades["symbol"].astype(str)
+            for _, t in trades.iterrows():
+                trades_lookup[(t["symbol"], t["entry_date"])] = t
 
         def _opt_float(row, col):
             v = row.get(col)
@@ -1722,15 +1710,21 @@ def get_selection_score(
 
         results = []
         for _, row in ds.iterrows():
+            sym = str(row["symbol"])
+            entry_date = str(row["entry_date"]) if pd.notna(row.get("entry_date")) else None
+            trade = trades_lookup.get((sym, entry_date), {})
             results.append(ScoredStock(
                 ml_rank=int(row["ml_rank"]),
                 ml_score=float(row["ml_score"]),
-                symbol=str(row["symbol"]),
+                symbol=sym,
                 name=str(row["name"]) if pd.notna(row.get("name")) else None,
                 pred_upside_pct=_opt_float(row, "pred_upside_pct"),
                 pe_current=_opt_float(row, "pe_current"),
-                close=_opt_float(row, "close"),
-                entry_date=str(row["entry_date"]) if pd.notna(row.get("entry_date")) else None,
+                entry_date=entry_date,
+                entry_price=_opt_float(trade, "entry_price"),
+                exit_date=str(trade["exit_date"]) if trade.get("exit_date") and pd.notna(trade.get("exit_date")) else None,
+                exit_price=_opt_float(trade, "exit_price"),
+                net_pnl=_opt_float(trade, "net_pnl"),
                 model_used=model_used,
             ))
         return results

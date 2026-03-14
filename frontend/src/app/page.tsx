@@ -9,8 +9,11 @@ interface ScoredStock {
   name: string | null
   pred_upside_pct: number | null
   pe_current: number | null
-  close: number | null
   entry_date: string | null
+  entry_price: number | null
+  exit_date: string | null
+  exit_price: number | null
+  net_pnl: number | null
   model_used: string
 }
 
@@ -123,7 +126,9 @@ export default function Home() {
                   <th className="px-4 py-3 text-right">ML分數</th>
                   <th className="px-4 py-3 text-right">預期漲幅%</th>
                   <th className="px-4 py-3 text-right">現值PE</th>
-                  <th className="px-4 py-3 text-right">收盤價</th>
+                  <th className="px-4 py-3 text-right">買進價</th>
+                  <th className="px-4 py-3 text-right">賣出價</th>
+                  <th className="px-4 py-3 text-right">淨利</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
@@ -137,7 +142,11 @@ export default function Home() {
                       {fmt(row.pred_upside_pct)}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">{fmt(row.pe_current)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{fmt(row.close)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums" title={row.entry_date ?? ''}>{fmt(row.entry_price)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums" title={row.exit_date ?? ''}>{fmt(row.exit_price)}</td>
+                    <td className={`px-4 py-2 text-right tabular-nums ${row.net_pnl !== null && row.net_pnl > 0 ? 'text-green-600' : row.net_pnl !== null && row.net_pnl < 0 ? 'text-red-500' : ''}`}>
+                      {row.net_pnl !== null ? row.net_pnl.toLocaleString('zh-TW', { maximumFractionDigits: 0 }) : '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

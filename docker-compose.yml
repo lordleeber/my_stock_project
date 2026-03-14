@@ -182,6 +182,7 @@ services:
       - ./common:/app/common
       - ./strategies:/app/strategies:ro
       - ./models_selection:/app/models_selection:ro
+      - ./backtester/output:/app/backtester/output:ro
 
   frontend:
     build:
