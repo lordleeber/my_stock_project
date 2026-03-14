@@ -1,11 +1,11 @@
 """
-Batch-run strategies/predict_published.py for a range of months.
+Batch-run train_eps/predict_and_publish.py for a range of months.
 
 Usage:
-  venv/bin/python3 strategies/batch_predict_published.py
-  venv/bin/python3 strategies/batch_predict_published.py --start-year 2023 --start-month 8
-  venv/bin/python3 strategies/batch_predict_published.py --skip-existing
-  venv/bin/python3 strategies/batch_predict_published.py --dry-run
+  venv/bin/python3 train_eps/batch_predict_and_publish.py
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --start-year 2023 --start-month 8
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --skip-existing
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --dry-run
 """
 from __future__ import annotations
 
@@ -31,14 +31,14 @@ def month_iter(start: tuple[int, int], end: tuple[int, int]):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Batch run predict_published.py for a range of months.")
+    parser = argparse.ArgumentParser(description="Batch run predict_and_publish.py for a range of months.")
     parser.add_argument("--start-year",    type=int, default=DEFAULT_START[0])
     parser.add_argument("--start-month",   type=int, default=DEFAULT_START[1])
     parser.add_argument("--end-year",      type=int, default=DEFAULT_END[0])
     parser.add_argument("--end-month",     type=int, default=DEFAULT_END[1])
     parser.add_argument("--dry-run",       action="store_true")
     parser.add_argument("--skip-existing", action="store_true",
-                        help="Skip months where predictions_published.csv already exists")
+                        help="Skip months where predictions_results.csv already exists")
     return parser.parse_args()
 
 
@@ -48,10 +48,10 @@ def main() -> None:
     end   = (args.end_year,   args.end_month)
 
     months = list(month_iter(start, end))
-    print(f"Batch predict_published: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)")
+    print(f"Batch predict_and_publish: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)")
 
     python = sys.executable
-    script = str(ROOT_DIR / "strategies" / "predict_published.py")
+    script = str(ROOT_DIR / "train_eps" / "predict_and_publish.py")
 
     ok = skipped = failed = 0
 
@@ -60,17 +60,17 @@ def main() -> None:
         label   = f"{year}/{month_s}"
 
         if args.skip_existing:
-            out_path = ROOT_DIR / "strategies" / "output" / str(year) / month_s / "predictions_published.csv"
+            out_path = ROOT_DIR / "models_eps" / str(year) / month_s / "predictions_results.csv"
             if out_path.exists():
-                print(f"[skip]  {label}  (predictions_published.csv exists)")
+                print(f"[skip]  {label}  (predictions_results.csv exists)")
                 skipped += 1
                 continue
 
         # Skip if prerequisites are missing.
-        input_path = ROOT_DIR / "strategies" / "output" / str(year) / month_s / "dataset_model_input.csv"
+        input_path = ROOT_DIR / "train_eps" / "output" / str(year) / month_s / "dataset_evaluate.csv"
         model_path = ROOT_DIR / "models_eps" / str(year) / month_s / "model.pkl"
         if not input_path.exists():
-            print(f"[skip]  {label}  (missing dataset_model_input.csv)")
+            print(f"[skip]  {label}  (missing train_eps/output/{year}/{month_s}/dataset_evaluate.csv)")
             skipped += 1
             continue
         if not model_path.exists():

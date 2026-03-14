@@ -13,19 +13,6 @@ EVAL_EXCLUDE_COLUMNS = {
     "symbol",
     "name",
     "industry",
-    "q3_date",
-    "q3_close",
-    "q3_volume",
-    "target_date",
-    "target_close",
-    "target_volume",
-    "pe_current",
-    "prev_q4_eps",
-    "q1_eps",
-    "q2_eps",
-    "q2_eps_official",
-    "ttm_eps_official",
-    "feature_cutoff_date",
     "year",
     TARGET,
     TARGET_DELTA,
@@ -46,10 +33,9 @@ def resolve_month_context(year: int, month: str) -> tuple[Path, Path, Path]:
     month_name = str(month).zfill(2)
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
-    month_dir = (Path.cwd() / "train_eps" / "output" / str(year) / month_name).resolve()
-    dataset_path = month_dir / "dataset_evaluate.csv"
-    results_dir = month_dir / "results_eval"
-    return month_dir, dataset_path, results_dir
+    dataset_path = (Path.cwd() / "train_eps" / "output" / str(year) / month_name / "dataset_evaluate.csv").resolve()
+    results_dir = (Path.cwd() / "models_eps" / str(year) / month_name).resolve()
+    return dataset_path, results_dir
 
 
 def winsorize_train_test(train_df: pd.DataFrame, test_df: pd.DataFrame, cols: list[str], q: float) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -89,11 +75,6 @@ def infer_feature_set(df: pd.DataFrame) -> list[str]:
         raise ValueError("dataset_evaluate.csv 必須包含 anchor_eps 欄位")
     if not feature_cols:
         raise ValueError("沒有可用特徵欄位，請檢查 dataset_evaluate.csv")
-    z_features = [c for c in feature_cols if c.endswith("_z")]
-    if z_features:
-        raise ValueError(
-            "dataset_evaluate.csv 不可包含 *_z 欄位。請先執行新版 prepare_data.py，輸出 *_quantile 後再評估。"
-        )
     quantile_features = [c for c in feature_cols if c.endswith("_quantile")]
     if not quantile_features:
         raise ValueError(
@@ -319,7 +300,7 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, results_dir = resolve_month_context(args.year, args.month)
+    dataset_path, results_dir = resolve_month_context(args.year, args.month)
     results_dir.mkdir(parents=True, exist_ok=True)
     config, _ = load_shared_config()
     common_cfg = config["common"]
@@ -518,7 +499,6 @@ def main() -> None:
     fold_df.to_json(fold_path, orient="records", force_ascii=False, indent=2)
 
     print("evaluate completed")
-    print(f"- month_dir: {month_dir}")
     print(f"- {fold_path}")
 
 

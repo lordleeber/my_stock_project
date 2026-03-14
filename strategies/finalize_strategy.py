@@ -4,7 +4,7 @@ and fetching technical features.
 
 Reads:
   strategies/output/<year>/<month>/dataset_strategy.csv
-  strategies/output/<year>/<month>/predictions_published.csv
+  models_eps/<year>/<month>/predictions_results.csv
 
 Writes:
   strategies/output/<year>/<month>/dataset_strategy.csv  (updated in-place with new columns)
@@ -93,13 +93,13 @@ def main() -> None:
 
     out_dir       = (ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month).resolve()
     strategy_path = out_dir / "dataset_strategy.csv"
-    pred_path     = out_dir / "predictions_published.csv"
+    pred_path     = (ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv").resolve()
     candidates_path = out_dir / "trade_candidates.csv"
 
     if not strategy_path.exists():
         raise FileNotFoundError(f"dataset_strategy.csv not found: {strategy_path}\nRun prepare_data.py first.")
     if not pred_path.exists():
-        raise FileNotFoundError(f"predictions_published.csv not found: {pred_path}\nRun predict_published.py first.")
+        raise FileNotFoundError(f"predictions_results.csv not found: {pred_path}\nRun predict_and_publish.py first.")
 
     ds   = pd.read_csv(strategy_path)
     pred = pd.read_csv(pred_path)
