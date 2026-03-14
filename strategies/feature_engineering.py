@@ -2,6 +2,7 @@
 Shared feature engineering for stock selection model.
 
 Fetches pre-computed technical indicators from the technical_indicators table
+and monthly revenue features from the monthly_revenue table,
 for a set of symbols at a given reference date.
 
 Used by:
@@ -132,3 +133,113 @@ def fetch_technical_features(
             ti[col] = np.nan
 
     return ti[["symbol"] + TECHNICAL_FEATURE_COLS].reset_index(drop=True)
+
+
+# ── Monthly Revenue Features ──────────────────────────────────────────────────
+
+REVENUE_FEATURE_COLS = [
+    "revenue_yoy_1m",        # latest month YoY %
+    "revenue_mom_1m",        # latest month MoM %
+    "revenue_cum_yoy",       # cumulative YoY % (year-to-date)
+    "revenue_yoy_3m_avg",    # 3-month average YoY %
+    "revenue_yoy_accel",     # YoY acceleration: latest YoY - 3-month-ago YoY
+    "revenue_positive_streak",  # consecutive months of positive YoY (from latest backward)
+]
+
+
+def fetch_revenue_features(
+    symbols: list[str],
+    ref_date: str,  # "YYYY-MM-DD" (entry_date)
+) -> pd.DataFrame:
+    """
+    Fetch monthly revenue features using only data published on or before ref_date.
+
+    PIT-safe: filters monthly_revenue by publish_time <= ref_date_compact (YYYYMMDD).
+    For month M with entry_date ~M/11, this picks up revenue published through M/10,
+    which covers month M-1's data (published by the 10th of M).
+
+    Returns DataFrame with columns ['symbol'] + REVENUE_FEATURE_COLS.
+    Missing symbols get NaN for all feature columns.
+    """
+    if not symbols:
+        return pd.DataFrame(columns=["symbol"] + REVENUE_FEATURE_COLS)
+
+    ref_compact = ref_date.replace("-", "")  # "YYYYMMDD"
+
+    # Fetch up to 6 most recent months per symbol, PIT-filtered by publish_time.
+    # monthly_revenue.date is "YYYYMXX" (e.g. "2025M09") — alphabetical sort is correct.
+    stmt = text(
+        """
+        WITH rev AS (
+            SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM monthly_revenue
+            WHERE symbol IN :symbols
+              AND publish_time IS NOT NULL
+              AND publish_time != ''
+              AND publish_time <= :ref_compact
+        )
+        SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, rn
+        FROM rev
+        WHERE rn <= 6
+        """
+    ).bindparams(bindparam("symbols", expanding=True))
+
+    engine = create_engine(tp.get_db_url())
+    with engine.connect() as conn:
+        df = pd.read_sql(
+            stmt, conn, params={"symbols": symbols, "ref_compact": ref_compact}
+        )
+
+    sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
+
+    if df.empty:
+        for col in REVENUE_FEATURE_COLS:
+            sym_df[col] = np.nan
+        return sym_df
+
+    df["symbol"] = df["symbol"].astype(str).str.strip()
+    for col in ["yoy_pct", "mom_pct", "cumulative_yoy_pct"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    records = []
+    for sym, grp in df.groupby("symbol"):
+        grp = grp.sort_values("rn").reset_index(drop=True)
+
+        r1 = grp[grp["rn"] == 1]
+        yoy_1m = float(r1["yoy_pct"].iloc[0])         if len(r1) and pd.notna(r1["yoy_pct"].iloc[0]) else np.nan
+        mom_1m = float(r1["mom_pct"].iloc[0])          if len(r1) and pd.notna(r1["mom_pct"].iloc[0]) else np.nan
+        cum_yoy = float(r1["cumulative_yoy_pct"].iloc[0]) if len(r1) and pd.notna(r1["cumulative_yoy_pct"].iloc[0]) else np.nan
+
+        recent_3 = grp[grp["rn"] <= 3]["yoy_pct"].dropna()
+        yoy_3m_avg = float(recent_3.mean()) if len(recent_3) >= 2 else np.nan
+
+        r3 = grp[grp["rn"] == 3]
+        yoy_3m_ago = float(r3["yoy_pct"].iloc[0]) if len(r3) and pd.notna(r3["yoy_pct"].iloc[0]) else np.nan
+        yoy_accel = (yoy_1m - yoy_3m_ago) if not (np.isnan(yoy_1m) or np.isnan(yoy_3m_ago)) else np.nan
+
+        # Positive YoY streak: consecutive months from most recent backward
+        streak = 0
+        for _, row in grp.sort_values("rn").iterrows():
+            v = row["yoy_pct"]
+            if pd.isna(v) or v <= 0:
+                break
+            streak += 1
+
+        records.append({
+            "symbol":                  sym,
+            "revenue_yoy_1m":          yoy_1m,
+            "revenue_mom_1m":          mom_1m,
+            "revenue_cum_yoy":         cum_yoy,
+            "revenue_yoy_3m_avg":      yoy_3m_avg,
+            "revenue_yoy_accel":       yoy_accel,
+            "revenue_positive_streak": float(streak),
+        })
+
+    result = pd.DataFrame(records)
+    result = sym_df.merge(result, on="symbol", how="left")
+    for col in REVENUE_FEATURE_COLS:
+        if col not in result.columns:
+            result[col] = np.nan
+
+    return result[["symbol"] + REVENUE_FEATURE_COLS].reset_index(drop=True)

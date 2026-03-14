@@ -29,7 +29,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from strategies.feature_engineering import fetch_technical_features, TECHNICAL_FEATURE_COLS
+from strategies.feature_engineering import (
+    fetch_technical_features, TECHNICAL_FEATURE_COLS,
+    fetch_revenue_features, REVENUE_FEATURE_COLS,
+)
 from train_eps import prepare_data as tp
 
 
@@ -130,6 +133,15 @@ def main() -> None:
         df = df.drop(columns=existing_tech)
     df = df.merge(tech, on="symbol", how="left")
     print(f"Technical features added: {len(TECHNICAL_FEATURE_COLS)} cols")
+
+    # Fetch monthly revenue features at entry_date (PIT-safe via publish_time filter).
+    rev = fetch_revenue_features(symbols, entry_date_str)
+    existing_rev = [c for c in REVENUE_FEATURE_COLS if c in df.columns]
+    if existing_rev:
+        df = df.drop(columns=existing_rev)
+    df = df.merge(rev, on="symbol", how="left")
+    n_rev = df[REVENUE_FEATURE_COLS].notna().any(axis=1).sum()
+    print(f"Revenue features added: {len(REVENUE_FEATURE_COLS)} cols  ({n_rev}/{len(df)} symbols with data)")
 
     # Convenience aliases for downstream scripts (analyze, score, train).
     df["close"]       = pd.to_numeric(df.get("q3_close"),     errors="coerce")

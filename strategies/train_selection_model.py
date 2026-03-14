@@ -45,7 +45,7 @@ except ImportError:
     print("lightgbm not installed. Run: pip install lightgbm")
     sys.exit(1)
 
-from strategies.feature_engineering import TECHNICAL_FEATURE_COLS
+from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATURE_COLS
 
 FEATURE_COLS = [
     "pred_upside_pct",
@@ -77,7 +77,7 @@ FEATURE_COLS = [
     "current_ratio",
     "eps_acc_yoy",
     "revenue_acc_yoy",
-] + TECHNICAL_FEATURE_COLS  # includes close_vs_ma5/10/20/60/240, k, d, rsi, macd, bb_position, etc.
+] + TECHNICAL_FEATURE_COLS + REVENUE_FEATURE_COLS  # includes close_vs_ma5/10/20/60/240, k, d, rsi, macd, bb_position, revenue momentum, etc.
 
 LABEL_COL = "fwd_return_pct"
 

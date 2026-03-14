@@ -24,7 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from strategies.feature_engineering import TECHNICAL_FEATURE_COLS
+from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATURE_COLS
 from train_eps import prepare_data as tp
 
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
@@ -62,7 +62,7 @@ FEATURE_COLS = [
     "current_ratio",
     "eps_acc_yoy",
     "revenue_acc_yoy",
-] + TECHNICAL_FEATURE_COLS
+] + TECHNICAL_FEATURE_COLS + REVENUE_FEATURE_COLS
 
 
 def month_iter(start: tuple[int, int], end: tuple[int, int]):
