@@ -95,11 +95,24 @@ TTM EPS proxy = `ly_target_eps + prev_eps + anchor_eps`
 `k`, `d`, `rsi6`, `rsi12`, `macd_dif`, `macd_dea`, `macd_hist`, `bb_position`,
 `foreign_streak_days`, `trust_streak_days`, `dealer_streak_days`
 
+### 月營收動能（由 feature_engineering.py 從 monthly_revenue 表查詢，PIT-safe）
+| 欄位 | 說明 |
+|------|------|
+| `revenue_yoy_1m` | 最新月營收 YoY % |
+| `revenue_mom_1m` | 最新月營收 MoM % |
+| `revenue_cum_yoy` | 當年累計營收 YoY % |
+| `revenue_yoy_3m_avg` | 近 3 個月 YoY % 平均 |
+| `revenue_yoy_accel` | YoY 加速度（最新月 YoY - 3 個月前 YoY） |
+| `revenue_positive_streak` | 連續 YoY > 0 的月數 |
+
+PIT 保證：以 `publish_time <= entry_date` 過濾，entry_date 約為月份 M/11，可取得 M/10 前公布的 M-1 月營收。
+
 ---
 
 ## ML Model
 
 - **演算法**：LightGBM Ranker（`objective="lambdarank"`）
+- **特徵數**：53 個（基本面 + 籌碼面 + 估值面 + 市場情緒 + 基本面品質 + 技術面 + 月營收動能）
 - **Label**：每月內按 `fwd_return_pct` 排名，分成 5 個 quintile（0=最差，4=最好）
 - **fwd_return_pct 定義**：月份 M 的 entry_date open 買入，M+1 entry_date **前一個交易日** open 賣出
 - **Group**：每個月為一個 group
