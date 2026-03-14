@@ -9,6 +9,8 @@ interface ScoredStock {
   name: string | null
   pred_upside_pct: number | null
   pe_current: number | null
+  ttm_eps: number | null
+  volume_lots: number | null
   entry_date: string | null
   entry_price: number | null
   exit_date: string | null
@@ -120,6 +122,15 @@ export default function Home() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             使用模型: <span className="font-medium text-gray-700 dark:text-gray-200">{modelUsed}</span>
             &nbsp;·&nbsp;共 {results.length} 檔
+            {(() => {
+              const total = results.reduce((sum, r) => sum + (r.net_pnl ?? 0), 0)
+              if (total === 0) return null
+              return (
+                <>&nbsp;·&nbsp;淨利合計:&nbsp;<span className={`font-medium ${total > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                  {total.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}
+                </span></>
+              )
+            })()}
           </p>
         )}
 
@@ -131,7 +142,15 @@ export default function Home() {
         )}
 
         {/* Results table */}
-        {results.length > 0 && (
+        {results.length > 0 && (() => {
+          const firstTrade = results.find(r => r.entry_date && r.exit_date)
+          const entryLabel = firstTrade?.entry_date
+            ? `買進價(${firstTrade.entry_date.slice(5).replace('-', '/')}開盤)`
+            : '買進價'
+          const exitLabel = firstTrade?.exit_date
+            ? `賣出價(${firstTrade.exit_date.slice(5).replace('-', '/')}開盤)`
+            : '賣出價'
+          return (
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
             <table className="w-full text-sm text-left">
               <thead className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 uppercase text-xs">
@@ -142,8 +161,10 @@ export default function Home() {
                   <th className="px-4 py-3 text-right">ML分數</th>
                   <th className="px-4 py-3 text-right">預期漲幅%</th>
                   <th className="px-4 py-3 text-right">現值PE</th>
-                  <th className="px-4 py-3 text-right">買進價</th>
-                  <th className="px-4 py-3 text-right">賣出價</th>
+                  <th className="px-4 py-3 text-right">TTM EPS</th>
+                  <th className="px-4 py-3 text-right">日成交張數</th>
+                  <th className="px-4 py-3 text-right">{entryLabel}</th>
+                  <th className="px-4 py-3 text-right">{exitLabel}</th>
                   <th className="px-4 py-3 text-right">淨利</th>
                 </tr>
               </thead>
@@ -158,6 +179,8 @@ export default function Home() {
                       {fmt(row.pred_upside_pct)}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200">{fmt(row.pe_current)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200">{fmt(row.ttm_eps)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200">{row.volume_lots !== null ? Math.round(row.volume_lots).toLocaleString('zh-TW') : '-'}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200" title={row.entry_date ?? ''}>{fmt(row.entry_price)}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-800 dark:text-gray-200" title={row.exit_date ?? ''}>{fmt(row.exit_price)}</td>
                     <td className={`px-4 py-2 text-right tabular-nums ${row.net_pnl !== null && row.net_pnl > 0 ? 'text-red-500' : row.net_pnl !== null && row.net_pnl < 0 ? 'text-green-500' : 'text-gray-800 dark:text-gray-200'}`}>
@@ -168,7 +191,8 @@ export default function Home() {
               </tbody>
             </table>
           </div>
-        )}
+          )
+        })()}
 
         {!isLoading && results.length === 0 && !error && modelUsed === null && (
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-8 text-center">選擇年月後點擊查詢</p>

@@ -1623,6 +1623,8 @@ class ScoredStock(BaseModel):
     name: Optional[str] = None
     pred_upside_pct: Optional[float] = None
     pe_current: Optional[float] = None
+    ttm_eps: Optional[float] = None
+    volume_lots: Optional[float] = None
     entry_date: Optional[str] = None
     entry_price: Optional[float] = None
     exit_date: Optional[str] = None
@@ -1720,6 +1722,8 @@ def get_selection_score(
                 name=str(row["name"]) if pd.notna(row.get("name")) else None,
                 pred_upside_pct=_opt_float(row, "pred_upside_pct"),
                 pe_current=_opt_float(row, "pe_current"),
+                ttm_eps=_opt_float(row, "ttm_eps"),
+                volume_lots=_opt_float(row, "volume_lots"),
                 entry_date=entry_date,
                 entry_price=_opt_float(trade, "entry_price"),
                 exit_date=str(trade["exit_date"]) if trade.get("exit_date") and pd.notna(trade.get("exit_date")) else None,
