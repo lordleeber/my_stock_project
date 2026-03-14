@@ -68,13 +68,13 @@ def main() -> None:
 
         # Skip if prerequisites are missing.
         input_path = ROOT_DIR / "strategies" / "output" / str(year) / month_s / "dataset_model_input.csv"
-        model_path = ROOT_DIR / "models_eps" / str(year) / month_s / "latest.json"
+        model_path = ROOT_DIR / "models_eps" / str(year) / month_s / "model.pkl"
         if not input_path.exists():
             print(f"[skip]  {label}  (missing dataset_model_input.csv)")
             skipped += 1
             continue
         if not model_path.exists():
-            print(f"[skip]  {label}  (missing models_eps/{year}/{month_s}/latest.json)")
+            print(f"[skip]  {label}  (missing models_eps/{year}/{month_s}/model.pkl)")
             skipped += 1
             continue
 

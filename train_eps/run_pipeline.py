@@ -117,17 +117,6 @@ def main() -> None:
                 month,
             ],
         ),
-        (
-            "gate_and_publish",
-            [
-                py,
-                str(repo_root / "train_eps" / "gate_and_publish.py"),
-                "--year",
-                str(args.year),
-                "--month",
-                month,
-            ],
-        ),
     ]
 
     for step_name, cmd in steps:

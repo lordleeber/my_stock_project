@@ -53,7 +53,7 @@ def feature_cht_name(feature: str) -> str | None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train shared LightGBM model for train_eps/output/<year>/<month>")
+    parser = argparse.ArgumentParser(description="Train shared LightGBM model for models_eps/<year>/<month>")
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -64,12 +64,12 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Pat
     if month_str < "01" or month_str > "12":
         raise ValueError("--month 必須是 01~12")
     month_dir = (Path.cwd() / "train_eps" / "output" / str(args.year) / month_str).resolve()
+    models_dir = (Path.cwd() / "models_eps" / str(args.year) / month_str).resolve()
 
     dataset = month_dir / "dataset_train.csv"
-    train_results_dir = month_dir / "results_train"
-    model_out = train_results_dir / "model.pkl"
-    metrics_out = train_results_dir / "train_metrics.json"
-    importance_out = train_results_dir / "feature_importance.json"
+    model_out = models_dir / "model.pkl"
+    metrics_out = models_dir / "train_metrics.json"
+    importance_out = models_dir / "feature_importance.json"
 
     return month_dir, dataset, model_out, metrics_out, importance_out
 

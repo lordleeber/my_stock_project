@@ -5,13 +5,14 @@
 - Responsibility: data preparation, training, evaluation, and gated publish.
 
 ## Layout
-- Month output folders:
+- Month data folders (datasets only):
   - `train_eps/output/<year>/<month>`
+- Month model folders (model artifacts):
+  - `models_eps/<year>/<month>`
 - Shared scripts:
   - `prepare_data.py`
   - `train.py`
   - `evaluate.py`
-  - `gate_and_publish.py`
   - `run_pipeline.py`
 
 ## Per-Month Data Files
@@ -26,7 +27,6 @@
 1. Run `prepare_data.py --year <year> --month <month>`
 2. Run `train.py --year <year> --month <month>`
 3. Run `evaluate.py --year <year> --month <month>`
-4. Run `gate_and_publish.py --year <year> --month <month>`
 
 ## One-Command Flow
 - Use `run_pipeline.py` to execute all 4 steps in order.
@@ -58,16 +58,12 @@
   - `results/valuation_daily_preview.csv`
   - `results/valuation_quality_report.json`
 
-## Current Gate Rule (Default)
-- Metric: `mae`
-- Compare model: `lgb_delta` vs baseline `baseline_anchor_eps`
-- Pass condition: `primary <= baseline * 0.975`
 
-## Published Artifacts
-- Gate-passed models are published to `models_eps/<year>/<month>/`:
-  - `<timestamp>_<primary_metric>.pkl`
-  - `<timestamp>_<primary_metric>.json`
-  - `latest.json`
+## Model Artifacts
+- `train.py` writes directly to `models_eps/<year>/<month>/`:
+  - `model.pkl` — authoritative model used by `predict_published.py`
+  - `train_metrics.json`
+  - `feature_importance.json`
 
 ## Typical Commands
 ```powershell
@@ -75,7 +71,6 @@
 venv/bin/python train_eps\prepare_data.py --year 2025 --month 11 --data-source api
 venv/bin/python train_eps\train.py --year 2025 --month 11
 venv/bin/python train_eps\evaluate.py --year 2025 --month 11
-venv/bin/python train_eps\gate_and_publish.py --year 2025 --month 11
 
 # One command pipeline
 venv/bin/python train_eps\run_pipeline.py --year 2025 --month 11 --data-source api

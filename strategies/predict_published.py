@@ -1,5 +1,4 @@
 import argparse
-import json
 import pickle
 from pathlib import Path
 
@@ -34,14 +33,9 @@ def main() -> None:
     models_root = args.models_root if args.models_root.is_absolute() else (Path.cwd() / args.models_root).resolve()
 
     month_dir = (data_root / f"{year:04d}" / month).resolve()
-    latest_path = models_root / f"{year:04d}" / month / "latest.json"
-    if not latest_path.exists():
-        raise FileNotFoundError(f"latest.json not found: {latest_path}")
-
-    latest = json.loads(latest_path.read_text(encoding="utf-8"))
-    model_path = Path(latest["published_model"])
+    model_path = models_root / f"{year:04d}" / month / "model.pkl"
     if not model_path.exists():
-        raise FileNotFoundError(f"published model not found: {model_path}")
+        raise FileNotFoundError(f"model.pkl not found: {model_path}")
 
     input_path = args.input if args.input else (month_dir / "dataset_model_input.csv")
     output_path = (Path.cwd() / "strategies" / "output" / f"{year:04d}" / month / "predictions_published.csv").resolve()
