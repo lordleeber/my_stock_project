@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import pickle
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,80 +98,23 @@ def detect_market_regime(ref_date: str) -> str:
     return "Sideways"
 
 
-def resolve_model_for_month(models_root: Path, year: int, month: int) -> Path | None:
-    """Return the model dir with the latest cutoff strictly before (year, month).
-    Falls back to models_root/latest if no versioned model is found."""
-    ym = year * 100 + month
-    best: tuple[int, Path] | None = None
+def load_candidates_safe(models_root: Path, year: int, month: int) -> pd.DataFrame | None:
+    """Load pre-computed candidates_scored.csv from models_selection/<year>/<month>/."""
+    month_s = normalize_month(month)
+    scored_path = models_root / f"{year:04d}" / month_s / "candidates_scored.csv"
 
-    for y_dir in sorted(models_root.iterdir()):
-        if not y_dir.is_dir() or y_dir.name == "latest":
-            continue
-        try:
-            y = int(y_dir.name)
-        except ValueError:
-            continue
-        for m_dir in sorted(y_dir.iterdir()):
-            if not m_dir.is_dir():
-                continue
-            try:
-                m = int(m_dir.name)
-            except ValueError:
-                continue
-            cutoff_ym = y * 100 + m
-            if cutoff_ym < ym and (m_dir / "selection_model.pkl").exists():
-                if best is None or cutoff_ym > best[0]:
-                    best = (cutoff_ym, m_dir)
+    if not scored_path.exists():
+        raise FileNotFoundError(
+            f"candidates_scored.csv not found: {scored_path}\n"
+            f"Run: venv/bin/python3 strategies/score_and_publish.py --year {year} --month {month}"
+        )
 
-    if best:
-        return best[1]
-    latest = models_root / "latest"
-    return latest if (latest / "selection_model.pkl").exists() else None
-
-
-def score_dataset_strategy(ds: pd.DataFrame, model_dir: Path) -> pd.DataFrame:
-    """Load model from model_dir and add ml_score column to ds."""
-    model_path = model_dir / "selection_model.pkl"
-    with open(model_path, "rb") as f:
-        payload = pickle.load(f)
-    model       = payload["model"]
-    feature_cols = payload["feature_cols"]
-
-    for c in feature_cols:
-        if c not in ds.columns:
-            ds[c] = 0.0
-    X = ds[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
-    ds = ds.copy()
-    ds["ml_score"] = model.predict(X)
-    return ds
-
-
-def load_candidates_safe(
-    strategies_out: Path, year: int, month: int, models_root: Path
-) -> pd.DataFrame | None:
-    month_s  = normalize_month(month)
-    ds_path  = strategies_out / f"{year:04d}" / month_s / "dataset_strategy.csv"
-
-    if not ds_path.exists():
-        return None
-
-    df = pd.read_csv(ds_path)
-    df["symbol"]     = df["symbol"].astype(str).str.strip()
+    df = pd.read_csv(scored_path)
+    df["symbol"] = df["symbol"].astype(str).str.strip()
     df["entry_date"] = pd.to_datetime(df.get("entry_date"), errors="coerce")
     df = df.dropna(subset=["symbol", "entry_date"])
     if df.empty:
         return None
-
-    # Walk-forward scoring: use the latest model trained before this month.
-    model_dir = resolve_model_for_month(models_root, year, month)
-    if model_dir is None:
-        raise FileNotFoundError(
-            f"No selection model found for {year}/{month_s} "
-            f"(need cutoff < {year}/{month_s} in {models_root}). "
-            f"Run: venv/bin/python3 strategies/batch_train_selection_model.py"
-        )
-    df = score_dataset_strategy(df, model_dir)
-    df["_model_used"] = model_dir.name
     return df
 
 
@@ -266,7 +208,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    strategies_out = (Path.cwd() / "strategies" / "output").resolve()
     out_dir = (Path.cwd() / "backtester" / "output" / "rolling").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -284,7 +225,11 @@ def main() -> None:
 
     for year, month in month_iter(args.start_year, args.start_month, args.end_year, args.end_month):
         month_s = normalize_month(month)
-        candidates_df = load_candidates_safe(strategies_out, year, month, models_root)
+        try:
+            candidates_df = load_candidates_safe(models_root, year, month)
+        except FileNotFoundError as exc:
+            print(f"[skip] {year}/{month_s}: {exc}")
+            continue
         if candidates_df is None:
             print(f"[skip] no candidates: {year}/{month_s}")
             continue

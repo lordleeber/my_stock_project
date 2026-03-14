@@ -1674,14 +1674,14 @@ def get_selection_score(
     """Return pre-scored stocks from candidates_scored.csv (pre-computed by ML pipeline)."""
     try:
         app_dir = Path(__file__).resolve().parent  # /app in Docker, backend/ locally
-        # In Docker: strategies mounted at /app/strategies
-        # Locally: strategies is at project root (parent of backend/)
-        strategies_root = app_dir / "strategies"
-        if not strategies_root.exists():
-            strategies_root = app_dir.parent / "strategies"
+        # In Docker: models_selection mounted at /app/models_selection
+        # Locally: models_selection is at project root (parent of backend/)
+        models_selection_dir = app_dir / "models_selection"
+        if not models_selection_dir.exists():
+            models_selection_dir = app_dir.parent / "models_selection"
 
         month_str = f"{month:02d}"
-        scored_path = strategies_root / "output" / f"{year:04d}" / month_str / "candidates_scored.csv"
+        scored_path = models_selection_dir / f"{year:04d}" / month_str / "candidates_scored.csv"
         if not scored_path.exists():
             raise HTTPException(status_code=404, detail=f"candidates_scored.csv not found for {year}/{month_str}")
 

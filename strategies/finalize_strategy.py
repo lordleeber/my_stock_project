@@ -107,6 +107,13 @@ def main() -> None:
     ds["symbol"]   = ds["symbol"].astype(str).str.strip()
     pred["symbol"] = pred["symbol"].astype(str).str.strip()
 
+    # Drop any previously computed columns so re-runs stay idempotent.
+    RECOMPUTED_COLS = [
+        "pred_lgb_delta", "predict_target_eps", "ttm_eps_forward",
+        "predict_target_price", "pred_upside_pct", "entry_date",
+    ] + TECHNICAL_FEATURE_COLS + REVENUE_FEATURE_COLS
+    ds = ds.drop(columns=[c for c in RECOMPUTED_COLS if c in ds.columns])
+
     # Keep only pred_lgb_delta from predictions (other cols already in ds).
     pred_cols = ["symbol", "pred_lgb_delta"]
     pred_merge = pred[[c for c in pred_cols if c in pred.columns]].drop_duplicates("symbol")
