@@ -8,9 +8,9 @@ then trains a LightGBM Ranker to select the top candidates each month.
 ## Pipeline Overview
 
 ```
-prepare_data.py          硬篩選 → dataset_strategy.csv + dataset_model_input.csv
-      ↓
-predict_published.py     EPS 預測 → predictions_published.csv
+train_eps/predict_and_publish.py   EPS 預測 → models_eps/<year>/<month>/predictions_results.csv
+                                                               ↓
+prepare_data.py          硬篩選 → dataset_strategy.csv
       ↓
 finalize_strategy.py     merge 預測 + entry_date + 技術面特徵 → dataset_strategy.csv (final)
                                                                → trade_candidates.csv
@@ -35,14 +35,20 @@ TTM EPS proxy = `ly_target_eps + prev_eps + anchor_eps`
 
 ---
 
-## Output Files（每月 strategies/output/<year>/<month>/）
+## Output Files
+
+### strategies/output/<year>/<month>/
 
 | 檔案 | 產生自 | 說明 |
 |------|--------|------|
-| `dataset_model_input.csv` | prepare_data | EPS 預測模型輸入 |
 | `dataset_strategy.csv` | prepare_data → finalize_strategy | 完整特徵快照（基本面 + 籌碼面 + 技術面） |
-| `predictions_published.csv` | predict_published | EPS 預測結果（含 pred_lgb_delta） |
 | `trade_candidates.csv` | finalize_strategy | 候選股清單（含 entry_date、pred_upside_pct） |
+
+### models_eps/<year>/<month>/
+
+| 檔案 | 產生自 | 說明 |
+|------|--------|------|
+| `predictions_results.csv` | train_eps/predict_and_publish | EPS 預測結果（含 pred_lgb_delta），由 finalize_strategy 讀取 |
 
 ---
 
@@ -128,15 +134,17 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 
 ### 單月執行
 ```bash
+# 先確保 EPS 預測已產生（train_eps pipeline 完成後自動產出）
+venv/bin/python3 train_eps/predict_and_publish.py --year 2025 --month 10
+
 venv/bin/python3 strategies/prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/predict_published.py --year 2025 --month 10
 venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
 ```
 
 ### 批次執行（歷史資料）
 ```bash
+venv/bin/python3 train_eps/batch_predict_and_publish.py
 venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_predict_published.py
 venv/bin/python3 strategies/batch_finalize_strategy.py
 ```
 

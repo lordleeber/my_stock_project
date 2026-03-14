@@ -1,8 +1,8 @@
-﻿# train_eps AI Guide
+# train_eps AI Guide
 
 ## Scope
 - Work only inside `train_eps/`.
-- Responsibility: data preparation, training, evaluation, and gated publish.
+- Responsibility: data preparation, training, evaluation, and prediction publish.
 
 ## Layout
 - Month data folders (datasets only):
@@ -13,20 +13,21 @@
   - `prepare_data.py`
   - `train.py`
   - `evaluate.py`
+  - `predict_and_publish.py`
   - `run_pipeline.py`
+  - `batch_evaluate.py`
+  - `batch_predict_and_publish.py`
 
 ## Per-Month Data Files
-- Required for `train/evaluate/gate`:
+- Required for `train/evaluate`:
   - `dataset_train.csv`
   - `dataset_evaluate.csv`
-- Optional month-specific artifacts (not required by `train/evaluate/gate`):
-  - `dataset_meta.csv`
-  - `dataset_live.csv`
 
 ## Standard Flow
 1. Run `prepare_data.py --year <year> --month <month>`
 2. Run `train.py --year <year> --month <month>`
 3. Run `evaluate.py --year <year> --month <month>`
+4. Run `predict_and_publish.py --year <year> --month <month>`
 
 ## One-Command Flow
 - Use `run_pipeline.py` to execute all 4 steps in order.
@@ -52,37 +53,40 @@
 
 ## Evaluate Output Contract
 - `evaluate.py` writes only:
-  - `results_eval/evaluate_by_fold.json`
-- It does not write:
-  - `results/predictions.csv`
-  - `results/valuation_daily_preview.csv`
-  - `results/valuation_quality_report.json`
-
+  - `models_eps/<year>/<month>/evaluate_by_fold.json`
+- It does not write predictions or model files.
 
 ## Model Artifacts
-- `train.py` writes directly to `models_eps/<year>/<month>/`:
-  - `model.pkl` — authoritative model used by `predict_published.py`
-  - `train_metrics.json`
-  - `feature_importance.json`
+All artifacts written to `models_eps/<year>/<month>/`:
+- `model.pkl` — authoritative model used by `predict_and_publish.py`
+- `train_metrics.json`
+- `feature_importance.json`
+- `evaluate_by_fold.json` — walk-forward evaluation metrics per fold
+- `predictions_results.csv` — EPS delta predictions for the latest year (consumed by `strategies/finalize_strategy.py`)
 
 ## Typical Commands
-```powershell
+```bash
 # Step-by-step
-venv/bin/python train_eps\prepare_data.py --year 2025 --month 11 --data-source api
-venv/bin/python train_eps\train.py --year 2025 --month 11
-venv/bin/python train_eps\evaluate.py --year 2025 --month 11
+venv/bin/python3 train_eps/prepare_data.py --year 2025 --month 11 --data-source api
+venv/bin/python3 train_eps/train.py --year 2025 --month 11
+venv/bin/python3 train_eps/evaluate.py --year 2025 --month 11
+venv/bin/python3 train_eps/predict_and_publish.py --year 2025 --month 11
 
 # One command pipeline
-venv/bin/python train_eps\run_pipeline.py --year 2025 --month 11 --data-source api
+venv/bin/python3 train_eps/run_pipeline.py --year 2025 --month 11 --data-source api
+
+# Batch historical
+venv/bin/python3 train_eps/batch_evaluate.py
+venv/bin/python3 train_eps/batch_predict_and_publish.py
 ```
 
 ## Health Metrics
-- After running `evaluate.py`, check `results_eval/evaluate_by_fold.json`:
+- After running `evaluate.py`, check `models_eps/<year>/<month>/evaluate_by_fold.json`:
   - Confirm fold count for `lgb_delta` is >= gate `min_folds`.
   - Confirm average `mae` of `lgb_delta` is better than `baseline_anchor_eps`.
   ```python
   import pandas as pd
-  df = pd.read_json("results_eval/evaluate_by_fold.json")
+  df = pd.read_json("models_eps/2025/11/evaluate_by_fold.json")
   x = df[df["model"].isin(["lgb_delta", "baseline_anchor_eps"])]
   print(x.groupby("model")["mae"].mean())
   print("folds:", x["fold"].nunique())

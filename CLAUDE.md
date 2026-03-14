@@ -51,21 +51,23 @@ docker compose run --rm calculator
 ### ML Pipeline (Python, no Docker)
 ```bash
 # EPS prediction model (train_eps/)
-venv/bin/python3 train_eps/prepare_data.py   --year 2025 --month 10
-venv/bin/python3 train_eps/train.py          --year 2025 --month 10
-venv/bin/python3 train_eps/evaluate.py       --year 2025 --month 10
-venv/bin/python3 train_eps/gate_and_publish.py --year 2025 --month 10
+venv/bin/python3 train_eps/prepare_data.py          --year 2025 --month 10
+venv/bin/python3 train_eps/train.py                 --year 2025 --month 10
+venv/bin/python3 train_eps/evaluate.py              --year 2025 --month 10
+venv/bin/python3 train_eps/predict_and_publish.py   --year 2025 --month 10
 # Or one-command:
-venv/bin/python3 train_eps/run_pipeline.py   --year 2025 --month 10
+venv/bin/python3 train_eps/run_pipeline.py          --year 2025 --month 10
+
+# Batch evaluate / predict (historical)
+venv/bin/python3 train_eps/batch_evaluate.py
+venv/bin/python3 train_eps/batch_predict_and_publish.py
 
 # Strategy features + selection model (strategies/)
 venv/bin/python3 strategies/prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/predict_published.py --year 2025 --month 10
 venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
 
 # Batch (historical)
 venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_predict_published.py
 venv/bin/python3 strategies/batch_finalize_strategy.py
 
 # Selection model training
