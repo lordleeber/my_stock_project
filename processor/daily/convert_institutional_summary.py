@@ -108,37 +108,74 @@ def _handle_institutional_summary(date_str, raw_dir=RAW_DIR):
                 )
                 continue
 
-            rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+            rel_path = (
+                str(file_path).split("my_stock_project/")[-1]
+                if "my_stock_project/" in str(file_path)
+                else str(file_path)
+            )
             src_col_str = "#".join(col_indices)
 
-            df = df.with_columns([
-                pl.lit(rel_path).alias("src_file"),
-                (pl.arange(0, df.height) + 2).alias("src_row"),
-                pl.lit(src_col_str).alias("src_col"),
-            ])
+            df = df.with_columns(
+                [
+                    pl.lit(rel_path).alias("src_file"),
+                    (pl.arange(0, df.height) + 2).alias("src_row"),
+                    pl.lit(src_col_str).alias("src_col"),
+                ]
+            )
 
-            df = df.with_columns(pl.col("institution").str.strip_chars().replace(INSTITUTION_MAP))
+            df = df.with_columns(
+                pl.col("institution").str.strip_chars().replace(INSTITUTION_MAP)
+            )
             df = df.filter(pl.col("institution").is_in(KEEP_INSTITUTIONS))
 
             for col in ["buy", "sell", "net"]:
                 if col in df.columns:
-                    df = df.with_columns(pl.col(col).str.replace_all(",", "").cast(pl.Int64, strict=False))
+                    df = df.with_columns(
+                        pl.col(col)
+                        .str.replace_all(",", "")
+                        .cast(pl.Int64, strict=False)
+                    )
 
-            df = df.with_columns([
-                pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
-                pl.lit(market).alias("market"),
-            ])
+            df = df.with_columns(
+                [
+                    pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+                    pl.lit(market).alias("market"),
+                ]
+            )
 
-            df = df.with_columns(pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col"))
-            all_dfs.append(df.select(["date", "market", "institution", "buy", "sell", "net", "src_file", "src_row", "src_col"]))
+            df = df.with_columns(
+                pl.concat_str([pl.lit("x#x#"), pl.col("src_col")]).alias("src_col")
+            )
+            all_dfs.append(
+                df.select(
+                    [
+                        "date",
+                        "market",
+                        "institution",
+                        "buy",
+                        "sell",
+                        "net",
+                        "src_file",
+                        "src_row",
+                        "src_col",
+                    ]
+                )
+            )
 
         except Exception as e:
-            log_processing_error(f"Error in institutional_summary for {market}: {e}", date_str, CATEGORY)
+            log_processing_error(
+                f"Error in institutional_summary for {market}: {e}", date_str, CATEGORY
+            )
 
     return pl.concat(all_dfs) if all_dfs else None
 
 
-def process_date(date_str, raw_dir=RAW_DIR, processed_dir=PROCESSED_DIR, force_reprocess=FORCE_REPROCESS):
+def process_date(
+    date_str,
+    raw_dir=RAW_DIR,
+    processed_dir=PROCESSED_DIR,
+    force_reprocess=FORCE_REPROCESS,
+):
     output_dir = os.path.join(processed_dir, CATEGORY, date_str[:4], date_str)
     output_file = os.path.join(output_dir, "all.csv")
 

@@ -38,23 +38,23 @@ class InstitutionalSummaryChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return ['buy', 'sell', 'net']
+        return ["buy", "sell", "net"]
 
     @property
     def null_threshold(self):
         return 10.0  # Summary should have no NULL
 
-    INTEGER_COLUMNS = {'buy', 'sell', 'net'}
-    STRING_COLUMNS = {'institution'}
+    INTEGER_COLUMNS = {"buy", "sell", "net"}
+    STRING_COLUMNS = {"institution"}
 
     # Columns that undergo transformation (Chinese -> English mapping)
-    TRANSFORMED_COLUMNS = {'institution'}
+    TRANSFORMED_COLUMNS = {"institution"}
 
     def _check_category_specific(self, df, market):
         """Check that we have data for major institution types"""
-        if 'institution' in df.columns:
-            institutions = df['institution'].unique()
-            expected_institutions = ['foreign', 'trust', 'dealer']
+        if "institution" in df.columns:
+            institutions = df["institution"].unique()
+            expected_institutions = ["foreign", "trust", "dealer"]
 
             for inst in expected_institutions:
                 if not any(inst in str(i).lower() for i in institutions):
@@ -67,7 +67,7 @@ class InstitutionalSummaryChecker(DataQualityCheckerBase):
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -88,7 +88,7 @@ class InstitutionalSummaryChecker(DataQualityCheckerBase):
                 if raw_clean == "" or raw_clean == "--":
                     return True
                 raw_int = int(raw_clean)
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)
@@ -101,4 +101,5 @@ class InstitutionalSummaryChecker(DataQualityCheckerBase):
     def get_file_path(self, market=None):
         """Override to always use all.csv"""
         from audit_base import get_processed_date_path
+
         return get_processed_date_path(self.category, self.date_str)

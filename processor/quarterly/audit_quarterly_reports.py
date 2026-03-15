@@ -7,7 +7,9 @@ CATEGORY = "quarterly_reports"
 
 def run_quality_check(start_q, end_q):
     if not is_quarter(start_q) or not is_quarter(end_q):
-        raise ValueError(f"Invalid quarter format (START_DATE={start_q}, END_DATE={end_q}). Expected YYYYQX.")
+        raise ValueError(
+            f"Invalid quarter format (START_DATE={start_q}, END_DATE={end_q}). Expected YYYYQX."
+        )
 
     issues = []
     for q in list_quarters(start_q, end_q):

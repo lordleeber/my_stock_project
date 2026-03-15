@@ -17,9 +17,9 @@ class ForeignHoldingChecker(DataQualityCheckerBase):
     @property
     def key_columns(self):
         return [
-            'foreign_held_shares',
-            'foreign_investable_shares',
-            'foreign_held_ratio'
+            "foreign_held_shares",
+            "foreign_investable_shares",
+            "foreign_held_ratio",
         ]
 
     @property
@@ -28,22 +28,26 @@ class ForeignHoldingChecker(DataQualityCheckerBase):
 
     # Integer columns (shares)
     INTEGER_COLUMNS = {
-        'issued_shares', 'foreign_investable_shares', 'foreign_held_shares'
+        "issued_shares",
+        "foreign_investable_shares",
+        "foreign_held_shares",
     }
 
     # Float columns (ratios)
     FLOAT_COLUMNS = {
-        'foreign_investable_ratio', 'foreign_held_ratio', 'foreign_legal_limit_ratio'
+        "foreign_investable_ratio",
+        "foreign_held_ratio",
+        "foreign_legal_limit_ratio",
     }
 
-    STRING_COLUMNS = {'symbol', 'name'}
+    STRING_COLUMNS = {"symbol", "name"}
 
     def _compare_values(self, processed_val, raw_val, col_name):
         """Custom comparison for foreign_holding"""
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -61,7 +65,7 @@ class ForeignHoldingChecker(DataQualityCheckerBase):
                 if raw_clean == "" or raw_clean == "--":
                     return True
                 raw_int = int(raw_clean)
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)

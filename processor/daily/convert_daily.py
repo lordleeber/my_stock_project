@@ -23,13 +23,17 @@ from .audit_market_indices import MarketIndicesChecker
 from .audit_institutional_summary import InstitutionalSummaryChecker
 from .audit_margin_summary import MarginSummaryChecker
 from .convert_daily_quotes import process_date as process_daily_quotes_date
-from .convert_institutional_investors import process_date as process_institutional_investors_date
+from .convert_institutional_investors import (
+    process_date as process_institutional_investors_date,
+)
 from .convert_foreign_holding import process_date as process_foreign_holding_date
 from .convert_margin_trading import process_date as process_margin_trading_date
 from .convert_margin_sbl import process_date as process_margin_sbl_date
 from .convert_pe_ratio import process_date as process_pe_ratio_date
 from .convert_market_indices import process_date as process_market_indices_date
-from .convert_institutional_summary import process_date as process_institutional_summary_date
+from .convert_institutional_summary import (
+    process_date as process_institutional_summary_date,
+)
 from .convert_margin_summary import process_date as process_margin_summary_date
 
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
@@ -60,19 +64,23 @@ CATEGORY_CHECKERS = {
     "margin_summary": MarginSummaryChecker,
 }
 
+
 def log_processing_error(msg, date_str=None, category=None):
     """將處理階段的錯誤訊息記錄到專用的 error_processor.log 檔案"""
     error_file = Path("/app/error_processor.log")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    with open(error_file, 'a', encoding='utf-8') as f:
+
+    with open(error_file, "a", encoding="utf-8") as f:
         f.write(f"\n## Processor Runtime Error - {timestamp}\n")
-        if date_str: f.write(f"**Date:** {date_str}\n")
-        if category: f.write(f"**Category:** {category}\n")
+        if date_str:
+            f.write(f"**Date:** {date_str}\n")
+        if category:
+            f.write(f"**Category:** {category}\n")
         f.write(f"**Message:** {msg}\n")
         f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
         f.write("---\n")
     print(f"❌ Error logged to error_processor.log: {msg}")
+
 
 def process_date_category(category, date_str):
     if category not in CATEGORY_PROCESSORS:
@@ -107,7 +115,9 @@ def should_process_category(category, date_str):
             return False
 
         # margin_summary is derived from raw/margin_trading, not raw/margin_summary.
-        raw_source_category = "margin_trading" if category == "margin_summary" else category
+        raw_source_category = (
+            "margin_trading" if category == "margin_summary" else category
+        )
         raw_date_dir = _date_dir(RAW_DIR, raw_source_category, date_str)
         return any(glob.glob(os.path.join(raw_date_dir, "*.csv")))
 
@@ -115,7 +125,9 @@ def should_process_category(category, date_str):
     # - otc from raw/market_indices/<date>/otc.csv
     # - sii extracted from raw/daily_quotes/<date>/sii.csv
     if category == "market_indices":
-        otc_raw = os.path.join(_date_dir(RAW_DIR, "market_indices", date_str), "otc.csv")
+        otc_raw = os.path.join(
+            _date_dir(RAW_DIR, "market_indices", date_str), "otc.csv"
+        )
         sii_raw = os.path.join(_date_dir(RAW_DIR, "daily_quotes", date_str), "sii.csv")
         otc_out = os.path.join(processed_date_dir, "otc.csv")
         sii_out = os.path.join(processed_date_dir, "sii.csv")
@@ -149,8 +161,11 @@ def run_category_quality_check(category, date_str):
         error_msg = f"{category} data quality check failed: {str(e)}"
         print(f"❌ {error_msg}")
         log_processing_error(error_msg, date_str, category)
-        print("❌ Processing stopped due to data quality error. Fix the issue and re-run.")
+        print(
+            "❌ Processing stopped due to data quality error. Fix the issue and re-run."
+        )
         sys.exit(1)
+
 
 def main():
     start_env = os.getenv("START_DATE")
@@ -164,19 +179,33 @@ def main():
         start_date = datetime.datetime.strptime(start_env, "%Y%m%d")
         end_date = datetime.datetime.strptime(end_env, "%Y%m%d")
     except ValueError:
-        print(f"Error: Invalid date format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYMMDD.")
+        print(
+            f"Error: Invalid date format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYMMDD."
+        )
         sys.exit(1)
 
     if start_date > end_date:
-        print(f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env}).")
+        print(
+            f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
+        )
         sys.exit(1)
 
     print("Starting Unified ETL Pipeline...")
-    
-    all_categories = ["daily_quotes", "institutional_investors", "foreign_holding", "margin_trading", "margin_sbl", "pe_ratio", "market_indices", "institutional_summary", "margin_summary"]
+
+    all_categories = [
+        "daily_quotes",
+        "institutional_investors",
+        "foreign_holding",
+        "margin_trading",
+        "margin_sbl",
+        "pe_ratio",
+        "market_indices",
+        "institutional_summary",
+        "margin_summary",
+    ]
 
     # 1. 搜集所有需要處理的日期 (僅掃描新路徑 YYYY/YYYYMMDD)
-    date_pattern = re.compile(r'^\d{8}$')
+    date_pattern = re.compile(r"^\d{8}$")
     all_dates = set()
     for cat in all_categories:
         cat_path = os.path.join(RAW_DIR, cat)
@@ -189,17 +218,18 @@ def main():
                             if date_pattern.match(sub_d):
                                 all_dates.add(sub_d)
 
-    
     sorted_dates = sorted(list(all_dates))
-    
+
     # 2. 依照日期順序執行
     for date_str in sorted_dates:
         try:
             curr = datetime.datetime.strptime(date_str, "%Y%m%d")
             # 日期範圍過濾
-            if start_date and curr < start_date: continue
-            if end_date and curr > end_date: continue
-            
+            if start_date and curr < start_date:
+                continue
+            if end_date and curr > end_date:
+                continue
+
             # 2a. 處理當天所有類別
             for category in all_categories:
                 processed = process_date_category(category, date_str)
@@ -209,6 +239,7 @@ def main():
         except Exception as e:
             log_processing_error(f"Error in main loop for {date_str}: {e}", date_str)
             sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

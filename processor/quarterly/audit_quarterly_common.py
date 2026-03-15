@@ -12,31 +12,72 @@ REQUIRED_FIELDS = {
 
 NUMERIC_FIELDS = {
     "income_statement": [
-        "revenue", "cost_of_revenue", "gross_profit", "operating_expense",
-        "operating_income", "non_operating_income", "pretax_income", "tax_expense",
-        "net_income", "other_comprehensive_income", "comprehensive_income", "eps",
-        "net_interest_income", "non_interest_income", "net_revenue", "other_income_net",
+        "revenue",
+        "cost_of_revenue",
+        "gross_profit",
+        "operating_expense",
+        "operating_income",
+        "non_operating_income",
+        "pretax_income",
+        "tax_expense",
+        "net_income",
+        "other_comprehensive_income",
+        "comprehensive_income",
+        "eps",
+        "net_interest_income",
+        "non_interest_income",
+        "net_revenue",
+        "other_income_net",
     ],
     "balance_sheet": [
-        "current_assets", "noncurrent_assets", "total_assets",
-        "current_liabilities", "noncurrent_liabilities", "total_liabilities",
-        "total_equity", "equity_parent",
-        "share_capital", "capital_surplus", "retained_earnings",
-        "other_equity", "treasury_shares", "nav_per_share",
+        "current_assets",
+        "noncurrent_assets",
+        "total_assets",
+        "current_liabilities",
+        "noncurrent_liabilities",
+        "total_liabilities",
+        "total_equity",
+        "equity_parent",
+        "share_capital",
+        "capital_surplus",
+        "retained_earnings",
+        "other_equity",
+        "treasury_shares",
+        "nav_per_share",
     ],
     "cash_flow": [
-        "cash_flow_operating", "cash_flow_investing", "cash_flow_financing",
-        "fx_effect", "net_cash_change", "cash_begin", "cash_end",
+        "cash_flow_operating",
+        "cash_flow_investing",
+        "cash_flow_financing",
+        "fx_effect",
+        "net_cash_change",
+        "cash_begin",
+        "cash_end",
     ],
     "quarterly_reports": [
-        "revenue", "revenue_ly", "revenue_yoy",
-        "op_income", "op_income_ly", "op_income_yoy",
-        "non_op_income", "non_op_income_ly", "non_op_income_yoy",
-        "pretax_income", "pretax_income_ly", "pretax_income_yoy",
-        "net_income", "net_income_ly", "net_income_yoy",
-        "eps", "eps_ly", "eps_yoy",
-        "capital", "nav_per_share", "equity_to_assets_ratio",
-        "current_ratio", "quick_ratio",
+        "revenue",
+        "revenue_ly",
+        "revenue_yoy",
+        "op_income",
+        "op_income_ly",
+        "op_income_yoy",
+        "non_op_income",
+        "non_op_income_ly",
+        "non_op_income_yoy",
+        "pretax_income",
+        "pretax_income_ly",
+        "pretax_income_yoy",
+        "net_income",
+        "net_income_ly",
+        "net_income_yoy",
+        "eps",
+        "eps_ly",
+        "eps_yoy",
+        "capital",
+        "nav_per_share",
+        "equity_to_assets_ratio",
+        "current_ratio",
+        "quick_ratio",
     ],
 }
 
@@ -100,11 +141,21 @@ def check_category(category, date_str, issues):
             if dtype is None:
                 continue
             if dtype in (
-                pl.Float64, pl.Float32,
-                pl.Int64, pl.Int32, pl.Int16, pl.Int8,
-                pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8,
+                pl.Float64,
+                pl.Float32,
+                pl.Int64,
+                pl.Int32,
+                pl.Int16,
+                pl.Int8,
+                pl.UInt64,
+                pl.UInt32,
+                pl.UInt16,
+                pl.UInt8,
             ):
-                if df.select(pl.col(field).is_not_null() & ~pl.col(field).is_finite()).to_series().any():
+                if (
+                    df.select(pl.col(field).is_not_null() & ~pl.col(field).is_finite())
+                    .to_series()
+                    .any()
+                ):
                     issues.append(f"{category} {date_str}: non-finite {field}")
                     break
-

@@ -85,19 +85,22 @@ NAME_COLS = ("公司名稱", "名稱", "證券名稱")
 def get_prev_quarter(date_str):
     year = int(date_str[:4])
     q = int(date_str[5])
-    if q == 1: return None
-    return f"{year}Q{q-1}"
+    if q == 1:
+        return None
+    return f"{year}Q{q - 1}"
 
 
 def load_prev_data(category, prev_q_str):
-    if not prev_q_str: return None
+    if not prev_q_str:
+        return None
     year_str = prev_q_str[:4]
     path = os.path.join(PROCESSED_DIR, category, year_str, prev_q_str, "all.csv")
     if os.path.exists(path):
         try:
             schema = get_polars_schema(category)
             return pl.read_csv(path, schema_overrides=schema or {})
-        except Exception: return None
+        except Exception:
+            return None
     return None
 
 
@@ -116,9 +119,9 @@ def clean_numeric(val):
 def detect_statement_type(market, filename):
     base = os.path.splitext(filename)[0]
     if base.startswith(f"{market}_"):
-        base = base[len(market) + 1:]
+        base = base[len(market) + 1 :]
     if base.startswith("cashflow_"):
-        base = base[len("cashflow_"):]
+        base = base[len("cashflow_") :]
     base = re.sub(r"\d+$", "", base)
     return base or "unknown"
 
@@ -150,22 +153,27 @@ def generate_src_col(schema_cols, col_mapping):
 
 def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None):
     try:
-        with open(csv_file, 'r', encoding='utf-8-sig', errors='replace') as f:
+        with open(csv_file, "r", encoding="utf-8-sig", errors="replace") as f:
             reader = csv.reader(f)
             rows = list(reader)
-        if not rows: return None
+        if not rows:
+            return None
 
         headers = [h.strip() for h in rows[0]]
         col_mapping = build_col_mapping(headers, mapping)
-        rel_path = csv_file.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
+        rel_path = csv_file.replace(
+            "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
+        )
         statement_type = detect_statement_type(market, os.path.basename(csv_file))
-        
+
         schema = SCHEMA_COLS.get(category)
-        if not schema: sys.exit(1)
+        if not schema:
+            sys.exit(1)
         src_col_str = generate_src_col(schema, col_mapping)
 
         df = pl.read_csv(csv_file, encoding="utf-8-sig", infer_schema_length=0)
-        if df.is_empty(): return None
+        if df.is_empty():
+            return None
 
         # Symbol & Name
         rename = {col: "symbol" for col in df.columns if col.strip() in SYMBOL_COLS}
@@ -173,14 +181,20 @@ def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None
         df = df.rename(rename)
         df = df.filter(pl.col("symbol").cast(pl.Utf8).str.contains(r"^\d{4}$"))
 
-        df = df.with_columns([
-            pl.lit(date_str).alias("date"),
-            pl.lit(market).alias("market"),
-            pl.lit(statement_type).alias("statement_type"),
-            pl.lit(rel_path).alias("src_file"),
-            pl.lit(src_col_str).alias("src_col"),
-        ])
-        df = df.with_row_index("_row_idx").with_columns((pl.col("_row_idx")+2).cast(pl.Int64).alias("src_row")).drop("_row_idx")
+        df = df.with_columns(
+            [
+                pl.lit(date_str).alias("date"),
+                pl.lit(market).alias("market"),
+                pl.lit(statement_type).alias("statement_type"),
+                pl.lit(rel_path).alias("src_file"),
+                pl.lit(src_col_str).alias("src_col"),
+            ]
+        )
+        df = (
+            df.with_row_index("_row_idx")
+            .with_columns((pl.col("_row_idx") + 2).cast(pl.Int64).alias("src_row"))
+            .drop("_row_idx")
+        )
 
         is_flow = category in ("income_statement", "cash_flow")
         is_q1 = date_str.endswith("Q1")
@@ -188,7 +202,11 @@ def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None
         # Extract numeric columns
         for raw_name, target_base in mapping.items():
             if raw_name in headers:
-                df = df.with_columns(pl.col(raw_name).map_elements(clean_numeric, return_dtype=pl.Float64).alias(target_base))
+                df = df.with_columns(
+                    pl.col(raw_name)
+                    .map_elements(clean_numeric, return_dtype=pl.Float64)
+                    .alias(target_base)
+                )
 
         # Flow Subtraction Logic
         if is_flow:
@@ -197,56 +215,75 @@ def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None
                     acc_col = f"{target_base}_acc"
                     q_col = f"{target_base}_q"
                     df = df.with_columns(pl.col(target_base).alias(acc_col))
-                    
+
                     if is_q1:
                         df = df.with_columns(pl.col(acc_col).alias(q_col))
                     else:
                         if prev_df is not None and acc_col in prev_df.columns:
-                            df = df.join(prev_df.select(["symbol", acc_col]).rename({acc_col: "_prev_val"}), on="symbol", how="left")
+                            df = df.join(
+                                prev_df.select(["symbol", acc_col]).rename(
+                                    {acc_col: "_prev_val"}
+                                ),
+                                on="symbol",
+                                how="left",
+                            )
                             df = df.with_columns(
                                 pl.when(pl.col("_prev_val").is_not_null())
                                 .then((pl.col(acc_col) - pl.col("_prev_val")).round(2))
-                                .otherwise(pl.col(acc_col)).alias(q_col)
+                                .otherwise(pl.col(acc_col))
+                                .alias(q_col)
                             ).drop("_prev_val")
                         else:
                             df = df.with_columns(pl.col(acc_col).alias(q_col))
-        
+
         for col in schema:
-            if col not in df.columns: df = df.with_columns(pl.lit(None).alias(col))
-        
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(None).alias(col))
+
         return df.select(schema)
 
     except Exception as e:
         print(f"Error processing {csv_file}: {e}")
-        import traceback; traceback.print_exc(); sys.exit(1)
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def process_category(category, qc_runner):
     raw_path = os.path.join(RAW_DIR, category)
-    if not os.path.exists(raw_path): return
+    if not os.path.exists(raw_path):
+        return
 
-    if category == "income_statement": mapping = INCOME_MAP
-    elif category == "balance_sheet": mapping = BALANCE_MAP
-    else: mapping = CASHFLOW_MAP
+    if category == "income_statement":
+        mapping = INCOME_MAP
+    elif category == "balance_sheet":
+        mapping = BALANCE_MAP
+    else:
+        mapping = CASHFLOW_MAP
 
     date_dirs = sorted(Path(raw_path).rglob("????Q[1-4]"))
     start_env, end_env = os.getenv("START_DATE"), os.getenv("END_DATE")
-    
+
     for date_dir in date_dirs:
         date_str = date_dir.name
-        if date_str < start_env or date_str > end_env: continue
+        if date_str < start_env or date_str > end_env:
+            continue
 
         print(f"Processing {category} {date_str}...")
         prev_df = load_prev_data(category, get_prev_quarter(date_str))
-        
+
         output_dir = os.path.join(PROCESSED_DIR, category, date_str[:4], date_str)
         os.makedirs(output_dir, exist_ok=True)
-        
+
         all_dfs = []
         for csv_file in sorted(glob.glob(os.path.join(str(date_dir), "*.csv"))):
             market = os.path.basename(csv_file).split("_")[0]
-            df = process_csv_file(csv_file, date_str, market, category, mapping, prev_df=prev_df)
-            if df is not None: all_dfs.append(df)
+            df = process_csv_file(
+                csv_file, date_str, market, category, mapping, prev_df=prev_df
+            )
+            if df is not None:
+                all_dfs.append(df)
 
         if all_dfs:
             # 強制轉換所有 DataFrame 的型別以避免 concat 錯誤
@@ -258,7 +295,7 @@ def process_category(category, qc_runner):
                     if col in df.columns:
                         cast_exprs.append(pl.col(col).cast(dtype, strict=False))
                 casted_dfs.append(df.with_columns(cast_exprs))
-            
+
             final_df = pl.concat(casted_dfs).unique(subset=["symbol"])
             final_df.write_csv(os.path.join(output_dir, "all.csv"))
             print(f"  [+] Saved {final_df.height} rows")

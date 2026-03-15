@@ -21,10 +21,10 @@ def enforce_schema(df, category):
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         df = df.with_columns([pl.lit(None).alias(col) for col in missing_cols])
-    
+
     # 按照標準欄位順序排列
     df = df.select(required_cols)
-    
+
     # 強制執行型別轉換
     schema = get_polars_schema(category)
     if schema:
@@ -35,7 +35,7 @@ def enforce_schema(df, category):
                 cast_exprs.append(pl.col(col).cast(dtype, strict=False))
         if cast_exprs:
             df = df.with_columns(cast_exprs)
-            
+
     return df
 
 
@@ -54,14 +54,18 @@ def generate_src_col(schema_cols, col_mapping):
 
 def handle_generic_category(file_path, market, category, date_str):
     """Process a generic per-market CSV category and return (df, col_mapping)."""
-    df, col_mapping = read_raw_csv(file_path, category=category, return_col_mapping=True)
+    df, col_mapping = read_raw_csv(
+        file_path, category=category, return_col_mapping=True
+    )
     if df is None or df.is_empty():
         return None, {}
 
-    df = df.with_columns([
-        pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
-        pl.lit(market).alias("market"),
-    ])
+    df = df.with_columns(
+        [
+            pl.lit(date_str).str.strptime(pl.Date, "%Y%m%d").alias("date"),
+            pl.lit(market).alias("market"),
+        ]
+    )
 
     if "symbol" in df.columns:
         df = df.filter(pl.col("symbol").is_not_null())
@@ -71,7 +75,9 @@ def handle_generic_category(file_path, market, category, date_str):
     return df, col_mapping
 
 
-def process_generic_category_date(category, date_str, raw_dir, processed_dir, force_reprocess):
+def process_generic_category_date(
+    category, date_str, raw_dir, processed_dir, force_reprocess
+):
     """Process one date for generic daily categories."""
     output_dir = os.path.join(processed_dir, category, date_str[:4], date_str)
     cat_raw_path = get_category_date_dir(raw_dir, category, date_str)

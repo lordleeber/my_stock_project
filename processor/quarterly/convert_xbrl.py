@@ -26,8 +26,12 @@ STATEMENT_COLUMNS = [
     "value_num",
 ]
 
-FILE_RE = re.compile(r"^(?P<date>\d{4}Q[1-4])_(?P<symbol>\d{4})_(?P<run_date>\d{8})\.html$")
-FACT_RE = re.compile(r"<ix:(nonFraction|nonNumeric)\b([^>]*)>(.*?)</ix:\1>", re.IGNORECASE | re.DOTALL)
+FILE_RE = re.compile(
+    r"^(?P<date>\d{4}Q[1-4])_(?P<symbol>\d{4})_(?P<run_date>\d{8})\.html$"
+)
+FACT_RE = re.compile(
+    r"<ix:(nonFraction|nonNumeric)\b([^>]*)>(.*?)</ix:\1>", re.IGNORECASE | re.DOTALL
+)
 ATTR_RE = re.compile(r'([:\w-]+)\s*=\s*([\'"])(.*?)\2', re.DOTALL)
 CONTEXT_RE = re.compile(
     r"<xbrli:context\b[^>]*\bid=['\"]([^'\"]+)['\"][^>]*>(.*?)</xbrli:context>",
@@ -77,17 +81,21 @@ def log_duplicate_and_exit(category: str, row: dict[str, str]):
         f.write(f"\n[{ts}] duplicate row detected in {category}\n")
         f.write(
             "key="
-            f"date={row.get('date','')},symbol={row.get('symbol','')},"
-            f"account_code={row.get('account_code','')},value_text={row.get('value_text','')},value_num={row.get('value_num','')}\n"
+            f"date={row.get('date', '')},symbol={row.get('symbol', '')},"
+            f"account_code={row.get('account_code', '')},value_text={row.get('value_text', '')},value_num={row.get('value_num', '')}\n"
         )
     print(f"Error: duplicate row detected in {category}. See {error_log}")
     raise SystemExit(1)
 
 
-def write_wide_all_csv(output_path: Path, rows: list[dict[str, str]], period_mode: str = "auto"):
+def write_wide_all_csv(
+    output_path: Path, rows: list[dict[str, str]], period_mode: str = "auto"
+):
     grouped: dict[tuple[str, str, str], list[dict[str, str]]] = defaultdict(list)
     for row in rows:
-        grouped[(row.get("date", ""), row.get("symbol", ""), row.get("publish_time", ""))].append(row)
+        grouped[
+            (row.get("date", ""), row.get("symbol", ""), row.get("publish_time", ""))
+        ].append(row)
 
     max_pairs = max((len(v) for v in grouped.values()), default=0)
     category = output_path.parts[-4] if len(output_path.parts) >= 4 else ""
@@ -169,9 +177,15 @@ def parse_attrs(attr_blob: str) -> dict[str, str]:
 
 
 def parse_account_names(cell_html: str) -> tuple[str, str]:
-    zh_m = re.search(r'<span class="zh">(.*?)</span>', cell_html, re.IGNORECASE | re.DOTALL)
-    en_m = re.search(r'<span class="en">(.*?)</span>', cell_html, re.IGNORECASE | re.DOTALL)
-    zh = normalize_account_name(clean_value_text(zh_m.group(1)) if zh_m else clean_value_text(cell_html))
+    zh_m = re.search(
+        r'<span class="zh">(.*?)</span>', cell_html, re.IGNORECASE | re.DOTALL
+    )
+    en_m = re.search(
+        r'<span class="en">(.*?)</span>', cell_html, re.IGNORECASE | re.DOTALL
+    )
+    zh = normalize_account_name(
+        clean_value_text(zh_m.group(1)) if zh_m else clean_value_text(cell_html)
+    )
     en = normalize_account_name(clean_value_text(en_m.group(1)) if en_m else "")
     return zh, en
 
@@ -218,7 +232,9 @@ def build_context_map(html_text: str) -> dict[str, str]:
     return {ctx_id: body for ctx_id, body in CONTEXT_RE.findall(html_text)}
 
 
-def classify_statement(fact_name: str, fact_type: str, context_ref: str, context_body: str) -> str | None:
+def classify_statement(
+    fact_name: str, fact_type: str, context_ref: str, context_body: str
+) -> str | None:
     if fact_type.lower() != "nonfraction":
         return None
     if context_ref.startswith("AsOf"):
@@ -246,14 +262,32 @@ def get_section_ranges(html_text: str) -> dict[str, tuple[int, int]]:
         end = start + end_m.start() if end_m else len(html_text)
         ranges[key] = (start, end)
 
-    _range(r'<div id="BalanceSheet"></div>', r'<div id="StatementOfComprehensiveIncome"></div>', BALANCE_CATEGORY)
-    _range(r'<div id="StatementOfComprehensiveIncome"></div>', r'<div id="StatementsOfCashFlows"></div>', INCOME_CATEGORY)
-    _range(r'<div id="StatementsOfCashFlows"></div>', r'<div id="StatementsOfChangeInEquity"></div>', CASHFLOW_CATEGORY)
-    _range(r'<div id="StatementsOfChangeInEquity"></div>', r'<div id="ReportOfIndependentAuditors"></div>', EQUITY_CATEGORY)
+    _range(
+        r'<div id="BalanceSheet"></div>',
+        r'<div id="StatementOfComprehensiveIncome"></div>',
+        BALANCE_CATEGORY,
+    )
+    _range(
+        r'<div id="StatementOfComprehensiveIncome"></div>',
+        r'<div id="StatementsOfCashFlows"></div>',
+        INCOME_CATEGORY,
+    )
+    _range(
+        r'<div id="StatementsOfCashFlows"></div>',
+        r'<div id="StatementsOfChangeInEquity"></div>',
+        CASHFLOW_CATEGORY,
+    )
+    _range(
+        r'<div id="StatementsOfChangeInEquity"></div>',
+        r'<div id="ReportOfIndependentAuditors"></div>',
+        EQUITY_CATEGORY,
+    )
     return ranges
 
 
-def classify_by_position(pos: int, section_ranges: dict[str, tuple[int, int]]) -> str | None:
+def classify_by_position(
+    pos: int, section_ranges: dict[str, tuple[int, int]]
+) -> str | None:
     for cat in (BALANCE_CATEGORY, INCOME_CATEGORY, CASHFLOW_CATEGORY, EQUITY_CATEGORY):
         r = section_ranges.get(cat)
         if not r:
@@ -281,7 +315,9 @@ def quarter_range(date_str: str) -> tuple[str, str]:
     return start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
 
 
-def keep_current_period_row(statement_category: str, context_ref: str, date_str: str) -> bool:
+def keep_current_period_row(
+    statement_category: str, context_ref: str, date_str: str
+) -> bool:
     q_start, q_end = quarter_range(date_str)
     y_start = f"{date_str[:4]}0101"
 
@@ -290,7 +326,10 @@ def keep_current_period_row(statement_category: str, context_ref: str, date_str:
         if statement_category == EQUITY_CATEGORY:
             # Equity changes table needs both beginning-of-year and quarter-end snapshots.
             return m_asof.group(1) in {y_start, q_end}
-        return statement_category in (BALANCE_CATEGORY, CASHFLOW_CATEGORY) and m_asof.group(1) == q_end
+        return (
+            statement_category in (BALANCE_CATEGORY, CASHFLOW_CATEGORY)
+            and m_asof.group(1) == q_end
+        )
 
     m_from = re.match(r"^From(\d{8})To(\d{8})", context_ref)
     if not m_from:
@@ -406,7 +445,9 @@ def derive_q4_income_quarter_rows(
 
     year = date_str[:4]
     prev_q = f"{year}Q3"
-    prev_acc_path = Path(PROCESSED_DIR) / INCOME_CATEGORY / year / prev_q / "all_accumulated.csv"
+    prev_acc_path = (
+        Path(PROCESSED_DIR) / INCOME_CATEGORY / year / prev_q / "all_accumulated.csv"
+    )
     prev_acc_map = load_income_accum_map_from_wide_csv(prev_acc_path)
 
     out_rows = list(quarter_rows)
@@ -425,7 +466,9 @@ def derive_q4_income_quarter_rows(
         if key in existing_keys:
             continue
 
-        current_val = parse_float_text(row.get("value_num", "") or row.get("value_text", ""))
+        current_val = parse_float_text(
+            row.get("value_num", "") or row.get("value_text", "")
+        )
         if current_val is None:
             continue
 
@@ -447,7 +490,9 @@ def derive_q4_income_quarter_rows(
     return out_rows, generated_count, fallback_count
 
 
-def extract_income_statement_code_map(html_text: str) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
+def extract_income_statement_code_map(
+    html_text: str,
+) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
     """
     Build mapping from (fact_name, context_ref, value_text) -> (account_code, account_name)
     only for Statement of Comprehensive Income section.
@@ -455,15 +500,19 @@ def extract_income_statement_code_map(html_text: str) -> tuple[dict[tuple[str, s
     key_map: dict[tuple[str, str, str], tuple[str, str]] = {}
     codebook: dict[str, tuple[str, str]] = {}
 
-    start_m = re.search(r'<div id="StatementOfComprehensiveIncome"></div>', html_text, re.IGNORECASE)
+    start_m = re.search(
+        r'<div id="StatementOfComprehensiveIncome"></div>', html_text, re.IGNORECASE
+    )
     if not start_m:
         return key_map, codebook
     start = start_m.end()
 
     # Income statement ends when cash flow section starts.
     end_markers = [
-        re.search(r'<div id="StatementsOfCashFlows"></div>', html_text[start:], re.IGNORECASE),
-        re.search(r'Statements of Cash Flows', html_text[start:], re.IGNORECASE),
+        re.search(
+            r'<div id="StatementsOfCashFlows"></div>', html_text[start:], re.IGNORECASE
+        ),
+        re.search(r"Statements of Cash Flows", html_text[start:], re.IGNORECASE),
     ]
     end_offsets = [m.start() for m in end_markers if m]
     end = start + min(end_offsets) if end_offsets else len(html_text)
@@ -487,12 +536,17 @@ def extract_income_statement_code_map(html_text: str) -> tuple[dict[tuple[str, s
             context_ref = attrs.get("contextRef", "")
             value_text = clean_value_text(fact_m.group(3))
             if fact_name and context_ref and value_text:
-                key_map[(fact_name, context_ref, value_text)] = (account_code, account_name)
+                key_map[(fact_name, context_ref, value_text)] = (
+                    account_code,
+                    account_name,
+                )
 
     return key_map, codebook
 
 
-def extract_balance_sheet_code_map(html_text: str) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
+def extract_balance_sheet_code_map(
+    html_text: str,
+) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
     """
     Balance sheet section is from #BalanceSheet to #StatementOfComprehensiveIncome.
     """
@@ -503,7 +557,11 @@ def extract_balance_sheet_code_map(html_text: str) -> tuple[dict[tuple[str, str,
         return key_map, codebook
     start = start_m.end()
 
-    end_m = re.search(r'<div id="StatementOfComprehensiveIncome"></div>', html_text[start:], re.IGNORECASE)
+    end_m = re.search(
+        r'<div id="StatementOfComprehensiveIncome"></div>',
+        html_text[start:],
+        re.IGNORECASE,
+    )
     end = start + end_m.start() if end_m else len(html_text)
     section = html_text[start:end]
 
@@ -523,22 +581,31 @@ def extract_balance_sheet_code_map(html_text: str) -> tuple[dict[tuple[str, str,
             context_ref = attrs.get("contextRef", "")
             value_text = clean_value_text(fact_m.group(3))
             if fact_name and context_ref and value_text:
-                key_map[(fact_name, context_ref, value_text)] = (account_code, account_name)
+                key_map[(fact_name, context_ref, value_text)] = (
+                    account_code,
+                    account_name,
+                )
     return key_map, codebook
 
 
-def extract_cash_flow_code_map(html_text: str) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
+def extract_cash_flow_code_map(
+    html_text: str,
+) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
     """
     Cash flow section is from #StatementsOfCashFlows to #StatementsOfChangeInEquity.
     """
     key_map: dict[tuple[str, str, str], tuple[str, str]] = {}
     codebook: dict[str, tuple[str, str]] = {}
-    start_m = re.search(r'<div id="StatementsOfCashFlows"></div>', html_text, re.IGNORECASE)
+    start_m = re.search(
+        r'<div id="StatementsOfCashFlows"></div>', html_text, re.IGNORECASE
+    )
     if not start_m:
         return key_map, codebook
     start = start_m.end()
 
-    end_m = re.search(r'<div id="StatementsOfChangeInEquity"></div>', html_text[start:], re.IGNORECASE)
+    end_m = re.search(
+        r'<div id="StatementsOfChangeInEquity"></div>', html_text[start:], re.IGNORECASE
+    )
     end = start + end_m.start() if end_m else len(html_text)
     section = html_text[start:end]
 
@@ -558,22 +625,33 @@ def extract_cash_flow_code_map(html_text: str) -> tuple[dict[tuple[str, str, str
             context_ref = attrs.get("contextRef", "")
             value_text = clean_value_text(fact_m.group(3))
             if fact_name and context_ref and value_text:
-                key_map[(fact_name, context_ref, value_text)] = (account_code, account_name)
+                key_map[(fact_name, context_ref, value_text)] = (
+                    account_code,
+                    account_name,
+                )
     return key_map, codebook
 
 
-def extract_equity_changes_code_map(html_text: str) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
+def extract_equity_changes_code_map(
+    html_text: str,
+) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
     """
     Equity changes section is from #StatementsOfChangeInEquity to #ReportOfIndependentAuditors.
     """
     key_map: dict[tuple[str, str, str], tuple[str, str]] = {}
     codebook: dict[str, tuple[str, str]] = {}
-    start_m = re.search(r'<div id="StatementsOfChangeInEquity"></div>', html_text, re.IGNORECASE)
+    start_m = re.search(
+        r'<div id="StatementsOfChangeInEquity"></div>', html_text, re.IGNORECASE
+    )
     if not start_m:
         return key_map, codebook
     start = start_m.end()
 
-    end_m = re.search(r'<div id="ReportOfIndependentAuditors"></div>', html_text[start:], re.IGNORECASE)
+    end_m = re.search(
+        r'<div id="ReportOfIndependentAuditors"></div>',
+        html_text[start:],
+        re.IGNORECASE,
+    )
     end = start + end_m.start() if end_m else len(html_text)
     section = html_text[start:end]
 
@@ -593,7 +671,10 @@ def extract_equity_changes_code_map(html_text: str) -> tuple[dict[tuple[str, str
             context_ref = attrs.get("contextRef", "")
             value_text = clean_value_text(fact_m.group(3))
             if fact_name and context_ref and value_text:
-                key_map[(fact_name, context_ref, value_text)] = (account_code, account_name)
+                key_map[(fact_name, context_ref, value_text)] = (
+                    account_code,
+                    account_name,
+                )
     return key_map, codebook
 
 
@@ -639,7 +720,9 @@ def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str
         pos_category = classify_by_position(m.start(), section_ranges)
         statement_category = pos_category
         if statement_category is None:
-            statement_category = classify_statement(fact_name, fact_type, context_ref, context_body)
+            statement_category = classify_statement(
+                fact_name, fact_type, context_ref, context_body
+            )
         key = (fact_name, context_ref, value_text)
         if pos_category == CASHFLOW_CATEGORY and key in cashflow_code_map:
             statement_category = CASHFLOW_CATEGORY
@@ -663,7 +746,14 @@ def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str
             if mapped:
                 row["account_code"] = mapped[0]
                 row["account_name"] = mapped[1]
-        yield row, statement_category, income_codebook, balance_codebook, cashflow_codebook, equity_codebook
+        yield (
+            row,
+            statement_category,
+            income_codebook,
+            balance_codebook,
+            cashflow_codebook,
+            equity_codebook,
+        )
 
 
 def collect_strict_html_per_symbol(date_dir: Path) -> list[tuple[Path, str, str]]:
@@ -696,11 +786,17 @@ def main():
         print("Error: START_DATE and END_DATE are both required (YYYYQX).")
         print("Example: START_DATE=2024Q1 END_DATE=2024Q1 python convert_quarterly.py")
         sys.exit(1)
-    if not (re.match(quarter_pattern, start_env) and re.match(quarter_pattern, end_env)):
-        print(f"Error: Invalid quarter format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYQX.")
+    if not (
+        re.match(quarter_pattern, start_env) and re.match(quarter_pattern, end_env)
+    ):
+        print(
+            f"Error: Invalid quarter format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYQX."
+        )
         sys.exit(1)
     if start_env > end_env:
-        print(f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env}).")
+        print(
+            f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
+        )
         sys.exit(1)
 
     raw_path = Path(RAW_DIR) / CATEGORY
@@ -721,9 +817,16 @@ def main():
                     account_code = (row.get("account_code") or "").strip()
                     if not statement_type or not account_code:
                         continue
-                    name_zh = normalize_account_name((row.get("account_name_zh") or "").strip())
-                    name_en = normalize_account_name((row.get("account_name_en") or "").strip())
-                    unified_codebook[(statement_type, account_code)] = (name_zh, name_en)
+                    name_zh = normalize_account_name(
+                        (row.get("account_name_zh") or "").strip()
+                    )
+                    name_en = normalize_account_name(
+                        (row.get("account_name_en") or "").strip()
+                    )
+                    unified_codebook[(statement_type, account_code)] = (
+                        name_zh,
+                        name_en,
+                    )
         except Exception as e:
             print(f"[WARN] Failed to load existing codebook {codebook_path}: {e}")
 
@@ -733,16 +836,40 @@ def main():
             continue
 
         output_paths = {
-            BALANCE_CATEGORY: Path(PROCESSED_DIR) / BALANCE_CATEGORY / date_str[:4] / date_str / "all.csv",
-            "income_statement_quarter": Path(PROCESSED_DIR) / INCOME_CATEGORY / date_str[:4] / date_str / "all_quarter.csv",
-            "income_statement_accumulated": Path(PROCESSED_DIR) / INCOME_CATEGORY / date_str[:4] / date_str / "all_accumulated.csv",
-            CASHFLOW_CATEGORY: Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all_accumulated.csv",
+            BALANCE_CATEGORY: Path(PROCESSED_DIR)
+            / BALANCE_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all.csv",
+            "income_statement_quarter": Path(PROCESSED_DIR)
+            / INCOME_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all_quarter.csv",
+            "income_statement_accumulated": Path(PROCESSED_DIR)
+            / INCOME_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all_accumulated.csv",
+            CASHFLOW_CATEGORY: Path(PROCESSED_DIR)
+            / CASHFLOW_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all_accumulated.csv",
         }
 
         # Remove legacy cash-flow outputs to avoid stale files being misread.
         legacy_cashflow_paths = [
-            Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all.csv",
-            Path(PROCESSED_DIR) / CASHFLOW_CATEGORY / date_str[:4] / date_str / "all_quarter.csv",
+            Path(PROCESSED_DIR)
+            / CASHFLOW_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all.csv",
+            Path(PROCESSED_DIR)
+            / CASHFLOW_CATEGORY
+            / date_str[:4]
+            / date_str
+            / "all_quarter.csv",
         ]
         for legacy_path in legacy_cashflow_paths:
             if legacy_path.exists():
@@ -786,7 +913,14 @@ def main():
                     if is_blocked_page(html_text):
                         blocked_files += 1
                         continue
-                    for row, statement_category, income_codebook, balance_codebook, cashflow_codebook, equity_codebook in iter_fact_rows(
+                    for (
+                        row,
+                        statement_category,
+                        income_codebook,
+                        balance_codebook,
+                        cashflow_codebook,
+                        equity_codebook,
+                    ) in iter_fact_rows(
                         date_str,
                         symbol,
                         publish_time,
@@ -798,10 +932,16 @@ def main():
                             balance_codebook_by_symbol[symbol] = balance_codebook
                         if cashflow_codebook:
                             cashflow_codebook_by_symbol[symbol] = cashflow_codebook
-                        if statement_category in (BALANCE_CATEGORY, INCOME_CATEGORY, CASHFLOW_CATEGORY):
+                        if statement_category in (
+                            BALANCE_CATEGORY,
+                            INCOME_CATEGORY,
+                            CASHFLOW_CATEGORY,
+                        ):
                             if not row.get("account_code"):
                                 continue
-                            statement_row = {k: row.get(k, "") for k in STATEMENT_COLUMNS}
+                            statement_row = {
+                                k: row.get(k, "") for k in STATEMENT_COLUMNS
+                            }
                             # Use context_ref internally for duplicate detection to avoid false positives
                             # when different equity columns happen to share the same visible value.
                             dedup_key = (
@@ -813,7 +953,9 @@ def main():
                                 row.get("context_ref", ""),
                             )
                             if statement_category == INCOME_CATEGORY:
-                                is_quarter, is_accumulated = income_period_flags(row.get("context_ref", ""), date_str)
+                                is_quarter, is_accumulated = income_period_flags(
+                                    row.get("context_ref", ""), date_str
+                                )
                                 if not (is_quarter or is_accumulated):
                                     continue
 
@@ -822,7 +964,9 @@ def main():
                                     if dedup_key in emitted_keys[bucket]:
                                         log_duplicate_and_exit(bucket, statement_row)
                                     emitted_keys[bucket].add(dedup_key)
-                                    statement_rows_by_category[bucket].append(statement_row)
+                                    statement_rows_by_category[bucket].append(
+                                        statement_row
+                                    )
                                     fact_rows_by_category[bucket] += 1
 
                                 if is_accumulated:
@@ -830,25 +974,41 @@ def main():
                                     if dedup_key in emitted_keys[bucket]:
                                         log_duplicate_and_exit(bucket, statement_row)
                                     emitted_keys[bucket].add(dedup_key)
-                                    statement_rows_by_category[bucket].append(statement_row)
+                                    statement_rows_by_category[bucket].append(
+                                        statement_row
+                                    )
                                     fact_rows_by_category[bucket] += 1
                             elif statement_category == CASHFLOW_CATEGORY:
-                                _, is_accumulated = cashflow_period_flags(row.get("context_ref", ""), date_str)
+                                _, is_accumulated = cashflow_period_flags(
+                                    row.get("context_ref", ""), date_str
+                                )
                                 if not is_accumulated:
                                     continue
 
                                 if dedup_key in emitted_keys[CASHFLOW_CATEGORY]:
-                                    log_duplicate_and_exit(CASHFLOW_CATEGORY, statement_row)
+                                    log_duplicate_and_exit(
+                                        CASHFLOW_CATEGORY, statement_row
+                                    )
                                 emitted_keys[CASHFLOW_CATEGORY].add(dedup_key)
-                                statement_rows_by_category[CASHFLOW_CATEGORY].append(statement_row)
+                                statement_rows_by_category[CASHFLOW_CATEGORY].append(
+                                    statement_row
+                                )
                                 fact_rows_by_category[CASHFLOW_CATEGORY] += 1
                             else:
-                                if not keep_current_period_row(statement_category, row.get("context_ref", ""), date_str):
+                                if not keep_current_period_row(
+                                    statement_category,
+                                    row.get("context_ref", ""),
+                                    date_str,
+                                ):
                                     continue
                                 if dedup_key in emitted_keys[statement_category]:
-                                    log_duplicate_and_exit(statement_category, statement_row)
+                                    log_duplicate_and_exit(
+                                        statement_category, statement_row
+                                    )
                                 emitted_keys[statement_category].add(dedup_key)
-                                statement_rows_by_category[statement_category].append(statement_row)
+                                statement_rows_by_category[statement_category].append(
+                                    statement_row
+                                )
                                 fact_rows_by_category[statement_category] += 1
                 except Exception as e:
                     print(f"  [WARN] failed to parse {html_path}: {e}")
@@ -866,7 +1026,9 @@ def main():
             statement_rows_by_category["income_statement_quarter"] = merged_rows
             fact_rows_by_category["income_statement_quarter"] = len(merged_rows)
 
-        write_wide_all_csv(output_paths[BALANCE_CATEGORY], statement_rows_by_category[BALANCE_CATEGORY])
+        write_wide_all_csv(
+            output_paths[BALANCE_CATEGORY], statement_rows_by_category[BALANCE_CATEGORY]
+        )
         write_wide_all_csv(
             output_paths["income_statement_quarter"],
             statement_rows_by_category["income_statement_quarter"],
@@ -884,14 +1046,27 @@ def main():
         )
 
         print(f"  Files={total_files}, blocked={blocked_files}")
-        print(f"  [+] Saved {output_paths[BALANCE_CATEGORY]} (facts={fact_rows_by_category[BALANCE_CATEGORY]})")
-        print(f"  [+] Saved {output_paths['income_statement_quarter']} (facts={fact_rows_by_category['income_statement_quarter']})")
-        print(f"  [+] Saved {output_paths['income_statement_accumulated']} (facts={fact_rows_by_category['income_statement_accumulated']})")
-        print(f"  [+] Saved {output_paths[CASHFLOW_CATEGORY]} (facts={fact_rows_by_category[CASHFLOW_CATEGORY]})")
+        print(
+            f"  [+] Saved {output_paths[BALANCE_CATEGORY]} (facts={fact_rows_by_category[BALANCE_CATEGORY]})"
+        )
+        print(
+            f"  [+] Saved {output_paths['income_statement_quarter']} (facts={fact_rows_by_category['income_statement_quarter']})"
+        )
+        print(
+            f"  [+] Saved {output_paths['income_statement_accumulated']} (facts={fact_rows_by_category['income_statement_accumulated']})"
+        )
+        print(
+            f"  [+] Saved {output_paths[CASHFLOW_CATEGORY]} (facts={fact_rows_by_category[CASHFLOW_CATEGORY]})"
+        )
         if date_str.endswith("Q4"):
-            print(f"  [i] Q4 income quarter derived rows={q4_generated}, fallback_to_acc={q4_fallback}")
+            print(
+                f"  [i] Q4 income quarter derived rows={q4_generated}, fallback_to_acc={q4_fallback}"
+            )
 
-        def _merge_codebook(statement_type: str, codebook_by_symbol: dict[str, dict[str, tuple[str, str]]]):
+        def _merge_codebook(
+            statement_type: str,
+            codebook_by_symbol: dict[str, dict[str, tuple[str, str]]],
+        ):
             merged: dict[str, tuple[str, str]] = {}
             for _, codebook in sorted(codebook_by_symbol.items()):
                 for code, name in codebook.items():
@@ -913,7 +1088,9 @@ def main():
     codebook_path.parent.mkdir(parents=True, exist_ok=True)
     with codebook_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["statement_type", "account_code", "account_name_zh", "account_name_en"])
+        writer.writerow(
+            ["statement_type", "account_code", "account_name_zh", "account_name_en"]
+        )
         for (statement_type, account_code), names in sorted(unified_codebook.items()):
             name_zh, name_en = names
             writer.writerow([statement_type, account_code, name_zh, name_en])

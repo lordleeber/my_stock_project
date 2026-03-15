@@ -6,7 +6,6 @@ Provides common functionality for all category-specific checkers.
 """
 
 import os
-import sys
 import csv
 import pandas as pd
 from datetime import datetime
@@ -18,6 +17,7 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 
 class DataQualityError(Exception):
     """Custom exception for data quality errors that should stop processing"""
+
     pass
 
 
@@ -27,7 +27,7 @@ def parse_csv_line(line):
         reader = csv.reader([line])
         return next(reader)
     except Exception:
-        return line.strip().split(',')
+        return line.strip().split(",")
 
 
 def clean_value_for_comparison(val):
@@ -36,21 +36,35 @@ def clean_value_for_comparison(val):
         return ""
     s = str(val).strip()
     # Remove surrounding quotes
-    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+    if (s.startswith('"') and s.endswith('"')) or (
+        s.startswith("'") and s.endswith("'")
+    ):
         s = s[1:-1]
     # Remove commas (number formatting)
-    s = s.replace(',', '')
+    s = s.replace(",", "")
     # Handle special markers (including various dash patterns and Chinese markers)
     empty_markers = {
-        '--', '---', '----', 'nan', 'None', '', 'NaN', 'N/A', 'n/a',
-        '除權', '除息', '除權息',  # Ex-rights, ex-dividend markers
-        'X', 'x',  # Common placeholder
-        'null', 'NULL',  # JSON-style null markers
+        "--",
+        "---",
+        "----",
+        "nan",
+        "None",
+        "",
+        "NaN",
+        "N/A",
+        "n/a",
+        "除權",
+        "除息",
+        "除權息",  # Ex-rights, ex-dividend markers
+        "X",
+        "x",  # Common placeholder
+        "null",
+        "NULL",  # JSON-style null markers
     }
     if s in empty_markers:
         return ""
     # Also treat all-dash strings as empty
-    if s and all(c == '-' for c in s):
+    if s and all(c == "-" for c in s):
         return ""
     return s
 
@@ -67,19 +81,27 @@ def write_error_report(date_str, category, issue):
     report += "\n**Processing stopped. Fix this error before continuing.**\n"
     report += "---\n"
 
-    with open(error_file, 'a', encoding='utf-8') as f:
+    with open(error_file, "a", encoding="utf-8") as f:
         f.write(report)
 
     print(f"\n❌ Data quality error in {category}:")
     print(f"   {issue}")
-    print(f"📝 Report written to error_processor.log")
+    print("📝 Report written to error_processor.log")
 
 
 def get_processed_date_path(category, date_str, market=None):
     """Get path to processed data file in new directory structure only."""
-    if category in ("quarterly_reports", "income_statement", "balance_sheet", "cash_flow", "monthly_revenue"):
+    if category in (
+        "quarterly_reports",
+        "income_statement",
+        "balance_sheet",
+        "cash_flow",
+        "monthly_revenue",
+    ):
         if market:
-            return Path(f"data/processed/{category}/{date_str[:4]}/{date_str}/{market}.csv")
+            return Path(
+                f"data/processed/{category}/{date_str[:4]}/{date_str}/{market}.csv"
+            )
         return Path(f"data/processed/{category}/{date_str[:4]}/{date_str}/all.csv")
 
     base_dir = Path(f"data/processed/{category}/{date_str[:4]}/{date_str}")
@@ -110,7 +132,7 @@ class DataQualityCheckerBase(ABC):
     @property
     def markets(self) -> list:
         """Return list of markets to check. Override if needed."""
-        return ['sii', 'otc']
+        return ["sii", "otc"]
 
     @property
     def key_columns(self) -> list:
@@ -141,7 +163,9 @@ class DataQualityCheckerBase(ABC):
                 df = pd.read_csv(file_path)
 
                 if len(df) == 0:
-                    self._raise_error(f"{self.category} {market}: File is empty (0 rows)")
+                    self._raise_error(
+                        f"{self.category} {market}: File is empty (0 rows)"
+                    )
 
                 # Run standard checks
                 self._check_key_columns(df, market)
@@ -155,7 +179,9 @@ class DataQualityCheckerBase(ABC):
             except DataQualityError:
                 raise
             except Exception as e:
-                self._raise_error(f"{self.category} {market}: Error reading file - {str(e)}")
+                self._raise_error(
+                    f"{self.category} {market}: Error reading file - {str(e)}"
+                )
 
     def _handle_missing_file(self, file_path, market):
         """Handle missing file - override if missing file is acceptable"""
@@ -189,21 +215,27 @@ class DataQualityCheckerBase(ABC):
             if col not in df.columns:
                 self._raise_error(f"{label}: Missing lineage column '{col}'")
             if df[col].isna().any():
-                self._raise_error(f"{label}: Found NULL values in lineage column '{col}'")
+                self._raise_error(
+                    f"{label}: Found NULL values in lineage column '{col}'"
+                )
 
         # Get schema columns (exclude lineage columns)
-        schema_cols = [c for c in df.columns if c not in ('src_file', 'src_row', 'src_col')]
+        schema_cols = [
+            c for c in df.columns if c not in ("src_file", "src_row", "src_col")
+        ]
 
         # Verify each row
         for idx, row in df.iterrows():
             trace_row = self._should_trace_row(row)
-            src_file = str(row['src_file'])
-            src_col = str(row['src_col'])
+            src_file = str(row["src_file"])
+            src_col = str(row["src_col"])
 
             try:
-                src_row = int(float(row['src_row']))
+                src_row = int(float(row["src_row"]))
             except (ValueError, TypeError):
-                self._raise_error(f"{label} row {idx}: Invalid src_row value '{row['src_row']}'")
+                self._raise_error(
+                    f"{label} row {idx}: Invalid src_row value '{row['src_row']}'"
+                )
 
             # Resolve file path
             full_path = self._resolve_file_path(src_file, label, idx)
@@ -226,7 +258,7 @@ class DataQualityCheckerBase(ABC):
             raw_fields = parse_csv_line(raw_line)
 
             # Parse src_col indices
-            col_indices = src_col.split('#')
+            col_indices = src_col.split("#")
 
             if len(col_indices) != len(schema_cols):
                 self._raise_error(
@@ -238,15 +270,17 @@ class DataQualityCheckerBase(ABC):
                 self._print_trace_row_header(label, idx, row, src_file, src_row)
 
             # Verify ALL columns
-            for col_idx, (col_name, src_idx_str) in enumerate(zip(schema_cols, col_indices)):
+            for col_idx, (col_name, src_idx_str) in enumerate(
+                zip(schema_cols, col_indices)
+            ):
                 # Skip processing-added columns (x)
-                if src_idx_str == 'x':
+                if src_idx_str == "x":
                     if trace_row:
                         self._print_trace_column(
                             col_name=col_name,
                             src_idx_str=src_idx_str,
-                            processed_val=row.get(col_name, ''),
-                            raw_val='',
+                            processed_val=row.get(col_name, ""),
+                            raw_val="",
                             match=True,
                             note="processing-added (skip raw compare)",
                         )
@@ -266,7 +300,7 @@ class DataQualityCheckerBase(ABC):
                     )
 
                 # Get values for comparison
-                processed_val = row.get(col_name, '')
+                processed_val = row.get(col_name, "")
                 raw_val = raw_fields[src_idx]
 
                 # Compare values using category-specific logic
@@ -302,7 +336,7 @@ class DataQualityCheckerBase(ABC):
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             # Empty processed should match empty raw
             return raw_clean == "" or raw_clean == "--"
 
@@ -311,10 +345,10 @@ class DataQualityCheckerBase(ABC):
         # Try numeric comparison
         try:
             # Check if raw is integer-like (no decimal point)
-            if '.' not in raw_clean and raw_clean.lstrip('-').isdigit():
+            if "." not in raw_clean and raw_clean.lstrip("-").isdigit():
                 raw_int = int(raw_clean)
                 # Check if processed is a float
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_float = float(processed_str)
                     # Convert float to int for comparison
                     return int(processed_float) == raw_int
@@ -322,7 +356,7 @@ class DataQualityCheckerBase(ABC):
                     return int(processed_str) == raw_int
 
             # Both are floats
-            if raw_clean.replace('.', '').replace('-', '').isdigit():
+            if raw_clean.replace(".", "").replace("-", "").isdigit():
                 raw_float = float(raw_clean)
                 processed_float = float(processed_str)
                 # Use tolerance for float comparison
@@ -355,7 +389,9 @@ class DataQualityCheckerBase(ABC):
             f"🔎 [{label}] row={idx} symbol={symbol} src_file={src_file} src_row={src_row}"
         )
 
-    def _print_trace_column(self, col_name, src_idx_str, processed_val, raw_val, match, note=""):
+    def _print_trace_column(
+        self, col_name, src_idx_str, processed_val, raw_val, match, note=""
+    ):
         status = "MATCH" if match else "MISMATCH"
         extra = f" ({note})" if note else ""
         print(
@@ -385,10 +421,12 @@ class DataQualityCheckerBase(ABC):
         cache_key = str(full_path)
         if cache_key not in self.raw_file_cache:
             try:
-                with open(full_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+                with open(full_path, "r", encoding="utf-8-sig", errors="replace") as f:
                     self.raw_file_cache[cache_key] = f.readlines()
             except Exception as e:
-                self._raise_error(f"{label} row {idx}: Error reading source file: {str(e)}")
+                self._raise_error(
+                    f"{label} row {idx}: Error reading source file: {str(e)}"
+                )
                 return None
 
         return self.raw_file_cache[cache_key]

@@ -31,7 +31,9 @@ from audit_base import DataQualityError
 RAW_DIR = os.getenv("RAW_DIR", "/app/data/raw")
 PROCESSED_DIR = os.getenv("PROCESSED_DIR", "/app/data/processed")
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
-INPUT_CATEGORY = os.getenv("INPUT_CATEGORY", "shareholding")  # 預設使用新的 shareholding 目錄
+INPUT_CATEGORY = os.getenv(
+    "INPUT_CATEGORY", "shareholding"
+)  # 預設使用新的 shareholding 目錄
 OUTPUT_CATEGORY = "shareholding"
 
 LEVEL_NAME_MAP = {
@@ -51,11 +53,19 @@ LEVEL_NAME_MAP = {
     14: "800,001-1,000,000",
     15: "1,000,001以上",
     16: "400萬以上(含)",  # OpenData API 新增
-    17: "總計",           # OpenData API 新增
+    17: "總計",  # OpenData API 新增
 }
 
 # Final output column order (schema) - src_col is generated based on this order
-SCHEMA_COLS = ['date', 'symbol', 'level', 'level_name', 'holders', 'shares', 'percentage']
+SCHEMA_COLS = [
+    "date",
+    "symbol",
+    "level",
+    "level_name",
+    "holders",
+    "shares",
+    "percentage",
+]
 
 
 def generate_src_col(schema_cols, col_mapping):
@@ -117,7 +127,9 @@ def process_file(file_path: str, date_str: str) -> bool:
         col_mapping = {}
         for cn_name, en_name in column_map.items():
             if cn_name in original_columns:
-                col_mapping[en_name] = list(original_columns).index(cn_name) + 1  # 1-based
+                col_mapping[en_name] = (
+                    list(original_columns).index(cn_name) + 1
+                )  # 1-based
 
         # Generate src_col using unified pattern (date=x, level_name=x, rest from raw)
         src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
@@ -126,25 +138,35 @@ def process_file(file_path: str, date_str: str) -> bool:
         df = df.rename({k: v for k, v in column_map.items() if k in df.columns})
         # TDCC symbol 常見右側補空白，統一先去除
         if "symbol" in df.columns:
-            df = df.with_columns(pl.col("symbol").cast(pl.Utf8).str.strip_chars().alias("symbol"))
+            df = df.with_columns(
+                pl.col("symbol").cast(pl.Utf8).str.strip_chars().alias("symbol")
+            )
 
         # 轉換數值型別
-        df = df.with_columns([
-            pl.col("level").cast(pl.Int32),
-            pl.col("holders").cast(pl.Int64),
-            pl.col("shares").cast(pl.Int64),
-            pl.col("percentage").cast(pl.Float64),
-        ])
+        df = df.with_columns(
+            [
+                pl.col("level").cast(pl.Int32),
+                pl.col("holders").cast(pl.Int64),
+                pl.col("shares").cast(pl.Int64),
+                pl.col("percentage").cast(pl.Float64),
+            ]
+        )
 
         # 重要：先加入追蹤資訊（在過濾 level 16, 17 之前）
-        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+        rel_path = (
+            str(file_path).split("my_stock_project/")[-1]
+            if "my_stock_project/" in str(file_path)
+            else str(file_path)
+        )
 
         # 資料從第 2 行開始 (1-based, index 0 is header)
-        df = df.with_columns([
-            pl.lit(rel_path).alias("src_file"),
-            (pl.arange(0, df.height) + 2).alias("src_row"),
-            pl.lit(src_col_str).alias("src_col")
-        ])
+        df = df.with_columns(
+            [
+                pl.lit(rel_path).alias("src_file"),
+                (pl.arange(0, df.height) + 2).alias("src_row"),
+                pl.lit(src_col_str).alias("src_col"),
+            ]
+        )
 
         # 之後再進行過濾，這樣留下來的 src_row 才會是正確的原始行號
         df = df.filter(pl.col("level") <= 15)
@@ -160,7 +182,20 @@ def process_file(file_path: str, date_str: str) -> bool:
         )
 
         # 調整欄位順序（並包含追蹤欄位）
-        df = df.select(["date", "symbol", "level", "level_name", "holders", "shares", "percentage", "src_file", "src_row", "src_col"])
+        df = df.select(
+            [
+                "date",
+                "symbol",
+                "level",
+                "level_name",
+                "holders",
+                "shares",
+                "percentage",
+                "src_file",
+                "src_row",
+                "src_col",
+            ]
+        )
 
         # 依 symbol, level 排序
         df = df.sort(["symbol", "level"])
@@ -195,11 +230,15 @@ def get_date_range():
         start_date = datetime.datetime.strptime(start_env, "%Y%m%d")
         end_date = datetime.datetime.strptime(end_env, "%Y%m%d")
     except ValueError:
-        print(f"Error: Invalid date format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYMMDD.")
+        print(
+            f"Error: Invalid date format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYMMDD."
+        )
         sys.exit(1)
 
     if start_date > end_date:
-        print(f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env}).")
+        print(
+            f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
+        )
         sys.exit(1)
 
     return start_date, end_date
@@ -208,7 +247,7 @@ def get_date_range():
 def main():
     start_date, end_date = get_date_range()
 
-    print(f"Starting Shareholding Dispersion ETL (all-in-one format)...")
+    print("Starting Shareholding Dispersion ETL (all-in-one format)...")
     print(f"Input directory: {INPUT_CATEGORY}")
     if start_date:
         print(f"Filter Start Date: {start_date.strftime('%Y-%m-%d')}")
@@ -256,7 +295,9 @@ def main():
                 error_msg = f"Shareholding data quality check failed: {str(e)}"
                 print(f"❌ {error_msg}")
                 # 立即停止處理，不再處理後續日期
-                print(f"❌ Processing stopped due to data quality error. Fix the issue and re-run.")
+                print(
+                    "❌ Processing stopped due to data quality error. Fix the issue and re-run."
+                )
                 sys.exit(1)
 
     print(f"ETL completed. Processed {processed_count} dates.")

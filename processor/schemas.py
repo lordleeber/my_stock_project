@@ -1,9 +1,9 @@
 import sys
 import os
+
 # 加入 common 目錄到搜尋路徑，以便在容器中引用
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from common.schemas import SCHEMA_COLS as COMMON_SCHEMA_COLS
-from common.schemas import COLUMN_MAP, NUMERIC_COLS
 
 
 def _to_processor_schema_cols(common_schema_cols):

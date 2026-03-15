@@ -16,18 +16,18 @@ class MarketIndicesChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return ['index_close', 'index_change_points']
+        return ["index_close", "index_change_points"]
 
     @property
     def null_threshold(self):
         return 30.0  # Market indices should have very low NULL rate
 
-    FLOAT_COLUMNS = {'index_close', 'index_change_points'}
-    STRING_COLUMNS = {'symbol', 'index_name'}
+    FLOAT_COLUMNS = {"index_close", "index_change_points"}
+    STRING_COLUMNS = {"symbol", "index_name"}
 
     def _handle_missing_file(self, file_path, market):
         """SII market indices might be missing if extraction failed"""
-        if market == 'sii':
+        if market == "sii":
             # SII is extracted from daily_quotes, might not exist
             return
         # OTC should always exist
@@ -38,7 +38,7 @@ class MarketIndicesChecker(DataQualityCheckerBase):
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)

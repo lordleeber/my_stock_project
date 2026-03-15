@@ -16,7 +16,7 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return ['foreign_net', 'trust_net', 'dealer_net']
+        return ["foreign_net", "trust_net", "dealer_net"]
 
     @property
     def null_threshold(self):
@@ -24,24 +24,38 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
 
     # All numeric columns (integers in raw, floats in processed)
     INTEGER_COLUMNS = {
-        'foreign_buy', 'foreign_sell', 'foreign_net',
-        'foreign_dealer_buy', 'foreign_dealer_sell', 'foreign_dealer_net',
-        'trust_buy', 'trust_sell', 'trust_net',
-        'dealer_self_buy', 'dealer_self_sell', 'dealer_self_net',
-        'dealer_hedge_buy', 'dealer_hedge_sell', 'dealer_hedge_net',
-        'dealer_net', 'total_net',
-        'foreign_total_buy', 'foreign_total_sell', 'foreign_total_net',
-        'dealer_total_buy', 'dealer_total_sell'
+        "foreign_buy",
+        "foreign_sell",
+        "foreign_net",
+        "foreign_dealer_buy",
+        "foreign_dealer_sell",
+        "foreign_dealer_net",
+        "trust_buy",
+        "trust_sell",
+        "trust_net",
+        "dealer_self_buy",
+        "dealer_self_sell",
+        "dealer_self_net",
+        "dealer_hedge_buy",
+        "dealer_hedge_sell",
+        "dealer_hedge_net",
+        "dealer_net",
+        "total_net",
+        "foreign_total_buy",
+        "foreign_total_sell",
+        "foreign_total_net",
+        "dealer_total_buy",
+        "dealer_total_sell",
     }
 
-    STRING_COLUMNS = {'symbol', 'name'}
+    STRING_COLUMNS = {"symbol", "name"}
 
     def _compare_values(self, processed_val, raw_val, col_name):
         """Custom comparison for institutional_investors"""
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -59,7 +73,7 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                 if raw_clean == "" or raw_clean == "--":
                     return True
                 raw_int = int(raw_clean)
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)
@@ -89,10 +103,14 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
             if col not in df.columns:
                 self._raise_error(f"{label}: Missing lineage column '{col}'")
             if df[col].isna().any():
-                self._raise_error(f"{label}: Found NULL values in lineage column '{col}'")
+                self._raise_error(
+                    f"{label}: Found NULL values in lineage column '{col}'"
+                )
 
         # Get schema columns (exclude lineage columns)
-        schema_cols = [c for c in df.columns if c not in ('src_file', 'src_row', 'src_col')]
+        schema_cols = [
+            c for c in df.columns if c not in ("src_file", "src_row", "src_col")
+        ]
 
         # Columns that may be missing in ETFs/special securities
         # ETFs typically have 17 fields instead of 20, missing:
@@ -100,19 +118,21 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
         # - Field 19: total_net (三大法人買賣超股數)
         # - Field 20: empty
         OPTIONAL_DEALER_COLUMNS = {
-            'dealer_hedge_net',  # Field 18
-            'total_net'          # Field 19
+            "dealer_hedge_net",  # Field 18
+            "total_net",  # Field 19
         }
 
         # Verify each row
         for idx, row in df.iterrows():
-            src_file = str(row['src_file'])
-            src_col = str(row['src_col'])
+            src_file = str(row["src_file"])
+            src_col = str(row["src_col"])
 
             try:
-                src_row = int(float(row['src_row']))
+                src_row = int(float(row["src_row"]))
             except (ValueError, TypeError):
-                self._raise_error(f"{label} row {idx}: Invalid src_row value '{row['src_row']}'")
+                self._raise_error(
+                    f"{label} row {idx}: Invalid src_row value '{row['src_row']}'"
+                )
 
             # Resolve file path
             full_path = self._resolve_file_path(src_file, label, idx)
@@ -139,10 +159,12 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
             is_special_security = raw_field_count < 20
 
             if DEBUG and is_special_security and idx % 50 == 0:
-                print(f"    Row {idx} ({row.get('symbol', 'N/A')}): Special security with {raw_field_count} fields")
+                print(
+                    f"    Row {idx} ({row.get('symbol', 'N/A')}): Special security with {raw_field_count} fields"
+                )
 
             # Parse src_col indices
-            col_indices = src_col.split('#')
+            col_indices = src_col.split("#")
 
             if len(col_indices) != len(schema_cols):
                 self._raise_error(
@@ -152,20 +174,28 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
 
             # Verify ALL columns
             # Print every 100 rows, or specific interesting rows (e.g., ETF at row 102)
-            should_debug_print = DEBUG_COLUMN_VERIFICATION and (idx % 100 == 0 or idx == 102)
+            should_debug_print = DEBUG_COLUMN_VERIFICATION and (
+                idx % 100 == 0 or idx == 102
+            )
             if should_debug_print:
-                print(f"\n🔍 Detailed verification for row {idx} (symbol: {row.get('symbol', 'N/A')}):")
+                print(
+                    f"\n🔍 Detailed verification for row {idx} (symbol: {row.get('symbol', 'N/A')}):"
+                )
                 print(f"   src_file: {src_file}")
                 print(f"   src_row: {src_row}")
                 print(f"   src_col: {src_col}")
                 print(f"   raw_field_count: {raw_field_count}")
                 print(f"   is_special_security: {is_special_security}")
 
-            for col_idx, (col_name, src_idx_str) in enumerate(zip(schema_cols, col_indices)):
+            for col_idx, (col_name, src_idx_str) in enumerate(
+                zip(schema_cols, col_indices)
+            ):
                 # Skip processing-added columns (x)
-                if src_idx_str == 'x':
+                if src_idx_str == "x":
                     if should_debug_print:
-                        print(f"   [{col_idx:2d}] {col_name:25s} <- 'x' (processing-added, skipped)")
+                        print(
+                            f"   [{col_idx:2d}] {col_name:25s} <- 'x' (processing-added, skipped)"
+                        )
                     continue
 
                 try:
@@ -181,7 +211,9 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                         # Verify that the processed value is 0 or NULL (padded column)
                         processed_val = row.get(col_name, None)
                         if should_debug_print:
-                            print(f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx+1:2d}] OUT OF RANGE (optional, padded) processed={processed_val}")
+                            print(
+                                f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx + 1:2d}] OUT OF RANGE (optional, padded) processed={processed_val}"
+                            )
                         if pd.notna(processed_val) and float(processed_val) != 0.0:
                             self._raise_error(
                                 f"{label} row {idx} col '{col_name}': Special security with {raw_field_count} fields "
@@ -202,12 +234,18 @@ class InstitutionalInvestorsChecker(DataQualityCheckerBase):
                     )
 
                 # Get values for comparison
-                processed_val = row.get(col_name, '')
+                processed_val = row.get(col_name, "")
                 raw_val = raw_fields[src_idx]
 
                 if should_debug_print:
-                    match_result = "✓" if self._compare_values(processed_val, raw_val, col_name) else "✗"
-                    print(f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx+1:2d}] {match_result} processed='{processed_val}' raw='{raw_val}'")
+                    match_result = (
+                        "✓"
+                        if self._compare_values(processed_val, raw_val, col_name)
+                        else "✗"
+                    )
+                    print(
+                        f"   [{col_idx:2d}] {col_name:25s} <- [{src_idx + 1:2d}] {match_result} processed='{processed_val}' raw='{raw_val}'"
+                    )
 
                 # Compare values using category-specific logic
                 if not self._compare_values(processed_val, raw_val, col_name):

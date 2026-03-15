@@ -16,19 +16,19 @@ class PeRatioChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return ['pe_ratio']
+        return ["pe_ratio"]
 
     @property
     def null_threshold(self):
         return 80.0  # PE ratio can legitimately be NULL for many stocks
 
-    FLOAT_COLUMNS = {'pe_ratio'}
-    STRING_COLUMNS = {'symbol', 'name'}
+    FLOAT_COLUMNS = {"pe_ratio"}
+    STRING_COLUMNS = {"symbol", "name"}
 
     def _check_category_specific(self, df, market):
         """Check for negative PE ratios"""
-        if 'pe_ratio' in df.columns:
-            invalid_count = (df['pe_ratio'] < 0).sum()
+        if "pe_ratio" in df.columns:
+            invalid_count = (df["pe_ratio"] < 0).sum()
             if invalid_count > 0:
                 self._raise_error(
                     f"pe_ratio {market}: Found {invalid_count} negative PE ratio values "
@@ -40,7 +40,7 @@ class PeRatioChecker(DataQualityCheckerBase):
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)

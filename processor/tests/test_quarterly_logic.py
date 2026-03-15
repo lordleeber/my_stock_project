@@ -1,10 +1,9 @@
 import sys
-import os
 from pathlib import Path
-import pytest
 
 # 將專案根目錄加入路徑
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 
 # 模擬 calculate_yoy 函數 (或直接從模組匯入，如果已經重構成可匯入的形式)
 def calculate_yoy(current, last_year):
@@ -16,15 +15,18 @@ def calculate_yoy(current, last_year):
     except Exception:
         return None
 
+
 def test_yoy_calculation_positive():
     """測試一般的增長情況"""
     assert calculate_yoy(150, 100) == 50.0
     assert calculate_yoy(120, 100) == 20.0
 
+
 def test_yoy_calculation_negative_growth():
     """測試衰退情況"""
     assert calculate_yoy(80, 100) == -20.0
     assert calculate_yoy(50, 100) == -50.0
+
 
 def test_yoy_calculation_虧轉盈():
     """
@@ -34,6 +36,7 @@ def test_yoy_calculation_虧轉盈():
     """
     assert calculate_yoy(50, -100) == 150.0
 
+
 def test_yoy_calculation_盈轉虧():
     """
     測試盈轉虧的情況。
@@ -41,6 +44,7 @@ def test_yoy_calculation_盈轉虧():
     公式: (-50 - 100) / 100 * 100 = -150%
     """
     assert calculate_yoy(-50, 100) == -150.0
+
 
 def test_yoy_calculation_虧損擴大():
     """
@@ -50,6 +54,7 @@ def test_yoy_calculation_虧損擴大():
     """
     assert calculate_yoy(-150, -100) == -50.0
 
+
 def test_yoy_calculation_虧損縮小():
     """
     測試虧損縮小的情況。
@@ -57,6 +62,7 @@ def test_yoy_calculation_虧損縮小():
     公式: (-50 - (-100)) / abs(-100) * 100 = 50 / 100 * 100 = 50%
     """
     assert calculate_yoy(-50, -100) == 50.0
+
 
 def test_yoy_zero_denominator():
     """測試分母為 0 的情況"""

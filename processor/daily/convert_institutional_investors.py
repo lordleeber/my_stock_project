@@ -7,5 +7,12 @@ FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
 CATEGORY = "institutional_investors"
 
 
-def process_date(date_str, raw_dir=RAW_DIR, processed_dir=PROCESSED_DIR, force_reprocess=FORCE_REPROCESS):
-    process_generic_category_date(CATEGORY, date_str, raw_dir, processed_dir, force_reprocess)
+def process_date(
+    date_str,
+    raw_dir=RAW_DIR,
+    processed_dir=PROCESSED_DIR,
+    force_reprocess=FORCE_REPROCESS,
+):
+    process_generic_category_date(
+        CATEGORY, date_str, raw_dir, processed_dir, force_reprocess
+    )

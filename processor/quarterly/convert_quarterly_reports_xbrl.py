@@ -121,7 +121,9 @@ def calc_yoy(current: float | None, last_year: float | None) -> float | None:
     return round((current - last_year) / abs(last_year) * 100.0, 2)
 
 
-def calc_nav_per_share(total_equity: float | None, capital: float | None) -> float | None:
+def calc_nav_per_share(
+    total_equity: float | None, capital: float | None
+) -> float | None:
     # Temporary approximation: shares_outstanding ~= capital / 10 (par value 10).
     if total_equity is None or capital in (None, 0.0):
         return None
@@ -195,12 +197,16 @@ def clean_value_text(raw_value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def resolve_raw_html_with_publish_time(raw_dir: Path, quarter: str, symbol: str) -> tuple[Path, str]:
+def resolve_raw_html_with_publish_time(
+    raw_dir: Path, quarter: str, symbol: str
+) -> tuple[Path, str]:
     quarter_dir = raw_dir / quarter[:4] / quarter
     if not quarter_dir.exists():
         raise FileNotFoundError(f"raw quarter dir not found: {quarter_dir}")
 
-    dated_pattern = re.compile(rf"^{re.escape(quarter)}_{re.escape(symbol)}_(\d{{8}})\.html$")
+    dated_pattern = re.compile(
+        rf"^{re.escape(quarter)}_{re.escape(symbol)}_(\d{{8}})\.html$"
+    )
     legacy_pattern = re.compile(rf"^{re.escape(quarter)}_{re.escape(symbol)}\.html$")
 
     dated_matches: list[tuple[str, Path]] = []
@@ -244,11 +250,17 @@ def normalize_market(raw_market: str) -> str:
     return s
 
 
-def build_experiment_row(processed_dir: Path, raw_dir: Path, quarter: str, symbol: str) -> dict[str, str | float | None]:
+def build_experiment_row(
+    processed_dir: Path, raw_dir: Path, quarter: str, symbol: str
+) -> dict[str, str | float | None]:
     year = quarter[:4]
     q_num = int(quarter[-1])
-    inc_q_path = processed_dir / "income_statement_xbrl" / year / quarter / "all_quarter.csv"
-    inc_a_path = processed_dir / "income_statement_xbrl" / year / quarter / "all_accumulated.csv"
+    inc_q_path = (
+        processed_dir / "income_statement_xbrl" / year / quarter / "all_quarter.csv"
+    )
+    inc_a_path = (
+        processed_dir / "income_statement_xbrl" / year / quarter / "all_accumulated.csv"
+    )
     bs_path = processed_dir / "balance_sheet_xbrl" / year / quarter / "all.csv"
     cf_path = processed_dir / "cash_flow_xbrl" / year / quarter / "all_accumulated.csv"
 
@@ -259,7 +271,13 @@ def build_experiment_row(processed_dir: Path, raw_dir: Path, quarter: str, symbo
 
     prev_year_quarter = f"{int(year) - 1}Q{q_num}"
     prev_year = prev_year_quarter[:4]
-    prev_inc_a_path = processed_dir / "income_statement_xbrl" / prev_year / prev_year_quarter / "all_accumulated.csv"
+    prev_inc_a_path = (
+        processed_dir
+        / "income_statement_xbrl"
+        / prev_year
+        / prev_year_quarter
+        / "all_accumulated.csv"
+    )
     prev_inc_a: dict[str, str] = {}
     if prev_inc_a_path.exists():
         try:
@@ -267,7 +285,9 @@ def build_experiment_row(processed_dir: Path, raw_dir: Path, quarter: str, symbo
         except ValueError:
             prev_inc_a = {}
 
-    raw_html_path, publish_time = resolve_raw_html_with_publish_time(raw_dir, quarter, symbol)
+    raw_html_path, publish_time = resolve_raw_html_with_publish_time(
+        raw_dir, quarter, symbol
+    )
     name, market = extract_name_market_from_raw_html(raw_html_path)
 
     total_equity = to_float(bs.get(TOTAL_EQUITY_CODE))
@@ -316,15 +336,21 @@ def build_experiment_row(processed_dir: Path, raw_dir: Path, quarter: str, symbo
     row["non_op_income_q"] = to_float(inc_q.get(NON_OP_INCOME_CODE))
     row["non_op_income_acc"] = to_float(inc_a.get(NON_OP_INCOME_CODE))
     row["non_op_income_acc_ly"] = to_float(prev_inc_a.get(NON_OP_INCOME_CODE))
-    row["non_op_income_acc_yoy"] = calc_yoy(row["non_op_income_acc"], row["non_op_income_acc_ly"])
+    row["non_op_income_acc_yoy"] = calc_yoy(
+        row["non_op_income_acc"], row["non_op_income_acc_ly"]
+    )
     row["pretax_income_q"] = to_float(inc_q.get(PRETAX_CODE))
     row["pretax_income_acc"] = to_float(inc_a.get(PRETAX_CODE))
     row["pretax_income_acc_ly"] = to_float(prev_inc_a.get(PRETAX_CODE))
-    row["pretax_income_acc_yoy"] = calc_yoy(row["pretax_income_acc"], row["pretax_income_acc_ly"])
+    row["pretax_income_acc_yoy"] = calc_yoy(
+        row["pretax_income_acc"], row["pretax_income_acc_ly"]
+    )
     row["net_income_q"] = to_float(inc_q.get(NET_INCOME_CODE))
     row["net_income_acc"] = to_float(inc_a.get(NET_INCOME_CODE))
     row["net_income_acc_ly"] = to_float(prev_inc_a.get(NET_INCOME_CODE))
-    row["net_income_acc_yoy"] = calc_yoy(row["net_income_acc"], row["net_income_acc_ly"])
+    row["net_income_acc_yoy"] = calc_yoy(
+        row["net_income_acc"], row["net_income_acc_ly"]
+    )
     row["eps_q"] = to_float(inc_q.get(EPS_CODE))
     row["eps_acc"] = to_float(inc_a.get(EPS_CODE))
     row["eps_acc_ly"] = to_float(prev_inc_a.get(EPS_CODE))
@@ -358,7 +384,9 @@ def list_symbols_from_raw(raw_dir: Path, quarter: str) -> list[str]:
     return sorted(symbols)
 
 
-def backfill_ly_yoy_from_quarterly_reports(processed_dir: Path, quarter: str, target_files: list[Path]) -> None:
+def backfill_ly_yoy_from_quarterly_reports(
+    processed_dir: Path, quarter: str, target_files: list[Path]
+) -> None:
     qr_path = processed_dir / "quarterly_reports" / quarter[:4] / quarter / "all.csv"
     if not qr_path.exists():
         print(f"[WARN] skip ly/yoy backfill: source not found {qr_path}")
@@ -403,7 +431,9 @@ def backfill_ly_yoy_from_quarterly_reports(processed_dir: Path, quarter: str, ta
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build quarterly_reports_xbrl from XBRL wide CSVs.")
+    parser = argparse.ArgumentParser(
+        description="Build quarterly_reports_xbrl from XBRL wide CSVs."
+    )
     parser.add_argument("--quarter", required=True, help="YYYYQX, e.g. 2020Q1")
     parser.add_argument("--symbol", help="single stock symbol, e.g. 2330")
     parser.add_argument("--processed-dir", default="data/processed")
@@ -446,7 +476,9 @@ def main() -> int:
     write_output_csv(out_quarter, rows_quarter)
     write_output_csv(out_acc, rows_acc)
     if quarter in BACKFILL_QUARTERS:
-        backfill_ly_yoy_from_quarterly_reports(processed_dir, quarter, [out_quarter, out_acc])
+        backfill_ly_yoy_from_quarterly_reports(
+            processed_dir, quarter, [out_quarter, out_acc]
+        )
     else:
         print(f"[backfill] skipped for {quarter} (only enabled for 2020Q1~2020Q4)")
 

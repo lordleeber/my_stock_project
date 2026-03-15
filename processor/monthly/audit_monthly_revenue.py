@@ -3,10 +3,12 @@
 Data Quality Checker for monthly_revenue category
 """
 
-from audit_base import DataQualityCheckerBase, clean_value_for_comparison, get_processed_date_path
+from audit_base import (
+    DataQualityCheckerBase,
+    clean_value_for_comparison,
+)
 from pathlib import Path
 import pandas as pd
-import re
 
 
 class MonthlyRevenueChecker(DataQualityCheckerBase):
@@ -22,7 +24,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return ['revenue_current', 'mom_pct', 'yoy_pct']
+        return ["revenue_current", "mom_pct", "yoy_pct"]
 
     @property
     def null_threshold(self):
@@ -30,15 +32,18 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
 
     # Integer columns (raw integers, processed as floats)
     INTEGER_COLUMNS = {
-        'revenue_current', 'revenue_last_month', 'revenue_last_year',
-        'revenue_cumulative', 'revenue_cumulative_last_year'
+        "revenue_current",
+        "revenue_last_month",
+        "revenue_last_year",
+        "revenue_cumulative",
+        "revenue_cumulative_last_year",
     }
 
     # Float columns (percentages)
-    FLOAT_COLUMNS = {'mom_pct', 'yoy_pct', 'cumulative_yoy_pct'}
+    FLOAT_COLUMNS = {"mom_pct", "yoy_pct", "cumulative_yoy_pct"}
 
     # String columns
-    STRING_COLUMNS = {'symbol', 'name', 'comment', 'publish_time', 'market'}
+    STRING_COLUMNS = {"symbol", "name", "comment", "publish_time", "market"}
 
     def get_file_path(self, market=None):
         """Override to handle monthly_revenue date format (YYYYMXX) in new path structure."""
@@ -70,8 +75,8 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
                 self._raise_error(f"{self.category}: File is empty (0 rows)")
 
             # Check date format (should be YYYYMXX)
-            if 'date' in df.columns:
-                invalid_dates = df[~df['date'].astype(str).str.match(r'^\d{4}M\d{2}$')]
+            if "date" in df.columns:
+                invalid_dates = df[~df["date"].astype(str).str.match(r"^\d{4}M\d{2}$")]
                 if len(invalid_dates) > 0:
                     self._raise_error(
                         f"{self.category}: Found {len(invalid_dates)} rows with invalid date format "
@@ -100,23 +105,28 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
             if col not in df.columns:
                 self._raise_error(f"{label}: Missing lineage column '{col}'")
             if df[col].isna().any():
-                self._raise_error(f"{label}: Found NULL values in lineage column '{col}'")
+                self._raise_error(
+                    f"{label}: Found NULL values in lineage column '{col}'"
+                )
 
         # Get schema columns (exclude lineage columns)
-        schema_cols = [c for c in df.columns if c not in ('src_file', 'src_row', 'src_col')]
+        schema_cols = [
+            c for c in df.columns if c not in ("src_file", "src_row", "src_col")
+        ]
 
         # Verify each row
-        from audit_base import parse_csv_line, DEBUG
 
         for idx, row in df.iterrows():
             trace_row = self._should_trace_row(row)
-            src_file = str(row['src_file'])
-            src_col = str(row['src_col'])
+            src_file = str(row["src_file"])
+            src_col = str(row["src_col"])
 
             try:
-                src_row = int(float(row['src_row']))
+                src_row = int(float(row["src_row"]))
             except (ValueError, TypeError):
-                self._raise_error(f"{label} row {idx}: Invalid src_row value '{row['src_row']}'")
+                self._raise_error(
+                    f"{label} row {idx}: Invalid src_row value '{row['src_row']}'"
+                )
 
             # Resolve file path
             full_path = self._resolve_file_path(src_file, label, idx)
@@ -139,7 +149,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
             raw_fields = parse_csv_line(raw_line)
 
             # Parse src_col indices
-            col_indices = src_col.split('#')
+            col_indices = src_col.split("#")
 
             if len(col_indices) != len(schema_cols):
                 self._raise_error(
@@ -151,15 +161,17 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
                 self._print_trace_row_header(label, idx, row, src_file, src_row)
 
             # Verify ALL columns
-            for col_idx, (col_name, src_idx_str) in enumerate(zip(schema_cols, col_indices)):
+            for col_idx, (col_name, src_idx_str) in enumerate(
+                zip(schema_cols, col_indices)
+            ):
                 # Skip processing-added columns (x)
-                if src_idx_str == 'x':
+                if src_idx_str == "x":
                     if trace_row:
                         self._print_trace_column(
                             col_name=col_name,
                             src_idx_str=src_idx_str,
-                            processed_val=row.get(col_name, ''),
-                            raw_val='',
+                            processed_val=row.get(col_name, ""),
+                            raw_val="",
                             match=True,
                             note="processing-added (skip raw compare)",
                         )
@@ -179,7 +191,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
                     )
 
                 # Get values for comparison
-                processed_val = row.get(col_name, '')
+                processed_val = row.get(col_name, "")
                 raw_val = raw_fields[src_idx]
 
                 # Compare values using category-specific logic
@@ -207,7 +219,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -228,7 +240,7 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
                 if raw_clean.startswith("(") and raw_clean.endswith(")"):
                     raw_clean = "-" + raw_clean[1:-1]
                 raw_int = int(float(raw_clean))
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)
@@ -246,7 +258,9 @@ class MonthlyRevenueChecker(DataQualityCheckerBase):
                     raw_clean = "-" + raw_clean[1:-1]
                 raw_float = float(raw_clean)
                 processed_float = float(processed_str)
-                return abs(processed_float - raw_float) < 0.01  # 0.01% tolerance for percentages
+                return (
+                    abs(processed_float - raw_float) < 0.01
+                )  # 0.01% tolerance for percentages
             except (ValueError, TypeError):
                 pass
 

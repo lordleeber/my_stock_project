@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import datetime
 import traceback
 from pathlib import Path
@@ -12,7 +11,9 @@ from quarterly.convert_cash_flow import main as convert_cash_flow_main
 
 
 def _parse_statement_categories():
-    raw = os.getenv("QUARTERLY_STATEMENT_CATEGORIES", "income_statement,balance_sheet,cash_flow")
+    raw = os.getenv(
+        "QUARTERLY_STATEMENT_CATEGORIES", "income_statement,balance_sheet,cash_flow"
+    )
     categories = [c.strip() for c in raw.split(",") if c.strip()]
     valid = {"income_statement", "balance_sheet", "cash_flow"}
     invalid = [c for c in categories if c not in valid]
@@ -56,7 +57,9 @@ def main():
             "Error: START_DATE, END_DATE, and QUARTERLY_TASK are all required "
             "(START_DATE/END_DATE format: YYYYQX; QUARTERLY_TASK: reports|detail_xbrl|statements|all)."
         )
-    if not (re.match(r"^\d{4}Q[1-4]$", start_env) and re.match(r"^\d{4}Q[1-4]$", end_env)):
+    if not (
+        re.match(r"^\d{4}Q[1-4]$", start_env) and re.match(r"^\d{4}Q[1-4]$", end_env)
+    ):
         _log_and_fail(
             f"Error: Invalid quarter format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYQX."
         )
@@ -68,7 +71,9 @@ def main():
     # QUARTERLY_TASK: reports | detail_xbrl | statements | all
     task = task.strip().lower()
     if task not in {"reports", "detail_xbrl", "statements", "all"}:
-        _log_and_fail("Error: QUARTERLY_TASK must be one of: reports, detail_xbrl, statements, all")
+        _log_and_fail(
+            "Error: QUARTERLY_TASK must be one of: reports, detail_xbrl, statements, all"
+        )
 
     if task in {"reports", "all"}:
         convert_quarterly_reports_main()
@@ -81,5 +86,5 @@ def main():
             _run_statement_category(category)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

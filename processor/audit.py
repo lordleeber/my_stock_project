@@ -43,8 +43,8 @@ from weekly.audit_shareholding import ShareholdingChecker
 def main():
     """Main entry point for data quality checking"""
     # Get date range from environment variable
-    date_str = os.getenv('START_DATE')
-    end_date_str = os.getenv('END_DATE')
+    date_str = os.getenv("START_DATE")
+    end_date_str = os.getenv("END_DATE")
 
     if not date_str or not end_date_str:
         print("Error: START_DATE and END_DATE are both required (YYYYMMDD).")
@@ -53,18 +53,22 @@ def main():
 
     # Validate date format
     try:
-        datetime.strptime(date_str, '%Y%m%d')
-        datetime.strptime(end_date_str, '%Y%m%d')
+        datetime.strptime(date_str, "%Y%m%d")
+        datetime.strptime(end_date_str, "%Y%m%d")
     except ValueError:
-        print(f"Error: Invalid date format (START_DATE={date_str}, END_DATE={end_date_str}). Expected YYYYMMDD.")
+        print(
+            f"Error: Invalid date format (START_DATE={date_str}, END_DATE={end_date_str}). Expected YYYYMMDD."
+        )
         sys.exit(1)
 
     if date_str != end_date_str:
-        print(f"Error: audit.py only supports a single date; require START_DATE == END_DATE (got {date_str} ~ {end_date_str}).")
+        print(
+            f"Error: audit.py only supports a single date; require START_DATE == END_DATE (got {date_str} ~ {end_date_str})."
+        )
         sys.exit(1)
 
     print(f"🔍 Checking data quality for {date_str}...")
-    print(f"📂 Processed data directory: data/processed/")
+    print("📂 Processed data directory: data/processed/")
     print()
 
     # List of all checkers to run
@@ -90,11 +94,11 @@ def main():
         print("\n✅ All data quality checks passed!")
         sys.exit(0)
 
-    except DataQualityError as e:
-        print(f"\n❌ Data quality check FAILED")
-        print(f"   Processing stopped due to error.")
+    except DataQualityError:
+        print("\n❌ Data quality check FAILED")
+        print("   Processing stopped due to error.")
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

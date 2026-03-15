@@ -17,12 +17,12 @@ class MarginTradingChecker(DataQualityCheckerBase):
     @property
     def key_columns(self):
         return [
-            'margin_long_buy',
-            'margin_long_sell',
-            'margin_long_balance',
-            'margin_short_buy',
-            'margin_short_sell',
-            'margin_short_balance'
+            "margin_long_buy",
+            "margin_long_sell",
+            "margin_long_balance",
+            "margin_short_buy",
+            "margin_short_sell",
+            "margin_short_balance",
         ]
 
     @property
@@ -31,23 +31,31 @@ class MarginTradingChecker(DataQualityCheckerBase):
 
     # All margin trading numeric columns
     INTEGER_COLUMNS = {
-        'margin_long_buy', 'margin_long_sell', 'margin_long_cash_repay',
-        'margin_long_prev_balance', 'margin_long_balance', 'margin_long_limit',
-        'margin_short_buy', 'margin_short_sell', 'margin_short_cash_repay',
-        'margin_short_prev_balance', 'margin_short_balance', 'margin_short_limit',
-        'offset_balance'
+        "margin_long_buy",
+        "margin_long_sell",
+        "margin_long_cash_repay",
+        "margin_long_prev_balance",
+        "margin_long_balance",
+        "margin_long_limit",
+        "margin_short_buy",
+        "margin_short_sell",
+        "margin_short_cash_repay",
+        "margin_short_prev_balance",
+        "margin_short_balance",
+        "margin_short_limit",
+        "offset_balance",
     }
 
-    FLOAT_COLUMNS = {'margin_long_utilization', 'margin_short_utilization'}
+    FLOAT_COLUMNS = {"margin_long_utilization", "margin_short_utilization"}
 
-    STRING_COLUMNS = {'symbol', 'name'}
+    STRING_COLUMNS = {"symbol", "name"}
 
     def _compare_values(self, processed_val, raw_val, col_name):
         """Custom comparison for margin_trading"""
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -65,7 +73,7 @@ class MarginTradingChecker(DataQualityCheckerBase):
                 if raw_clean == "" or raw_clean == "--":
                     return True
                 raw_int = int(raw_clean)
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)

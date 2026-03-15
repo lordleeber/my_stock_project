@@ -50,13 +50,24 @@ def _handle_margin_summary(date_str, raw_dir=RAW_DIR):
     sii_path = os.path.join(input_dir, "sii.csv")
     if os.path.exists(sii_path):
         try:
-            rel_path = str(sii_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(sii_path) else str(sii_path)
+            rel_path = (
+                str(sii_path).split("my_stock_project/")[-1]
+                if "my_stock_project/" in str(sii_path)
+                else str(sii_path)
+            )
             with open(sii_path, "r", encoding="utf-8-sig") as f:
                 lines = [f.readline() for _ in range(4)]
             df = pd.read_csv(io.StringIO("".join(lines)))
             df.columns = [c.strip() for c in df.columns]
 
-            needed_cols_ordered = ["項目", "買進", "賣出", "現金(券)償還", "前日餘額", "今日餘額"]
+            needed_cols_ordered = [
+                "項目",
+                "買進",
+                "賣出",
+                "現金(券)償還",
+                "前日餘額",
+                "今日餘額",
+            ]
             col_indices = ["x", "x"]
             for col_name in needed_cols_ordered:
                 if col_name in df.columns:
@@ -67,26 +78,38 @@ def _handle_margin_summary(date_str, raw_dir=RAW_DIR):
             for idx, row in df.iterrows():
                 item = str(row["項目"]).strip()
                 if "融資" in item or "融券" in item:
-                    results.append({
-                        "date": datetime.datetime.strptime(date_str, "%Y%m%d").date(),
-                        "market": "SII",
-                        "item": item,
-                        "buy": int(str(row["買進"]).replace(",", "")),
-                        "sell": int(str(row["賣出"]).replace(",", "")),
-                        "cash_repay": int(str(row["現金(券)償還"]).replace(",", "")),
-                        "prev_balance": int(str(row["前日餘額"]).replace(",", "")),
-                        "today_balance": int(str(row["今日餘額"]).replace(",", "")),
-                        "src_file": rel_path,
-                        "src_row": idx + 2,
-                        "src_col": src_col_str,
-                    })
+                    results.append(
+                        {
+                            "date": datetime.datetime.strptime(
+                                date_str, "%Y%m%d"
+                            ).date(),
+                            "market": "SII",
+                            "item": item,
+                            "buy": int(str(row["買進"]).replace(",", "")),
+                            "sell": int(str(row["賣出"]).replace(",", "")),
+                            "cash_repay": int(
+                                str(row["現金(券)償還"]).replace(",", "")
+                            ),
+                            "prev_balance": int(str(row["前日餘額"]).replace(",", "")),
+                            "today_balance": int(str(row["今日餘額"]).replace(",", "")),
+                            "src_file": rel_path,
+                            "src_row": idx + 2,
+                            "src_col": src_col_str,
+                        }
+                    )
         except Exception as e:
-            log_processing_error(f"Error in margin_summary (SII): {e}", date_str, CATEGORY)
+            log_processing_error(
+                f"Error in margin_summary (SII): {e}", date_str, CATEGORY
+            )
 
     otc_path = os.path.join(input_dir, "otc.csv")
     if os.path.exists(otc_path):
         try:
-            rel_path = str(otc_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(otc_path) else str(otc_path)
+            rel_path = (
+                str(otc_path).split("my_stock_project/")[-1]
+                if "my_stock_project/" in str(otc_path)
+                else str(otc_path)
+            )
             with open(otc_path, "r", encoding="utf-8-sig") as f:
                 lines = f.readlines()
             for i, line in enumerate(lines):
@@ -100,17 +123,72 @@ def _handle_margin_summary(date_str, raw_dir=RAW_DIR):
                     item = parts[0].replace('"', "")
                     src_row = i + 1
                     if "合計(張)" in item and len(parts) >= 15:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資(交易單位)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#4#5#6#3#7"})
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融券(交易單位)", "buy": int(parts[12].replace(",", "")), "sell": int(parts[11].replace(",", "")), "cash_repay": int(parts[13].replace(",", "")), "prev_balance": int(parts[10].replace(",", "")), "today_balance": int(parts[14].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#13#12#14#11#15"})
+                        results.append(
+                            {
+                                "date": datetime.datetime.strptime(
+                                    date_str, "%Y%m%d"
+                                ).date(),
+                                "market": "OTC",
+                                "item": "融資(交易單位)",
+                                "buy": int(parts[3].replace(",", "")),
+                                "sell": int(parts[4].replace(",", "")),
+                                "cash_repay": int(parts[5].replace(",", "")),
+                                "prev_balance": int(parts[2].replace(",", "")),
+                                "today_balance": int(parts[6].replace(",", "")),
+                                "src_file": rel_path,
+                                "src_row": src_row,
+                                "src_col": "x#x#1#4#5#6#3#7",
+                            }
+                        )
+                        results.append(
+                            {
+                                "date": datetime.datetime.strptime(
+                                    date_str, "%Y%m%d"
+                                ).date(),
+                                "market": "OTC",
+                                "item": "融券(交易單位)",
+                                "buy": int(parts[12].replace(",", "")),
+                                "sell": int(parts[11].replace(",", "")),
+                                "cash_repay": int(parts[13].replace(",", "")),
+                                "prev_balance": int(parts[10].replace(",", "")),
+                                "today_balance": int(parts[14].replace(",", "")),
+                                "src_file": rel_path,
+                                "src_row": src_row,
+                                "src_col": "x#x#1#13#12#14#11#15",
+                            }
+                        )
                     elif "融資金(仟元)" in item:
-                        results.append({"date": datetime.datetime.strptime(date_str, "%Y%m%d").date(), "market": "OTC", "item": "融資金額(仟元)", "buy": int(parts[3].replace(",", "")), "sell": int(parts[4].replace(",", "")), "cash_repay": int(parts[5].replace(",", "")), "prev_balance": int(parts[2].replace(",", "")), "today_balance": int(parts[6].replace(",", "")), "src_file": rel_path, "src_row": src_row, "src_col": "x#x#1#4#5#6#3#7"})
+                        results.append(
+                            {
+                                "date": datetime.datetime.strptime(
+                                    date_str, "%Y%m%d"
+                                ).date(),
+                                "market": "OTC",
+                                "item": "融資金額(仟元)",
+                                "buy": int(parts[3].replace(",", "")),
+                                "sell": int(parts[4].replace(",", "")),
+                                "cash_repay": int(parts[5].replace(",", "")),
+                                "prev_balance": int(parts[2].replace(",", "")),
+                                "today_balance": int(parts[6].replace(",", "")),
+                                "src_file": rel_path,
+                                "src_row": src_row,
+                                "src_col": "x#x#1#4#5#6#3#7",
+                            }
+                        )
         except Exception as e:
-            log_processing_error(f"Error in margin_summary (OTC): {e}", date_str, CATEGORY)
+            log_processing_error(
+                f"Error in margin_summary (OTC): {e}", date_str, CATEGORY
+            )
 
     return pl.from_pandas(pd.DataFrame(results)) if results else None
 
 
-def process_date(date_str, raw_dir=RAW_DIR, processed_dir=PROCESSED_DIR, force_reprocess=FORCE_REPROCESS):
+def process_date(
+    date_str,
+    raw_dir=RAW_DIR,
+    processed_dir=PROCESSED_DIR,
+    force_reprocess=FORCE_REPROCESS,
+):
     output_dir = os.path.join(processed_dir, CATEGORY, date_str[:4], date_str)
     output_file = os.path.join(output_dir, "all.csv")
 

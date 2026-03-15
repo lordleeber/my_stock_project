@@ -16,11 +16,7 @@ class MarginSblChecker(DataQualityCheckerBase):
 
     @property
     def key_columns(self):
-        return [
-            'margin_short_balance',
-            'margin_short_buy',
-            'margin_short_sell'
-        ]
+        return ["margin_short_balance", "margin_short_buy", "margin_short_sell"]
 
     @property
     def null_threshold(self):
@@ -28,19 +24,24 @@ class MarginSblChecker(DataQualityCheckerBase):
 
     # Integer columns
     INTEGER_COLUMNS = {
-        'margin_short_prev_balance', 'margin_short_balance',
-        'margin_short_buy', 'margin_short_sell',
-        'sbl_prev_balance', 'sbl_sell', 'sbl_repay', 'sbl_balance'
+        "margin_short_prev_balance",
+        "margin_short_balance",
+        "margin_short_buy",
+        "margin_short_sell",
+        "sbl_prev_balance",
+        "sbl_sell",
+        "sbl_repay",
+        "sbl_balance",
     }
 
-    STRING_COLUMNS = {'symbol', 'name'}
+    STRING_COLUMNS = {"symbol", "name"}
 
     def _compare_values(self, processed_val, raw_val, col_name):
         """Custom comparison for margin_sbl"""
         raw_clean = clean_value_for_comparison(raw_val)
 
         # Handle empty values
-        if pd.isna(processed_val) or str(processed_val) in ('', 'nan', 'None', 'NaN'):
+        if pd.isna(processed_val) or str(processed_val) in ("", "nan", "None", "NaN"):
             return raw_clean == "" or raw_clean == "--"
 
         processed_str = str(processed_val)
@@ -58,7 +59,7 @@ class MarginSblChecker(DataQualityCheckerBase):
                 if raw_clean == "" or raw_clean == "--":
                     return True
                 raw_int = int(raw_clean)
-                if '.' in processed_str:
+                if "." in processed_str:
                     processed_int = int(float(processed_str))
                 else:
                     processed_int = int(processed_str)
