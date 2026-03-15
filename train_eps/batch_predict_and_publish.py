@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -89,15 +90,17 @@ def main() -> None:
             / month_s
             / "dataset_evaluate.csv"
         )
-        model_path = ROOT_DIR / "models_eps" / str(year) / month_s / "model.pkl"
         if not input_path.exists():
             print(
                 f"[skip]  {label}  (missing train_eps/output/{year}/{month_s}/dataset_evaluate.csv)"
             )
             skipped += 1
             continue
-        if not model_path.exists():
-            print(f"[skip]  {label}  (missing models_eps/{year}/{month_s}/model.pkl)")
+        models_dir = ROOT_DIR / "models_eps" / str(year) / month_s
+        pkl_pattern = re.compile(r"^\d{14}_\d+\.\d+\.pkl$")
+        has_model = any(pkl_pattern.match(p.name) for p in models_dir.glob("*.pkl"))
+        if not has_model:
+            print(f"[skip]  {label}  (no timestamped model pkl in models_eps/{year}/{month_s}/)")
             skipped += 1
             continue
 

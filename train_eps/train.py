@@ -71,11 +71,10 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Pat
     models_dir = (Path.cwd() / "models_eps" / str(args.year) / month_str).resolve()
 
     dataset = month_dir / "dataset_train.csv"
-    model_out = models_dir / "model.pkl"
     metrics_out = models_dir / "train_metrics.json"
     importance_out = models_dir / "feature_importance.json"
 
-    return month_dir, dataset, model_out, metrics_out, importance_out
+    return month_dir, dataset, models_dir, metrics_out, importance_out
 
 
 def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
@@ -90,7 +89,7 @@ def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, model_out, metrics_out, importance_out = resolve_paths(
+    month_dir, dataset_path, models_dir, metrics_out, importance_out = resolve_paths(
         args
     )
     config, config_path = load_shared_config()
@@ -184,14 +183,17 @@ def main() -> None:
         raise ValueError(f"Missing Chinese label for features: {missing_cht}")
     importance_df = importance_df.sort_values("importance", ascending=False)
 
-    model_out.parent.mkdir(parents=True, exist_ok=True)
+    lgb_mae = metrics["train_mae_lgb_pred_eps"]
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    model_out = models_dir / f"{ts}_{lgb_mae:.3f}.pkl"
+
+    models_dir.mkdir(parents=True, exist_ok=True)
     with open(model_out, "wb") as f:
         pickle.dump(model, f)
     metrics_out.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     importance_df.to_json(importance_out, orient="records", force_ascii=False, indent=2)
 
     # sanity check: in-sample MAE 應低於 baseline，否則代表訓練有嚴重問題
-    lgb_mae = metrics["train_mae_lgb_pred_eps"]
     bl_mae = metrics["train_mae_baseline_anchor_eps"]
     if lgb_mae > bl_mae:
         log_path = BASE_DIR.parent / "error_train_eps.log"

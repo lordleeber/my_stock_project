@@ -58,11 +58,17 @@
 
 ## Model Artifacts
 All artifacts written to `models_eps/<year>/<month>/`:
-- `model.pkl` — authoritative model used by `predict_and_publish.py`
+- `{timestamp}_{train_mae:.3f}.pkl` — model file named by training timestamp and in-sample MAE (e.g. `20260301170934_0.705.pkl`). Multiple pkl files may exist per month; `predict_and_publish.py` automatically picks the one with the lowest MAE.
 - `train_metrics.json`
 - `feature_importance.json`
 - `evaluate_by_fold.json` — walk-forward evaluation metrics per fold
 - `predictions_results.csv` — EPS delta predictions for the latest year (consumed by `strategies/finalize_strategy.py`)
+
+## Model Naming Convention
+- `train.py` saves the model as `{timestamp}_{train_mae:.3f}.pkl` directly to `models_eps/<year>/<month>/`.
+- The metric in the filename is the **in-sample train MAE** (`train_mae_lgb_pred_eps`), lower is better.
+- `predict_and_publish.py` and `batch_predict_and_publish.py` resolve the model by scanning for `\d{14}_\d+\.\d+\.pkl` and picking the file with the lowest MAE value.
+- Do **not** create or expect a `model.pkl` file; that naming was a bug introduced during refactoring.
 
 ## Typical Commands
 ```bash

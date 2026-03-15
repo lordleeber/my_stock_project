@@ -1,5 +1,6 @@
 import argparse
 import pickle
+import re
 from pathlib import Path
 
 import numpy as np
@@ -32,17 +33,25 @@ def main() -> None:
         / month
         / "dataset_evaluate.csv"
     ).resolve()
-    model_path = (
-        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "model.pkl"
-    ).resolve()
-    output_path = (
-        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv"
-    ).resolve()
+    models_dir = (ROOT_DIR / "models_eps" / f"{year:04d}" / month).resolve()
+    output_path = (models_dir / "predictions_results.csv").resolve()
 
     if not input_path.exists():
         raise FileNotFoundError(f"dataset_evaluate.csv not found: {input_path}")
-    if not model_path.exists():
-        raise FileNotFoundError(f"model.pkl not found: {model_path}")
+
+    # Pick the pkl with the lowest MAE (format: {timestamp}_{mae:.3f}.pkl).
+    pkl_pattern = re.compile(r"^\d{14}_(\d+\.\d+)\.pkl$")
+    candidates = []
+    for p in models_dir.glob("*.pkl"):
+        m = pkl_pattern.match(p.name)
+        if m:
+            candidates.append((float(m.group(1)), p))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No timestamped model pkl found in {models_dir}\n"
+            f"Run: venv/bin/python3 train_eps/train.py --year {year} --month {month}"
+        )
+    model_path = min(candidates, key=lambda x: x[0])[1]
 
     with open(model_path, "rb") as f:
         model = pickle.load(f)
