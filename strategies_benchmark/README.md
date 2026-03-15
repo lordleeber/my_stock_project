@@ -130,6 +130,77 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 
 ---
 
+## Benchmark 結果與可重現性
+
+### 基準回測結果
+
+| 指標 | 數值 |
+|------|------|
+| 期間 | 2022/07 – 2025/10 |
+| 閉倉交易數 | 300 |
+| 勝率 | 64.33%（193/107）|
+| 平均報酬 | 6.78% |
+| Net PnL | **2,029,746 TWD** |
+
+結果存放於 `backtester_benchmark/rolling_summary.json`。
+
+---
+
+### 重現方法
+
+```bash
+# 1. 使用 benchmark 版 feature_return_analysis.csv（關鍵：直接複製，不要重新生成）
+cp strategies_benchmark/output/feature_return_analysis.csv strategies/output/feature_return_analysis.csv
+
+# 2. 刪除舊模型
+rm -rf models_selection/2022 models_selection/2023 models_selection/2024 models_selection/2025
+
+# 3. 訓練（batch_train 不呼叫 analyze_feature_returns，直接用上面複製的版本）
+venv/bin/python3 strategies/batch_train_selection_model.py
+
+# 4. 打分 + 回測 + 統計
+venv/bin/python3 strategies/batch_score_and_publish.py
+venv/bin/python3 backtester/run_rolling.py \
+  --start_year 2022 --start_month 7 \
+  --end_year 2025 --end_month 10 \
+  --top-n 10 --position-amount 100000
+venv/bin/python3 backtester/summarize_range.py
+```
+
+---
+
+### 為什麼不能直接重跑 `analyze_feature_returns.py`？
+
+`feature_return_analysis.csv` 是整個 ML pipeline 的訓練資料集，每一列為「某股票在某月的特徵值 + 實際持有報酬（fwd_return_pct）」。
+
+重新執行 `analyze_feature_returns.py` 會讀取 `dataset_strategy.csv` 裡的特徵欄位，而其中 **`pe_percentile_official`**（PE 在全市場的歷史百分位排名）是即時對 DB 計算的，會隨著 DB 資料更新有微小浮動（平均差異約 0.08，最大約 1.06）。
+
+雖然差異很小，但 LGBMRanker 學的是**月內排名**。微小的特徵差異就可能讓兩支股票的排名對調，導致每月選出的前 10 名不同，進而造成回測結果明顯差異：
+
+| | Net PnL | 勝率 |
+|--|---------|------|
+| benchmark CSV（保存版）| **2,029,746** | 64.33% |
+| 重新生成 CSV（pe_percentile 微差）| 1,838,208 | 65.3% |
+
+其他 52 個特徵（包含 `pred_upside_pct`）在 EPS 模型未重訓的情況下完全可重現，差異僅來自 `pe_percentile_official`。
+
+---
+
+### 特徵實驗的教訓（2026/03）
+
+以 Spearman ≥ 0.02 篩選特徵（只保留 18 個正向信號特徵）並不能超越基準，反而比基準差。實驗結果：
+
+| 版本 | Net PnL | 勝率 |
+|------|---------|------|
+| 基準（53 特徵） | **2,029,746** | **64.33%** |
+| 18 特徵（Spearman ≥ 0.02） | 1,828,612 | 60.3% |
+| 18 特徵 + n=300, leaves=31 | 1,789,655 | 60.3% |
+| 22 特徵（Spearman ≥ 0.01） | 1,767,262 | 60.3% |
+
+**結論**：個別特徵的 Spearman 為負不代表對模型有害。負相關特徵在 LightGBM ensemble 中可能與其他特徵產生有用的交互作用，強制移除反而讓模型失去信號。
+
+---
+
 ## Usage
 
 ### 單月執行
