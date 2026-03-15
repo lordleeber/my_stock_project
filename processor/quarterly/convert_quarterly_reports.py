@@ -4,8 +4,6 @@ import csv
 import re
 from pathlib import Path
 import polars as pl
-from datetime import datetime
-from .audit_quarterly_reports import run_quality_check
 
 # 環境變數設定
 RAW_DIR = os.environ.get("RAW_DIR", "data/raw")
@@ -15,48 +13,101 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 
 # Final output column order (schema) - src_col is generated based on this order
 SCHEMA_COLS = [
-    "date", "symbol", "name", "market",
-    "revenue_q", "revenue_acc", "revenue_acc_ly", "revenue_acc_yoy",
-    "op_income_q", "op_income_acc", "op_income_acc_ly", "op_income_acc_yoy",
-    "non_op_income_q", "non_op_income_acc", "non_op_income_acc_ly", "non_op_income_acc_yoy",
-    "pretax_income_q", "pretax_income_acc", "pretax_income_acc_ly", "pretax_income_acc_yoy",
-    "net_income_q", "net_income_acc", "net_income_acc_ly", "net_income_acc_yoy",
-    "eps_q", "eps_acc", "eps_acc_ly", "eps_acc_yoy",
-    "capital", "nav_per_share", "equity_to_assets_ratio",
-    "current_ratio", "quick_ratio"
+    "date",
+    "symbol",
+    "name",
+    "market",
+    "revenue_q",
+    "revenue_acc",
+    "revenue_acc_ly",
+    "revenue_acc_yoy",
+    "op_income_q",
+    "op_income_acc",
+    "op_income_acc_ly",
+    "op_income_acc_yoy",
+    "non_op_income_q",
+    "non_op_income_acc",
+    "non_op_income_acc_ly",
+    "non_op_income_acc_yoy",
+    "pretax_income_q",
+    "pretax_income_acc",
+    "pretax_income_acc_ly",
+    "pretax_income_acc_yoy",
+    "net_income_q",
+    "net_income_acc",
+    "net_income_acc_ly",
+    "net_income_acc_yoy",
+    "eps_q",
+    "eps_acc",
+    "eps_acc_ly",
+    "eps_acc_yoy",
+    "capital",
+    "nav_per_share",
+    "equity_to_assets_ratio",
+    "current_ratio",
+    "quick_ratio",
 ]
 
 FINAL_FIELDS = SCHEMA_COLS + ["src_file", "src_row", "src_col"]
 
 # 需要計算單季值的流量欄位 (Accumulated -> Quarterly)
-FLOW_FIELDS = ["revenue", "op_income", "non_op_income", "pretax_income", "net_income", "eps"]
+FLOW_FIELDS = [
+    "revenue",
+    "op_income",
+    "non_op_income",
+    "pretax_income",
+    "net_income",
+    "eps",
+]
 
 # SII 欄位映射 (1-based column index for src_col generation)
 # 這裡對應的是 raw CSV 裡的原始累計值欄位
 SII_MAPPING = {
-    "symbol": 1, "name": 2,
-    "revenue_acc": 3, "revenue_acc_ly": 4, "revenue_acc_yoy": 5,
-    "op_income_acc": 6, "op_income_acc_ly": 7,
-    "non_op_income_acc": 8, "non_op_income_acc_ly": 9,
-    "net_income_acc": 10, "net_income_acc_ly": 11, "net_income_acc_yoy": 12,
+    "symbol": 1,
+    "name": 2,
+    "revenue_acc": 3,
+    "revenue_acc_ly": 4,
+    "revenue_acc_yoy": 5,
+    "op_income_acc": 6,
+    "op_income_acc_ly": 7,
+    "non_op_income_acc": 8,
+    "non_op_income_acc_ly": 9,
+    "net_income_acc": 10,
+    "net_income_acc_ly": 11,
+    "net_income_acc_yoy": 12,
     "capital": 13,
-    "eps_acc": 14, "eps_acc_ly": 15,
-    "nav_per_share": 16, "equity_to_assets_ratio": 17,
-    "current_ratio": 18, "quick_ratio": 19,
-    "pretax_income_acc": 20, "pretax_income_acc_ly": 21, "pretax_income_acc_yoy": 22
+    "eps_acc": 14,
+    "eps_acc_ly": 15,
+    "nav_per_share": 16,
+    "equity_to_assets_ratio": 17,
+    "current_ratio": 18,
+    "quick_ratio": 19,
+    "pretax_income_acc": 20,
+    "pretax_income_acc_ly": 21,
+    "pretax_income_acc_yoy": 22,
 }
 
 # OTC 欄位映射 (1-based column index)
 OTC_MAPPING = {
-    "symbol": 1, "name": 2,
-    "revenue_acc": 3, "revenue_acc_ly": 4, "revenue_acc_yoy": 5,
-    "op_income_acc": 6, "op_income_acc_ly": 7,
-    "non_op_income_acc": 8, "non_op_income_acc_ly": 9,
-    "net_income_acc": 10, "net_income_acc_ly": 11, "net_income_acc_yoy": 12,
+    "symbol": 1,
+    "name": 2,
+    "revenue_acc": 3,
+    "revenue_acc_ly": 4,
+    "revenue_acc_yoy": 5,
+    "op_income_acc": 6,
+    "op_income_acc_ly": 7,
+    "non_op_income_acc": 8,
+    "non_op_income_acc_ly": 9,
+    "net_income_acc": 10,
+    "net_income_acc_ly": 11,
+    "net_income_acc_yoy": 12,
     "capital": 13,
-    "eps_acc": 14, "eps_acc_ly": 15,
-    "nav_per_share": 16, "equity_to_assets_ratio": 17,
-    "current_ratio": 18, "quick_ratio": 19
+    "eps_acc": 14,
+    "eps_acc_ly": 15,
+    "nav_per_share": 16,
+    "equity_to_assets_ratio": 17,
+    "current_ratio": 18,
+    "quick_ratio": 19,
 }
 
 
@@ -66,13 +117,14 @@ def get_prev_quarter(date_str):
     q = int(date_str[5])
     if q == 1:
         return None
-    return f"{year}Q{q-1}"
+    return f"{year}Q{q - 1}"
 
 
-import sys
+
 # 加入 common 目錄到搜尋路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from common.schemas import get_polars_schema
+from common.schemas import get_polars_schema  # noqa: E402
+
 
 def load_prev_data(prev_q_str):
     """讀取前一季已處理好的資料"""
@@ -88,7 +140,9 @@ def load_prev_data(prev_q_str):
             schema = get_polars_schema(CATEGORY)
             df = pl.read_csv(path, schema_overrides=schema or {})
             if DEBUG:
-                print(f"  [DEBUG] Successfully loaded {len(df)} records from {prev_q_str}")
+                print(
+                    f"  [DEBUG] Successfully loaded {len(df)} records from {prev_q_str}"
+                )
             return df
         except Exception as e:
             if DEBUG:
@@ -151,7 +205,7 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
     """
     try:
         # 讀取 CSV (處理 BOM)
-        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+        with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -166,9 +220,11 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
             sys.exit(1)
 
         # 選擇映射
-        col_mapping = SII_MAPPING if market == 'sii' else OTC_MAPPING
+        col_mapping = SII_MAPPING if market == "sii" else OTC_MAPPING
         src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
-        rel_path = file_path.replace("/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/")
+        rel_path = file_path.replace(
+            "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
+        )
 
         records = []
         for row_idx in range(header_idx + 1, len(rows)):
@@ -188,7 +244,11 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
             data["date"] = date_str
             data["market"] = market
             data["symbol"] = raw_symbol
-            data["name"] = str(row[col_mapping["name"] - 1]).strip() if (col_mapping["name"] - 1) < len(row) else ""
+            data["name"] = (
+                str(row[col_mapping["name"] - 1]).strip()
+                if (col_mapping["name"] - 1) < len(row)
+                else ""
+            )
 
             # 1. 提取原始累計值 (acc) 與時點值 (snapshot)
             for field, idx_1based in col_mapping.items():
@@ -199,25 +259,45 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
                     data[field] = clean_numeric(row[idx])
 
             # 2. OTC 手動計算稅前累計 (OTC CSV 沒有 pretax 欄位)
-            if market == 'otc':
-                if data["op_income_acc"] is not None and data["non_op_income_acc"] is not None:
-                    data["pretax_income_acc"] = data["op_income_acc"] + data["non_op_income_acc"]
-                if data["op_income_acc_ly"] is not None and data["non_op_income_acc_ly"] is not None:
-                    data["pretax_income_acc_ly"] = data["op_income_acc_ly"] + data["non_op_income_acc_ly"]
+            if market == "otc":
+                if (
+                    data["op_income_acc"] is not None
+                    and data["non_op_income_acc"] is not None
+                ):
+                    data["pretax_income_acc"] = (
+                        data["op_income_acc"] + data["non_op_income_acc"]
+                    )
+                if (
+                    data["op_income_acc_ly"] is not None
+                    and data["non_op_income_acc_ly"] is not None
+                ):
+                    data["pretax_income_acc_ly"] = (
+                        data["op_income_acc_ly"] + data["non_op_income_acc_ly"]
+                    )
 
             # 3. 計算 YoY (累計)
-            data["revenue_acc_yoy"] = calculate_yoy(data["revenue_acc"], data["revenue_acc_ly"])
-            data["op_income_acc_yoy"] = calculate_yoy(data["op_income_acc"], data["op_income_acc_ly"])
-            data["non_op_income_acc_yoy"] = calculate_yoy(data["non_op_income_acc"], data["non_op_income_acc_ly"])
-            data["pretax_income_acc_yoy"] = calculate_yoy(data["pretax_income_acc"], data["pretax_income_acc_ly"])
-            data["net_income_acc_yoy"] = calculate_yoy(data["net_income_acc"], data["net_income_acc_ly"])
+            data["revenue_acc_yoy"] = calculate_yoy(
+                data["revenue_acc"], data["revenue_acc_ly"]
+            )
+            data["op_income_acc_yoy"] = calculate_yoy(
+                data["op_income_acc"], data["op_income_acc_ly"]
+            )
+            data["non_op_income_acc_yoy"] = calculate_yoy(
+                data["non_op_income_acc"], data["non_op_income_acc_ly"]
+            )
+            data["pretax_income_acc_yoy"] = calculate_yoy(
+                data["pretax_income_acc"], data["pretax_income_acc_ly"]
+            )
+            data["net_income_acc_yoy"] = calculate_yoy(
+                data["net_income_acc"], data["net_income_acc_ly"]
+            )
             data["eps_acc_yoy"] = calculate_yoy(data["eps_acc"], data["eps_acc_ly"])
 
             # 4. 計算單季值 (q)
             # 如果是 Q1，單季值 = 累計值
             # 如果是 Q2-Q4，單季值 = 當前累計 - 前一季累計
             is_q1 = date_str.endswith("Q1")
-            
+
             # 取得前一季這家公司的資料
             prev_row = None
             if not is_q1 and prev_df is not None:
@@ -231,7 +311,7 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
             for field in FLOW_FIELDS:
                 acc_field = f"{field}_acc"
                 q_field = f"{field}_q"
-                
+
                 if is_q1:
                     data[q_field] = data[acc_field]
                 else:
@@ -241,8 +321,10 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
                         if prev_acc is not None:
                             data[q_field] = round(data[acc_field] - prev_acc, 2)
                             if DEBUG and raw_symbol == "2330" and field == "eps":
-                                print(f"  [DEBUG] 2330 EPS Subtraction: {data[acc_field]} - {prev_acc} = {data[q_field]}")
-                    
+                                print(
+                                    f"  [DEBUG] 2330 EPS Subtraction: {data[acc_field]} - {prev_acc} = {data[q_field]}"
+                                )
+
                     # 如果找不到前一季資料，則單季值暫時設為 None (或者可以改為等於累計值，但 None 較為精確)
                     if data[q_field] is None:
                         data[q_field] = data[acc_field]
@@ -266,6 +348,7 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -283,12 +366,18 @@ def main():
         print("Example: START_DATE=2024Q1 END_DATE=2024Q1 python convert_quarterly.py")
         sys.exit(1)
 
-    if not (re.match(quarter_pattern, start_env) and re.match(quarter_pattern, end_env)):
-        print(f"Error: Invalid quarter format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYQX.")
+    if not (
+        re.match(quarter_pattern, start_env) and re.match(quarter_pattern, end_env)
+    ):
+        print(
+            f"Error: Invalid quarter format (START_DATE={start_env}, END_DATE={end_env}). Expected YYYYQX."
+        )
         sys.exit(1)
 
     if start_env > end_env:
-        print(f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env}).")
+        print(
+            f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
+        )
         sys.exit(1)
 
     for date_dir in date_dirs:
@@ -305,7 +394,9 @@ def main():
         prev_q = get_prev_quarter(date_str)
         prev_df = load_prev_data(prev_q)
         if prev_q and prev_df is None:
-            print(f"  [!] Note: Previous quarter data ({prev_q}) not found. Single-quarter values will equal accumulated values.")
+            print(
+                f"  [!] Note: Previous quarter data ({prev_q}) not found. Single-quarter values will equal accumulated values."
+            )
 
         all_dfs = []
         for market in ["sii", "otc"]:
@@ -341,7 +432,9 @@ def main():
                     if col in final_df.columns:
                         null_count = final_df.select(pl.col(col).null_count()).item()
                         if null_count == final_df.height:
-                            print(f"  [!] CRITICAL: Column '{col}' is entirely NULL in {date_str}. Check mapping logic.")
+                            print(
+                                f"  [!] CRITICAL: Column '{col}' is entirely NULL in {date_str}. Check mapping logic."
+                            )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,9 @@
+[lint]
+# E402: module-level import not at top of file
+# All entry-point scripts use sys.path.insert() before project imports — this is intentional.
+
+[lint.per-file-ignores]
+"backtester/*.py"  = ["E402"]
+"scraper/*.py"     = ["E402"]
+"strategies/*.py"  = ["E402"]
+"train_eps/*.py"   = ["E402"]

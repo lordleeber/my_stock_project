@@ -1,6 +1,7 @@
 """
 統計值驗證模組：比對資料庫和 CSV 的統計值
 """
+
 import os
 import glob
 import polars as pl
@@ -14,9 +15,9 @@ from common.schemas import get_polars_schema
 
 def get_csv_stats(table_name, data_dir="/app/data/processed"):
     """從 CSV 檔案計算統計值"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"分析 CSV: {table_name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # 找出所有 CSV 檔案 (支援 date=yyyymmdd 和 yyyy/yyyymmdd 結構)
     csv_files = []
@@ -31,7 +32,7 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
     csv_files.extend(glob.glob(f"{data_dir}/{table_name}/date=*/all.csv"))
 
     if not csv_files:
-        print(f"⚠️  找不到 CSV 檔案")
+        print("⚠️  找不到 CSV 檔案")
         return None
 
     # 顯示 CSV 檔案的日期範圍
@@ -61,7 +62,7 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
         df_all = pl.concat(dfs, how="diagonal")
     except Exception as e:
         print(f"⚠️  合併 CSV 時發生錯誤: {e}")
-        print(f"   嘗試使用寬鬆模式合併...")
+        print("   嘗試使用寬鬆模式合併...")
         # 如果 diagonal 也失敗，嘗試將所有欄位轉成字串再合併
         dfs_str = []
         for df in dfs:
@@ -70,48 +71,53 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
         df_all = pl.concat(dfs_str, how="diagonal")
 
     # Drop lineage columns (added by processor for QC, not imported to DB)
-    lineage_cols = [c for c in ["src_file", "src_row", "src_col"] if c in df_all.columns]
+    lineage_cols = [
+        c for c in ["src_file", "src_row", "src_col"] if c in df_all.columns
+    ]
     if lineage_cols:
         df_all = df_all.drop(lineage_cols)
 
-    # 過濾 ETF 和特別股（與 importer 的過濾邏輯一致）
-    # 這樣 CSV 統計值才能與資料庫統計值正確比對
-        if 'symbol' in df_all.columns:
+        # 過濾 ETF 和特別股（與 importer 的過濾邏輯一致）
+        # 這樣 CSV 統計值才能與資料庫統計值正確比對
+        if "symbol" in df_all.columns:
             original_count = df_all.height
             # 只保留 4 碼純數字代號
-            df_all = df_all.filter(pl.col('symbol').cast(pl.Utf8).str.contains(r"^\d{4}$"))
+            df_all = df_all.filter(
+                pl.col("symbol").cast(pl.Utf8).str.contains(r"^\d{4}$")
+            )
             filtered_count = original_count - df_all.height
             if filtered_count > 0:
                 print(f"已過濾 {filtered_count} 筆非四碼股票記錄（與匯入邏輯一致）")
     # 計算基本統計值
     stats = {
-        'total_rows': df_all.height,
-        'unique_dates': df_all['date'].n_unique(),
+        "total_rows": df_all.height,
+        "unique_dates": df_all["date"].n_unique(),
     }
 
-    if 'symbol' in df_all.columns:
-        stats['unique_symbols'] = df_all['symbol'].n_unique()
+    if "symbol" in df_all.columns:
+        stats["unique_symbols"] = df_all["symbol"].n_unique()
 
     # 計算日期範圍
-    stats['date_range'] = (
-        df_all['date'].min(),
-        df_all['date'].max()
-    )
+    stats["date_range"] = (df_all["date"].min(), df_all["date"].max())
 
     # 針對不同表格計算特定統計值
-    if table_name == 'daily_quotes':
+    if table_name == "daily_quotes":
         # 先將數值欄位轉換為正確的型態，這樣 OHLCV 過濾才能正確比較數值
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
             if col in df_all.columns:
                 try:
-                    df_all = df_all.with_columns(pl.col(col).cast(pl.Float64, strict=False))
-                except:
+                    df_all = df_all.with_columns(
+                        pl.col(col).cast(pl.Float64, strict=False)
+                    )
+                except Exception:
                     pass
 
         # 過濾掉 OHLCV 全為 0 或 NULL 的記錄（與 importer 邏輯完全一致）
         original_count = df_all.height
-        ohlcv_cols = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c in df_all.columns]
+        ohlcv_cols = [
+            c for c in ["open", "high", "low", "close", "volume"] if c in df_all.columns
+        ]
         if ohlcv_cols:
             # 使用與 importer 相同的邏輯：~pl.all_horizontal(...)
             df_all = df_all.filter(
@@ -121,88 +127,111 @@ def get_csv_stats(table_name, data_dir="/app/data/processed"):
             )
             filtered_ohlcv = original_count - df_all.height
             if filtered_ohlcv > 0:
-                print(f"已過濾 {filtered_ohlcv} 筆 OHLCV 全為 0/NULL 的記錄（與資料庫過濾邏輯一致）")
+                print(
+                    f"已過濾 {filtered_ohlcv} 筆 OHLCV 全為 0/NULL 的記錄（與資料庫過濾邏輯一致）"
+                )
 
         # 確保 value 欄位也是數值型態
-        if 'value' in df_all.columns:
+        if "value" in df_all.columns:
             try:
-                df_all = df_all.with_columns(pl.col('value').cast(pl.Float64, strict=False))
-            except:
+                df_all = df_all.with_columns(
+                    pl.col("value").cast(pl.Float64, strict=False)
+                )
+            except Exception:
                 pass
 
         # 更新過濾後的統計值
-        stats.update({
-            'total_rows': df_all.height,  # 更新為過濾後的行數
-            'sum_volume': float(df_all['volume'].sum()),
-            'sum_value': float(df_all['value'].sum()),
-            'avg_close': float(df_all['close'].mean()),
-            'min_close': float(df_all['close'].min()),
-            'max_close': float(df_all['close'].max()),
-        })
-    elif table_name == 'institutional_investors':
+        stats.update(
+            {
+                "total_rows": df_all.height,  # 更新為過濾後的行數
+                "sum_volume": float(df_all["volume"].sum()),
+                "sum_value": float(df_all["value"].sum()),
+                "avg_close": float(df_all["close"].mean()),
+                "min_close": float(df_all["close"].min()),
+                "max_close": float(df_all["close"].max()),
+            }
+        )
+    elif table_name == "institutional_investors":
         # 確保數值欄位是正確的型態
-        numeric_cols = ['foreign_buy', 'trust_buy', 'dealer_net']
+        numeric_cols = ["foreign_buy", "trust_buy", "dealer_net"]
         for col in numeric_cols:
             if col in df_all.columns:
                 try:
-                    df_all = df_all.with_columns(pl.col(col).cast(pl.Float64, strict=False))
-                except:
+                    df_all = df_all.with_columns(
+                        pl.col(col).cast(pl.Float64, strict=False)
+                    )
+                except Exception:
                     pass
 
-        if 'foreign_buy' in df_all.columns:
-            stats['sum_foreign_buy'] = float(df_all['foreign_buy'].sum())
-        if 'trust_buy' in df_all.columns:
-            stats['sum_trust_buy'] = float(df_all['trust_buy'].sum())
-        if 'dealer_net' in df_all.columns:
-            stats['sum_dealer_net'] = float(df_all['dealer_net'].sum())
-    elif table_name == 'margin_trading':
-        if 'margin_long_balance' in df_all.columns:
+        if "foreign_buy" in df_all.columns:
+            stats["sum_foreign_buy"] = float(df_all["foreign_buy"].sum())
+        if "trust_buy" in df_all.columns:
+            stats["sum_trust_buy"] = float(df_all["trust_buy"].sum())
+        if "dealer_net" in df_all.columns:
+            stats["sum_dealer_net"] = float(df_all["dealer_net"].sum())
+    elif table_name == "margin_trading":
+        if "margin_long_balance" in df_all.columns:
             # 先轉成數值型別（可能是 text），使用 strict=False 忽略無效值
             try:
                 df_all = df_all.with_columns(
-                    pl.col('margin_long_balance').cast(pl.Float64, strict=False).alias('margin_long_balance')
+                    pl.col("margin_long_balance")
+                    .cast(pl.Float64, strict=False)
+                    .alias("margin_long_balance")
                 )
-                stats['sum_margin_long_balance'] = float(df_all['margin_long_balance'].sum())
+                stats["sum_margin_long_balance"] = float(
+                    df_all["margin_long_balance"].sum()
+                )
             except Exception as e:
                 print(f"⚠️  計算 margin_long_balance 時發生錯誤: {e}")
-                stats['sum_margin_long_balance'] = 0
-        if 'margin_short_balance' in df_all.columns:
+                stats["sum_margin_long_balance"] = 0
+        if "margin_short_balance" in df_all.columns:
             try:
                 df_all = df_all.with_columns(
-                    pl.col('margin_short_balance').cast(pl.Float64, strict=False).alias('margin_short_balance')
+                    pl.col("margin_short_balance")
+                    .cast(pl.Float64, strict=False)
+                    .alias("margin_short_balance")
                 )
-                stats['sum_margin_short_balance'] = float(df_all['margin_short_balance'].sum())
+                stats["sum_margin_short_balance"] = float(
+                    df_all["margin_short_balance"].sum()
+                )
             except Exception as e:
                 print(f"⚠️  計算 margin_short_balance 時發生錯誤: {e}")
-                stats['sum_margin_short_balance'] = 0
-    elif table_name == 'pe_ratio':
-        if 'pe_ratio' in df_all.columns:
+                stats["sum_margin_short_balance"] = 0
+    elif table_name == "pe_ratio":
+        if "pe_ratio" in df_all.columns:
             # 確保 pe_ratio 是數值型態
             try:
-                df_all = df_all.with_columns(pl.col('pe_ratio').cast(pl.Float64, strict=False))
-            except:
+                df_all = df_all.with_columns(
+                    pl.col("pe_ratio").cast(pl.Float64, strict=False)
+                )
+            except Exception:
                 pass
 
             # 過濾掉 0 和 null 的 PE ratio
-            valid_pe = df_all.filter((pl.col('pe_ratio') > 0) & (pl.col('pe_ratio').is_not_null()))
+            valid_pe = df_all.filter(
+                (pl.col("pe_ratio") > 0) & (pl.col("pe_ratio").is_not_null())
+            )
             if valid_pe.height > 0:
-                stats['avg_pe_ratio'] = float(valid_pe['pe_ratio'].mean())
+                stats["avg_pe_ratio"] = float(valid_pe["pe_ratio"].mean())
 
     return stats
 
 
 def get_db_stats(engine, table_name):
     """從資料庫查詢統計值"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"查詢資料庫: {table_name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     with engine.connect() as conn:
         try:
             # 檢查表格是否存在
-            exists = conn.execute(text(
-                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :name)"
-            ), {"name": table_name}).scalar()
+            exists = conn.execute(
+                text(
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :name)"
+                ),
+                {"name": table_name},
+            ).scalar()
 
             if not exists:
                 print(f"⚠️  表格不存在: {table_name}")
@@ -212,31 +241,41 @@ def get_db_stats(engine, table_name):
             result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
             total_rows = result[0]
 
-            result = conn.execute(text(f"SELECT COUNT(DISTINCT date) FROM {table_name}")).fetchone()
+            result = conn.execute(
+                text(f"SELECT COUNT(DISTINCT date) FROM {table_name}")
+            ).fetchone()
             unique_dates = result[0]
 
             stats = {
-                'total_rows': total_rows,
-                'unique_dates': unique_dates,
+                "total_rows": total_rows,
+                "unique_dates": unique_dates,
             }
 
             # 如果有 symbol 欄位
-            has_symbol = conn.execute(text(f"""
+            has_symbol = conn.execute(
+                text("""
                 SELECT column_name FROM information_schema.columns
                 WHERE table_name = :name AND column_name = 'symbol'
-            """), {"name": table_name}).fetchone()
+            """),
+                {"name": table_name},
+            ).fetchone()
 
             if has_symbol:
-                result = conn.execute(text(f"SELECT COUNT(DISTINCT symbol) FROM {table_name}")).fetchone()
-                stats['unique_symbols'] = result[0]
+                result = conn.execute(
+                    text(f"SELECT COUNT(DISTINCT symbol) FROM {table_name}")
+                ).fetchone()
+                stats["unique_symbols"] = result[0]
 
             # 日期範圍
-            result = conn.execute(text(f"SELECT MIN(date), MAX(date) FROM {table_name}")).fetchone()
-            stats['date_range'] = result
+            result = conn.execute(
+                text(f"SELECT MIN(date), MAX(date) FROM {table_name}")
+            ).fetchone()
+            stats["date_range"] = result
 
             # 針對不同表格計算特定統計值
-            if table_name == 'daily_quotes':
-                result = conn.execute(text(f"""
+            if table_name == "daily_quotes":
+                result = conn.execute(
+                    text(f"""
                     SELECT
                         SUM(volume)::numeric,
                         SUM(value)::numeric,
@@ -244,46 +283,59 @@ def get_db_stats(engine, table_name):
                         MIN(close)::numeric,
                         MAX(close)::numeric
                     FROM {table_name}
-                """)).fetchone()
-                stats.update({
-                    'sum_volume': float(result[0]) if result[0] else 0,
-                    'sum_value': float(result[1]) if result[1] else 0,
-                    'avg_close': float(result[2]) if result[2] else 0,
-                    'min_close': float(result[3]) if result[3] else 0,
-                    'max_close': float(result[4]) if result[4] else 0,
-                })
-            elif table_name == 'institutional_investors':
-                result = conn.execute(text(f"""
+                """)
+                ).fetchone()
+                stats.update(
+                    {
+                        "sum_volume": float(result[0]) if result[0] else 0,
+                        "sum_value": float(result[1]) if result[1] else 0,
+                        "avg_close": float(result[2]) if result[2] else 0,
+                        "min_close": float(result[3]) if result[3] else 0,
+                        "max_close": float(result[4]) if result[4] else 0,
+                    }
+                )
+            elif table_name == "institutional_investors":
+                result = conn.execute(
+                    text(f"""
                     SELECT
                         SUM(foreign_buy)::numeric,
                         SUM(trust_buy)::numeric,
                         SUM(dealer_net)::numeric
                     FROM {table_name}
-                """)).fetchone()
+                """)
+                ).fetchone()
                 if result:
-                    stats['sum_foreign_buy'] = float(result[0]) if result[0] else 0
-                    stats['sum_trust_buy'] = float(result[1]) if result[1] else 0
-                    stats['sum_dealer_net'] = float(result[2]) if result[2] else 0
-            elif table_name == 'margin_trading':
+                    stats["sum_foreign_buy"] = float(result[0]) if result[0] else 0
+                    stats["sum_trust_buy"] = float(result[1]) if result[1] else 0
+                    stats["sum_dealer_net"] = float(result[2]) if result[2] else 0
+            elif table_name == "margin_trading":
                 # margin_long_balance 和 margin_short_balance 是 double precision 型別
                 # SUM() 會自動忽略 NULL 值，不需要 WHERE 條件
-                result = conn.execute(text(f"""
+                result = conn.execute(
+                    text(f"""
                     SELECT
                         SUM(margin_long_balance),
                         SUM(margin_short_balance)
                     FROM {table_name}
-                """)).fetchone()
+                """)
+                ).fetchone()
                 if result:
-                    stats['sum_margin_long_balance'] = float(result[0]) if result[0] else 0
-                    stats['sum_margin_short_balance'] = float(result[1]) if result[1] else 0
-            elif table_name == 'pe_ratio':
-                result = conn.execute(text(f"""
+                    stats["sum_margin_long_balance"] = (
+                        float(result[0]) if result[0] else 0
+                    )
+                    stats["sum_margin_short_balance"] = (
+                        float(result[1]) if result[1] else 0
+                    )
+            elif table_name == "pe_ratio":
+                result = conn.execute(
+                    text(f"""
                     SELECT AVG(pe_ratio)::numeric
                     FROM {table_name}
                     WHERE pe_ratio > 0 AND pe_ratio IS NOT NULL
-                """)).fetchone()
+                """)
+                ).fetchone()
                 if result and result[0]:
-                    stats['avg_pe_ratio'] = float(result[0])
+                    stats["avg_pe_ratio"] = float(result[0])
 
             return stats
 
@@ -294,9 +346,9 @@ def get_db_stats(engine, table_name):
 
 def compare_stats(csv_stats, db_stats, table_name):
     """比較 CSV 和資料庫的統計值"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"比對結果: {table_name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if not csv_stats or not db_stats:
         print("❌ 無法比對（資料不完整）")
@@ -335,18 +387,20 @@ def compare_stats(csv_stats, db_stats, table_name):
             all_match = False
             if isinstance(csv_val, float) and csv_val != 0:
                 diff_pct = abs(csv_val - db_val) / abs(csv_val) * 100
-                error_msg = f"{key}: CSV={csv_val:.2f}, DB={db_val:.2f}, 差異={diff_pct:.4f}%"
+                error_msg = (
+                    f"{key}: CSV={csv_val:.2f}, DB={db_val:.2f}, 差異={diff_pct:.4f}%"
+                )
             else:
                 error_msg = f"{key}: CSV={csv_val}, DB={db_val}"
             errors.append(error_msg)
             print(f"   ⚠️  {error_msg}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if all_match:
         print(f"✅ {table_name} 驗證通過！")
     else:
         print(f"❌ {table_name} 驗證失敗，有差異！")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     return all_match, errors
 
@@ -368,23 +422,30 @@ def validate_single_date(engine, table_name, target_date):
     with engine.connect() as conn:
         try:
             # 1. 檢查是否有 pced_* 欄位
-            schema_check = conn.execute(text(f"""
+            schema_check = conn.execute(
+                text("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = :table
                 AND column_name IN ('pced_file', 'pced_row', 'pced_col')
-            """), {"table": table_name}).fetchall()
+            """),
+                {"table": table_name},
+            ).fetchall()
 
             has_lineage = len(schema_check) == 3
 
             if not has_lineage:
                 # 如果沒有 lineage 欄位，使用簡單的 row count 驗證
-                result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
-                                    {"date": target_date}).fetchone()
+                result = conn.execute(
+                    text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date"),
+                    {"date": target_date},
+                ).fetchone()
                 db_count = result[0]
                 if db_count == 0:
                     return True, []
-                print(f"  ✓ {table_name} {target_date}: {db_count} rows in DB (no lineage)")
+                print(
+                    f"  ✓ {table_name} {target_date}: {db_count} rows in DB (no lineage)"
+                )
                 return True, []
 
             # 2. 查詢該日期的所有資料（包含 lineage 欄位）
@@ -395,13 +456,15 @@ def validate_single_date(engine, table_name, target_date):
             if len(df_db) == 0:
                 return True, []  # 沒有資料不算錯誤
 
-            print(f"  → {table_name} {target_date}: 驗證 {len(df_db)} rows with lineage...")
+            print(
+                f"  → {table_name} {target_date}: 驗證 {len(df_db)} rows with lineage..."
+            )
 
             # 3. 按 pced_file 分組（減少檔案讀取次數）
             errors = []
             files_checked = set()
 
-            for pced_file in df_db['pced_file'].unique():
+            for pced_file in df_db["pced_file"].unique():
                 if pd.isna(pced_file):
                     continue
 
@@ -418,10 +481,10 @@ def validate_single_date(engine, table_name, target_date):
                     continue
 
                 # 驗證來自這個檔案的所有 DB rows
-                db_rows_from_file = df_db[df_db['pced_file'] == pced_file]
+                db_rows_from_file = df_db[df_db["pced_file"] == pced_file]
 
                 for _, db_row in db_rows_from_file.iterrows():
-                    pced_row = int(db_row['pced_row'])
+                    pced_row = int(db_row["pced_row"])
 
                     # pced_row 是檔案的絕對行號（1-based，包含 header）
                     # Row 1 = header（Polars 自動跳過）
@@ -430,28 +493,42 @@ def validate_single_date(engine, table_name, target_date):
                     csv_row_idx = pced_row - 2
 
                     if csv_row_idx < 0 or csv_row_idx >= df_csv.height:
-                        errors.append(f"pced_row {pced_row} 超出 CSV 範圍 (header + 1-{df_csv.height})")
+                        errors.append(
+                            f"pced_row {pced_row} 超出 CSV 範圍 (header + 1-{df_csv.height})"
+                        )
                         continue
 
                     # 比對欄位值（排除 lineage 欄位和 date）
                     csv_row = df_csv[csv_row_idx]
                     for col in df_db.columns:
-                        if col in ['pced_file', 'pced_row', 'pced_col', 'date']:
+                        if col in ["pced_file", "pced_row", "pced_col", "date"]:
                             continue
 
                         if col not in df_csv.columns:
                             continue
 
                         db_val = db_row[col]
-                        csv_val = csv_row[col][0] if hasattr(csv_row[col], '__getitem__') else csv_row[col]
+                        csv_val = (
+                            csv_row[col][0]
+                            if hasattr(csv_row[col], "__getitem__")
+                            else csv_row[col]
+                        )
 
                         # 類型感知比對
-                        if pd.isna(db_val) and (csv_val is None or (hasattr(csv_val, '__len__') and len(str(csv_val).strip()) == 0)):
+                        if pd.isna(db_val) and (
+                            csv_val is None
+                            or (
+                                hasattr(csv_val, "__len__")
+                                and len(str(csv_val).strip()) == 0
+                            )
+                        ):
                             continue  # 都是 NULL/空值
 
                         if pd.isna(db_val) or csv_val is None:
                             if not pd.isna(db_val) or csv_val is not None:
-                                errors.append(f"Row {pced_row}, {col}: DB={db_val}, CSV={csv_val} (NULL mismatch)")
+                                errors.append(
+                                    f"Row {pced_row}, {col}: DB={db_val}, CSV={csv_val} (NULL mismatch)"
+                                )
                             continue
 
                         # 數值比對（容許浮點誤差）
@@ -459,11 +536,15 @@ def validate_single_date(engine, table_name, target_date):
                             db_num = float(db_val)
                             csv_num = float(csv_val)
                             if abs(db_num - csv_num) > 0.0001:
-                                errors.append(f"Row {pced_row}, {col}: DB={db_num}, CSV={csv_num}")
+                                errors.append(
+                                    f"Row {pced_row}, {col}: DB={db_num}, CSV={csv_num}"
+                                )
                         except (ValueError, TypeError):
                             # 字串比對
                             if str(db_val).strip() != str(csv_val).strip():
-                                errors.append(f"Row {pced_row}, {col}: DB='{db_val}', CSV='{csv_val}'")
+                                errors.append(
+                                    f"Row {pced_row}, {col}: DB='{db_val}', CSV='{csv_val}'"
+                                )
 
             if errors:
                 print(f"  ✗ {table_name} {target_date}: {len(errors)} errors found")
@@ -474,22 +555,25 @@ def validate_single_date(engine, table_name, target_date):
                     print(f"     ... and {len(errors) - 5} more errors")
                 return False, errors
 
-            print(f"  ✓ {table_name} {target_date}: {len(df_db)} rows verified from {len(files_checked)} files")
+            print(
+                f"  ✓ {table_name} {target_date}: {len(df_db)} rows verified from {len(files_checked)} files"
+            )
             return True, []
 
         except Exception as e:
             error_msg = f"{table_name} {target_date}: 驗證失敗 - {str(e)}"
             print(f"  ✗ {error_msg}")
             import traceback
+
             traceback.print_exc()
             return False, [error_msg]
 
 
 def validate_all_tables(engine):
     """驗證所有表格"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🔍 開始統計值比對驗證...")
-    print("="*60)
+    print("=" * 60)
 
     # 要驗證的表格（依據 IMPORT_CATEGORY）
     import_category = os.getenv("IMPORT_CATEGORY")
@@ -498,10 +582,10 @@ def validate_all_tables(engine):
     else:
         # 只驗證主要的表格（跳過 stock_info, stock_tags 等無日期的表格）
         tables = [
-            'daily_quotes',
-            'institutional_investors',
-            'margin_trading',
-            'pe_ratio',
+            "daily_quotes",
+            "institutional_investors",
+            "margin_trading",
+            "pe_ratio",
         ]
 
     results = {}
@@ -524,24 +608,25 @@ def validate_all_tables(engine):
         except Exception as e:
             print(f"\n❌ {table} 驗證時發生錯誤: {e}")
             import traceback
+
             traceback.print_exc()
             results[table] = False
             all_errors[table] = [f"驗證時發生錯誤: {str(e)}"]
 
     # 總結
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 驗證總結")
-    print("="*60)
+    print("=" * 60)
     for table, passed in results.items():
         status = "✅ 通過" if passed else "❌ 失敗"
         print(f"{table:30} {status}")
 
-    print("="*60)
+    print("=" * 60)
     all_passed = all(results.values())
     if all_passed:
         print("🎉 所有表格驗證通過！")
     else:
         print("⚠️  部分表格驗證失敗，請檢查差異")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     return all_passed, all_errors

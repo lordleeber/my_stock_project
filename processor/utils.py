@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from schemas import COLUMN_MAP, NUMERIC_COLS
 
+
 def log_parsing_error(file_path, msg, exception=None):
     """
     將 CSV 解析階段的錯誤訊息記錄到專用的 error_processor.log 檔案
@@ -13,16 +14,15 @@ def log_parsing_error(file_path, msg, exception=None):
     error_file = Path("/app/error_processor.log")
     timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
     date_str = "Unknown"
-    
+
     # 嘗試從新路徑結構提取日期 (YYYY/YYYYMMDD)
-    path_str = str(file_path)
     parts = Path(file_path).parts
     if len(parts) >= 2:
         potential_date = parts[-2]
         if len(potential_date) == 8 and potential_date.isdigit():
             date_str = potential_date
 
-    with open(error_file, 'a', encoding='utf-8') as f:
+    with open(error_file, "a", encoding="utf-8") as f:
         f.write(f"\n## Utils Parsing Error - {timestamp}\n")
         f.write(f"**Date:** {date_str}\n")
         f.write(f"**File:** {Path(file_path).name}\n")
@@ -30,6 +30,7 @@ def log_parsing_error(file_path, msg, exception=None):
         if exception:
             f.write(f"**Exception:** {str(exception)}\n")
         f.write("---\n")
+
 
 def clean_dataframe(df, return_col_mapping=False):
     """
@@ -56,7 +57,7 @@ def clean_dataframe(df, return_col_mapping=False):
         if col in ["src_file", "src_row", "src_col"]:
             continue
 
-        clean_col = col.strip().replace('"', '').replace('\ufeff', '')
+        clean_col = col.strip().replace('"', "").replace("\ufeff", "")
         norm_col = clean_col.replace(" ", "").replace("\u3000", "").replace("\t", "")
 
         eng_name = None
@@ -91,7 +92,9 @@ def clean_dataframe(df, return_col_mapping=False):
 
     if not matched_any:
         if os.getenv("DEBUG", "0") == "1":
-            print(f"⚠️  clean_dataframe matched 0 columns. First 5 raw: {raw_columns[:5]}")
+            print(
+                f"⚠️  clean_dataframe matched 0 columns. First 5 raw: {raw_columns[:5]}"
+            )
         return (None, {}) if return_col_mapping else None
 
     df = df.rename(rename_dict)
@@ -100,21 +103,26 @@ def clean_dataframe(df, return_col_mapping=False):
 
     if "symbol" in df.columns:
         df = df.with_columns(
-            pl.col("symbol").cast(pl.Utf8).str.replace_all('=|"', '').str.strip_chars()
+            pl.col("symbol").cast(pl.Utf8).str.replace_all('=|"', "").str.strip_chars()
         )
 
     for col in df.columns:
-        base_col = col.split('_')[0] if '_' in col else col
+        base_col = col.split("_")[0] if "_" in col else col
         if col in NUMERIC_COLS or base_col in NUMERIC_COLS:
             df = df.with_columns(
-                pl.col(col).cast(pl.Utf8)
-                .str.replace_all(",", "").str.replace_all("--", "").str.replace_all(" ", "")
-                .str.strip_chars().cast(pl.Float64, strict=False)
+                pl.col(col)
+                .cast(pl.Utf8)
+                .str.replace_all(",", "")
+                .str.replace_all("--", "")
+                .str.replace_all(" ", "")
+                .str.strip_chars()
+                .cast(pl.Float64, strict=False)
             )
 
     if return_col_mapping:
         return df, col_index_mapping
     return df
+
 
 def read_raw_csv(file_path, category=None, return_col_mapping=False):
     """強化版的 Raw CSV 讀取函式
@@ -134,11 +142,11 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
 
         # 自動編碼探測
         try:
-            with open(file_path, 'r', encoding='utf-8-sig') as f:
+            with open(file_path, "r", encoding="utf-8-sig") as f:
                 lines = f.readlines()
         except UnicodeDecodeError:
             # 使用 replace 而非 ignore，保留解碼失敗的標記供後續檢查
-            with open(file_path, 'r', encoding='cp950', errors='replace') as f:
+            with open(file_path, "r", encoding="cp950", errors="replace") as f:
                 lines = f.readlines()
 
         if not lines:
@@ -146,12 +154,14 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
 
         header_idx = -1
         keywords = ["證券代號", "代號"]
-        if category == "market_indices": keywords.append("指數")
+        if category == "market_indices":
+            keywords.append("指數")
 
         for i, line in enumerate(lines):
-            clean_line = line.replace('"', '').replace('\ufeff', '')
+            clean_line = line.replace('"', "").replace("\ufeff", "")
             if any(k in clean_line for k in keywords) and clean_line.count(",") >= 3:
-                if category != "market_indices" and "收盤指數" in clean_line: continue
+                if category != "market_indices" and "收盤指數" in clean_line:
+                    continue
                 header_idx = i
                 break
 
@@ -161,23 +171,38 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
         header = []
         is_multi_row = False
         if header_idx > 0:
-            prev_line = lines[header_idx-1].replace('"', '').strip()
+            prev_line = lines[header_idx - 1].replace('"', "").strip()
             # 偵測是否為分類行 (通常有分類字眼且包含大量逗號)
-            if any(k in prev_line for k in ["融資", "融券", "借券"]) and prev_line.count(",") >= 3:
+            if (
+                any(k in prev_line for k in ["融資", "融券", "借券"])
+                and prev_line.count(",") >= 3
+            ):
                 is_multi_row = True
 
         if is_multi_row:
             # 使用簡單的 split 代替 csv.reader 來解析標題，避免引號引發的問題
-            cat_row = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx-1])))]
-            sub_row = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx])))]
+            cat_row = [
+                c.strip().replace('"', "")
+                for c in next(csv.reader(io.StringIO(lines[header_idx - 1])))
+            ]
+            sub_row = [
+                c.strip().replace('"', "")
+                for c in next(csv.reader(io.StringIO(lines[header_idx])))
+            ]
 
             last_cat = ""
             for j, sub in enumerate(sub_row):
                 cat = cat_row[j].strip() if j < len(cat_row) else ""
-                if cat: last_cat = cat
-                header.append(f"{last_cat}-{sub}" if last_cat and sub else (sub or last_cat))
+                if cat:
+                    last_cat = cat
+                header.append(
+                    f"{last_cat}-{sub}" if last_cat and sub else (sub or last_cat)
+                )
         else:
-            header = [c.strip().replace('"', '') for c in next(csv.reader(io.StringIO(lines[header_idx])))]
+            header = [
+                c.strip().replace('"', "")
+                for c in next(csv.reader(io.StringIO(lines[header_idx])))
+            ]
 
         if not header:
             return (None, {}) if return_col_mapping else None
@@ -202,16 +227,20 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
                 continue
 
             first = row[0].strip()
-            if first.startswith("說明:") or first.startswith("Total") or first == "以上":
+            if (
+                first.startswith("說明:")
+                or first.startswith("Total")
+                or first == "以上"
+            ):
                 continue
 
             # 處理行長度不一致的情況
             if len(row) != len(header):
                 mismatched_rows += 1
                 if len(row) < len(header):
-                    row.extend([''] * (len(header) - len(row)))
+                    row.extend([""] * (len(header) - len(row)))
                 elif len(row) > len(header):
-                    row = row[:len(header)]
+                    row = row[: len(header)]
 
             # 儲存資料與精確的原始行號
             raw_data_with_lineage.append(list(row) + [actual_src_row])
@@ -235,7 +264,11 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
         # 準備資料與追蹤資訊
         final_data = []
         # 取得相對路徑以便儲存
-        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+        rel_path = (
+            str(file_path).split("my_stock_project/")[-1]
+            if "my_stock_project/" in str(file_path)
+            else str(file_path)
+        )
 
         for row_with_lineage in raw_data_with_lineage:
             # 最後一欄是我們剛剛暫存的 actual_src_row
@@ -249,7 +282,9 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
 
         if os.getenv("DEBUG", "0") == "1":
             if mismatched_rows > 0:
-                print(f"⚠️  {Path(file_path).name}: {mismatched_rows} rows adjusted for length mismatch")
+                print(
+                    f"⚠️  {Path(file_path).name}: {mismatched_rows} rows adjusted for length mismatch"
+                )
             print(f"DEBUG: unique_header[:10] = {unique_header[:10]}")
 
         df = pl.DataFrame(final_data, schema=unique_header, orient="row")
@@ -287,6 +322,7 @@ def read_raw_csv(file_path, category=None, return_col_mapping=False):
         log_parsing_error(file_path, f"Failed to parse CSV: {str(e)}", exception=e)
         return (None, {}) if return_col_mapping else None
 
+
 def read_sii_indices(file_path, return_col_mapping=False):
     """特別為 SII 指數區塊設計的讀取邏輯
 
@@ -298,7 +334,7 @@ def read_sii_indices(file_path, return_col_mapping=False):
         df 或 (df, col_mapping) 取決於 return_col_mapping 參數
     """
     try:
-        with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+        with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
             lines = f.readlines()
 
         # 找到「收盤指數」區塊
@@ -329,36 +365,47 @@ def read_sii_indices(file_path, return_col_mapping=False):
 
         # 處理舊格式：將 "漲跌(+/-)" 和 "漲跌點數" 合併
         if "漲跌(+/-)" in pdf.columns and "漲跌點數" in pdf.columns:
+
             def combine_change(row):
                 sign = str(row["漲跌(+/-)"]).strip()
                 val = str(row["漲跌點數"]).replace(",", "")
-                if val == "--" or not val: return None
+                if val == "--" or not val:
+                    return None
                 try:
                     num = float(val)
                     return -num if sign == "-" else num
-                except:
+                except Exception:
                     return None
+
             pdf["change_combined"] = pdf.apply(combine_change, axis=1)
 
         new_rename_map = {}
 
         for col in pdf.columns:
-            c = str(col).strip().replace('"', '')
+            c = str(col).strip().replace('"', "")
             if c == "指數" or c == "報酬指數":
                 new_rename_map[col] = "index_name"
             elif c == "收盤指數":
                 new_rename_map[col] = "index_close"
             elif c == "change_combined":
                 new_rename_map[col] = "index_change_points"
-            elif "漲跌" in c and "漲跌幅" not in c and "index_change_points" not in new_rename_map.values():
-                if "漲跌(+/-)" not in pdf.columns: # 只有在單一欄位時才直接對映
+            elif (
+                "漲跌" in c
+                and "漲跌幅" not in c
+                and "index_change_points" not in new_rename_map.values()
+            ):
+                if "漲跌(+/-)" not in pdf.columns:  # 只有在單一欄位時才直接對映
                     new_rename_map[col] = "index_change_points"
 
         if "index_name" not in new_rename_map.values():
             return (None, {}) if return_col_mapping else None
 
         # 取得相對路徑
-        rel_path = str(file_path).split("my_stock_project/")[-1] if "my_stock_project/" in str(file_path) else str(file_path)
+        rel_path = (
+            str(file_path).split("my_stock_project/")[-1]
+            if "my_stock_project/" in str(file_path)
+            else str(file_path)
+        )
 
         # 建立欄位映射: {英文欄位名: 原始欄位索引(1-based)}
         col_mapping = {}
@@ -380,7 +427,8 @@ def read_sii_indices(file_path, return_col_mapping=False):
         for col in ["index_close", "index_change_points"]:
             if col in df.columns:
                 df = df.with_columns(
-                    pl.col(col).cast(pl.Utf8)
+                    pl.col(col)
+                    .cast(pl.Utf8)
                     .str.replace_all(",", "")
                     .str.replace_all("--", "")
                     .cast(pl.Float64, strict=False)
@@ -412,5 +460,7 @@ def read_sii_indices(file_path, return_col_mapping=False):
             df = df.with_columns(pl.lit(src_col_str).alias("src_col"))
             return df
     except Exception as e:
-        log_parsing_error(file_path, f"Failed to parse SII indices: {str(e)}", exception=e)
+        log_parsing_error(
+            file_path, f"Failed to parse SII indices: {str(e)}", exception=e
+        )
         return (None, {}) if return_col_mapping else None
