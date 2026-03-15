@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback
 
 from sqlalchemy import create_engine, text
@@ -117,7 +116,9 @@ def run():
         )
 
     with engine.connect() as conn:
-        total_rows = conn.execute(text("SELECT COUNT(*) FROM short_interest_analysis")).scalar()
+        total_rows = conn.execute(
+            text("SELECT COUNT(*) FROM short_interest_analysis")
+        ).scalar()
         min_date, max_date = conn.execute(
             text("SELECT MIN(date), MAX(date) FROM short_interest_analysis")
         ).fetchone()

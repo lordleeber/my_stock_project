@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback
 
 from sqlalchemy import create_engine, text
@@ -84,7 +83,11 @@ def run():
 
     with engine.begin() as conn:
         conn.execute(create_sql)
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trust_holding_symbol_date ON trust_holding (symbol, date)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_trust_holding_symbol_date ON trust_holding (symbol, date)"
+            )
+        )
 
     with engine.connect() as conn:
         total_rows = conn.execute(text("SELECT COUNT(*) FROM trust_holding")).scalar()
@@ -92,7 +95,9 @@ def run():
             text("SELECT MIN(date), MAX(date) FROM trust_holding")
         ).fetchone()
 
-    print(f"trust_holding rebuilt successfully: {total_rows} rows ({min_date} ~ {max_date})")
+    print(
+        f"trust_holding rebuilt successfully: {total_rows} rows ({min_date} ~ {max_date})"
+    )
 
 
 def main():

@@ -12,7 +12,9 @@ ERROR_LOG = "/error_calculator.log"
 def abort_with_error(message, exception=None):
     with open(ERROR_LOG, "w") as f:
         f.write("# Calculator 錯誤報告\n\n")
-        f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(
+            f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
         f.write(f"## 錯誤訊息\n\n{message}\n\n")
         if exception is not None:
             f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
@@ -165,11 +167,24 @@ def calculate_indicators(df_group):
         ]
     ]
 
+
 def ensure_streak_columns(engine):
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS foreign_streak_days bigint"))
-        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS trust_streak_days bigint"))
-        conn.execute(text("ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS dealer_streak_days bigint"))
+        conn.execute(
+            text(
+                "ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS foreign_streak_days bigint"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS trust_streak_days bigint"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS dealer_streak_days bigint"
+            )
+        )
 
 
 def run():
@@ -217,7 +232,9 @@ def run():
         return
 
     print(f"Data fetched: {len(df)} rows. Calculating indicators...")
-    results = df.groupby("symbol", group_keys=False).apply(calculate_indicators, include_groups=False)
+    results = df.groupby("symbol", group_keys=False).apply(
+        calculate_indicators, include_groups=False
+    )
 
     if is_incremental:
         results["date"] = pd.to_datetime(results["date"]).dt.date
@@ -242,9 +259,13 @@ def run():
                         delete_query = text(
                             "DELETE FROM technical_indicators WHERE date::date >= :start_date AND date::date <= :end_date"
                         )
-                        conn.execute(delete_query, {"start_date": start_str, "end_date": end_str})
+                        conn.execute(
+                            delete_query, {"start_date": start_str, "end_date": end_str}
+                        )
                     else:
-                        delete_query = text("DELETE FROM technical_indicators WHERE date::date >= :start_date")
+                        delete_query = text(
+                            "DELETE FROM technical_indicators WHERE date::date >= :start_date"
+                        )
                         conn.execute(delete_query, {"start_date": start_str})
                     conn.commit()
 
@@ -252,11 +273,21 @@ def run():
         if is_incremental:
             ensure_streak_columns(engine)
         print(f"Writing {len(results)} rows (mode={if_exists_mode})...")
-        results.to_sql("technical_indicators", engine, if_exists=if_exists_mode, index=False, chunksize=5000)
+        results.to_sql(
+            "technical_indicators",
+            engine,
+            if_exists=if_exists_mode,
+            index=False,
+            chunksize=5000,
+        )
 
     if not is_incremental:
         with engine.connect() as conn:
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tech_symbol_date ON technical_indicators (symbol, date)"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_tech_symbol_date ON technical_indicators (symbol, date)"
+                )
+            )
             conn.commit()
 
     print("Calculator (daily) finished successfully.")

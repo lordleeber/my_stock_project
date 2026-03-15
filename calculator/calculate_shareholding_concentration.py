@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback
 
 from sqlalchemy import create_engine, text
@@ -107,7 +106,9 @@ def run():
         )
 
     with engine.connect() as conn:
-        total_rows = conn.execute(text("SELECT COUNT(*) FROM shareholding_concentration")).scalar()
+        total_rows = conn.execute(
+            text("SELECT COUNT(*) FROM shareholding_concentration")
+        ).scalar()
         min_date, max_date = conn.execute(
             text("SELECT MIN(date), MAX(date) FROM shareholding_concentration")
         ).fetchone()
@@ -124,7 +125,9 @@ def main():
     except SystemExit:
         raise
     except Exception as e:
-        abort_with_error(f"Unhandled shareholding_concentration calculator error: {e}", e)
+        abort_with_error(
+            f"Unhandled shareholding_concentration calculator error: {e}", e
+        )
 
 
 if __name__ == "__main__":
