@@ -37,9 +37,7 @@ This is the code diff content:
 
 payload = {"contents": [{"parts": [{"text": prompt}]}]}
 headers = {"Content-Type": "application/json"}
-api_url = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-)
+api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 
 # --- Debugging: Print request details (excluding sensitive key) ---
@@ -68,7 +66,9 @@ except requests.exceptions.HTTPError as e:
     sys.exit(1)
 except requests.exceptions.RequestException as e:
     print("--- Network Error ---", file=sys.stderr)
-    print(f"Error: Failed to call Gemini API due to a network issue: {e}", file=sys.stderr)
+    print(
+        f"Error: Failed to call Gemini API due to a network issue: {e}", file=sys.stderr
+    )
     sys.exit(1)
 except (KeyError, IndexError) as e:
     print("--- Response Parse Error ---", file=sys.stderr)

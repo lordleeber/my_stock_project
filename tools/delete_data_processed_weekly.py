@@ -3,6 +3,7 @@ import shutil
 import argparse
 import sys
 
+
 def delete_shareholding_weekly_data(target_date):
     """
     Deletes processed shareholding data (weekly) for a specific date.
@@ -12,15 +13,19 @@ def delete_shareholding_weekly_data(target_date):
         sys.exit(1)
 
     year = target_date[:4]
-    
+
     # Get the project root directory (parent of tools/)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
+
     # New target path: data/processed/shareholding/<year>/<target_date>.csv
-    csv_path = os.path.join(base_dir, "data", "processed", "shareholding", year, f"{target_date}.csv")
+    csv_path = os.path.join(
+        base_dir, "data", "processed", "shareholding", year, f"{target_date}.csv"
+    )
     # Legacy target path (kept for backward compatibility)
-    legacy_dir_path = os.path.join(base_dir, "data", "processed", "shareholding", year, target_date)
-    
+    legacy_dir_path = os.path.join(
+        base_dir, "data", "processed", "shareholding", year, target_date
+    )
+
     print(f"--- Checking data/processed/shareholding for date {target_date} ---")
 
     deleted_any = False
@@ -52,9 +57,12 @@ def delete_shareholding_weekly_data(target_date):
             f"Checked: {csv_path} and {legacy_dir_path}"
         )
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Delete processed shareholding data (weekly) for a specific date.")
+    parser = argparse.ArgumentParser(
+        description="Delete processed shareholding data (weekly) for a specific date."
+    )
     parser.add_argument("date", help="Target date in YYYYMMDD format (e.g., 20240212)")
-    
+
     args = parser.parse_args()
     delete_shareholding_weekly_data(args.date)

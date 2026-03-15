@@ -110,7 +110,9 @@
       "Bash(START_DATE=20200102 docker compose run:*)",
       "Bash(START_DATE=20200102 END_DATE=20200102 IMPORT_CATEGORY=pe_ratio docker compose:*)",
       "Bash(wc:*)",
-      "Bash(START_DATE=20200102 END_DATE=20200102 docker compose run:*)"
+      "Bash(START_DATE=20200102 END_DATE=20200102 docker compose run:*)",
+      "Bash(cp /Users/poyilee/Documents/GitHubLL/my_stock_project/backtester/output/rolling/rolling_monthly.csv /Users/poyilee/Documents/GitHubLL/my_stock_project/strategyB/\ncp /Users/poyilee/Documents/GitHubLL/my_stock_project/backtester/output/rolling/rolling_summary.json /Users/poyilee/Documents/GitHubLL/my_stock_project/strategyB/\ncp /Users/poyilee/Documents/GitHubLL/my_stock_project/backtester/output/rolling/rolling_trades.csv /Users/poyilee/Documents/GitHubLL/my_stock_project/strategyB/\necho \"strategyB done\")",
+      "Bash(./venv/bin/python3 << 'EOF'\nimport json\nwith open\\('models_eps/2024/06/latest.json'\\) as f:\n    data = json.load\\(f\\)\n    print\\(\"Key findings from latest.json:\"\\)\n    print\\(f\"  model_file: {data.get\\('model_file'\\)}\"\\)\n    print\\(f\"  published_model: {data.get\\('published_model'\\)}\"\\)\n    print\\(f\"  passed: {data.get\\('passed'\\)}\"\\)\nEOF)"
     ]
   }
 }

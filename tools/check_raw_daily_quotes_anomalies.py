@@ -51,10 +51,21 @@ def main():
     parser.add_argument("--start", required=True, help="YYYYMMDD")
     parser.add_argument("--end", required=True, help="YYYYMMDD")
     parser.add_argument("--market", default="sii", choices=["sii", "otc"])
-    parser.add_argument("--pct", type=float, default=0.11, help="Threshold for daily change (e.g. 0.11)")
-    parser.add_argument("--revert", type=float, default=0.7, help="Reversion factor (next day close < peak * revert)")
+    parser.add_argument(
+        "--pct", type=float, default=0.11, help="Threshold for daily change (e.g. 0.11)"
+    )
+    parser.add_argument(
+        "--revert",
+        type=float,
+        default=0.7,
+        help="Reversion factor (next day close < peak * revert)",
+    )
     parser.add_argument("--limit", type=int, default=200, help="Max anomalies to print")
-    parser.add_argument("--exclude-etf", action="store_true", help="Exclude ETF/ETN (symbols starting with 00)")
+    parser.add_argument(
+        "--exclude-etf",
+        action="store_true",
+        help="Exclude ETF/ETN (symbols starting with 00)",
+    )
     args = parser.parse_args()
 
     start = parse_date(args.start)
@@ -97,27 +108,31 @@ def main():
                 else:
                     reverted = close_next > close_curr / args.revert
 
-            anomalies.append({
-                "symbol": symbol,
-                "name": name,
-                "date": date_str,
-                "close_prev": close_prev,
-                "close_curr": close_curr,
-                "close_next": close_next,
-                "pct_change": pct_change,
-                "reverted": reverted,
-            })
+            anomalies.append(
+                {
+                    "symbol": symbol,
+                    "name": name,
+                    "date": date_str,
+                    "close_prev": close_prev,
+                    "close_curr": close_curr,
+                    "close_next": close_next,
+                    "pct_change": pct_change,
+                    "reverted": reverted,
+                }
+            )
 
     anomalies.sort(key=lambda x: abs(x["pct_change"]), reverse=True)
 
-    print(f"Found {len(anomalies)} anomalies in {args.market} from {args.start} to {args.end}")
+    print(
+        f"Found {len(anomalies)} anomalies in {args.market} from {args.start} to {args.end}"
+    )
     for i, a in enumerate(anomalies[: args.limit]):
         next_str = "--" if a["close_next"] is None else f"{a['close_next']:.2f}"
         print(
-            f"{i+1:03d} {a['symbol']} {a['name']} {a['date']} "
+            f"{i + 1:03d} {a['symbol']} {a['name']} {a['date']} "
             f"prev={a['close_prev']:.2f} curr={a['close_curr']:.2f} "
             f"next={next_str} "
-            f"chg={a['pct_change']*100:.2f}% reverted={a['reverted']}"
+            f"chg={a['pct_change'] * 100:.2f}% reverted={a['reverted']}"
         )
 
 

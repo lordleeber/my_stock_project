@@ -58,7 +58,9 @@ def process_file(path: Path) -> bool:
 
 
 def main() -> None:
-    files = sorted(ROOT.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9][0-9][0-9]M[0-9][0-9]/market.csv"))
+    files = sorted(
+        ROOT.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9][0-9][0-9]M[0-9][0-9]/market.csv")
+    )
     if not files:
         print("No market.csv files found.")
         return

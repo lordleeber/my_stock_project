@@ -1,6 +1,7 @@
 """
 共用 HTTP 客戶端，包含重試機制
 """
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -62,7 +63,9 @@ def fetch_json(endpoint: str, params: dict = None, timeout: int = None) -> list 
     return response.json()
 
 
-def fetch_dataframe(endpoint: str, params: dict = None, timeout: int = None) -> pd.DataFrame:
+def fetch_dataframe(
+    endpoint: str, params: dict = None, timeout: int = None
+) -> pd.DataFrame:
     """
     從 API 取得資料並轉換為 DataFrame
 

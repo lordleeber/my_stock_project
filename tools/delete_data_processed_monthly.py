@@ -48,7 +48,9 @@ def delete_processed_monthly_data(target: str):
 
     year = month_key[:4]
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(base_dir, "data", "processed", "monthly_revenue", year, month_key)
+    path = os.path.join(
+        base_dir, "data", "processed", "monthly_revenue", year, month_key
+    )
 
     print(f"--- Checking data/processed/monthly_revenue for month {month_key} ---")
 
