@@ -231,6 +231,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Root dir for selection models (default: models_selection/)",
     )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print per-month progress"
+    )
     return parser.parse_args()
 
 
@@ -259,10 +262,12 @@ def main() -> None:
         try:
             candidates_df = load_candidates_safe(models_root, year, month)
         except FileNotFoundError as exc:
-            print(f"[skip] {year}/{month_s}: {exc}")
+            if args.verbose:
+                print(f"[skip] {year}/{month_s}: {exc}")
             continue
         if candidates_df is None:
-            print(f"[skip] no candidates: {year}/{month_s}")
+            if args.verbose:
+                print(f"[skip] no candidates: {year}/{month_s}")
             continue
 
         # All candidates share the same entry_date (first trading day after release).
@@ -336,12 +341,13 @@ def main() -> None:
                 "portfolio_capital_deployed": round(portfolio_capital, 2),
             }
         )
-        regime_tag = " [BEAR — all exited]" if is_bear else f" [{regime}]"
-        print(
-            f"[{year}/{month_s}] entry={entry_date_str}{regime_tag} | "
-            f"holdings={len(portfolio)} | exits={len(exit_symbols)} entries={len(entry_symbols)} | "
-            f"realized_pnl={month_realized_pnl:+.0f}"
-        )
+        if args.verbose:
+            regime_tag = " [BEAR — all exited]" if is_bear else f" [{regime}]"
+            print(
+                f"[{year}/{month_s}] entry={entry_date_str}{regime_tag} | "
+                f"holdings={len(portfolio)} | exits={len(exit_symbols)} entries={len(entry_symbols)} | "
+                f"realized_pnl={month_realized_pnl:+.0f}"
+            )
 
     # --- Close remaining open positions (mark as unrealized) ---
     for sym, pos in portfolio.items():
@@ -398,12 +404,13 @@ def main() -> None:
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    print("\nrolling backtest done")
-    print(f"- output: {out_dir}")
-    print(f"- closed trades: {summary['total_closed_trades']}")
-    print(f"- win/loss: {win_count}/{loss_count}")
-    print(f"- total net pnl: {total_net_pnl:+.0f} TWD")
-    print(f"- still open: {summary['still_open_count']}")
+    if args.verbose:
+        print("\nrolling backtest done")
+        print(f"- output: {out_dir}")
+        print(f"- closed trades: {summary['total_closed_trades']}")
+        print(f"- win/loss: {win_count}/{loss_count}")
+        print(f"- total net pnl: {total_net_pnl:+.0f} TWD")
+        print(f"- still open: {summary['still_open_count']}")
 
 
 if __name__ == "__main__":

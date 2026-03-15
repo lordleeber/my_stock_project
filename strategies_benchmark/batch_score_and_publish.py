@@ -10,6 +10,9 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import sys
 from pathlib import Path
 
@@ -20,7 +23,17 @@ if str(ROOT_DIR) not in sys.path:
 from strategies.score_and_publish import score_and_publish
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Batch-score all months.")
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print per-month output"
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+
     strategies_out = ROOT_DIR / "strategies" / "output"
     if not strategies_out.exists():
         print(f"strategies/output not found: {strategies_out}")
@@ -55,13 +68,17 @@ def main() -> None:
     for year, month in months:
         month_s = f"{month:02d}"
         try:
-            score_and_publish(year, month)
+            if args.verbose:
+                score_and_publish(year, month)
+            else:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    score_and_publish(year, month)
             ok += 1
         except Exception as exc:
             print(f"[FAIL] {year}/{month_s}: {exc}")
             failed.append((year, month, str(exc)))
 
-    print(f"\nbatch_score_and_publish done: {ok} ok, {len(failed)} failed")
+    print(f"\nDone: {ok} ok, {len(failed)} failed")
     if failed:
         print("Failed months:")
         for y, m, err in failed:

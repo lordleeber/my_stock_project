@@ -59,6 +59,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip cutoff months where selection_model.pkl already exists",
     )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print per-month output"
+    )
     return parser.parse_args()
 
 
@@ -90,7 +93,8 @@ def main() -> None:
                 / "selection_model.pkl"
             )
             if model_path.exists():
-                print(f"[skip]  cutoff={label}  (selection_model.pkl exists)")
+                if args.verbose:
+                    print(f"[skip]  cutoff={label}  (selection_model.pkl exists)")
                 skipped += 1
                 continue
 
@@ -100,20 +104,25 @@ def main() -> None:
             print(f"[dry]   cutoff={label}  {' '.join(cmd)}")
             continue
 
-        print(f"\n{'=' * 60}")
-        print(f"[run]   cutoff={label}")
-        print(f"{'=' * 60}")
-        result = subprocess.run(cmd, cwd=str(ROOT_DIR))
+        if args.verbose:
+            print(f"\n{'=' * 60}")
+            print(f"[run]   cutoff={label}")
+            print(f"{'=' * 60}")
+        result = subprocess.run(
+            cmd, cwd=str(ROOT_DIR),
+            stdout=None if args.verbose else subprocess.DEVNULL,
+            stderr=None if args.verbose else subprocess.DEVNULL,
+        )
         if result.returncode == 0:
-            print(f"[ok]    cutoff={label}")
+            if args.verbose:
+                print(f"[ok]    cutoff={label}")
             ok += 1
         else:
             print(f"[FAIL]  cutoff={label}  (returncode={result.returncode})")
             failed += 1
 
     if not args.dry_run:
-        print(f"\n{'=' * 60}")
-        print(f"Done: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
+        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
 
 
 if __name__ == "__main__":

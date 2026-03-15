@@ -47,6 +47,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip months where dataset_strategy.csv already exists",
     )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print per-month output"
+    )
     return parser.parse_args()
 
 
@@ -79,7 +82,8 @@ def main() -> None:
                 / "dataset_strategy.csv"
             )
             if out_path.exists():
-                print(f"[skip]  {label}  (dataset_strategy.csv exists)")
+                if args.verbose:
+                    print(f"[skip]  {label}  (dataset_strategy.csv exists)")
                 skipped += 1
                 continue
 
@@ -89,20 +93,25 @@ def main() -> None:
             print(f"[dry]   {label}  {' '.join(cmd)}")
             continue
 
-        print(f"\n{'=' * 60}")
-        print(f"[run]   {label}")
-        print(f"{'=' * 60}")
-        result = subprocess.run(cmd, cwd=str(ROOT_DIR))
+        if args.verbose:
+            print(f"\n{'=' * 60}")
+            print(f"[run]   {label}")
+            print(f"{'=' * 60}")
+        result = subprocess.run(
+            cmd, cwd=str(ROOT_DIR),
+            stdout=None if args.verbose else subprocess.DEVNULL,
+            stderr=None if args.verbose else subprocess.DEVNULL,
+        )
         if result.returncode == 0:
-            print(f"[ok]    {label}")
+            if args.verbose:
+                print(f"[ok]    {label}")
             ok += 1
         else:
             print(f"[FAIL]  {label}  (returncode={result.returncode})")
             failed += 1
 
     if not args.dry_run:
-        print(f"\n{'=' * 60}")
-        print(f"Done: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
+        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
 
 
 if __name__ == "__main__":
