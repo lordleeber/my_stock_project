@@ -102,6 +102,8 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Number of label bins per month (default 5=quintile, 10=decile)",
     )
+    parser.add_argument("--reg-alpha", type=float, default=0.0, help="L1 regularization")
+    parser.add_argument("--reg-lambda", type=float, default=0.0, help="L2 regularization")
     return parser.parse_args()
 
 
@@ -200,6 +202,8 @@ def main() -> None:
         subsample=0.8,
         colsample_bytree=0.8,
         min_child_samples=5,
+        reg_alpha=args.reg_alpha,
+        reg_lambda=args.reg_lambda,
         random_state=42,
         verbose=-1,
     )

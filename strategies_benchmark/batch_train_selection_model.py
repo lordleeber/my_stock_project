@@ -99,7 +99,8 @@ def main() -> None:
                 continue
 
         cmd = [python, script, "--cutoff-year", str(year), "--cutoff-month", str(month),
-               "--n-bins", "10"]
+               "--n-bins", "10",
+               "--reg-alpha", "0.05", "--reg-lambda", "0.1"]
 
         if args.dry_run:
             print(f"[dry]   cutoff={label}  {' '.join(cmd)}")

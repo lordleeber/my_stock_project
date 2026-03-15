@@ -122,7 +122,7 @@ PIT 保證：以 `publish_time <= entry_date` 過濾，entry_date 約為月份 M
 - **Label**：每月內按 `fwd_return_pct` 排名，分成 **10 個 decile**（0=最差，9=最好）
 - **fwd_return_pct 定義**：月份 M 的 entry_date open 買入，M+1 entry_date **前一個交易日** open 賣出
 - **Group**：每個月為一個 group
-- **超參數**：`n_estimators=500, learning_rate=0.03, num_leaves=31`
+- **超參數**：`n_estimators=500, learning_rate=0.03, num_leaves=31, reg_alpha=0.05, reg_lambda=0.1`
 - **評估指標**：Spearman IC（預測排名 vs 實際報酬排名的相關係數）
 - **模型位置**：`models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl`
 
@@ -139,13 +139,14 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 |------|------|
 | 期間 | 2022/07 – 2025/10 |
 | 閉倉交易數 | 300 |
-| 勝率 | **65.3%**（196/104）|
-| 平均報酬 | **7.12%** |
-| Gross PnL | 2,319,597 TWD |
-| Net PnL | **2,134,045 TWD** |
+| 勝率 | **68.3%**（205/95）|
+| 平均報酬 | **7.56%** |
+| Gross PnL | 2,449,920 TWD |
+| Net PnL | **2,263,822 TWD** |
 
 結果存放於 `backtester_benchmark/rolling_summary.json`。
 
+> **舊基準 A2**（無正則化）：Net PnL=2,134,045，勝率=65.3%。
 > **舊基準**（quintile labels, n_estimators=200, num_leaves=15）：Net PnL=2,029,746，勝率=64.33%。
 
 ---
@@ -153,13 +154,15 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 ### 重現方法
 
 ```bash
-# 1. 使用 benchmark 版 feature_return_analysis.csv（關鍵：直接複製，不要重新生成）
-cp strategies_benchmark/output/feature_return_analysis.csv strategies/output/feature_return_analysis.csv
+# 1. 重新生成資料（從 DB 抓取最新的 pe_percentile_official）
+venv/bin/python3 strategies/batch_prepare_data.py
+venv/bin/python3 strategies/batch_finalize_strategy.py
+venv/bin/python3 strategies/analyze_feature_returns.py
 
 # 2. 刪除舊模型
 rm -rf models_selection/2022 models_selection/2023 models_selection/2024 models_selection/2025
 
-# 3. 訓練（batch_train 不呼叫 analyze_feature_returns，直接用上面複製的版本）
+# 3. 訓練
 venv/bin/python3 strategies/batch_train_selection_model.py
 
 # 4. 打分 + 回測 + 統計
@@ -171,22 +174,61 @@ venv/bin/python3 backtester/run_rolling.py \
 venv/bin/python3 backtester/summarize_range.py
 ```
 
+> **注意**：由於 `pe_percentile_official` 會隨 DB 資料更新而微幅變動，重現結果可能與上方基準數字有小幅差異（實測 PnL 差距約 ±1.5%），這是預期行為。比較兩個策略時，應在同一次生成的資料上進行。
+
 ---
 
-### 為什麼不能直接重跑 `analyze_feature_returns.py`？
+### `pe_percentile_official` 的變動性
 
-`feature_return_analysis.csv` 是整個 ML pipeline 的訓練資料集，每一列為「某股票在某月的特徵值 + 實際持有報酬（fwd_return_pct）」。
+`pe_percentile_official` 是 53 個特徵中**唯一會隨時間變動的特徵**。其他 52 個特徵在 EPS 模型未重訓的情況下完全可重現。
 
-重新執行 `analyze_feature_returns.py` 會讀取 `dataset_strategy.csv` 裡的特徵欄位，而其中 **`pe_percentile_official`**（PE 在全市場的歷史百分位排名）是即時對 DB 計算的，會隨著 DB 資料更新有微小浮動（平均差異約 0.08，最大約 1.06）。
+#### 變動原因
 
-雖然差異很小，但 LGBMRanker 學的是**月內排名**。微小的特徵差異就可能讓兩支股票的排名對調，導致每月選出的前 10 名不同，進而造成回測結果明顯差異：
+`pe_percentile_official` 由 `calculator/calculate_valuation.py` 計算，使用 **full-history percentile rank**：
 
-| | Net PnL | 勝率 |
-|--|---------|------|
-| benchmark CSV（保存版）| **2,029,746** | 64.33% |
-| 重新生成 CSV（pe_percentile 微差）| 1,838,208 | 65.3% |
+```python
+df_combined.groupby("symbol")["pe_calculated"].rank(pct=True) * 100
+```
 
-其他 52 個特徵（包含 `pred_upside_pct`）在 EPS 模型未重訓的情況下完全可重現，差異僅來自 `pe_percentile_official`。
+這是對每支股票的**全部歷史 PE 值**做百分位排名。每當 `daily_quotes` 新增一天的交易資料，就多了 ~2000 筆新的 PE 值參與排名，導致**所有歷史日期的百分位都會微幅改變**。
+
+#### 實際影響幅度
+
+以 A3 基準的 15,721 筆訓練資料為基準，重新從 DB 抓取最新值比較（2026/03 實測）：
+
+| 統計量 | 值 |
+|--------|------|
+| 平均絕對差異 | 0.08 |
+| 中位數絕對差異 | 0.07 |
+| 最大絕對差異 | 1.06 |
+| 發生變化的筆數 | 13,765 / 15,508（88.8%）|
+
+差異雖小，但 LGBMRanker 學的是**月內排名**。微小的特徵擾動就可能讓兩支股票的排名對調，改變每月前 10 名的選股結果：
+
+| 資料來源 | Net PnL | 勝率 |
+|----------|---------|------|
+| 鎖定 CSV（benchmark 保存版）| **2,263,822** | **68.3%** |
+| 重新從 DB 抓取（pe_percentile 微差）| 2,229,495 | 66.7% |
+
+#### 為什麼不能用其他計算方式替代？
+
+我們測試了兩種穩定化方案，結果均大幅劣化（2026/03 實測）：
+
+| 計算方式 | 說明 | Net PnL | 勝率 |
+|----------|------|---------|------|
+| **Full-history rank**（現行） | 對股票全部歷史 PE 排名 | **2,263,822** | **68.3%** |
+| Expanding window | 每個日期只看 ≤ 該日的資料排名 | 1,609,716 | 61.3% |
+| Trailing 750 天 | 只看過去 3 年（~750 交易日）排名 | 1,886,179 | 61.7% |
+
+- **Expanding window**：早期日期只有少量資料（如上市第 10 天，每天代表 10% 的分布），百分位噪音極大，模型學到的信號完全不同。
+- **Trailing 750 天**：窗口邊界造成值跳變（一筆舊資料滑出窗口就改變排名），且忽略了超過 3 年的歷史估值水位，信號損失嚴重。
+- **Full-history rank**：整段歷史參與排名，分布最穩定、信號最完整，代價是新增資料會改變歷史值。
+
+**結論**：full-history rank 的信號品質遠優於替代方案（PnL 差距 +378K ~ +654K），不可替換。
+
+#### 開發新策略時的處理方式
+
+開發新策略或訓練新模型時，直接從 DB 抓取最新的 `pe_percentile_official` 即可。重新生成的回測結果會因為 pe_percentile 微幅變動而與本文件記載的基準數字略有差異，這是**預期行為**。比較新舊策略時，應在同一次生成的資料上比較，而非跨時間比較絕對數字。
 
 ---
 
@@ -224,7 +266,28 @@ venv/bin/python3 backtester/summarize_range.py
 
 **B 分析**：新增的 4 個機構流量特徵（`foreign_net_5d`, `trust_net_5d`, `smart_money_net_5d`, `hist_vol_20d`）與現有的 `foreign_held_ratio`、`trust_held_ratio`、`foreign_streak_days` 高度相關，造成特徵冗餘，加上 `trust_net_5d` 幾乎無信號（Spearman=0.01），反而引入噪音。57 個特徵在有限訓練樣本下讓 LGBMRanker 更難收斂。
 
-**新基準 (A2)**：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10`
+**舊基準 (A2)**：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10`
+
+---
+
+#### 實驗三：正則化調校（2026/03，成功超越 A2）
+
+在 A2 基礎上加入 L1/L2 正則化，不改變特徵或 label 設定：
+
+| 實驗 | reg_alpha | reg_lambda | Net PnL | 勝率 | 結果 |
+|------|-----------|------------|---------|------|------|
+| A2（無正則） | 0 | 0 | 2,134,045 | 65.3% | 基準 |
+| 強正則 | 1.0 | 5.0 | 1,657,455 | 58.0% | 過度抑制 |
+| 中正則 | 0.1 | 0.5 | 2,088,305 | 66.7% | WR↑ PnL↓ |
+| **輕正則** | **0.05** | **0.1** | **2,263,822** | **68.3%** | **成功** |
+| 更輕正則 | 0.02 | 0.05 | 2,147,558 | 66.3% | 不夠 |
+| 偏 L2 | 0.05 | 0.2 | 2,125,414 | 67.0% | 略差 |
+
+額外嘗試在輕正則基礎上降低 learning rate（0.015/1000 trees, 0.025/750 trees），兩者皆劣於原始 LR=0.03/500 trees。
+
+**分析**：53 特徵 / ~300 股每月的設定下，模型確實有輕微過擬合。極輕的 L1+L2 正則化（alpha=0.05, lambda=0.1）在不手動移除特徵的前提下達到隱式特徵選擇效果，同時保留有用的交互作用。過強的正則化（≥0.1/0.5）則過度抑制模型容量。
+
+**新基準 (A3)**：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10, reg_alpha=0.05, reg_lambda=0.1`
 
 ---
 
