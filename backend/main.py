@@ -1,5 +1,4 @@
 import os
-import pickle
 import datetime
 import numpy as np
 import pandas as pd
@@ -21,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def get_db_url():
     user = os.getenv("DB_USER", "user")
     password = os.getenv("DB_PASSWORD", "password")
@@ -28,6 +28,7 @@ def get_db_url():
     port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "stock_db")
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+
 
 # 定義回傳資料模型
 class StockQuote(BaseModel):
@@ -38,6 +39,7 @@ class StockQuote(BaseModel):
     close: float
     volume: float
     change: Optional[float] = None
+
 
 class MAQuote(BaseModel):
     date: datetime.date
@@ -52,6 +54,7 @@ class MAQuote(BaseModel):
     ma120: Optional[float] = None
     ma240: Optional[float] = None
 
+
 class VMAQuote(BaseModel):
     date: datetime.date
     symbol: str
@@ -65,6 +68,7 @@ class VMAQuote(BaseModel):
     vma120: Optional[float] = None
     vma240: Optional[float] = None
 
+
 class VolumeBreakoutQuote(BaseModel):
     date: datetime.date
     symbol: str
@@ -74,17 +78,19 @@ class VolumeBreakoutQuote(BaseModel):
     vma10: float
     ratio: float
 
+
 # --- Backtest Models ---
 class BacktestRequest(BaseModel):
     start_date: str
     end_date: str
-    strategy_mode: str = "shares" # shares or amount
+    strategy_mode: str = "shares"  # shares or amount
     capital: float = 100000
     hold_days: int = 3
     allow_pyramiding: bool = True
     only_red_candle: bool = False
     take_profit_pct: float = 0.0
     stop_loss_pct: float = 0.0
+
 
 class TradeRecord(BaseModel):
     symbol: str
@@ -97,6 +103,7 @@ class TradeRecord(BaseModel):
     profit: float
     return_rate: float
 
+
 class BacktestSummary(BaseModel):
     total_trades: int
     total_profit: float
@@ -105,11 +112,14 @@ class BacktestSummary(BaseModel):
     win_rate: float
     avg_return: float
 
+
 class BacktestResult(BaseModel):
     summary: BacktestSummary
     trades: List[TradeRecord]
 
+
 # --- Scanner Models ---
+
 
 class VolumeSpikeResult(BaseModel):
     symbol: str
@@ -134,6 +144,7 @@ class VolumeSpikeResult(BaseModel):
     macd_dif: Optional[float] = None
     macd_dea: Optional[float] = None
 
+
 class CandlestickData(BaseModel):
     date: datetime.date
     open: float
@@ -146,12 +157,14 @@ class CandlestickData(BaseModel):
     ma20: Optional[float] = None
     ma60: Optional[float] = None
 
+
 class InstitutionalData(BaseModel):
     date: datetime.date
     foreign_net: float
     trust_net: float
     foreign_held_shares: Optional[float] = None
     trust_held_shares: Optional[float] = None
+
 
 class MLTrainingData(BaseModel):
     date: datetime.date
@@ -192,6 +205,7 @@ class MLTrainingData(BaseModel):
     small_holder_ratio_wow: Optional[float] = None
     concentration_spread_wow: Optional[float] = None
 
+
 # --- Raw Data Models ---
 class DailyQuoteRaw(BaseModel):
     date: str  # 改為字串以確保一致
@@ -209,6 +223,7 @@ class DailyQuoteRaw(BaseModel):
     direction: Optional[str] = None
     bid: Optional[str] = None  # Stored as text in database
     ask: Optional[str] = None  # Stored as text in database
+
 
 class MarginTradingRaw(BaseModel):
     date: str  # Stored as text in database
@@ -229,6 +244,7 @@ class MarginTradingRaw(BaseModel):
     margin_short_limit: Optional[float]
     offset_balance: Optional[float] = None
 
+
 class MarginSummaryRaw(BaseModel):
     date: str  # Stored as text (consistent with all other tables)
     market: str
@@ -238,6 +254,7 @@ class MarginSummaryRaw(BaseModel):
     cash_repay: Optional[float]
     prev_balance: Optional[float]
     today_balance: Optional[float]
+
 
 class InstitutionalInvestorsRaw(BaseModel):
     date: str
@@ -260,6 +277,7 @@ class InstitutionalInvestorsRaw(BaseModel):
     dealer_hedge_sell: Optional[float] = None
     dealer_hedge_net: Optional[float] = None
 
+
 class InstitutionalSummaryRaw(BaseModel):
     date: str
     market: str
@@ -267,6 +285,7 @@ class InstitutionalSummaryRaw(BaseModel):
     buy: Optional[float] = None
     sell: Optional[float] = None
     net: Optional[float] = None
+
 
 class ForeignHoldingRaw(BaseModel):
     date: str
@@ -280,6 +299,7 @@ class ForeignHoldingRaw(BaseModel):
     foreign_held_ratio: Optional[float] = None
     foreign_legal_limit_ratio: Optional[float] = None
 
+
 class TrustHoldingRaw(BaseModel):
     date: str
     symbol: str
@@ -289,6 +309,7 @@ class TrustHoldingRaw(BaseModel):
     trust_held_shares: Optional[float] = None
     trust_held_ratio: Optional[float] = None
 
+
 class DealerHoldingRaw(BaseModel):
     date: str
     symbol: str
@@ -297,6 +318,7 @@ class DealerHoldingRaw(BaseModel):
     issued_shares: Optional[float] = None
     dealer_held_shares: Optional[float] = None
     dealer_held_ratio: Optional[float] = None
+
 
 class PeRatioRaw(BaseModel):
     date: str
@@ -308,6 +330,7 @@ class PeRatioRaw(BaseModel):
     dividend_year: Optional[int] = None
     pb_ratio: Optional[float] = None
 
+
 class MarketIndexRaw(BaseModel):
     date: str
     symbol: str
@@ -316,6 +339,7 @@ class MarketIndexRaw(BaseModel):
     close: Optional[float] = None
     change: Optional[float] = None
     change_pct: Optional[float] = None
+
 
 class MonthlyRevenueRaw(BaseModel):
     date: str  # Format: YYYYMXX (e.g. 2025M01)
@@ -332,6 +356,7 @@ class MonthlyRevenueRaw(BaseModel):
     cumulative_yoy_pct: Optional[float] = None
     publish_time: Optional[str] = None
 
+
 class StockInfoRaw(BaseModel):
     symbol: str
     name: str
@@ -340,9 +365,11 @@ class StockInfoRaw(BaseModel):
     listing_date: Optional[str] = None
     tags: Optional[List[str]] = None
 
+
 class StockTagRaw(BaseModel):
     symbol: str
     tag: str
+
 
 class ShareholdingRaw(BaseModel):
     date: str
@@ -352,6 +379,7 @@ class ShareholdingRaw(BaseModel):
     holders: Optional[float]
     shares: Optional[float]
     percentage: Optional[float]
+
 
 class ShareholdingConcentrationRaw(BaseModel):
     date: str
@@ -364,6 +392,7 @@ class ShareholdingConcentrationRaw(BaseModel):
     large_holder_ratio_wow: Optional[float] = None
     small_holder_ratio_wow: Optional[float] = None
     concentration_spread_wow: Optional[float] = None
+
 
 class ShortInterestAnalysisRaw(BaseModel):
     date: str
@@ -380,6 +409,7 @@ class ShortInterestAnalysisRaw(BaseModel):
     margin_short_balance_wow: Optional[float] = None
     margin_short_balance_wow_pct: Optional[float] = None
     short_pressure_score: Optional[float] = None
+
 
 class MarginPressureAnalysisRaw(BaseModel):
     date: str
@@ -398,6 +428,7 @@ class MarginPressureAnalysisRaw(BaseModel):
     margin_short_balance_wow_pct: Optional[float] = None
     short_cover_pressure: Optional[float] = None
     margin_pressure_score: Optional[float] = None
+
 
 class QuarterlyReportRaw(BaseModel):
     date: str  # Format: YYYYQX (e.g. 2025Q1)
@@ -435,6 +466,7 @@ class QuarterlyReportRaw(BaseModel):
     equity_to_assets_ratio: Optional[float] = None
     current_ratio: Optional[float] = None
     quick_ratio: Optional[float] = None
+
 
 class IncomeStatementRaw(BaseModel):
     date: str
@@ -475,6 +507,7 @@ class IncomeStatementRaw(BaseModel):
     other_income_net_q: Optional[float] = None
     other_income_net_acc: Optional[float] = None
 
+
 class BalanceSheetRaw(BaseModel):
     date: str
     market: str
@@ -496,6 +529,7 @@ class BalanceSheetRaw(BaseModel):
     treasury_shares: Optional[float] = None
     nav_per_share: Optional[float] = None
 
+
 class CashFlowRaw(BaseModel):
     date: str
     market: str
@@ -515,6 +549,7 @@ class CashFlowRaw(BaseModel):
     cash_begin: Optional[float] = None
     cash_end: Optional[float] = None
 
+
 class XbrlStatementRaw(BaseModel):
     date: str
     symbol: str
@@ -526,6 +561,7 @@ class XbrlStatementRaw(BaseModel):
     account_name_eng: Optional[str] = None
     value_text: Optional[str] = None
 
+
 class DividendRaw(BaseModel):
     date: str
     symbol: str
@@ -534,6 +570,7 @@ class DividendRaw(BaseModel):
     ref_price: Optional[float] = None
     rights_dividend_value: Optional[float] = None
     type: Optional[str] = None
+
 
 class ValuationAnalysisRaw(BaseModel):
     date: str
@@ -544,11 +581,14 @@ class ValuationAnalysisRaw(BaseModel):
     pe_ratio_from_pe_table: Optional[float] = None
     pe_percentile: Optional[float] = None
 
+
 @app.get("/")
 def read_root():
     return {"message": "Stock Analysis API is running"}
 
+
 # --- Raw Data Endpoints ---
+
 
 @app.get("/raw/dividend", response_model=List[DividendRaw])
 def get_raw_dividend(
@@ -556,10 +596,11 @@ def get_raw_dividend(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     """取得除權除息資料"""
     return get_raw_data("dividend", start_date, end_date, symbol, None, limit, offset)
+
 
 def get_raw_data(
     table: str,
@@ -568,45 +609,50 @@ def get_raw_data(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = 1000,
-    offset: int = 0
+    offset: int = 0,
 ):
     """通用原始資料查詢邏輯"""
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
-        params = {"start": start_date, "end": end_date, "limit": limit, "offset": offset}
+
+        params = {
+            "start": start_date,
+            "end": end_date,
+            "limit": limit,
+            "offset": offset,
+        }
         where_clauses = ["date >= :start", "date <= :end"]
-        
+
         if symbol:
             params["symbol"] = symbol
             where_clauses.append("symbol = :symbol")
         if market:
             params["market"] = market
             where_clauses.append("market = :market")
-            
+
         with engine.connect() as conn:
             # 先獲取表格的所有欄位名稱
             column_query = text(f"SELECT * FROM {table} LIMIT 0")
             table_columns = conn.execute(column_query).keys()
-            
+
             # 動態建立 ORDER BY
             order_by = "date DESC"
             if "symbol" in table_columns:
                 order_by += ", symbol ASC"
-                
+
             sql = text(f"""
                 SELECT * FROM {table}
                 WHERE {" AND ".join(where_clauses)}
                 ORDER BY {order_by}
                 LIMIT :limit OFFSET :offset
             """)
-            
+
             df = pd.read_sql(sql, conn, params=params)
-        
+
         if df.empty:
             return []
-        
+
         # 統一日期格式為 YYYY-MM-DD 字串，處理 NaT
         # 註：季報、財報與月營收使用 YYYYQX/YYYYMXX 格式，應跳過轉換
         periodic_tables = [
@@ -619,13 +665,15 @@ def get_raw_data(
             "cash_flow_xbrl",
             "monthly_revenue",
         ]
-        if 'date' in df.columns and table not in periodic_tables:
-            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
-            df['date'] = df['date'].where(df['date'].notnull(), None)
-        
+        if "date" in df.columns and table not in periodic_tables:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+                "%Y-%m-%d"
+            )
+            df["date"] = df["date"].where(df["date"].notnull(), None)
+
         # 確保 symbol 是字串
-        if 'symbol' in df.columns:
-            df['symbol'] = df['symbol'].astype(str)
+        if "symbol" in df.columns:
+            df["symbol"] = df["symbol"].astype(str)
         return _to_clean_records(df)
 
     except Exception as e:
@@ -677,17 +725,21 @@ def _table_exists(conn, table_name: str) -> bool:
 
 
 def _get_table_columns(conn, table_name: str) -> set[str]:
-    rows = conn.execute(
-        text(
-            """
+    rows = (
+        conn.execute(
+            text(
+                """
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = 'public'
               AND table_name = :table_name
             """
-        ),
-        {"table_name": table_name},
-    ).scalars().all()
+            ),
+            {"table_name": table_name},
+        )
+        .scalars()
+        .all()
+    )
     return set(rows)
 
 
@@ -708,7 +760,12 @@ def get_raw_xbrl_data(
         db_url = get_db_url()
         engine = create_engine(db_url)
 
-        params = {"start": start_date, "end": end_date, "limit": limit, "offset": offset}
+        params = {
+            "start": start_date,
+            "end": end_date,
+            "limit": limit,
+            "offset": offset,
+        }
         where_clauses = ["x.date >= :start", "x.date <= :end"]
         if symbol:
             params["symbol"] = symbol
@@ -717,11 +774,23 @@ def get_raw_xbrl_data(
         with engine.connect() as conn:
             if _table_exists(conn, "xbrl_codebook"):
                 codebook_columns = _get_table_columns(conn, "xbrl_codebook")
-                cht_expr = "cb.account_name_cht" if "account_name_cht" in codebook_columns else (
-                    "cb.account_name_zh" if "account_name_zh" in codebook_columns else "NULL"
+                cht_expr = (
+                    "cb.account_name_cht"
+                    if "account_name_cht" in codebook_columns
+                    else (
+                        "cb.account_name_zh"
+                        if "account_name_zh" in codebook_columns
+                        else "NULL"
+                    )
                 )
-                eng_expr = "cb.account_name_eng" if "account_name_eng" in codebook_columns else (
-                    "cb.account_name_en" if "account_name_en" in codebook_columns else "NULL"
+                eng_expr = (
+                    "cb.account_name_eng"
+                    if "account_name_eng" in codebook_columns
+                    else (
+                        "cb.account_name_en"
+                        if "account_name_en" in codebook_columns
+                        else "NULL"
+                    )
                 )
                 join_conditions = ["cb.account_code = x.account_code"]
                 if "statement_type" in codebook_columns:
@@ -742,8 +811,8 @@ def get_raw_xbrl_data(
                         x.value_text
                     FROM {table} x
                     LEFT JOIN xbrl_codebook cb
-                        ON {' AND '.join(join_conditions)}
-                    WHERE {' AND '.join(where_clauses)}
+                        ON {" AND ".join(join_conditions)}
+                    WHERE {" AND ".join(where_clauses)}
                     ORDER BY x.date DESC, x.symbol ASC, x.account_code ASC
                     LIMIT :limit OFFSET :offset
                     """
@@ -762,7 +831,7 @@ def get_raw_xbrl_data(
                         NULL AS account_name_eng,
                         x.value_text
                     FROM {table} x
-                    WHERE {' AND '.join(where_clauses)}
+                    WHERE {" AND ".join(where_clauses)}
                     ORDER BY x.date DESC, x.symbol ASC, x.account_code ASC
                     LIMIT :limit OFFSET :offset
                     """
@@ -801,22 +870,23 @@ def get_raw_xbrl_data(
         print(f"Raw Data Error ({table}): {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/raw/stock-info", response_model=List[StockInfoRaw])
 def get_raw_stock_info(
     symbol: Optional[str] = None,
     industry: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     """取得股票基本資料與產業分類"""
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
+
         params = {"limit": limit, "offset": offset}
         where_clauses = []
-        
+
         if symbol:
             params["symbol"] = symbol
             where_clauses.append("s.symbol = :symbol")
@@ -826,7 +896,7 @@ def get_raw_stock_info(
         if market:
             params["market"] = market.lower()
             where_clauses.append("s.market = :market")
-            
+
         # 使用 LEFT JOIN 並透過 array_agg 合併標籤
         sql_text = """
             SELECT 
@@ -835,27 +905,28 @@ def get_raw_stock_info(
             FROM stock_info s
             LEFT JOIN stock_tags t ON s.symbol = t.symbol
         """
-        
+
         if where_clauses:
             sql_text += " WHERE " + " AND ".join(where_clauses)
-            
+
         sql_text += " GROUP BY s.symbol, s.name, s.industry, s.market, s.listing_date"
         sql_text += " ORDER BY s.symbol ASC LIMIT :limit OFFSET :offset"
-        
+
         with engine.connect() as conn:
             df = pd.read_sql(text(sql_text), conn, params=params)
-        
+
         # 處理 DataFrame 中的 tags (SQL 回傳的是 list)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/raw/stock-tags", response_model=List[StockTagRaw])
 def get_raw_stock_tags(
     symbol: Optional[str] = None,
     tag: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     """取得股票標籤對照 (symbol, tag)"""
     try:
@@ -886,6 +957,7 @@ def get_raw_stock_tags(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/raw/daily-quotes", response_model=List[DailyQuoteRaw])
 def get_raw_quotes(
     start_date: str = Query(..., description="YYYY-MM-DD"),
@@ -893,9 +965,12 @@ def get_raw_quotes(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("daily_quotes", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "daily_quotes", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/margin-trading", response_model=List[MarginTradingRaw])
 def get_raw_margin_trading(
@@ -904,9 +979,12 @@ def get_raw_margin_trading(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("margin_trading", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "margin_trading", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/margin-summary", response_model=List[MarginSummaryRaw])
 def get_raw_margin_summary(
@@ -914,9 +992,12 @@ def get_raw_margin_summary(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("margin_summary", start_date, end_date, None, market, limit, offset)
+    return get_raw_data(
+        "margin_summary", start_date, end_date, None, market, limit, offset
+    )
+
 
 @app.get("/raw/institutional-investors", response_model=List[InstitutionalInvestorsRaw])
 def get_raw_institutional(
@@ -925,9 +1006,12 @@ def get_raw_institutional(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("institutional_investors", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "institutional_investors", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/institutional-summary", response_model=List[InstitutionalSummaryRaw])
 def get_raw_institutional_summary(
@@ -935,9 +1019,12 @@ def get_raw_institutional_summary(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("institutional_summary", start_date, end_date, None, market, limit, offset)
+    return get_raw_data(
+        "institutional_summary", start_date, end_date, None, market, limit, offset
+    )
+
 
 @app.get("/raw/foreign-holding", response_model=List[ForeignHoldingRaw])
 def get_raw_foreign_holding(
@@ -946,9 +1033,12 @@ def get_raw_foreign_holding(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("foreign_holding", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "foreign_holding", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/trust-holding", response_model=List[TrustHoldingRaw])
 def get_raw_trust_holding(
@@ -957,9 +1047,12 @@ def get_raw_trust_holding(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("trust_holding", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "trust_holding", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/dealer-holding", response_model=List[DealerHoldingRaw])
 def get_raw_dealer_holding(
@@ -968,9 +1061,12 @@ def get_raw_dealer_holding(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("dealer_holding", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "dealer_holding", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/pe-ratio", response_model=List[PeRatioRaw])
 def get_raw_pe_ratio(
@@ -979,9 +1075,10 @@ def get_raw_pe_ratio(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     return get_raw_data("pe_ratio", start_date, end_date, symbol, market, limit, offset)
+
 
 @app.get("/raw/valuation-analysis", response_model=List[ValuationAnalysisRaw])
 def get_raw_valuation_analysis(
@@ -989,9 +1086,12 @@ def get_raw_valuation_analysis(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("valuation_analysis", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_data(
+        "valuation_analysis", start_date, end_date, symbol, None, limit, offset
+    )
+
 
 @app.get("/raw/market-indices", response_model=List[MarketIndexRaw])
 def get_raw_market_indices(
@@ -1000,21 +1100,29 @@ def get_raw_market_indices(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("market_indices", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "market_indices", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/monthly-revenue", response_model=List[MonthlyRevenueRaw])
 def get_raw_monthly_revenue(
-    start_date: str = Query(..., description="Format: YYYYMXX (e.g. 2025M01) or YYYY-MM-DD"),
+    start_date: str = Query(
+        ..., description="Format: YYYYMXX (e.g. 2025M01) or YYYY-MM-DD"
+    ),
     end_date: str = Query(..., description="Format: YYYYMXX"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     # 如果是 YYYYMXX 格式則直接傳入，否則保持原樣
-    return get_raw_data("monthly_revenue", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "monthly_revenue", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/shareholding", response_model=List[ShareholdingRaw])
 def get_raw_shareholding(
@@ -1022,19 +1130,27 @@ def get_raw_shareholding(
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("shareholding", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_data(
+        "shareholding", start_date, end_date, symbol, None, limit, offset
+    )
 
-@app.get("/raw/shareholding-concentration", response_model=List[ShareholdingConcentrationRaw])
+
+@app.get(
+    "/raw/shareholding-concentration", response_model=List[ShareholdingConcentrationRaw]
+)
 def get_raw_shareholding_concentration(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("shareholding_concentration", start_date, end_date, symbol, None, limit, offset)
+    return get_raw_data(
+        "shareholding_concentration", start_date, end_date, symbol, None, limit, offset
+    )
+
 
 @app.get("/raw/short-interest-analysis", response_model=List[ShortInterestAnalysisRaw])
 def get_raw_short_interest_analysis(
@@ -1043,20 +1159,28 @@ def get_raw_short_interest_analysis(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("short_interest_analysis", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "short_interest_analysis", start_date, end_date, symbol, market, limit, offset
+    )
 
-@app.get("/raw/margin-pressure-analysis", response_model=List[MarginPressureAnalysisRaw])
+
+@app.get(
+    "/raw/margin-pressure-analysis", response_model=List[MarginPressureAnalysisRaw]
+)
 def get_raw_margin_pressure_analysis(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
-    return get_raw_data("margin_pressure_analysis", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "margin_pressure_analysis", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/quarterly-reports", response_model=List[QuarterlyReportRaw])
 def get_raw_quarterly_reports(
@@ -1065,20 +1189,24 @@ def get_raw_quarterly_reports(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     """
     Fetch quarterly financial reports.
     Note: Date filtering for this endpoint uses 'YYYYQX' string format (e.g. '2020Q1'), not YYYY-MM-DD.
     """
     import re
+
     q_pattern = re.compile(r"^\d{4}Q[1-4]$")
     if not q_pattern.match(start_date) or not q_pattern.match(end_date):
         raise HTTPException(
-            status_code=400, 
-            detail="Invalid date format. Quarterly reports require 'YYYYQX' format (e.g., 2025Q1)."
+            status_code=400,
+            detail="Invalid date format. Quarterly reports require 'YYYYQX' format (e.g., 2025Q1).",
         )
-    return get_raw_data("quarterly_reports", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "quarterly_reports", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/income-statements", response_model=List[IncomeStatementRaw])
 def get_raw_income_statements(
@@ -1087,12 +1215,18 @@ def get_raw_income_statements(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("income_statement", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "income_statement", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/balance-sheets", response_model=List[BalanceSheetRaw])
 def get_raw_balance_sheets(
@@ -1101,12 +1235,18 @@ def get_raw_balance_sheets(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("balance_sheet", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "balance_sheet", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/cash-flows", response_model=List[CashFlowRaw])
 def get_raw_cash_flows(
@@ -1115,12 +1255,18 @@ def get_raw_cash_flows(
     symbol: Optional[str] = None,
     market: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_data("cash_flow", start_date, end_date, symbol, market, limit, offset)
+    return get_raw_data(
+        "cash_flow", start_date, end_date, symbol, market, limit, offset
+    )
+
 
 @app.get("/raw/income-statements-xbrl", response_model=List[XbrlStatementRaw])
 def get_raw_income_statements_xbrl(
@@ -1128,12 +1274,18 @@ def get_raw_income_statements_xbrl(
     end_date: str = Query(..., description="Format: YYYYQX"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_xbrl_data("income_statement_xbrl", start_date, end_date, symbol, limit, offset)
+    return get_raw_xbrl_data(
+        "income_statement_xbrl", start_date, end_date, symbol, limit, offset
+    )
+
 
 @app.get("/raw/balance-sheets-xbrl", response_model=List[XbrlStatementRaw])
 def get_raw_balance_sheets_xbrl(
@@ -1141,12 +1293,18 @@ def get_raw_balance_sheets_xbrl(
     end_date: str = Query(..., description="Format: YYYYQX"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_xbrl_data("balance_sheet_xbrl", start_date, end_date, symbol, limit, offset)
+    return get_raw_xbrl_data(
+        "balance_sheet_xbrl", start_date, end_date, symbol, limit, offset
+    )
+
 
 @app.get("/raw/cash-flows-xbrl", response_model=List[XbrlStatementRaw])
 def get_raw_cash_flows_xbrl(
@@ -1154,12 +1312,18 @@ def get_raw_cash_flows_xbrl(
     end_date: str = Query(..., description="Format: YYYYQX"),
     symbol: Optional[str] = None,
     limit: int = Query(1000, gt=0, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
 ):
     import re
-    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(r"^\d{4}Q[1-4]$", end_date):
+
+    if not re.match(r"^\d{4}Q[1-4]$", start_date) or not re.match(
+        r"^\d{4}Q[1-4]$", end_date
+    ):
         raise HTTPException(status_code=400, detail="Dates must be in format YYYYQX")
-    return get_raw_xbrl_data("cash_flow_xbrl", start_date, end_date, symbol, limit, offset)
+    return get_raw_xbrl_data(
+        "cash_flow_xbrl", start_date, end_date, symbol, limit, offset
+    )
+
 
 # @app.get("/scanner/volume-spike", response_model=List[VolumeSpikeResult])
 # def get_volume_spike_scanner(
@@ -1221,12 +1385,13 @@ def get_raw_cash_flows_xbrl(
 #         traceback.print_exc()
 #         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/scanner/candlestick/{symbol}", response_model=List[CandlestickData])
 def get_candlestick_data(
     symbol: str,
     date: str = Query(..., description="Center date in YYYY-MM-DD format"),
     days_before: int = Query(30, description="Days before center date"),
-    days_after: int = Query(10, description="Days after center date")
+    days_after: int = Query(10, description="Days after center date"),
 ):
     """
     Get candlestick chart data for a specific stock around a date
@@ -1234,9 +1399,9 @@ def get_candlestick_data(
     try:
         from datetime import timedelta
 
-        center_date = datetime.datetime.strptime(date, '%Y-%m-%d')
-        start_date = (center_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
-        end_date = (center_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
+        center_date = datetime.datetime.strptime(date, "%Y-%m-%d")
+        start_date = (center_date - timedelta(days=days_before)).strftime("%Y-%m-%d")
+        end_date = (center_date + timedelta(days=days_after)).strftime("%Y-%m-%d")
 
         db_url = get_db_url()
         engine = create_engine(db_url)
@@ -1253,54 +1418,62 @@ def get_candlestick_data(
         """)
 
         with engine.connect() as conn:
-            result = conn.execute(sql, {
-                "symbol": symbol,
-                "start_date": start_date,
-                "end_date": end_date
-            }).fetchall()
+            result = conn.execute(
+                sql, {"symbol": symbol, "start_date": start_date, "end_date": end_date}
+            ).fetchall()
 
         if not result:
             return []
 
         candlestick_data = []
         for row in result:
-            if row.open is None or row.high is None or row.low is None or row.close is None or row.volume is None:
+            if (
+                row.open is None
+                or row.high is None
+                or row.low is None
+                or row.close is None
+                or row.volume is None
+            ):
                 continue
-            candlestick_data.append(CandlestickData(
-                date=row.date,
-                open=float(row.open),
-                high=float(row.high),
-                low=float(row.low),
-                close=float(row.close),
-                volume=float(row.volume),
-                ma5=float(row.ma5) if row.ma5 is not None else None,
-                ma10=float(row.ma10) if row.ma10 is not None else None,
-                ma20=float(row.ma20) if row.ma20 is not None else None,
-                ma60=float(row.ma60) if row.ma60 is not None else None
-            ))
+            candlestick_data.append(
+                CandlestickData(
+                    date=row.date,
+                    open=float(row.open),
+                    high=float(row.high),
+                    low=float(row.low),
+                    close=float(row.close),
+                    volume=float(row.volume),
+                    ma5=float(row.ma5) if row.ma5 is not None else None,
+                    ma10=float(row.ma10) if row.ma10 is not None else None,
+                    ma20=float(row.ma20) if row.ma20 is not None else None,
+                    ma60=float(row.ma60) if row.ma60 is not None else None,
+                )
+            )
 
         return candlestick_data
 
     except Exception as e:
         print(f"Candlestick Data Error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/scanner/institutional/{symbol}", response_model=List[InstitutionalData])
 def get_institutional_data(
     symbol: str,
     date: str = Query(..., description="Center date in YYYY-MM-DD format"),
     days_before: int = Query(90, description="Days before center date"),
-    days_after: int = Query(90, description="Days after center date")
+    days_after: int = Query(90, description="Days after center date"),
 ):
     """Get institutional investor net buy/sell data for a specific stock around a date"""
     try:
         from datetime import timedelta
 
-        center_date = datetime.datetime.strptime(date, '%Y-%m-%d')
-        start_date = (center_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
-        end_date = (center_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
+        center_date = datetime.datetime.strptime(date, "%Y-%m-%d")
+        start_date = (center_date - timedelta(days=days_before)).strftime("%Y-%m-%d")
+        end_date = (center_date + timedelta(days=days_after)).strftime("%Y-%m-%d")
 
         db_url = get_db_url()
         engine = create_engine(db_url)
@@ -1319,11 +1492,9 @@ def get_institutional_data(
         """)
 
         with engine.connect() as conn:
-            result = conn.execute(sql, {
-                "symbol": symbol,
-                "start_date": start_date,
-                "end_date": end_date
-            }).fetchall()
+            result = conn.execute(
+                sql, {"symbol": symbol, "start_date": start_date, "end_date": end_date}
+            ).fetchall()
 
         if not result:
             return []
@@ -1332,19 +1503,28 @@ def get_institutional_data(
         for row in result:
             if row.foreign_net is None and row.trust_net is None:
                 continue
-            data.append(InstitutionalData(
-                date=row.date,
-                foreign_net=float(row.foreign_net) if row.foreign_net is not None else 0,
-                trust_net=float(row.trust_net) if row.trust_net is not None else 0,
-                foreign_held_shares=float(row.foreign_held_shares) if row.foreign_held_shares is not None else None,
-                trust_held_shares=float(row.trust_held_shares) if row.trust_held_shares is not None else None
-            ))
+            data.append(
+                InstitutionalData(
+                    date=row.date,
+                    foreign_net=float(row.foreign_net)
+                    if row.foreign_net is not None
+                    else 0,
+                    trust_net=float(row.trust_net) if row.trust_net is not None else 0,
+                    foreign_held_shares=float(row.foreign_held_shares)
+                    if row.foreign_held_shares is not None
+                    else None,
+                    trust_held_shares=float(row.trust_held_shares)
+                    if row.trust_held_shares is not None
+                    else None,
+                )
+            )
 
         return data
 
     except Exception as e:
         print(f"Institutional Data Error: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1360,11 +1540,12 @@ def health_check():
     except Exception as e:
         return {"status": "error", "db_connection": "failed", "detail": str(e)}
 
+
 @app.get("/quotes/top-volume", response_model=List[StockQuote])
 def get_top_volume(
-    date: str = Query(..., description="Date in YYYY-MM-DD or YYYYMMDD format"), 
+    date: str = Query(..., description="Date in YYYY-MM-DD or YYYYMMDD format"),
     limit: int = 10,
-    sort: str = Query("desc", description="Sort order: asc or desc")
+    sort: str = Query("desc", description="Sort order: asc or desc"),
 ):
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
@@ -1376,7 +1557,7 @@ def get_top_volume(
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
+
         sql = text(f"""
             SELECT date, market, symbol, name, close, volume, change
             FROM daily_quotes
@@ -1384,36 +1565,39 @@ def get_top_volume(
             ORDER BY volume {sort_order}
             LIMIT :limit
         """)
-        
+
         with engine.connect() as conn:
             result = conn.execute(sql, {"date": date_str, "limit": limit}).fetchall()
-            
+
         if not result:
             return []
-            
+
         quotes = []
         for row in result:
-            quotes.append(StockQuote(
-                date=row.date,
-                market=row.market,
-                symbol=row.symbol,
-                name=row.name,
-                close=float(row.close) if row.close is not None else 0.0,
-                volume=float(row.volume) if row.volume is not None else 0.0,
-                change=float(row.change) if row.change is not None else None
-            ))
-            
+            quotes.append(
+                StockQuote(
+                    date=row.date,
+                    market=row.market,
+                    symbol=row.symbol,
+                    name=row.name,
+                    close=float(row.close) if row.close is not None else 0.0,
+                    volume=float(row.volume) if row.volume is not None else 0.0,
+                    change=float(row.change) if row.change is not None else None,
+                )
+            )
+
         return quotes
 
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/analysis/ma", response_model=List[MAQuote])
 def get_ma_data(
-    date: str = Query(..., description="Date in YYYY-MM-DD"), 
+    date: str = Query(..., description="Date in YYYY-MM-DD"),
     limit: int = 10,
-    sort: str = Query("desc", description="Sort by volume: asc or desc")
+    sort: str = Query("desc", description="Sort by volume: asc or desc"),
 ):
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
@@ -1425,7 +1609,7 @@ def get_ma_data(
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
+
         sql = text(f"""
             SELECT t.date, t.symbol, d.name, d.close, d.volume, 
                    t.ma5, t.ma10, t.ma20, t.ma60, t.ma120, t.ma240
@@ -1435,10 +1619,10 @@ def get_ma_data(
             ORDER BY d.volume {sort_order}
             LIMIT :limit
         """)
-        
+
         with engine.connect() as conn:
             result = conn.execute(sql, {"date": date_str, "limit": limit}).fetchall()
-            
+
         return [
             MAQuote(
                 date=row.date,
@@ -1451,19 +1635,21 @@ def get_ma_data(
                 ma20=float(row.ma20) if row.ma20 is not None else None,
                 ma60=float(row.ma60) if row.ma60 is not None else None,
                 ma120=float(row.ma120) if row.ma120 is not None else None,
-                ma240=float(row.ma240) if row.ma240 is not None else None
-            ) for row in result
+                ma240=float(row.ma240) if row.ma240 is not None else None,
+            )
+            for row in result
         ]
 
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/analysis/vma", response_model=List[VMAQuote])
 def get_vma_data(
-    date: str = Query(..., description="Date in YYYY-MM-DD"), 
+    date: str = Query(..., description="Date in YYYY-MM-DD"),
     limit: int = 10,
-    sort: str = Query("desc", description="Sort by volume: asc or desc")
+    sort: str = Query("desc", description="Sort by volume: asc or desc"),
 ):
     if len(date) == 8 and date.isdigit():
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
@@ -1475,7 +1661,7 @@ def get_vma_data(
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
-        
+
         sql = text(f"""
             SELECT t.date, t.symbol, d.name, d.close, d.volume, 
                    t.vma5, t.vma10, t.vma20, t.vma60, t.vma120, t.vma240
@@ -1485,10 +1671,10 @@ def get_vma_data(
             ORDER BY d.volume {sort_order}
             LIMIT :limit
         """)
-        
+
         with engine.connect() as conn:
             result = conn.execute(sql, {"date": date_str, "limit": limit}).fetchall()
-            
+
         return [
             VMAQuote(
                 date=row.date,
@@ -1501,13 +1687,15 @@ def get_vma_data(
                 vma20=float(row.vma20) if row.vma20 is not None else None,
                 vma60=float(row.vma60) if row.vma60 is not None else None,
                 vma120=float(row.vma120) if row.vma120 is not None else None,
-                vma240=float(row.vma240) if row.vma240 is not None else None
-            ) for row in result
+                vma240=float(row.vma240) if row.vma240 is not None else None,
+            )
+            for row in result
         ]
 
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/ml/training-data", response_model=List[MLTrainingData])
 def get_ml_training_data(
@@ -1515,30 +1703,74 @@ def get_ml_training_data(
     end_date: str = Query(..., description="End date in YYYY-MM-DD"),
     symbols: Optional[str] = Query(None, description="Comma-separated symbols"),
     include_indicators: bool = Query(True, description="Include indicators"),
-    include_institutional: bool = Query(True, description="Include institutional")
+    include_institutional: bool = Query(True, description="Include institutional"),
 ):
     try:
         db_url = get_db_url()
         engine = create_engine(db_url)
 
-        select_fields = ["dq.date", "dq.symbol", "dq.open", "dq.high", "dq.low", "dq.close", "dq.volume"]
+        select_fields = [
+            "dq.date",
+            "dq.symbol",
+            "dq.open",
+            "dq.high",
+            "dq.low",
+            "dq.close",
+            "dq.volume",
+        ]
         if include_indicators:
-            select_fields.extend(["ti.ma5", "ti.ma10", "ti.ma20", "ti.ma60", "ti.ma120", "ti.ma240",
-                                "ti.vma5", "ti.vma10", "ti.vma20", "ti.vma60",
-                                "ti.k", "ti.d", "ti.rsi6", "ti.rsi12", "ti.macd_dif", "ti.macd_dea",
-                                "ti.foreign_streak_days", "ti.trust_streak_days", "ti.dealer_streak_days"])
+            select_fields.extend(
+                [
+                    "ti.ma5",
+                    "ti.ma10",
+                    "ti.ma20",
+                    "ti.ma60",
+                    "ti.ma120",
+                    "ti.ma240",
+                    "ti.vma5",
+                    "ti.vma10",
+                    "ti.vma20",
+                    "ti.vma60",
+                    "ti.k",
+                    "ti.d",
+                    "ti.rsi6",
+                    "ti.rsi12",
+                    "ti.macd_dif",
+                    "ti.macd_dea",
+                    "ti.foreign_streak_days",
+                    "ti.trust_streak_days",
+                    "ti.dealer_streak_days",
+                ]
+            )
         if include_institutional:
-            select_fields.extend(["ii.foreign_net", "ii.trust_net", "ii.dealer_net", "fh.foreign_held_shares",
-                                "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares",
-                                "shc.large_holder_ratio", "shc.small_holder_ratio", "shc.concentration_spread",
-                                "shc.large_holder_ratio_wow", "shc.small_holder_ratio_wow", "shc.concentration_spread_wow"])
+            select_fields.extend(
+                [
+                    "ii.foreign_net",
+                    "ii.trust_net",
+                    "ii.dealer_net",
+                    "fh.foreign_held_shares",
+                    "SUM(ii.trust_net) OVER (PARTITION BY dq.symbol ORDER BY dq.date) AS trust_held_shares",
+                    "shc.large_holder_ratio",
+                    "shc.small_holder_ratio",
+                    "shc.concentration_spread",
+                    "shc.large_holder_ratio_wow",
+                    "shc.small_holder_ratio_wow",
+                    "shc.concentration_spread_wow",
+                ]
+            )
 
         joins = []
         if include_indicators:
-            joins.append("LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date")
+            joins.append(
+                "LEFT JOIN technical_indicators ti ON dq.symbol = ti.symbol AND dq.date = ti.date"
+            )
         if include_institutional:
-            joins.append("LEFT JOIN institutional_investors ii ON dq.symbol = ii.symbol AND dq.date = ii.date")
-            joins.append("LEFT JOIN foreign_holding fh ON dq.symbol = fh.symbol AND dq.date = fh.date")
+            joins.append(
+                "LEFT JOIN institutional_investors ii ON dq.symbol = ii.symbol AND dq.date = ii.date"
+            )
+            joins.append(
+                "LEFT JOIN foreign_holding fh ON dq.symbol = fh.symbol AND dq.date = fh.date"
+            )
             joins.append(
                 "LEFT JOIN LATERAL ("
                 "  SELECT sc.large_holder_ratio, sc.small_holder_ratio, sc.concentration_spread, "
@@ -1559,39 +1791,96 @@ def get_ml_training_data(
             for i, s in enumerate(s_list):
                 params[f"s{i}"] = s
 
-        query = text(f"SELECT {', '.join(select_fields)} FROM daily_quotes dq {' '.join(joins)} WHERE {' AND '.join(where)} ORDER BY dq.date, dq.symbol")
+        query = text(
+            f"SELECT {', '.join(select_fields)} FROM daily_quotes dq {' '.join(joins)} WHERE {' AND '.join(where)} ORDER BY dq.date, dq.symbol"
+        )
 
         with engine.connect() as conn:
             result = conn.execute(query, params).fetchall()
 
         data = []
         for row in result:
-            record = {"date": row.date, "symbol": row.symbol, "open": float(row.open), "high": float(row.high),
-                      "low": float(row.low), "close": float(row.close), "volume": float(row.volume)}
+            record = {
+                "date": row.date,
+                "symbol": row.symbol,
+                "open": float(row.open),
+                "high": float(row.high),
+                "low": float(row.low),
+                "close": float(row.close),
+                "volume": float(row.volume),
+            }
             if include_indicators:
-                record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
-                             for k in ["ma5", "ma10", "ma20", "ma60", "ma120", "ma240", "vma5", "vma10", "vma20", "vma60",
-                                       "k", "d", "rsi6", "rsi12", "macd_dif", "macd_dea"]})
-                record.update({k: int(getattr(row, k)) if getattr(row, k) is not None else None
-                             for k in ["foreign_streak_days", "trust_streak_days", "dealer_streak_days"]})
+                record.update(
+                    {
+                        k: float(getattr(row, k))
+                        if getattr(row, k) is not None
+                        else None
+                        for k in [
+                            "ma5",
+                            "ma10",
+                            "ma20",
+                            "ma60",
+                            "ma120",
+                            "ma240",
+                            "vma5",
+                            "vma10",
+                            "vma20",
+                            "vma60",
+                            "k",
+                            "d",
+                            "rsi6",
+                            "rsi12",
+                            "macd_dif",
+                            "macd_dea",
+                        ]
+                    }
+                )
+                record.update(
+                    {
+                        k: int(getattr(row, k)) if getattr(row, k) is not None else None
+                        for k in [
+                            "foreign_streak_days",
+                            "trust_streak_days",
+                            "dealer_streak_days",
+                        ]
+                    }
+                )
             if include_institutional:
-                record.update({k: float(getattr(row, k)) if getattr(row, k) is not None else None 
-                             for k in ["foreign_net", "trust_net", "dealer_net", "foreign_held_shares", "trust_held_shares",
-                                       "large_holder_ratio", "small_holder_ratio", "concentration_spread",
-                                       "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow"]})
+                record.update(
+                    {
+                        k: float(getattr(row, k))
+                        if getattr(row, k) is not None
+                        else None
+                        for k in [
+                            "foreign_net",
+                            "trust_net",
+                            "dealer_net",
+                            "foreign_held_shares",
+                            "trust_held_shares",
+                            "large_holder_ratio",
+                            "small_holder_ratio",
+                            "concentration_spread",
+                            "large_holder_ratio_wow",
+                            "small_holder_ratio_wow",
+                            "concentration_spread_wow",
+                        ]
+                    }
+                )
             data.append(MLTrainingData(**record))
         return data
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/quotes/volume-breakout", response_model=List[VolumeBreakoutQuote])
 def get_volume_breakout(
     date: str = Query(..., description="Date in YYYY-MM-DD"),
     min_volume: int = 1000000,
     ratio: float = 3.0,
-    limit: int = 20
+    limit: int = 20,
 ):
     try:
         db_url = get_db_url()
@@ -1605,9 +1894,27 @@ def get_volume_breakout(
             ORDER BY ratio DESC LIMIT :limit
         """)
         with engine.connect() as conn:
-            result = conn.execute(sql, {"date": date, "min_volume": min_volume, "ratio": ratio, "limit": limit}).fetchall()
-        return [VolumeBreakoutQuote(date=row.date, symbol=row.symbol, name=row.name, close=float(row.close),
-                                   volume=float(row.volume), vma10=float(row.vma10), ratio=float(row.ratio)) for row in result]
+            result = conn.execute(
+                sql,
+                {
+                    "date": date,
+                    "min_volume": min_volume,
+                    "ratio": ratio,
+                    "limit": limit,
+                },
+            ).fetchall()
+        return [
+            VolumeBreakoutQuote(
+                date=row.date,
+                symbol=row.symbol,
+                name=row.name,
+                close=float(row.close),
+                volume=float(row.volume),
+                vma10=float(row.vma10),
+                ratio=float(row.ratio),
+            )
+            for row in result
+        ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1615,6 +1922,7 @@ def get_volume_breakout(
 # ---------------------------------------------------------------------------
 # ML Selection Scoring
 # ---------------------------------------------------------------------------
+
 
 class ScoredStock(BaseModel):
     ml_rank: int
@@ -1633,7 +1941,9 @@ class ScoredStock(BaseModel):
     model_used: str
 
 
-def _resolve_model_for_month(models_root: Path, year: int, month: int) -> Optional[Path]:
+def _resolve_model_for_month(
+    models_root: Path, year: int, month: int
+) -> Optional[Path]:
     """Return model dir with latest cutoff strictly before (year, month).
     Falls back to models_root/latest if no versioned model found."""
     ym = year * 100 + month
@@ -1681,9 +1991,14 @@ def get_selection_score(
             models_selection_dir = app_dir.parent / "models_selection"
 
         month_str = f"{month:02d}"
-        scored_path = models_selection_dir / f"{year:04d}" / month_str / "candidates_scored.csv"
+        scored_path = (
+            models_selection_dir / f"{year:04d}" / month_str / "candidates_scored.csv"
+        )
         if not scored_path.exists():
-            raise HTTPException(status_code=404, detail=f"candidates_scored.csv not found for {year}/{month_str}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"candidates_scored.csv not found for {year}/{month_str}",
+            )
 
         ds = pd.read_csv(scored_path)
         ds["symbol"] = ds["symbol"].astype(str)
@@ -1691,9 +2006,17 @@ def get_selection_score(
         model_used = f"pre-computed {year}/{month_str}"
 
         # Join with rolling_trades for entry/exit price and net_pnl
-        trades_path = app_dir / "backtester" / "output" / "rolling" / "rolling_trades.csv"
+        trades_path = (
+            app_dir / "backtester" / "output" / "rolling" / "rolling_trades.csv"
+        )
         if not trades_path.exists():
-            trades_path = app_dir.parent / "backtester" / "output" / "rolling" / "rolling_trades.csv"
+            trades_path = (
+                app_dir.parent
+                / "backtester"
+                / "output"
+                / "rolling"
+                / "rolling_trades.csv"
+            )
         trades_lookup: dict = {}
         if trades_path.exists():
             trades = pd.read_csv(trades_path)
@@ -1713,29 +2036,36 @@ def get_selection_score(
         results = []
         for _, row in ds.iterrows():
             sym = str(row["symbol"])
-            entry_date = str(row["entry_date"]) if pd.notna(row.get("entry_date")) else None
+            entry_date = (
+                str(row["entry_date"]) if pd.notna(row.get("entry_date")) else None
+            )
             trade = trades_lookup.get((sym, entry_date), {})
-            results.append(ScoredStock(
-                ml_rank=int(row["ml_rank"]),
-                ml_score=float(row["ml_score"]),
-                symbol=sym,
-                name=str(row["name"]) if pd.notna(row.get("name")) else None,
-                pred_upside_pct=_opt_float(row, "pred_upside_pct"),
-                pe_current=_opt_float(row, "pe_current"),
-                ttm_eps=_opt_float(row, "ttm_eps"),
-                volume_lots=_opt_float(row, "volume_lots"),
-                entry_date=entry_date,
-                entry_price=_opt_float(trade, "entry_price"),
-                exit_date=str(trade["exit_date"]) if trade.get("exit_date") and pd.notna(trade.get("exit_date")) else None,
-                exit_price=_opt_float(trade, "exit_price"),
-                net_pnl=_opt_float(trade, "net_pnl"),
-                model_used=model_used,
-            ))
+            results.append(
+                ScoredStock(
+                    ml_rank=int(row["ml_rank"]),
+                    ml_score=float(row["ml_score"]),
+                    symbol=sym,
+                    name=str(row["name"]) if pd.notna(row.get("name")) else None,
+                    pred_upside_pct=_opt_float(row, "pred_upside_pct"),
+                    pe_current=_opt_float(row, "pe_current"),
+                    ttm_eps=_opt_float(row, "ttm_eps"),
+                    volume_lots=_opt_float(row, "volume_lots"),
+                    entry_date=entry_date,
+                    entry_price=_opt_float(trade, "entry_price"),
+                    exit_date=str(trade["exit_date"])
+                    if trade.get("exit_date") and pd.notna(trade.get("exit_date"))
+                    else None,
+                    exit_price=_opt_float(trade, "exit_price"),
+                    net_pnl=_opt_float(trade, "net_pnl"),
+                    model_used=model_used,
+                )
+            )
         return results
 
     except HTTPException:
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

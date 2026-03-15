@@ -35,7 +35,9 @@ class ScoredStock(BaseModel):
     model_used: str
 
 
-def _resolve_model_for_month(models_root: Path, year: int, month: int) -> Optional[Path]:
+def _resolve_model_for_month(
+    models_root: Path, year: int, month: int
+) -> Optional[Path]:
     """Return model dir with latest cutoff strictly before (year, month).
     Falls back to models_root/latest if no versioned model found."""
     ym = year * 100 + month
@@ -75,7 +77,14 @@ def get_selection_score(
 ):
     try:
         month_str = f"{month:02d}"
-        ds_path = DATA_ROOT / "strategies" / "output" / f"{year:04d}" / month_str / "dataset_strategy.csv"
+        ds_path = (
+            DATA_ROOT
+            / "strategies"
+            / "output"
+            / f"{year:04d}"
+            / month_str
+            / "dataset_strategy.csv"
+        )
         if not ds_path.exists():
             raise HTTPException(
                 status_code=404,
@@ -87,7 +96,11 @@ def get_selection_score(
         if model_dir is None:
             raise HTTPException(status_code=404, detail="No selection model found")
 
-        model_used = "latest" if model_dir.name == "latest" else f"{model_dir.parent.name}/{model_dir.name}"
+        model_used = (
+            "latest"
+            if model_dir.name == "latest"
+            else f"{model_dir.parent.name}/{model_dir.name}"
+        )
 
         with open(model_dir / "selection_model.pkl", "rb") as f:
             payload = pickle.load(f)
@@ -115,23 +128,28 @@ def get_selection_score(
 
         results = []
         for _, row in ds.iterrows():
-            results.append(ScoredStock(
-                ml_rank=int(row["ml_rank"]),
-                ml_score=float(row["ml_score"]),
-                symbol=str(row["symbol"]),
-                name=str(row["name"]) if pd.notna(row.get("name")) else None,
-                pred_upside_pct=_opt_float(row, "pred_upside_pct"),
-                pe_current=_opt_float(row, "pe_current"),
-                close=_opt_float(row, "close"),
-                entry_date=str(row["entry_date"]) if pd.notna(row.get("entry_date")) else None,
-                model_used=model_used,
-            ))
+            results.append(
+                ScoredStock(
+                    ml_rank=int(row["ml_rank"]),
+                    ml_score=float(row["ml_score"]),
+                    symbol=str(row["symbol"]),
+                    name=str(row["name"]) if pd.notna(row.get("name")) else None,
+                    pred_upside_pct=_opt_float(row, "pred_upside_pct"),
+                    pe_current=_opt_float(row, "pe_current"),
+                    close=_opt_float(row, "close"),
+                    entry_date=str(row["entry_date"])
+                    if pd.notna(row.get("entry_date"))
+                    else None,
+                    model_used=model_used,
+                )
+            )
         return results
 
     except HTTPException:
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 

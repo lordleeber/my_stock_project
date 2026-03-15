@@ -36,8 +36,22 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "name", "market", "open", "high", "low", "close",
-            "volume", "value", "transactions", "change", "direction", "bid", "ask", "pe_ratio"
+            "date",
+            "symbol",
+            "name",
+            "market",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "value",
+            "transactions",
+            "change",
+            "direction",
+            "bid",
+            "ask",
+            "pe_ratio",
         ],
     },
     {
@@ -47,12 +61,23 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market", "name",
-            "margin_long_buy", "margin_long_sell", "margin_long_cash_repay",
-            "margin_long_prev_balance", "margin_long_balance", "margin_long_limit",
-            "margin_short_buy", "margin_short_sell", "margin_short_cash_repay",
-            "margin_short_prev_balance", "margin_short_balance", "margin_short_limit",
-            "offset_balance"
+            "date",
+            "symbol",
+            "market",
+            "name",
+            "margin_long_buy",
+            "margin_long_sell",
+            "margin_long_cash_repay",
+            "margin_long_prev_balance",
+            "margin_long_balance",
+            "margin_long_limit",
+            "margin_short_buy",
+            "margin_short_sell",
+            "margin_short_cash_repay",
+            "margin_short_prev_balance",
+            "margin_short_balance",
+            "margin_short_limit",
+            "offset_balance",
         ],
     },
     {
@@ -62,7 +87,14 @@ CASES = [
         "params": ["market"],
         "required_non_empty": ["date", "market"],
         "expected_fields": [
-            "date", "market", "item", "buy", "sell", "cash_repay", "prev_balance", "today_balance"
+            "date",
+            "market",
+            "item",
+            "buy",
+            "sell",
+            "cash_repay",
+            "prev_balance",
+            "today_balance",
         ],
     },
     {
@@ -72,10 +104,19 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market", "name",
-            "foreign_buy", "foreign_sell", "foreign_net",
-            "trust_buy", "trust_sell", "trust_net",
-            "dealer_buy", "dealer_sell", "dealer_net"
+            "date",
+            "symbol",
+            "market",
+            "name",
+            "foreign_buy",
+            "foreign_sell",
+            "foreign_net",
+            "trust_buy",
+            "trust_sell",
+            "trust_net",
+            "dealer_buy",
+            "dealer_sell",
+            "dealer_net",
         ],
     },
     {
@@ -93,9 +134,15 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market",
-            "issued_shares", "foreign_investable_shares", "foreign_held_shares",
-            "foreign_investable_ratio", "foreign_held_ratio", "foreign_legal_limit_ratio"
+            "date",
+            "symbol",
+            "market",
+            "issued_shares",
+            "foreign_investable_shares",
+            "foreign_held_shares",
+            "foreign_investable_ratio",
+            "foreign_held_ratio",
+            "foreign_legal_limit_ratio",
         ],
     },
     {
@@ -105,8 +152,12 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market",
-            "issued_shares", "trust_held_shares", "trust_held_ratio"
+            "date",
+            "symbol",
+            "market",
+            "issued_shares",
+            "trust_held_shares",
+            "trust_held_ratio",
         ],
     },
     {
@@ -116,8 +167,12 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market",
-            "issued_shares", "dealer_held_shares", "dealer_held_ratio"
+            "date",
+            "symbol",
+            "market",
+            "issued_shares",
+            "dealer_held_shares",
+            "dealer_held_ratio",
         ],
     },
     {
@@ -126,7 +181,14 @@ CASES = [
         "columns": ["date", "symbol", "market"],
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
-        "expected_fields": ["date", "symbol", "market", "pe_ratio", "dividend_yield", "pb_ratio"],
+        "expected_fields": [
+            "date",
+            "symbol",
+            "market",
+            "pe_ratio",
+            "dividend_yield",
+            "pb_ratio",
+        ],
     },
     {
         "endpoint": "/raw/market-indices",
@@ -134,7 +196,15 @@ CASES = [
         "columns": ["date", "symbol", "market"],
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
-        "expected_fields": ["date", "symbol", "name", "market", "close", "change", "change_pct"],
+        "expected_fields": [
+            "date",
+            "symbol",
+            "name",
+            "market",
+            "close",
+            "change",
+            "change_pct",
+        ],
     },
     {
         "endpoint": "/raw/valuation-analysis",
@@ -143,8 +213,13 @@ CASES = [
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol"],
         "expected_fields": [
-            "date", "symbol", "close", "ttm_eps", "pe_ratio_calculated",
-            "pe_ratio_from_pe_table", "pe_percentile"
+            "date",
+            "symbol",
+            "close",
+            "ttm_eps",
+            "pe_ratio_calculated",
+            "pe_ratio_from_pe_table",
+            "pe_percentile",
         ],
     },
     {
@@ -154,11 +229,18 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market",
-            "revenue_current", "revenue_last_month", "revenue_last_year",
-            "mom_pct", "yoy_pct",
-            "revenue_cumulative", "revenue_cumulative_last_year", "cumulative_yoy_pct",
-            "publish_time"
+            "date",
+            "symbol",
+            "market",
+            "revenue_current",
+            "revenue_last_month",
+            "revenue_last_year",
+            "mom_pct",
+            "yoy_pct",
+            "revenue_cumulative",
+            "revenue_cumulative_last_year",
+            "cumulative_yoy_pct",
+            "publish_time",
         ],
         "is_q_format": True,
     },
@@ -168,7 +250,15 @@ CASES = [
         "columns": ["date", "symbol"],
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol"],
-        "expected_fields": ["date", "symbol", "level", "level_name", "holders", "shares", "percentage"],
+        "expected_fields": [
+            "date",
+            "symbol",
+            "level",
+            "level_name",
+            "holders",
+            "shares",
+            "percentage",
+        ],
     },
     {
         "endpoint": "/raw/shareholding-concentration",
@@ -177,10 +267,16 @@ CASES = [
         "params": ["symbol"],
         "required_non_empty": ["date", "symbol"],
         "expected_fields": [
-            "date", "symbol",
-            "large_holder_ratio", "small_holder_ratio", "concentration_spread",
-            "large_holder_count", "small_holder_count",
-            "large_holder_ratio_wow", "small_holder_ratio_wow", "concentration_spread_wow"
+            "date",
+            "symbol",
+            "large_holder_ratio",
+            "small_holder_ratio",
+            "concentration_spread",
+            "large_holder_count",
+            "small_holder_count",
+            "large_holder_ratio_wow",
+            "small_holder_ratio_wow",
+            "concentration_spread_wow",
         ],
     },
     {
@@ -190,11 +286,20 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market", "name",
-            "sbl_balance", "sbl_balance_wow", "sbl_balance_wow_pct",
-            "sbl_sell", "sbl_repay", "sbl_sell_repay_ratio",
-            "margin_short_balance", "margin_short_balance_wow", "margin_short_balance_wow_pct",
-            "short_pressure_score"
+            "date",
+            "symbol",
+            "market",
+            "name",
+            "sbl_balance",
+            "sbl_balance_wow",
+            "sbl_balance_wow_pct",
+            "sbl_sell",
+            "sbl_repay",
+            "sbl_sell_repay_ratio",
+            "margin_short_balance",
+            "margin_short_balance_wow",
+            "margin_short_balance_wow_pct",
+            "short_pressure_score",
         ],
     },
     {
@@ -204,12 +309,22 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "market", "name",
-            "margin_long_balance", "margin_long_limit", "margin_usage_ratio",
-            "margin_long_balance_wow", "margin_long_balance_wow_pct",
-            "margin_short_balance", "margin_short_limit", "short_usage_ratio",
-            "margin_short_balance_wow", "margin_short_balance_wow_pct",
-            "short_cover_pressure", "margin_pressure_score"
+            "date",
+            "symbol",
+            "market",
+            "name",
+            "margin_long_balance",
+            "margin_long_limit",
+            "margin_usage_ratio",
+            "margin_long_balance_wow",
+            "margin_long_balance_wow_pct",
+            "margin_short_balance",
+            "margin_short_limit",
+            "short_usage_ratio",
+            "margin_short_balance_wow",
+            "margin_short_balance_wow_pct",
+            "short_cover_pressure",
+            "margin_pressure_score",
         ],
     },
     {
@@ -219,9 +334,16 @@ CASES = [
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
         "expected_fields": [
-            "date", "symbol", "name", "market",
-            "revenue", "revenue_ly", "revenue_yoy",
-            "eps", "eps_ly", "eps_yoy"
+            "date",
+            "symbol",
+            "name",
+            "market",
+            "revenue",
+            "revenue_ly",
+            "revenue_yoy",
+            "eps",
+            "eps_ly",
+            "eps_yoy",
         ],
         "is_q_format": True,
     },
@@ -240,7 +362,13 @@ CASES = [
         "columns": ["date", "symbol", "market"],
         "params": ["symbol", "market"],
         "required_non_empty": ["date", "symbol", "market"],
-        "expected_fields": ["date", "symbol", "total_assets", "total_equity", "nav_per_share"],
+        "expected_fields": [
+            "date",
+            "symbol",
+            "total_assets",
+            "total_equity",
+            "nav_per_share",
+        ],
         "is_q_format": True,
     },
     {
@@ -257,10 +385,22 @@ CASES = [
         "table": "income_statement_xbrl",
         "columns": ["date", "symbol"],
         "params": ["symbol"],
-        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "required_non_empty": [
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+        ],
         "expected_fields": [
-            "date", "symbol", "period", "period_type", "account_code",
-            "account_name_cht", "account_name_eng", "value_text"
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+            "account_name_cht",
+            "account_name_eng",
+            "value_text",
         ],
         "is_q_format": True,
     },
@@ -269,10 +409,22 @@ CASES = [
         "table": "balance_sheet_xbrl",
         "columns": ["date", "symbol"],
         "params": ["symbol"],
-        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "required_non_empty": [
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+        ],
         "expected_fields": [
-            "date", "symbol", "period", "period_type", "account_code",
-            "account_name_cht", "account_name_eng", "value_text"
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+            "account_name_cht",
+            "account_name_eng",
+            "value_text",
         ],
         "is_q_format": True,
     },
@@ -281,10 +433,22 @@ CASES = [
         "table": "cash_flow_xbrl",
         "columns": ["date", "symbol"],
         "params": ["symbol"],
-        "required_non_empty": ["date", "symbol", "period", "period_type", "account_code"],
+        "required_non_empty": [
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+        ],
         "expected_fields": [
-            "date", "symbol", "period", "period_type", "account_code",
-            "account_name_cht", "account_name_eng", "value_text"
+            "date",
+            "symbol",
+            "period",
+            "period_type",
+            "account_code",
+            "account_name_cht",
+            "account_name_eng",
+            "value_text",
         ],
         "is_q_format": True,
     },
@@ -311,7 +475,7 @@ def test_raw_endpoint_returns_data_for_latest_row(case, client, engine):
     assert isinstance(data, list)
     assert len(data) >= 1
     assert "date" in data[0]
-    
+
     # Date format check based on case type
     if case.get("is_q_format"):
         assert Q_DATE_RE.match(data[0]["date"]) or M_DATE_RE.match(data[0]["date"])
@@ -417,27 +581,22 @@ def test_raw_endpoint_offset_behavior(case, client, engine):
     # Fetch 2 rows with limit=2, offset=0
     start_date = "2020Q1" if case.get("is_q_format") else "2020-01-01"
     end_date = "2026Q4" if case.get("is_q_format") else "2026-12-31"
-    
-    params = {
-        "start_date": start_date,
-        "end_date": end_date,
-        "limit": 2,
-        "offset": 0
-    }
+
+    params = {"start_date": start_date, "end_date": end_date, "limit": 2, "offset": 0}
     resp1 = client.get(case["endpoint"], params=params)
     assert resp1.status_code == 200
     data1 = resp1.json()
-    
+
     if len(data1) < 2:
         pytest.skip(f"Not enough data in {case['table']} to test offset")
-        
+
     # Fetch the 2nd row using limit=1, offset=1
     params["limit"] = 1
     params["offset"] = 1
     resp2 = client.get(case["endpoint"], params=params)
     assert resp2.status_code == 200
     data2 = resp2.json()
-    
+
     assert len(data2) == 1
     # The record at offset 1 should match the 2nd record from the first request
     assert data2[0] == data1[1]
