@@ -29,7 +29,9 @@ def load_candidates(path: Path) -> pd.DataFrame:
     out = df.copy()
     out["symbol"] = out["symbol"].astype(str).str.strip()
     out["entry_date"] = pd.to_datetime(out["entry_date"], errors="coerce")
-    out["predict_target_price"] = pd.to_numeric(out["predict_target_price"], errors="coerce")
+    out["predict_target_price"] = pd.to_numeric(
+        out["predict_target_price"], errors="coerce"
+    )
     out["close"] = pd.to_numeric(out["close"], errors="coerce")
 
     out = out.dropna(subset=["symbol", "entry_date"])
@@ -46,17 +48,27 @@ def normalize_quotes(df: pd.DataFrame) -> pd.DataFrame:
     for c in ["open", "high", "low", "close"]:
         out[c] = pd.to_numeric(out[c], errors="coerce")
     out = out.dropna(subset=["symbol", "date"]).copy()
-    return out.sort_values(["symbol", "date"]).drop_duplicates(subset=["symbol", "date"], keep="last").reset_index(drop=True)
+    return (
+        out.sort_values(["symbol", "date"])
+        .drop_duplicates(subset=["symbol", "date"], keep="last")
+        .reset_index(drop=True)
+    )
 
 
-def estimate_quote_window(candidates: pd.DataFrame, max_hold_days: int) -> tuple[str, str]:
+def estimate_quote_window(
+    candidates: pd.DataFrame, max_hold_days: int
+) -> tuple[str, str]:
     # A generous calendar buffer to cover trading-day-based max hold.
     start = candidates["entry_date"].min().date()
-    end = candidates["entry_date"].max().date() + timedelta(days=max(60, max_hold_days * 3))
+    end = candidates["entry_date"].max().date() + timedelta(
+        days=max(60, max_hold_days * 3)
+    )
     return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
-def fetch_quotes_from_db(symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
+def fetch_quotes_from_db(
+    symbols: list[str], start_date: str, end_date: str
+) -> pd.DataFrame:
     if not symbols:
         raise ValueError("symbols is empty")
 

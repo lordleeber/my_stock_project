@@ -1,16 +1,18 @@
 """Summarize rolling backtest results from backtester/output/rolling/."""
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Summarize rolling backtest results.")
-    parser.add_argument("--show-monthly", action="store_true", help="Print per-month detail rows.")
+    parser.add_argument(
+        "--show-monthly", action="store_true", help="Print per-month detail rows."
+    )
     return parser.parse_args()
 
 
@@ -29,7 +31,9 @@ def main() -> None:
 
     closed = trades[trades["exit_reason"] == "not_reselected"].copy()
     still_open = trades[trades["exit_reason"] == "still_open"].copy()
-    no_quote = trades[trades["exit_reason"].isin(["no_quote_on_exit", "no_quote_on_entry_date"])].copy()
+    no_quote = trades[
+        trades["exit_reason"].isin(["no_quote_on_exit", "no_quote_on_entry_date"])
+    ].copy()
 
     total_net_pnl = closed["net_pnl"].sum() if not closed.empty else 0.0
     total_gross_pnl = closed["gross_pnl"].sum() if not closed.empty else 0.0
@@ -39,8 +43,12 @@ def main() -> None:
     total_closed = len(closed)
     win_rate = win_count / total_closed if total_closed > 0 else float("nan")
 
-    avg_return_pct = float(closed["return_pct"].mean()) if not closed.empty else float("nan")
-    median_return_pct = float(closed["return_pct"].median()) if not closed.empty else float("nan")
+    avg_return_pct = (
+        float(closed["return_pct"].mean()) if not closed.empty else float("nan")
+    )
+    median_return_pct = (
+        float(closed["return_pct"].median()) if not closed.empty else float("nan")
+    )
 
     print("=" * 55)
     print("Rolling Portfolio Backtest Summary")
@@ -57,7 +65,20 @@ def main() -> None:
 
     if args.show_monthly and not monthly.empty:
         print("\n--- Monthly Detail ---")
-        cols = [c for c in ["year", "month", "entry_date", "holdings_count", "exits", "entries", "realized_net_pnl", "portfolio_capital_deployed"] if c in monthly.columns]
+        cols = [
+            c
+            for c in [
+                "year",
+                "month",
+                "entry_date",
+                "holdings_count",
+                "exits",
+                "entries",
+                "realized_net_pnl",
+                "portfolio_capital_deployed",
+            ]
+            if c in monthly.columns
+        ]
         print(monthly[cols].to_string(index=False))
 
 

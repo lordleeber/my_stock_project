@@ -4,12 +4,15 @@ Rolling monthly portfolio backtester (Method C).
 Logic per month:
   1. Detect market regime (Bull / Sideways / Bear) as of entry_date.
   2. Bear regime → exit ALL current holdings, skip new entries.
-  3. Bull / Sideways → normal rolling logic:
-       - Stocks in portfolio but NOT in new candidates → exit at entry_date open.
-       - Stocks in new candidates but NOT in portfolio → enter at entry_date open.
-       - Stocks in both → continue holding, no transaction.
+  3. Bull / Sideways → full monthly turnover:
+       - ALL current holdings exit at prev_trading_day(entry_date) open.
+       - ALL new candidates enter at entry_date open.
+  - No "continue holding": every month is a clean rotation, consistent with
+    the model's per-month holding period optimisation and avoids look-ahead
+    bias (exit decision does not require knowing the next month's picks).
   - Position sizing: fixed amount per stock (default 100,000 TWD).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -80,7 +83,9 @@ def detect_market_regime(ref_date: str) -> str:
     if idx.empty:
         return "Sideways"
 
-    daily = idx.groupby("date", as_index=False)["index_close"].mean().sort_values("date")
+    daily = (
+        idx.groupby("date", as_index=False)["index_close"].mean().sort_values("date")
+    )
     daily["ma20"] = daily["index_close"].rolling(20, min_periods=10).mean()
     daily["ma60"] = daily["index_close"].rolling(60, min_periods=20).mean()
     latest = daily.iloc[-1]
@@ -98,7 +103,9 @@ def detect_market_regime(ref_date: str) -> str:
     return "Sideways"
 
 
-def load_candidates_safe(models_root: Path, year: int, month: int) -> pd.DataFrame | None:
+def load_candidates_safe(
+    models_root: Path, year: int, month: int
+) -> pd.DataFrame | None:
     """Load pre-computed candidates_scored.csv from models_selection/<year>/<month>/."""
     month_s = normalize_month(month)
     scored_path = models_root / f"{year:04d}" / month_s / "candidates_scored.csv"
@@ -126,7 +133,9 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
     buffer_start = (target - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
     buffer_end = (target + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
     try:
-        quotes = fetch_quotes_from_db(symbols=symbols, start_date=buffer_start, end_date=buffer_end)
+        quotes = fetch_quotes_from_db(
+            symbols=symbols, start_date=buffer_start, end_date=buffer_end
+        )
     except Exception as exc:
         print(f"[WARN] fetch_quotes failed for {date_str}: {exc}")
         return {}
@@ -142,7 +151,9 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
     return result
 
 
-def _cost(entry_price: float, exit_price: float, shares: int, cost_cfg: CostConfig) -> float:
+def _cost(
+    entry_price: float, exit_price: float, shares: int, cost_cfg: CostConfig
+) -> float:
     commission = (entry_price * shares + exit_price * shares) * cost_cfg.commission_rate
     tax = exit_price * shares * cost_cfg.tax_rate
     return commission + tax
@@ -193,16 +204,33 @@ def _exit_position(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Rolling monthly portfolio backtester.")
+    parser = argparse.ArgumentParser(
+        description="Rolling monthly portfolio backtester."
+    )
     parser.add_argument("--start_year", type=int, required=True)
     parser.add_argument("--start_month", type=int, required=True)
     parser.add_argument("--end_year", type=int, required=True)
     parser.add_argument("--end_month", type=int, required=True)
-    parser.add_argument("--position-amount", type=float, default=100_000.0, help="Fixed TWD per position (default 100000)")
+    parser.add_argument(
+        "--position-amount",
+        type=float,
+        default=100_000.0,
+        help="Fixed TWD per position (default 100000)",
+    )
     parser.add_argument("--commission-rate", type=float, default=0.001425)
     parser.add_argument("--tax-rate", type=float, default=0.003)
-    parser.add_argument("--top-n", type=int, default=None, help="Keep only top-N candidates by ml_score (default: no limit)")
-    parser.add_argument("--models-root", type=Path, default=None, help="Root dir for selection models (default: models_selection/)")
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=None,
+        help="Keep only top-N candidates by ml_score (default: no limit)",
+    )
+    parser.add_argument(
+        "--models-root",
+        type=Path,
+        default=None,
+        help="Root dir for selection models (default: models_selection/)",
+    )
     return parser.parse_args()
 
 
@@ -215,7 +243,8 @@ def main() -> None:
     position_amount = args.position_amount
     top_n = args.top_n
     models_root = (
-        args.models_root if args.models_root
+        args.models_root
+        if args.models_root
         else (Path.cwd() / "models_selection").resolve()
     )
 
@@ -223,7 +252,9 @@ def main() -> None:
     trade_log: list[dict] = []
     monthly_rows: list[dict] = []
 
-    for year, month in month_iter(args.start_year, args.start_month, args.end_year, args.end_month):
+    for year, month in month_iter(
+        args.start_year, args.start_month, args.end_year, args.end_month
+    ):
         month_s = normalize_month(month)
         try:
             candidates_df = load_candidates_safe(models_root, year, month)
@@ -253,21 +284,22 @@ def main() -> None:
             exit_symbols = sorted(portfolio.keys())
             entry_symbols: list[str] = []
         else:
-            new_symbols = set(candidates_df["symbol"].tolist())
-            current_symbols = set(portfolio.keys())
-            exit_symbols = sorted(current_symbols - new_symbols)
-            entry_symbols = sorted(new_symbols - current_symbols)
+            # Full monthly turnover: exit everything, enter all new candidates.
+            exit_symbols = sorted(portfolio.keys())
+            entry_symbols = sorted(candidates_df["symbol"].tolist())
 
         # Fetch exit prices at prev trading day; entry prices at entry_date.
-        exit_open_prices  = fetch_open_on_date(exit_symbols,  exit_date_str)
+        exit_open_prices = fetch_open_on_date(exit_symbols, exit_date_str)
         entry_open_prices = fetch_open_on_date(entry_symbols, entry_date_str)
 
         # --- Process exits ---
         month_realized_pnl = 0.0
         for sym in exit_symbols:
             pos = portfolio.pop(sym)
-            exit_reason = "bear_market_exit" if is_bear else "not_reselected"
-            row, net_pnl = _exit_position(pos, exit_date_str, exit_open_prices.get(sym), exit_reason, cost_cfg)
+            exit_reason = "bear_market_exit" if is_bear else "monthly_rotation"
+            row, net_pnl = _exit_position(
+                pos, exit_date_str, exit_open_prices.get(sym), exit_reason, cost_cfg
+            )
             trade_log.append(row)
             month_realized_pnl += net_pnl
 
@@ -289,20 +321,22 @@ def main() -> None:
             )
 
         portfolio_capital = sum(p.capital_used for p in portfolio.values())
-        monthly_rows.append({
-            "year": year,
-            "month": month_s,
-            "exit_date": exit_date_str,
-            "entry_date": entry_date_str,
-            "regime": regime,
-            "holdings_count": len(portfolio),
-            "exits": len(exit_symbols),
-            "entries": len(entry_symbols),
-            "entries_failed_no_quote": month_entries_failed,
-            "realized_net_pnl": round(month_realized_pnl, 2),
-            "portfolio_capital_deployed": round(portfolio_capital, 2),
-        })
-        regime_tag = f" [BEAR — all exited]" if is_bear else f" [{regime}]"
+        monthly_rows.append(
+            {
+                "year": year,
+                "month": month_s,
+                "exit_date": exit_date_str,
+                "entry_date": entry_date_str,
+                "regime": regime,
+                "holdings_count": len(portfolio),
+                "exits": len(exit_symbols),
+                "entries": len(entry_symbols),
+                "entries_failed_no_quote": month_entries_failed,
+                "realized_net_pnl": round(month_realized_pnl, 2),
+                "portfolio_capital_deployed": round(portfolio_capital, 2),
+            }
+        )
+        regime_tag = " [BEAR — all exited]" if is_bear else f" [{regime}]"
         print(
             f"[{year}/{month_s}] entry={entry_date_str}{regime_tag} | "
             f"holdings={len(portfolio)} | exits={len(exit_symbols)} entries={len(entry_symbols)} | "
@@ -311,20 +345,22 @@ def main() -> None:
 
     # --- Close remaining open positions (mark as unrealized) ---
     for sym, pos in portfolio.items():
-        trade_log.append({
-            "symbol": sym,
-            "entry_date": pos.entry_date,
-            "exit_date": np.nan,
-            "entry_price": pos.entry_price,
-            "exit_price": np.nan,
-            "shares": pos.shares,
-            "capital_used": pos.capital_used,
-            "gross_pnl": np.nan,
-            "cost": np.nan,
-            "net_pnl": np.nan,
-            "return_pct": np.nan,
-            "exit_reason": "still_open",
-        })
+        trade_log.append(
+            {
+                "symbol": sym,
+                "entry_date": pos.entry_date,
+                "exit_date": np.nan,
+                "entry_price": pos.entry_price,
+                "exit_price": np.nan,
+                "shares": pos.shares,
+                "capital_used": pos.capital_used,
+                "gross_pnl": np.nan,
+                "cost": np.nan,
+                "net_pnl": np.nan,
+                "return_pct": np.nan,
+                "exit_reason": "still_open",
+            }
+        )
 
     trades_df = pd.DataFrame(trade_log)
     monthly_df = pd.DataFrame(monthly_rows)
@@ -335,7 +371,9 @@ def main() -> None:
     monthly_df.to_csv(monthly_path, index=False, encoding="utf-8-sig")
 
     # Summary stats (closed trades only — excludes still_open)
-    closed = trades_df[trades_df["exit_reason"].isin(["not_reselected", "bear_market_exit"])].copy()
+    closed = trades_df[
+        trades_df["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])
+    ].copy()
     total_net_pnl = closed["net_pnl"].sum() if not closed.empty else 0.0
     win_count = int((closed["net_pnl"] > 0).sum()) if not closed.empty else 0
     loss_count = int((closed["net_pnl"] < 0).sum()) if not closed.empty else 0
@@ -345,7 +383,10 @@ def main() -> None:
         "end": f"{args.end_year}/{normalize_month(args.end_month)}",
         "position_amount": position_amount,
         "top_n": top_n,
-        "cost_config": {"commission_rate": cost_cfg.commission_rate, "tax_rate": cost_cfg.tax_rate},
+        "cost_config": {
+            "commission_rate": cost_cfg.commission_rate,
+            "tax_rate": cost_cfg.tax_rate,
+        },
         "total_closed_trades": int(len(closed)),
         "win_count": win_count,
         "loss_count": loss_count,
@@ -353,7 +394,9 @@ def main() -> None:
         "total_net_pnl": round(float(total_net_pnl), 2),
         "still_open_count": int((trades_df["exit_reason"] == "still_open").sum()),
     }
-    (out_dir / "rolling_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "rolling_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     print("\nrolling backtest done")
     print(f"- output: {out_dir}")

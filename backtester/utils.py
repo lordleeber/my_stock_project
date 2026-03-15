@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 from typing import Iterator
 
 
@@ -24,7 +23,9 @@ def release_yyyymmdd(year: int, month: int) -> str:
     return release_date(year, month).strftime("%Y%m%d")
 
 
-def month_iter(start_year: int, start_month: int, end_year: int, end_month: int) -> Iterator[tuple[int, int]]:
+def month_iter(
+    start_year: int, start_month: int, end_year: int, end_month: int
+) -> Iterator[tuple[int, int]]:
     y, m = start_year, start_month
     while (y, m) <= (end_year, end_month):
         yield y, m
@@ -33,6 +34,3 @@ def month_iter(start_year: int, start_month: int, end_year: int, end_month: int)
             m = 1
         else:
             m += 1
-
-
-

@@ -13,14 +13,18 @@ class CostConfig:
     tax_rate: float = 0.003
 
 
-def build_position_size(entry_open: float, max_position_amount: float, shares_per_lot: int) -> tuple[int, float]:
+def build_position_size(
+    entry_open: float, max_position_amount: float, shares_per_lot: int
+) -> tuple[int, float]:
     # Use budget-based sizing; no fixed one-lot constraint.
     shares = int(max_position_amount // entry_open)
     shares = max(shares, 1)
     return shares, float(shares * entry_open)
 
 
-def check_entry_allowed(row: pd.Series, entry_open: float, entry_rule: dict[str, Any]) -> tuple[bool, str]:
+def check_entry_allowed(
+    row: pd.Series, entry_open: float, entry_rule: dict[str, Any]
+) -> tuple[bool, str]:
     rule_type = entry_rule.get("type", "all")
     if rule_type == "all":
         return False, "entry_rule_all_not_allowed"
@@ -42,7 +46,9 @@ def check_entry_allowed(row: pd.Series, entry_open: float, entry_rule: dict[str,
     return True, "entry_unknown_rule_default_true"
 
 
-def resolve_take_profit_price(row: pd.Series, entry_open: float, tp_rule: dict[str, Any]) -> float | None:
+def resolve_take_profit_price(
+    row: pd.Series, entry_open: float, tp_rule: dict[str, Any]
+) -> float | None:
     tp_type = tp_rule.get("type", "target_price")
     if tp_type == "target_price":
         v = float(row.get("predict_target_price", np.nan))
@@ -57,7 +63,9 @@ def resolve_take_profit_price(row: pd.Series, entry_open: float, tp_rule: dict[s
     return None
 
 
-def _cost_amount(entry_price: float, exit_price: float, shares: int, cost_cfg: CostConfig) -> float:
+def _cost_amount(
+    entry_price: float, exit_price: float, shares: int, cost_cfg: CostConfig
+) -> float:
     buy = entry_price * shares
     sell = exit_price * shares
     commission = (buy + sell) * cost_cfg.commission_rate
@@ -85,9 +93,17 @@ def simulate_one(
     }
 
     sym_quotes = quote_df[quote_df["symbol"] == symbol].copy()
-    sym_quotes = sym_quotes[sym_quotes["date"] >= signal_entry_dt].sort_values("date").reset_index(drop=True)
+    sym_quotes = (
+        sym_quotes[sym_quotes["date"] >= signal_entry_dt]
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
     if sym_quotes.empty:
-        return {**base, "status": "no_quote_in_window", "exit_reason": "no_quote_in_window"}
+        return {
+            **base,
+            "status": "no_quote_in_window",
+            "exit_reason": "no_quote_in_window",
+        }
 
     actual_entry_row = sym_quotes.iloc[0]
     actual_entry_dt = pd.to_datetime(actual_entry_row["date"])
@@ -99,11 +115,22 @@ def simulate_one(
             "actual_entry_date": actual_entry_dt.strftime("%Y-%m-%d"),
         }
 
-    entry_open = float(actual_entry_row["open"]) if pd.notna(actual_entry_row["open"]) else np.nan
+    entry_open = (
+        float(actual_entry_row["open"])
+        if pd.notna(actual_entry_row["open"])
+        else np.nan
+    )
     if np.isnan(entry_open):
-        return {**base, "status": "no_entry_open", "exit_reason": "no_entry_open", "actual_entry_date": actual_entry_dt.strftime("%Y-%m-%d")}
+        return {
+            **base,
+            "status": "no_entry_open",
+            "exit_reason": "no_entry_open",
+            "actual_entry_date": actual_entry_dt.strftime("%Y-%m-%d"),
+        }
 
-    entry_ok, entry_reason = check_entry_allowed(row=row, entry_open=entry_open, entry_rule=entry_rule)
+    entry_ok, entry_reason = check_entry_allowed(
+        row=row, entry_open=entry_open, entry_rule=entry_rule
+    )
     if not entry_ok:
         return {
             **base,
@@ -116,7 +143,9 @@ def simulate_one(
     pos = position_cfg or {"shares_per_lot": 1000, "max_position_amount": 200000}
     shares_per_lot = int(pos.get("shares_per_lot", 1000))
     max_position_amount = float(pos.get("max_position_amount", 200000))
-    shares_bought, capital_used = build_position_size(entry_open, max_position_amount, shares_per_lot)
+    shares_bought, capital_used = build_position_size(
+        entry_open, max_position_amount, shares_per_lot
+    )
 
     stop_loss_pct = float(exit_rule.get("stop_loss_pct", 0.05))
     fixed_stop = entry_open * (1.0 - stop_loss_pct)
@@ -124,7 +153,9 @@ def simulate_one(
     trailing_stop_pct = None if trailing_stop_pct is None else float(trailing_stop_pct)
     max_hold_days = int(exit_rule.get("max_hold_days", 20))
     prefer_stop_when_both = bool(exit_rule.get("prefer_stop_when_both", True))
-    take_profit_price = resolve_take_profit_price(row=row, entry_open=entry_open, tp_rule=take_profit_rule)
+    take_profit_price = resolve_take_profit_price(
+        row=row, entry_open=entry_open, tp_rule=take_profit_rule
+    )
     highest_high = entry_open
 
     q = sym_quotes.reset_index(drop=True)
@@ -142,7 +173,11 @@ def simulate_one(
             effective_stop = max(effective_stop, trailing_stop)
 
         hit_sl = pd.notna(day_low) and day_low <= effective_stop
-        hit_tp = (take_profit_price is not None) and pd.notna(day_high) and day_high >= take_profit_price
+        hit_tp = (
+            (take_profit_price is not None)
+            and pd.notna(day_high)
+            and day_high >= take_profit_price
+        )
 
         if hit_sl and hit_tp:
             if prefer_stop_when_both:
@@ -218,10 +253,20 @@ def simulate_one(
     last = q.tail(1).iloc[0]
     last_close = float(last["close"]) if pd.notna(last["close"]) else np.nan
     last_date = pd.to_datetime(last["date"]).strftime("%Y-%m-%d")
-    gross_pnl = (last_close - entry_open) * shares_bought if pd.notna(last_close) else np.nan
-    total_cost = _cost_amount(entry_open, last_close, shares_bought, cost_cfg) if pd.notna(last_close) else np.nan
+    gross_pnl = (
+        (last_close - entry_open) * shares_bought if pd.notna(last_close) else np.nan
+    )
+    total_cost = (
+        _cost_amount(entry_open, last_close, shares_bought, cost_cfg)
+        if pd.notna(last_close)
+        else np.nan
+    )
     net_pnl = gross_pnl - total_cost if pd.notna(gross_pnl) else np.nan
-    net_return_pct = (net_pnl / capital_used * 100.0) if capital_used > 0 and pd.notna(net_pnl) else np.nan
+    net_return_pct = (
+        (net_pnl / capital_used * 100.0)
+        if capital_used > 0 and pd.notna(net_pnl)
+        else np.nan
+    )
     return {
         **base,
         "status": "open_until_end",
@@ -293,7 +338,11 @@ def aggregate_monthly(trades: pd.DataFrame) -> pd.DataFrame:
     net_pnl = float(sold["net_pnl"].sum()) if not sold.empty else 0.0
     return_pct = (net_pnl / total_capital * 100.0) if total_capital > 0 else 0.0
 
-    stop_loss_count = int((sold.get("exit_reason", pd.Series(dtype=str)) == "stop_loss").sum()) if not sold.empty else 0
+    stop_loss_count = (
+        int((sold.get("exit_reason", pd.Series(dtype=str)) == "stop_loss").sum())
+        if not sold.empty
+        else 0
+    )
     stop_loss_ratio = (stop_loss_count / len(sold)) if len(sold) > 0 else np.nan
 
     row = {
@@ -306,7 +355,9 @@ def aggregate_monthly(trades: pd.DataFrame) -> pd.DataFrame:
         "sold_win_count": int((sold["net_pnl"] > 0).sum()) if not sold.empty else 0,
         "sold_loss_count": int((sold["net_pnl"] < 0).sum()) if not sold.empty else 0,
         "stop_loss_count": stop_loss_count,
-        "stop_loss_ratio": round(float(stop_loss_ratio), 6) if np.isfinite(stop_loss_ratio) else np.nan,
+        "stop_loss_ratio": round(float(stop_loss_ratio), 6)
+        if np.isfinite(stop_loss_ratio)
+        else np.nan,
         "total_capital": round(total_capital, 2),
         "gross_pnl": round(gross_pnl, 2),
         "total_cost": round(total_cost, 2),
@@ -322,7 +373,11 @@ def build_equity_curve(trades: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=["date", "daily_net_pnl", "cum_net_pnl"])
     x["date"] = pd.to_datetime(x["exit_date"], errors="coerce")
     x = x.dropna(subset=["date"]).copy()
-    daily = x.groupby("date", as_index=False)["net_pnl"].sum().rename(columns={"net_pnl": "daily_net_pnl"})
+    daily = (
+        x.groupby("date", as_index=False)["net_pnl"]
+        .sum()
+        .rename(columns={"net_pnl": "daily_net_pnl"})
+    )
     daily = daily.sort_values("date").reset_index(drop=True)
     daily["cum_net_pnl"] = daily["daily_net_pnl"].cumsum()
     daily["date"] = daily["date"].dt.strftime("%Y-%m-%d")
