@@ -7,8 +7,7 @@ import csv
 
 # Setup basic logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -111,7 +110,11 @@ def _normalize_month_key(date_str: str) -> str | None:
     return None
 
 
-def generate_stock_list(output_file="active_stocks.txt", date_str: str | None = None, data_dir: str | None = None):
+def generate_stock_list(
+    output_file="active_stocks.txt",
+    date_str: str | None = None,
+    data_dir: str | None = None,
+):
     """
     Generates a list of active common stocks from monthly revenue.
     Source (new): data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv
@@ -145,19 +148,32 @@ def generate_stock_list(output_file="active_stocks.txt", date_str: str | None = 
 
     # Sort and Save
     sorted_codes = sorted(list(all_codes))
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
+
+    with open(output_file, "w", encoding="utf-8") as f:
         for code in sorted_codes:
             f.write(f"{code}\n")
-            
-    logger.info(f"Successfully saved {len(sorted_codes)} active stocks to {output_file}")
+
+    logger.info(
+        f"Successfully saved {len(sorted_codes)} active stocks to {output_file}"
+    )
     return True
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate active stock list from monthly revenue")
-    parser.add_argument("--output", "-o", default="active_stocks.txt", help="Output file path")
-    parser.add_argument("--date", "-d", help="Target month/date (YYYYMXX, YYYYMM, or YYYYMMDD). Default: latest monthly_revenue")
-    parser.add_argument("--data-dir", help="Base data dir (default: OUTPUT_DIR or ./data)")
+    parser = argparse.ArgumentParser(
+        description="Generate active stock list from monthly revenue"
+    )
+    parser.add_argument(
+        "--output", "-o", default="active_stocks.txt", help="Output file path"
+    )
+    parser.add_argument(
+        "--date",
+        "-d",
+        help="Target month/date (YYYYMXX, YYYYMM, or YYYYMMDD). Default: latest monthly_revenue",
+    )
+    parser.add_argument(
+        "--data-dir", help="Base data dir (default: OUTPUT_DIR or ./data)"
+    )
     args = parser.parse_args()
 
     generate_stock_list(args.output, date_str=args.date, data_dir=args.data_dir)

@@ -16,7 +16,9 @@ def main():
     month = os.getenv("REVENUE_MONTH", "").strip()
 
     if not year or not month:
-        print("[INFO] REVENUE_YEAR or REVENUE_MONTH not set. Skip monthly output check.")
+        print(
+            "[INFO] REVENUE_YEAR or REVENUE_MONTH not set. Skip monthly output check."
+        )
         return
 
     try:

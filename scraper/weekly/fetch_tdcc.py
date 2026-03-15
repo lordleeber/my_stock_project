@@ -29,7 +29,6 @@ import sys
 import argparse
 import subprocess
 from pathlib import Path
-from datetime import datetime
 
 # TDCC OpenData API endpoint
 TDCC_API_URL = "https://opendata.tdcc.com.tw/getOD.ashx?id=1-5"
@@ -55,21 +54,16 @@ def fetch_tdcc_data(verify_ssl=True):
         print(f"Fetching TDCC data from {TDCC_API_URL}...")
 
         # Build curl command
-        curl_cmd = ['curl', '-s', '-L']  # -s: silent, -L: follow redirects
+        curl_cmd = ["curl", "-s", "-L"]  # -s: silent, -L: follow redirects
 
         if not verify_ssl:
             print("⚠️  SSL verification disabled")
-            curl_cmd.append('-k')  # -k: insecure (skip SSL verification)
+            curl_cmd.append("-k")  # -k: insecure (skip SSL verification)
 
         curl_cmd.append(TDCC_API_URL)
 
         # Execute curl command
-        result = subprocess.run(
-            curl_cmd,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
 
         if result.returncode != 0:
             print(f"❌ curl failed with exit code {result.returncode}")
@@ -88,7 +82,7 @@ def fetch_tdcc_data(verify_ssl=True):
         # Extract date from first data row
         # Format: 資料日期,證券代號,持股分級,人數,股數,占集保庫存數比例%
         #         20260206,000218,1,0,0,0.00
-        lines = data.strip().split('\n')
+        lines = data.strip().split("\n")
 
         if len(lines) < 2:
             print("❌ API response has insufficient data")
@@ -96,7 +90,7 @@ def fetch_tdcc_data(verify_ssl=True):
 
         # Skip header and get first data row
         first_data_row = lines[1]
-        date_str = first_data_row.split(',')[0]
+        date_str = first_data_row.split(",")[0]
 
         # Validate date format (YYYYMMDD)
         if len(date_str) != 8 or not date_str.isdigit():
@@ -107,7 +101,7 @@ def fetch_tdcc_data(verify_ssl=True):
         return data, date_str
 
     except subprocess.TimeoutExpired:
-        print(f"❌ Request timed out after 30 seconds")
+        print("❌ Request timed out after 30 seconds")
         return None, None
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
@@ -139,12 +133,12 @@ def save_data(data, date_str, output_dir):
         if os.path.exists(output_file):
             print(f"⚠️  File already exists: {output_file}")
             response = input("Overwrite? (y/n): ").lower()
-            if response != 'y':
+            if response != "y":
                 print("❌ Aborted by user")
                 return False
 
         # Write data to file
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(data)
 
         # Get file size
@@ -152,7 +146,7 @@ def save_data(data, date_str, output_dir):
         file_size_mb = file_size / (1024 * 1024)
 
         # Count rows
-        row_count = len(data.strip().split('\n')) - 1  # Exclude header
+        row_count = len(data.strip().split("\n")) - 1  # Exclude header
 
         print(f"✓ Data saved to: {output_file}")
         print(f"  File size: {file_size_mb:.2f} MB")
@@ -167,26 +161,24 @@ def save_data(data, date_str, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fetch TDCC shareholding distribution data from OpenData API'
+        description="Fetch TDCC shareholding distribution data from OpenData API"
     )
     parser.add_argument(
-        '--date',
-        help='Force specific date (YYYYMMDD). If not provided, date will be auto-detected from API response'
+        "--date",
+        help="Force specific date (YYYYMMDD). If not provided, date will be auto-detected from API response",
     )
     parser.add_argument(
-        '--output-dir',
+        "--output-dir",
         default=OUTPUT_DIR,
-        help=f'Output directory base (default: {OUTPUT_DIR}, year subfolder will be used)'
+        help=f"Output directory base (default: {OUTPUT_DIR}, year subfolder will be used)",
     )
     parser.add_argument(
-        '--no-prompt',
-        action='store_true',
-        help='Skip overwrite prompt (always overwrite)'
+        "--no-prompt",
+        action="store_true",
+        help="Skip overwrite prompt (always overwrite)",
     )
     parser.add_argument(
-        '--no-verify',
-        action='store_true',
-        help='Disable SSL certificate verification'
+        "--no-verify", action="store_true", help="Disable SSL certificate verification"
     )
 
     args = parser.parse_args()
@@ -213,11 +205,11 @@ def main():
         year_dir = Path(args.output_dir) / date_str[:4]
         year_dir.mkdir(parents=True, exist_ok=True)
         output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.write(data)
         file_size = os.path.getsize(output_file)
         file_size_mb = file_size / (1024 * 1024)
-        row_count = len(data.strip().split('\n')) - 1
+        row_count = len(data.strip().split("\n")) - 1
         print(f"✓ Data saved to: {output_file}")
         print(f"  File size: {file_size_mb:.2f} MB")
         print(f"  Total rows: {row_count:,}")
@@ -229,5 +221,5 @@ def main():
             return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

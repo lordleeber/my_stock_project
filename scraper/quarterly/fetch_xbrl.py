@@ -19,7 +19,9 @@ def get_error_log_path() -> Path:
     return app_log if app_log.parent.exists() else Path("error_scraper.log")
 
 
-def append_error_log(year: int, quarter: int, run_date: str, failures: list[tuple[str, str]]):
+def append_error_log(
+    year: int, quarter: int, run_date: str, failures: list[tuple[str, str]]
+):
     if not failures:
         return
     error_log = get_error_log_path()
@@ -158,9 +160,13 @@ def save_symbol_report(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch detailed quarterly XBRL HTML reports from MOPS.")
+    parser = argparse.ArgumentParser(
+        description="Fetch detailed quarterly XBRL HTML reports from MOPS."
+    )
     parser.add_argument("--year", type=int, required=True, help="AD year, e.g. 2025")
-    parser.add_argument("--quarter", type=int, required=True, choices=[1, 2, 3, 4], help="Quarter 1~4")
+    parser.add_argument(
+        "--quarter", type=int, required=True, choices=[1, 2, 3, 4], help="Quarter 1~4"
+    )
     args = parser.parse_args()
     force_reprocess = os.getenv("FORCE_REPROCESS", "0") == "1"
 
@@ -180,7 +186,9 @@ def main():
     print(f"Output: {out_dir}")
     print(f"run_date: {run_date}")
     print(f"existing_reports: {len(existing_report_names)}")
-    print(f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)")
+    print(
+        f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)"
+    )
 
     ok = 0
     fail = 0

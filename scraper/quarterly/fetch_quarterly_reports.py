@@ -43,13 +43,15 @@ def download_sii(year, quarter, target_dir):
     target_csv = os.path.join(target_dir, "sii.csv")
     if os.path.exists(target_file) and not FORCE_REPROCESS:
         if os.path.exists(target_csv):
-            print(f"[=] SII report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+            print(
+                f"[=] SII report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)"
+            )
             return True
         ok = _convert_xls_to_raw_csv(target_file, target_csv)
         if ok:
             print(f"[+] SII raw CSV saved to {target_csv}")
         return ok
-    
+
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         print(f"[*] Fetching SII: {url}")
@@ -75,6 +77,7 @@ def download_sii(year, quarter, target_dir):
         print(f"[!] SII Error: {e}")
         return False
 
+
 def download_otc(year, quarter, target_dir):
     """直接下載上櫃公司季報 XLS，確保存為 otc.xls"""
     url = OTC_URL.format(year=year, quarter=quarter)
@@ -82,13 +85,15 @@ def download_otc(year, quarter, target_dir):
     target_csv = os.path.join(target_dir, "otc.csv")
     if os.path.exists(target_file) and not FORCE_REPROCESS:
         if os.path.exists(target_csv):
-            print(f"[=] OTC report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)")
+            print(
+                f"[=] OTC report already exists at {target_file}, skip. (Set FORCE_REPROCESS=1 to overwrite)"
+            )
             return True
         ok = _convert_xls_to_raw_csv(target_file, target_csv)
         if ok:
             print(f"[+] OTC raw CSV saved to {target_csv}")
         return ok
-    
+
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         print(f"[*] Fetching OTC: {url}")
@@ -108,6 +113,7 @@ def download_otc(year, quarter, target_dir):
         print(f"[!] OTC Error: {e}")
         return False
 
+
 def _year_quarter_dir(base_dir, year, quarter):
     return os.path.join(base_dir, str(year), f"{year}Q{quarter}")
 
@@ -115,15 +121,15 @@ def _year_quarter_dir(base_dir, year, quarter):
 def download_quarterly_report(year, quarter, output_base_dir):
     target_dir = _year_quarter_dir(output_base_dir, year, quarter)
     os.makedirs(target_dir, exist_ok=True)
-    
+
     s_ok = download_sii(year, quarter, target_dir)
-    time.sleep(2) # 禮貌性延遲
+    time.sleep(2)  # 禮貌性延遲
     o_ok = download_otc(year, quarter, target_dir)
-    time.sleep(2) # 禮貌性延遲
+    time.sleep(2)  # 禮貌性延遲
     m_ok = download_mops_income_statement(year, quarter, INCOME_STATEMENT_DIR)
     b_ok = download_mops_balance_sheet(year, quarter, BALANCE_SHEET_DIR)
     c_ok = download_mops_cash_flow(year, quarter, CASH_FLOW_DIR)
-    
+
     return s_ok or o_ok or m_ok or b_ok or c_ok
 
 
@@ -137,19 +143,43 @@ def _post_mops(payload, url=MOPS_AJAX_URL):
 
 def _table_label(cols):
     joined = " ".join(cols)
-    if any(k in joined for k in ["營業活動之淨現金流入", "投資活動之淨現金流入", "籌資活動之淨現金流入", "期末現金及約當現金"]):
-        if any(k in joined for k in ["利息淨收益", "存放央行及拆借銀行同業", "貼現及放款", "存款及匯款"]):
+    if any(
+        k in joined
+        for k in [
+            "營業活動之淨現金流入",
+            "投資活動之淨現金流入",
+            "籌資活動之淨現金流入",
+            "期末現金及約當現金",
+        ]
+    ):
+        if any(
+            k in joined
+            for k in [
+                "利息淨收益",
+                "存放央行及拆借銀行同業",
+                "貼現及放款",
+                "存款及匯款",
+            ]
+        ):
             return "cashflow_bank"
         if any(k in joined for k in ["保險", "再保險", "保險負債"]):
             return "cashflow_insurance"
         return "cashflow_general"
     # Balance sheet subtype detection first
-    if any(k in joined for k in ["資產總計", "資產總額", "負債總計", "負債總額", "權益總額"]):
-        if any(k in joined for k in ["存款及匯款", "貼現及放款", "附買回票券", "央行及同業融資"]):
+    if any(
+        k in joined
+        for k in ["資產總計", "資產總額", "負債總計", "負債總額", "權益總額"]
+    ):
+        if any(
+            k in joined
+            for k in ["存款及匯款", "貼現及放款", "附買回票券", "央行及同業融資"]
+        ):
             return "bank"
         if any(k in joined for k in ["保險負債", "再保險", "保險合約"]):
             return "insurance"
-        if any(k in joined for k in ["流動資產", "非流動資產", "流動負債", "非流動負債"]):
+        if any(
+            k in joined for k in ["流動資產", "非流動資產", "流動負債", "非流動負債"]
+        ):
             return "general"
         return "balance"
     if any(k in joined for k in ["利息淨收益", "利息以外淨收益", "呆帳"]):
@@ -211,7 +241,9 @@ def download_mops_income_statement(year, quarter, output_base_dir):
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):
-        print(f"[*] Fetching MOPS t163sb04 Income Statement ({market.upper()}) {year}Q{quarter}")
+        print(
+            f"[*] Fetching MOPS t163sb04 Income Statement ({market.upper()}) {year}Q{quarter}"
+        )
         # First try AD year (YYYY)
         payload = {
             "encodeURIComponent": 1,
@@ -241,7 +273,9 @@ def download_mops_income_statement(year, quarter, output_base_dir):
             resp.encoding = "utf-8"
             outputs = _save_tables_as_csv(resp.text, target_dir, market)
             if outputs:
-                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                print(
+                    f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)"
+                )
                 ok = True
             else:
                 print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
@@ -256,7 +290,9 @@ def download_mops_balance_sheet(year, quarter, output_base_dir):
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):
-        print(f"[*] Fetching MOPS t163sb05 Balance Sheet ({market.upper()}) {year}Q{quarter}")
+        print(
+            f"[*] Fetching MOPS t163sb05 Balance Sheet ({market.upper()}) {year}Q{quarter}"
+        )
         payload = {
             "encodeURIComponent": 1,
             "step": 1,
@@ -284,7 +320,9 @@ def download_mops_balance_sheet(year, quarter, output_base_dir):
             resp.encoding = "utf-8"
             outputs = _save_tables_as_csv(resp.text, target_dir, market)
             if outputs:
-                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                print(
+                    f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)"
+                )
                 ok = True
             else:
                 print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
@@ -299,7 +337,9 @@ def download_mops_cash_flow(year, quarter, output_base_dir):
     os.makedirs(target_dir, exist_ok=True)
     ok = False
     for market, typek in (("sii", "sii"), ("otc", "otc")):
-        print(f"[*] Fetching MOPS t163sb20 Cash Flow ({market.upper()}) {year}Q{quarter}")
+        print(
+            f"[*] Fetching MOPS t163sb20 Cash Flow ({market.upper()}) {year}Q{quarter}"
+        )
         payload = {
             "encodeURIComponent": 1,
             "step": 1,
@@ -327,7 +367,9 @@ def download_mops_cash_flow(year, quarter, output_base_dir):
             resp.encoding = "utf-8"
             outputs = _save_tables_as_csv(resp.text, target_dir, market)
             if outputs:
-                print(f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)")
+                print(
+                    f"[+] MOPS {market.upper()} saved: {', '.join(outputs)} (ROC year)"
+                )
                 ok = True
             else:
                 print(f"[-] MOPS {market.upper()} no table for {year}Q{quarter}")
@@ -335,12 +377,17 @@ def download_mops_cash_flow(year, quarter, output_base_dir):
             print(f"[!] MOPS {market.upper()} error (ROC year): {e}")
     return ok
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Fetch Quarterly Financial Reports (SII & OTC)")
+    parser = argparse.ArgumentParser(
+        description="Fetch Quarterly Financial Reports (SII & OTC)"
+    )
     parser.add_argument("--year", type=int, help="Year (AD, e.g. 2020)")
-    parser.add_argument("--quarter", type=int, choices=[1, 2, 3, 4], help="Quarter (1-4)")
+    parser.add_argument(
+        "--quarter", type=int, choices=[1, 2, 3, 4], help="Quarter (1-4)"
+    )
     parser.add_argument("--all", action="store_true", help="Fetch from 2020 to current")
-    
+
     args = parser.parse_args()
 
     if args.all:
@@ -357,9 +404,13 @@ def main():
     else:
         today = datetime.now()
         y, q = today.year, (today.month - 1) // 3 + 1
-        if q == 1: y -= 1; q = 4
-        else: q -= 1
+        if q == 1:
+            y -= 1
+            q = 4
+        else:
+            q -= 1
         download_quarterly_report(y, q, RAW_DIR)
+
 
 if __name__ == "__main__":
     main()

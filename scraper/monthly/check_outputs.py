@@ -23,7 +23,13 @@ def check_monthly_outputs(output_dir, year, month):
     base_dir = Path(output_dir).resolve()
 
     missing = []
-    new_dir = base_dir / "raw" / "monthly_revenue" / date_str[:4] / f"{date_str[:4]}M{date_str[4:6]}"
+    new_dir = (
+        base_dir
+        / "raw"
+        / "monthly_revenue"
+        / date_str[:4]
+        / f"{date_str[:4]}M{date_str[4:6]}"
+    )
     required_files = [new_dir / "tmp.csv", new_dir / "market.csv"]
     for p in required_files:
         if not p.exists() or p.stat().st_size == 0:
@@ -44,7 +50,9 @@ if __name__ == "__main__":
     month = os.getenv("REVENUE_MONTH", "").strip()
 
     if not year or not month:
-        print("[INFO] REVENUE_YEAR or REVENUE_MONTH not set. Skip monthly output check.")
+        print(
+            "[INFO] REVENUE_YEAR or REVENUE_MONTH not set. Skip monthly output check."
+        )
     else:
         try:
             check_monthly_outputs(output_dir, year, month)

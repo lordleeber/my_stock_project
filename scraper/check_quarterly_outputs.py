@@ -16,7 +16,9 @@ def main():
     quarter = os.getenv("REPORT_QUARTER", "").strip()
 
     if not year or not quarter:
-        print("[INFO] REPORT_YEAR or REPORT_QUARTER not set. Skip quarterly output check.")
+        print(
+            "[INFO] REPORT_YEAR or REPORT_QUARTER not set. Skip quarterly output check."
+        )
         return
 
     check_quarterly_outputs(output_dir, year, quarter)

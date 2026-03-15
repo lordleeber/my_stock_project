@@ -18,7 +18,9 @@ def main():
 
     if not year or not quarter:
         print("Error: REPORT_YEAR and REPORT_QUARTER are required.")
-        print("Example: REPORT_YEAR=2025 REPORT_QUARTER=3 python scraper/scraper_quarterly.py")
+        print(
+            "Example: REPORT_YEAR=2025 REPORT_QUARTER=3 python scraper/scraper_quarterly.py"
+        )
         return 1
 
     try:

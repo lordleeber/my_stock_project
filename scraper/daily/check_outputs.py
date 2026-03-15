@@ -64,7 +64,9 @@ def check_daily_outputs(date_list, output_dir, market_type):
         for dataset in datasets:
             dataset_markets = ["otc"] if dataset == "market_indices" else markets
             for market in dataset_markets:
-                new_path = base_dir / "raw" / dataset / date[:4] / date / f"{market}.csv"
+                new_path = (
+                    base_dir / "raw" / dataset / date[:4] / date / f"{market}.csv"
+                )
                 old_path = base_dir / "raw" / dataset / f"date={date}" / f"{market}.csv"
                 path = new_path if new_path.exists() else old_path
                 if not _is_file_valid(path, min_bytes, min_lines):

@@ -18,7 +18,9 @@ def main():
 
     if not year or not month:
         print("Error: REVENUE_YEAR and REVENUE_MONTH are required.")
-        print("Example: REVENUE_YEAR=2026 REVENUE_MONTH=1 python scraper/scraper_monthly.py")
+        print(
+            "Example: REVENUE_YEAR=2026 REVENUE_MONTH=1 python scraper/scraper_monthly.py"
+        )
         return 1
 
     try:
