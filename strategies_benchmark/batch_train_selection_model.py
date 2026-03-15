@@ -98,7 +98,8 @@ def main() -> None:
                 skipped += 1
                 continue
 
-        cmd = [python, script, "--cutoff-year", str(year), "--cutoff-month", str(month)]
+        cmd = [python, script, "--cutoff-year", str(year), "--cutoff-month", str(month),
+               "--n-bins", "10"]
 
         if args.dry_run:
             print(f"[dry]   cutoff={label}  {' '.join(cmd)}")

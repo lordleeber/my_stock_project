@@ -164,6 +164,169 @@ def fetch_technical_features(
     return ti[["symbol"] + TECHNICAL_FEATURE_COLS].reset_index(drop=True)
 
 
+# ── Institutional Flow Features ──────────────────────────────────────────────
+
+INSTITUTIONAL_FLOW_COLS = [
+    "foreign_net_5d",
+    "trust_net_5d",
+    "smart_money_net_5d",
+]
+
+
+def fetch_institutional_flow_features(
+    symbols: list[str],
+    ref_date: str,
+) -> pd.DataFrame:
+    """
+    Compute 5-day institutional net buy ratios (% of avg daily volume).
+
+    foreign_net_5d       = sum(foreign_net, 5d) / avg(volume, 5d)
+    trust_net_5d         = sum(trust_net, 5d) / avg(volume, 5d)
+    smart_money_net_5d   = (sum(foreign_net, 5d) + sum(trust_net, 5d)) / avg(volume, 5d)
+
+    Returns DataFrame with columns ['symbol'] + INSTITUTIONAL_FLOW_COLS.
+    """
+    if not symbols:
+        return pd.DataFrame(columns=["symbol"] + INSTITUTIONAL_FLOW_COLS)
+
+    # Fetch last 5 trading days of institutional data on or before ref_date.
+    ii_stmt = text(
+        """
+        WITH ranked AS (
+            SELECT symbol, date, foreign_net, trust_net,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM institutional_investors
+            WHERE symbol IN :symbols
+              AND date <= :ref_date
+        )
+        SELECT symbol, date, foreign_net, trust_net
+        FROM ranked WHERE rn <= 5
+        """
+    ).bindparams(bindparam("symbols", expanding=True))
+
+    # Fetch last 5 trading days of volume from daily_quotes.
+    dq_stmt = text(
+        """
+        WITH ranked AS (
+            SELECT symbol, date, volume,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM daily_quotes
+            WHERE symbol IN :symbols
+              AND date <= :ref_date
+              AND volume IS NOT NULL AND volume > 0
+        )
+        SELECT symbol, date, volume
+        FROM ranked WHERE rn <= 5
+        """
+    ).bindparams(bindparam("symbols", expanding=True))
+
+    engine = create_engine(tp.get_db_url())
+    with engine.connect() as conn:
+        ii_df = pd.read_sql(
+            ii_stmt, conn, params={"symbols": symbols, "ref_date": ref_date}
+        )
+        dq_df = pd.read_sql(
+            dq_stmt, conn, params={"symbols": symbols, "ref_date": ref_date}
+        )
+
+    sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
+
+    if ii_df.empty or dq_df.empty:
+        for col in INSTITUTIONAL_FLOW_COLS:
+            sym_df[col] = np.nan
+        return sym_df
+
+    ii_df["symbol"] = ii_df["symbol"].astype(str).str.strip()
+    dq_df["symbol"] = dq_df["symbol"].astype(str).str.strip()
+    for col in ["foreign_net", "trust_net"]:
+        ii_df[col] = pd.to_numeric(ii_df[col], errors="coerce")
+    dq_df["volume"] = pd.to_numeric(dq_df["volume"], errors="coerce")
+
+    ii_agg = ii_df.groupby("symbol").agg(
+        foreign_net_sum=("foreign_net", "sum"),
+        trust_net_sum=("trust_net", "sum"),
+    )
+    dq_agg = dq_df.groupby("symbol").agg(avg_volume=("volume", "mean"))
+
+    agg = ii_agg.join(dq_agg, how="outer").reset_index()
+
+    def _flow_ratio(net_sum: pd.Series, avg_vol: pd.Series) -> pd.Series:
+        return (net_sum / avg_vol).where(avg_vol > 0)
+
+    agg["foreign_net_5d"] = _flow_ratio(agg["foreign_net_sum"], agg["avg_volume"])
+    agg["trust_net_5d"] = _flow_ratio(agg["trust_net_sum"], agg["avg_volume"])
+    agg["smart_money_net_5d"] = _flow_ratio(
+        agg["foreign_net_sum"] + agg["trust_net_sum"], agg["avg_volume"]
+    )
+
+    result = sym_df.merge(agg[["symbol"] + INSTITUTIONAL_FLOW_COLS], on="symbol", how="left")
+    return result[["symbol"] + INSTITUTIONAL_FLOW_COLS].reset_index(drop=True)
+
+
+# ── Price / Volatility Features ───────────────────────────────────────────────
+
+PRICE_FEATURE_COLS = [
+    "hist_vol_20d",
+]
+
+
+def fetch_price_features(
+    symbols: list[str],
+    ref_date: str,
+) -> pd.DataFrame:
+    """
+    Compute 20-day annualised historical volatility from close prices.
+
+    hist_vol_20d = std(daily_log_return, 20d) * sqrt(252)
+
+    Returns DataFrame with columns ['symbol'] + PRICE_FEATURE_COLS.
+    """
+    if not symbols:
+        return pd.DataFrame(columns=["symbol"] + PRICE_FEATURE_COLS)
+
+    stmt = text(
+        """
+        WITH ranked AS (
+            SELECT symbol, date, close,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM daily_quotes
+            WHERE symbol IN :symbols
+              AND date <= :ref_date
+              AND close IS NOT NULL AND close > 0
+        )
+        SELECT symbol, date, close
+        FROM ranked WHERE rn <= 21
+        """
+    ).bindparams(bindparam("symbols", expanding=True))
+
+    engine = create_engine(tp.get_db_url())
+    with engine.connect() as conn:
+        df = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
+
+    sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
+
+    if df.empty:
+        sym_df["hist_vol_20d"] = np.nan
+        return sym_df
+
+    df["symbol"] = df["symbol"].astype(str).str.strip()
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+    records = []
+    for sym, grp in df.groupby("symbol"):
+        grp = grp.sort_values("date").reset_index(drop=True)
+        closes = grp["close"].dropna().values
+        if len(closes) < 2:
+            records.append({"symbol": sym, "hist_vol_20d": np.nan})
+            continue
+        log_returns = np.diff(np.log(closes))
+        hist_vol = float(np.std(log_returns, ddof=1) * np.sqrt(252))
+        records.append({"symbol": sym, "hist_vol_20d": hist_vol})
+
+    result = sym_df.merge(pd.DataFrame(records), on="symbol", how="left")
+    return result[["symbol"] + PRICE_FEATURE_COLS].reset_index(drop=True)
+
+
 # ── Monthly Revenue Features ──────────────────────────────────────────────────
 
 REVENUE_FEATURE_COLS = [

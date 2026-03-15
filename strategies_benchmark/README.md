@@ -119,9 +119,10 @@ PIT 保證：以 `publish_time <= entry_date` 過濾，entry_date 約為月份 M
 
 - **演算法**：LightGBM Ranker（`objective="lambdarank"`）
 - **特徵數**：53 個（基本面 + 籌碼面 + 估值面 + 市場情緒 + 基本面品質 + 技術面 + 月營收動能）
-- **Label**：每月內按 `fwd_return_pct` 排名，分成 5 個 quintile（0=最差，4=最好）
+- **Label**：每月內按 `fwd_return_pct` 排名，分成 **10 個 decile**（0=最差，9=最好）
 - **fwd_return_pct 定義**：月份 M 的 entry_date open 買入，M+1 entry_date **前一個交易日** open 賣出
 - **Group**：每個月為一個 group
+- **超參數**：`n_estimators=500, learning_rate=0.03, num_leaves=31`
 - **評估指標**：Spearman IC（預測排名 vs 實際報酬排名的相關係數）
 - **模型位置**：`models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl`
 
@@ -138,11 +139,14 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 |------|------|
 | 期間 | 2022/07 – 2025/10 |
 | 閉倉交易數 | 300 |
-| 勝率 | 64.33%（193/107）|
-| 平均報酬 | 6.78% |
-| Net PnL | **2,029,746 TWD** |
+| 勝率 | **65.3%**（196/104）|
+| 平均報酬 | **7.12%** |
+| Gross PnL | 2,319,597 TWD |
+| Net PnL | **2,134,045 TWD** |
 
 結果存放於 `backtester_benchmark/rolling_summary.json`。
+
+> **舊基準**（quintile labels, n_estimators=200, num_leaves=15）：Net PnL=2,029,746，勝率=64.33%。
 
 ---
 
@@ -188,16 +192,39 @@ venv/bin/python3 backtester/summarize_range.py
 
 ### 特徵實驗的教訓（2026/03）
 
+#### 實驗一：Spearman 篩選特徵（失敗）
+
 以 Spearman ≥ 0.02 篩選特徵（只保留 18 個正向信號特徵）並不能超越基準，反而比基準差。實驗結果：
 
 | 版本 | Net PnL | 勝率 |
 |------|---------|------|
-| 基準（53 特徵） | **2,029,746** | **64.33%** |
+| 舊基準（53 特徵） | **2,029,746** | **64.33%** |
 | 18 特徵（Spearman ≥ 0.02） | 1,828,612 | 60.3% |
 | 18 特徵 + n=300, leaves=31 | 1,789,655 | 60.3% |
 | 22 特徵（Spearman ≥ 0.01） | 1,767,262 | 60.3% |
 
 **結論**：個別特徵的 Spearman 為負不代表對模型有害。負相關特徵在 LightGBM ensemble 中可能與其他特徵產生有用的交互作用，強制移除反而讓模型失去信號。
+
+---
+
+#### 實驗二：增量特徵 + 超參調整（2026/03，成功超越基準）
+
+採增量策略（不移除任何特徵），依序實驗：
+
+| 實驗 | 變更 | Net PnL | 勝率 | 結果 |
+|------|------|---------|------|------|
+| 舊基準 | n_estimators=200, lr=0.05, num_leaves=15, n_bins=5 | 2,029,746 | 64.33% | — |
+| A1 | 提升複雜度（500/0.03/31），quintile 不變 | 1,846,970 | 65.3% | 未超越（win_rate 提升但 PnL 下降） |
+| **A2** | A1 + decile labels（n_bins=10） | **2,134,045** | **65.3%** | **成功** |
+| B | A2 + 4 個新特徵（foreign_net_5d 等） | 1,781,941 | 63.0% | 未超越 |
+
+**A1 分析**：複雜度提升後 quintile（5 級）標籤太粗，模型排名監督信號不足，導致 PnL 下降。
+
+**A2 分析**：decile（10 級）提供更細的排名監督信號，與提高容量（num_leaves=31）的模型相輔相成，兩項指標同步改善。
+
+**B 分析**：新增的 4 個機構流量特徵（`foreign_net_5d`, `trust_net_5d`, `smart_money_net_5d`, `hist_vol_20d`）與現有的 `foreign_held_ratio`、`trust_held_ratio`、`foreign_streak_days` 高度相關，造成特徵冗餘，加上 `trust_net_5d` 幾乎無信號（Spearman=0.01），反而引入噪音。57 個特徵在有限訓練樣本下讓 LGBMRanker 更難收斂。
+
+**新基準 (A2)**：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10`
 
 ---
 

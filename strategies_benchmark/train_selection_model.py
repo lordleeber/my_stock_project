@@ -93,9 +93,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cutoff-year", type=int, default=None)
     parser.add_argument("--cutoff-month", type=int, default=None)
-    parser.add_argument("--n-estimators", type=int, default=200)
-    parser.add_argument("--learning-rate", type=float, default=0.05)
-    parser.add_argument("--num-leaves", type=int, default=15)
+    parser.add_argument("--n-estimators", type=int, default=500)
+    parser.add_argument("--learning-rate", type=float, default=0.03)
+    parser.add_argument("--num-leaves", type=int, default=31)
     parser.add_argument(
         "--n-bins",
         type=int,
