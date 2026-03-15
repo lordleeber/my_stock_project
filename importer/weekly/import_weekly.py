@@ -35,7 +35,9 @@ def import_shareholding_category(engine, config):
         target_date = to_iso_date(date_token)
 
         try:
-            if not config["force_reimport"] and date_exists_in_db(engine, table_name, target_date):
+            if not config["force_reimport"] and date_exists_in_db(
+                engine, table_name, target_date
+            ):
                 print(f"Skipping {table_name} - {date_token} (already in DB)")
                 continue
 
@@ -45,7 +47,9 @@ def import_shareholding_category(engine, config):
                 print("  -> Empty file, skipping.")
                 continue
             if "symbol" in df.columns:
-                df = df.with_columns(pl.col("symbol").cast(pl.Utf8).str.strip_chars().alias("symbol"))
+                df = df.with_columns(
+                    pl.col("symbol").cast(pl.Utf8).str.strip_chars().alias("symbol")
+                )
 
             df = recalculate_lineage(df, csv_file)
             df = filter_etf(df)

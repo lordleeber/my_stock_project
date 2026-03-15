@@ -24,7 +24,9 @@ def abort_with_error(message, exception=None):
     error_file = "/app/error_importer.log"
     with open(error_file, "w") as f:
         f.write("# Importer 錯誤報告\n\n")
-        f.write(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(
+            f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
         f.write(f"## 錯誤訊息\n\n{message}\n\n")
         if exception:
             f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
@@ -102,7 +104,9 @@ def print_run_config(config):
 def table_exists(engine, table_name):
     with engine.connect() as conn:
         return conn.execute(
-            text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :name)"),
+            text(
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :name)"
+            ),
             {"name": table_name},
         ).scalar()
 
@@ -114,7 +118,9 @@ def date_exists_in_db(engine, table_name, target_date, market=None):
     with engine.connect() as conn:
         if market is not None:
             result = conn.execute(
-                text(f"SELECT EXISTS (SELECT 1 FROM {table_name} WHERE date = :date AND market = :market)"),
+                text(
+                    f"SELECT EXISTS (SELECT 1 FROM {table_name} WHERE date = :date AND market = :market)"
+                ),
                 {"date": target_date, "market": market},
             ).scalar()
         else:
@@ -129,7 +135,9 @@ def delete_by_date(engine, table_name, target_date, market=None):
     with engine.begin() as conn:
         if market is not None:
             conn.execute(
-                text(f"DELETE FROM {table_name} WHERE date = :date AND market = :market"),
+                text(
+                    f"DELETE FROM {table_name} WHERE date = :date AND market = :market"
+                ),
                 {"date": target_date, "market": market},
             )
         else:
@@ -139,11 +147,15 @@ def delete_by_date(engine, table_name, target_date, market=None):
             )
 
 
-def verify_row_count(engine, table_name, expected_count, date_filter, market_filter=None):
+def verify_row_count(
+    engine, table_name, expected_count, date_filter, market_filter=None
+):
     with engine.connect() as conn:
         if market_filter is not None:
             result = conn.execute(
-                text(f"SELECT COUNT(*) FROM {table_name} WHERE date = :date AND market = :market"),
+                text(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE date = :date AND market = :market"
+                ),
                 {"date": date_filter, "market": market_filter},
             ).scalar()
         else:
@@ -156,16 +168,22 @@ def verify_row_count(engine, table_name, expected_count, date_filter, market_fil
         scope = f"{table_name} date={date_filter}"
         if market_filter is not None:
             scope += f" market={market_filter}"
-        raise RuntimeError(f"Row count mismatch for {scope}: CSV={expected_count}, DB={result}")
+        raise RuntimeError(
+            f"Row count mismatch for {scope}: CSV={expected_count}, DB={result}"
+        )
     return True
 
 
 def recalculate_lineage(df, csv_file_path):
-    lineage_cols_to_drop = [c for c in ["src_file", "src_row", "src_col"] if c in df.columns]
+    lineage_cols_to_drop = [
+        c for c in ["src_file", "src_row", "src_col"] if c in df.columns
+    ]
     if lineage_cols_to_drop:
         df = df.drop(lineage_cols_to_drop)
 
-    num_data_cols = len([c for c in df.columns if c not in ["pced_file", "pced_row", "pced_col"]])
+    num_data_cols = len(
+        [c for c in df.columns if c not in ["pced_file", "pced_row", "pced_col"]]
+    )
     pced_col_str = "#".join(str(i + 1) for i in range(num_data_cols))
 
     return df.with_columns(
@@ -188,7 +206,9 @@ def filter_etf(df):
 
     filtered_count = original_count - df.height
     if filtered_count > 0:
-        print(f"  -> Filtered out {filtered_count} non-stock records (kept only 4-digit numeric symbols)")
+        print(
+            f"  -> Filtered out {filtered_count} non-stock records (kept only 4-digit numeric symbols)"
+        )
     return df
 
 
@@ -196,12 +216,16 @@ def apply_daily_quotes_filter(df, table_name):
     if table_name != "daily_quotes":
         return df
 
-    ohlcv_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+    ohlcv_cols = [
+        c for c in ["open", "high", "low", "close", "volume"] if c in df.columns
+    ]
     if not ohlcv_cols:
         return df
 
     before = df.height
-    df = df.filter(~pl.all_horizontal((pl.col(c).is_null() | (pl.col(c) == 0)) for c in ohlcv_cols))
+    df = df.filter(
+        ~pl.all_horizontal((pl.col(c).is_null() | (pl.col(c) == 0)) for c in ohlcv_cols)
+    )
     filtered = before - df.height
     if filtered > 0:
         print(f"  -> Filtered {filtered} rows with all-zero/null OHLCV.")
@@ -336,7 +360,9 @@ def run_lineage_validation(engine, table_name, target_date):
 
         passed, errors = validate_single_date(engine, table_name, target_date)
         if not passed:
-            abort_with_error(f"Validation failed for {table_name} {target_date}: {'; '.join(errors)}")
+            abort_with_error(
+                f"Validation failed for {table_name} {target_date}: {'; '.join(errors)}"
+            )
     except ImportError:
         return
     except SystemExit:
@@ -361,7 +387,9 @@ def import_static_all_csv(engine, category, table_name, schema_overrides=None):
             return False
 
         df = recalculate_lineage(df, csv_file)
-        df.to_pandas().to_sql(name=table_name, con=engine, if_exists="replace", index=False)
+        df.to_pandas().to_sql(
+            name=table_name, con=engine, if_exists="replace", index=False
+        )
         print(f"  -> Imported {df.height} rows into {table_name}.")
         return True
     except Exception as e:
@@ -392,18 +420,22 @@ def import_daily_market_category(
             market = os.path.basename(csv_file).split(".")[0]
 
             try:
-                if not config["force_reimport"] and date_exists_in_db(engine, table_name, target_date, market=market):
-                    print(f"Skipping {table_name} - {date_token} - {market} (already in DB)")
+                if not config["force_reimport"] and date_exists_in_db(
+                    engine, table_name, target_date, market=market
+                ):
+                    print(
+                        f"Skipping {table_name} - {date_token} - {market} (already in DB)"
+                    )
                     continue
 
                 print(f"Processing {table_name} - {date_token} - {market}...")
-                
+
                 # 使用明確定義的 Schema，並與傳入的 override 合併
                 full_schema = get_polars_schema(category) or {}
                 if schema_overrides:
                     full_schema.update(schema_overrides)
                 df = pl.read_csv(csv_file, schema_overrides=full_schema)
-                
+
                 if df.height == 0:
                     print("  -> Empty file, skipping.")
                     continue
@@ -432,7 +464,13 @@ def import_daily_market_category(
                     chunksize=chunksize,
                 )
                 print(f"  -> Imported {expected_count} rows.")
-                verify_row_count(engine, table_name, expected_count, target_date, market_filter=market)
+                verify_row_count(
+                    engine,
+                    table_name,
+                    expected_count,
+                    target_date,
+                    market_filter=market,
+                )
                 imported_any = True
                 imported_this_date = True
             except Exception as e:
@@ -467,18 +505,20 @@ def import_daily_all_category(
         target_date = to_iso_date(date_token)
 
         try:
-            if not config["force_reimport"] and date_exists_in_db(engine, table_name, target_date):
+            if not config["force_reimport"] and date_exists_in_db(
+                engine, table_name, target_date
+            ):
                 print(f"Skipping {table_name} - {date_token} (already in DB)")
                 continue
 
             print(f"Processing {table_name} - {date_token}...")
-            
+
             # 使用明確定義的 Schema
             full_schema = get_polars_schema(category) or {}
             if schema_overrides:
                 full_schema.update(schema_overrides)
             df = pl.read_csv(csv_file, schema_overrides=full_schema)
-            
+
             if df.height == 0:
                 print("  -> Empty file, skipping.")
                 continue
@@ -532,7 +572,9 @@ def import_period_category(
             continue
 
         try:
-            if not config["force_reimport"] and date_exists_in_db(engine, table_name, period_token):
+            if not config["force_reimport"] and date_exists_in_db(
+                engine, table_name, period_token
+            ):
                 print(f"Skipping {table_name} - {period_token} (already in DB)")
                 continue
 
@@ -608,7 +650,12 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
     df_wide = pl.read_csv(
         csv_file,
         infer_schema_length=0,
-        schema_overrides={"date": pl.Utf8, "symbol": pl.Utf8, "publish_time": pl.Utf8, "period": pl.Utf8},
+        schema_overrides={
+            "date": pl.Utf8,
+            "symbol": pl.Utf8,
+            "publish_time": pl.Utf8,
+            "period": pl.Utf8,
+        },
     )
     if df_wide.height == 0:
         return _empty_xbrl_long_df()
@@ -616,7 +663,9 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
     required_cols = {"date", "symbol", "publish_time"}
     missing_cols = sorted(required_cols - set(df_wide.columns))
     if missing_cols:
-        raise RuntimeError(f"Missing required columns in {csv_file}: {', '.join(missing_cols)}")
+        raise RuntimeError(
+            f"Missing required columns in {csv_file}: {', '.join(missing_cols)}"
+        )
 
     if "period" not in df_wide.columns:
         df_wide = df_wide.with_columns(pl.lit(None).cast(pl.Utf8).alias("period"))
@@ -635,8 +684,14 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
                     pl.col("publish_time").cast(pl.Utf8).alias("publish_time"),
                     pl.col("period").cast(pl.Utf8).alias("period"),
                     pl.lit(period_type).cast(pl.Utf8).alias("period_type"),
-                    pl.col(code_col).cast(pl.Utf8).str.strip_chars().alias("account_code"),
-                    pl.col(value_col).cast(pl.Utf8).str.strip_chars().alias("value_text"),
+                    pl.col(code_col)
+                    .cast(pl.Utf8)
+                    .str.strip_chars()
+                    .alias("account_code"),
+                    pl.col(value_col)
+                    .cast(pl.Utf8)
+                    .str.strip_chars()
+                    .alias("value_text"),
                 ]
             )
             .filter(
@@ -647,7 +702,9 @@ def _expand_xbrl_wide_csv(csv_file, period_type):
                 & pl.col("value_text").is_not_null()
                 & (pl.col("value_text") != "")
             )
-            .with_columns(pl.col("value_text").cast(pl.Float64, strict=False).alias("value_num"))
+            .with_columns(
+                pl.col("value_text").cast(pl.Float64, strict=False).alias("value_num")
+            )
         )
         parts.append(part)
 
@@ -682,7 +739,9 @@ def import_xbrl_period_category(
             continue
 
         try:
-            if not config["force_reimport"] and date_exists_in_db(engine, table_name, period_token):
+            if not config["force_reimport"] and date_exists_in_db(
+                engine, table_name, period_token
+            ):
                 print(f"Skipping {table_name} - {period_token} (already in DB)")
                 continue
 
@@ -721,7 +780,9 @@ def import_xbrl_period_category(
             run_lineage_validation(engine, table_name, period_token)
             imported_any = True
         except Exception as e:
-            abort_with_error(f"Failed to import xbrl {table_name} for {period_token}: {e}", e)
+            abort_with_error(
+                f"Failed to import xbrl {table_name} for {period_token}: {e}", e
+            )
 
     return imported_any
 
@@ -773,7 +834,10 @@ def import_xbrl_codebook(engine):
         df = (
             df.select(normalized_cols)
             .with_columns(
-                [pl.col(col).cast(dtype, strict=False).alias(col) for col, dtype in codebook_schema.items()]
+                [
+                    pl.col(col).cast(dtype, strict=False).alias(col)
+                    for col, dtype in codebook_schema.items()
+                ]
             )
             .with_columns(
                 [

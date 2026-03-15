@@ -45,7 +45,9 @@ def run(engine, config, import_category=None):
             continue
 
         try:
-            if not config["force_reimport"] and date_exists_in_db(engine, TABLE_NAME, period_token):
+            if not config["force_reimport"] and date_exists_in_db(
+                engine, TABLE_NAME, period_token
+            ):
                 print(f"Skipping {TABLE_NAME} - {period_token} (already in DB)")
                 continue
 
@@ -58,7 +60,9 @@ def run(engine, config, import_category=None):
                     continue
 
                 # Keep quarter vs accumulated source explicit in one table.
-                df_part = df_part.with_columns(pl.lit(period_type).cast(pl.Utf8).alias("period_type"))
+                df_part = df_part.with_columns(
+                    pl.lit(period_type).cast(pl.Utf8).alias("period_type")
+                )
                 dfs.append(df_part)
 
             if not dfs:
@@ -86,6 +90,8 @@ def run(engine, config, import_category=None):
             run_lineage_validation(engine, TABLE_NAME, period_token)
             imported_any = True
         except Exception as e:
-            abort_with_error(f"Failed to import {TABLE_NAME} for {period_token}: {e}", e)
+            abort_with_error(
+                f"Failed to import {TABLE_NAME} for {period_token}: {e}", e
+            )
 
     return imported_any

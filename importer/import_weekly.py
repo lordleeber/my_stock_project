@@ -1,5 +1,11 @@
 from weekly.import_weekly import run
-from import_common import abort_with_error, get_db_url, get_run_config, print_run_config, wait_for_db
+from import_common import (
+    abort_with_error,
+    get_db_url,
+    get_run_config,
+    print_run_config,
+    wait_for_db,
+)
 from sqlalchemy import create_engine
 
 
