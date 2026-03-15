@@ -1,4 +1,5 @@
 """Cache daily OHLC quotes for the current strategy month."""
+
 from __future__ import annotations
 
 import argparse
@@ -33,7 +34,9 @@ def month_date_range(year: int, month: int) -> tuple[str, str]:
 
 
 def add_trading_day_buffer(year: int, month: int, buffer_days: int = 30) -> str:
-    end_dt = pd.Timestamp(f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}") + pd.Timedelta(days=buffer_days)
+    end_dt = pd.Timestamp(
+        f"{year:04d}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+    ) + pd.Timedelta(days=buffer_days)
     return end_dt.strftime("%Y-%m-%d")
 
 
@@ -69,10 +72,18 @@ def candidate_release_date(year: int, month: int) -> str:
 
 def get_candidates_path(base_dir: Path, year: int, month: int) -> Path:
     ymd = candidate_release_date(year, month)
-    return base_dir / f"{year:04d}" / f"{month:02d}" / "results_candidates" / f"trade_candidates_{ymd}.csv"
+    return (
+        base_dir
+        / f"{year:04d}"
+        / f"{month:02d}"
+        / "results_candidates"
+        / f"trade_candidates_{ymd}.csv"
+    )
 
 
-def fetch_quotes_from_db(conn, symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
+def fetch_quotes_from_db(
+    conn, symbols: list[str], start_date: str, end_date: str
+) -> pd.DataFrame:
     keep_cols = [
         "date",
         "symbol",
@@ -129,8 +140,12 @@ def fetch_quotes_from_db(conn, symbols: list[str], start_date: str, end_date: st
     return out
 
 
-def fetch_and_save_quotes(conn, symbols: list[str], start_date: str, end_date: str, output_path: Path) -> None:
-    out = fetch_quotes_from_db(conn=conn, symbols=symbols, start_date=start_date, end_date=end_date)
+def fetch_and_save_quotes(
+    conn, symbols: list[str], start_date: str, end_date: str, output_path: Path
+) -> None:
+    out = fetch_quotes_from_db(
+        conn=conn, symbols=symbols, start_date=start_date, end_date=end_date
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False)
     print(f"  -> saved {len(out)} rows to {output_path}")
@@ -156,7 +171,13 @@ def cache_one_period(conn, base_dir: Path, year: int, month: int, label: str) ->
     if output_path.exists():
         print(f"  [skip] cache exists: {output_path}")
         return
-    fetch_and_save_quotes(conn=conn, symbols=symbols, start_date=start_date, end_date=end_date, output_path=output_path)
+    fetch_and_save_quotes(
+        conn=conn,
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+        output_path=output_path,
+    )
 
 
 def main() -> None:
@@ -168,7 +189,9 @@ def main() -> None:
 
     engine = create_engine(tp.get_db_url())
     with engine.connect() as conn:
-        cache_one_period(conn=conn, base_dir=base_dir, year=year, month=month, label="Current month")
+        cache_one_period(
+            conn=conn, base_dir=base_dir, year=year, month=month, label="Current month"
+        )
 
     print("\ncache_daily_quotes done")
     print(f"- year: {year}, month: {month_s}")

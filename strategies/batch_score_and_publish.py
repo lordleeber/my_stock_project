@@ -7,6 +7,7 @@ dataset_strategy.csv and runs score_and_publish for each one.
 Usage:
   venv/bin/python3 strategies/batch_score_and_publish.py
 """
+
 from __future__ import annotations
 
 import sys

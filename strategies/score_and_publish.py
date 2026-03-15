@@ -9,6 +9,7 @@ Usage:
   venv/bin/python3 strategies/score_and_publish.py --year 2024 --month 7
   venv/bin/python3 strategies/score_and_publish.py --year 2025 --month 10 --model-dir models_selection/latest
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,11 +52,17 @@ def resolve_model_for_month(models_root: Path, year: int, month: int) -> Path | 
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Score candidates using walk-forward selection model.")
-    parser.add_argument("--year",      type=int,  required=True)
-    parser.add_argument("--month",     type=str,  required=True)
-    parser.add_argument("--model-dir", type=Path, default=None,
-                        help="Override model dir (e.g. models_selection/latest for production pick)")
+    parser = argparse.ArgumentParser(
+        description="Score candidates using walk-forward selection model."
+    )
+    parser.add_argument("--year", type=int, required=True)
+    parser.add_argument("--month", type=str, required=True)
+    parser.add_argument(
+        "--model-dir",
+        type=Path,
+        default=None,
+        help="Override model dir (e.g. models_selection/latest for production pick)",
+    )
     return parser.parse_args()
 
 
@@ -63,7 +70,14 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
     """Score candidates for year/month and write candidates_scored.csv to models_selection/<year>/<month>/."""
     month_s = str(month).zfill(2)
 
-    ds_path = ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month_s / "dataset_strategy.csv"
+    ds_path = (
+        ROOT_DIR
+        / "strategies"
+        / "output"
+        / f"{year:04d}"
+        / month_s
+        / "dataset_strategy.csv"
+    )
     if not ds_path.exists():
         raise FileNotFoundError(
             f"dataset_strategy.csv not found: {ds_path}\n"
@@ -94,7 +108,9 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
 
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
-        print(f"[WARN] features missing in dataset_strategy.csv (will be filled with 0): {missing}")
+        print(
+            f"[WARN] features missing in dataset_strategy.csv (will be filled with 0): {missing}"
+        )
 
     for c in feature_cols:
         if c not in df.columns:
@@ -113,9 +129,21 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
 
     print(f"scored {len(out)} candidates → {out_path}")
     print(f"model used: {model_dir}")
-    show_cols = [c for c in ["symbol", "name", "ml_rank", "ml_score", "pred_upside_pct",
-                             "pe_current", "ttm_eps", "close_vs_ma240"] if c in out.columns]
-    print(f"\nTop 15 by ml_score:")
+    show_cols = [
+        c
+        for c in [
+            "symbol",
+            "name",
+            "ml_rank",
+            "ml_score",
+            "pred_upside_pct",
+            "pe_current",
+            "ttm_eps",
+            "close_vs_ma240",
+        ]
+        if c in out.columns
+    ]
+    print("\nTop 15 by ml_score:")
     print(out[show_cols].head(15).to_string(index=False))
 
     return out_path

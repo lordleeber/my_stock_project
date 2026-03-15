@@ -13,6 +13,7 @@ Writes:
 Usage:
   venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,7 +22,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
 
@@ -30,15 +30,19 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from strategies.feature_engineering import (
-    fetch_technical_features, TECHNICAL_FEATURE_COLS,
-    fetch_revenue_features, REVENUE_FEATURE_COLS,
+    fetch_technical_features,
+    TECHNICAL_FEATURE_COLS,
+    fetch_revenue_features,
+    REVENUE_FEATURE_COLS,
 )
 from train_eps import prepare_data as tp
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Finalize strategy dataset and produce trade candidates.")
-    parser.add_argument("--year",  type=int, required=True)
+    parser = argparse.ArgumentParser(
+        description="Finalize strategy dataset and produce trade candidates."
+    )
+    parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 08")
     return parser.parse_args()
 
@@ -79,44 +83,64 @@ def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
         oldest = pd.to_numeric(df.get("ly_q1_eps"), errors="coerce")
 
     df["ttm_eps_forward"] = ttm - oldest + df["predict_target_eps"]
-    df["predict_target_price"] = pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward"]
+    df["predict_target_price"] = (
+        pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward"]
+    )
     close = pd.to_numeric(df.get("q3_close"), errors="coerce")
-    df["pred_upside_pct"] = ((df["predict_target_price"] - close) / close * 100.0).where(close > 0)
+    df["pred_upside_pct"] = (
+        (df["predict_target_price"] - close) / close * 100.0
+    ).where(close > 0)
     return df
 
 
 def main() -> None:
     args = parse_args()
-    year  = int(args.year)
+    year = int(args.year)
     month = str(args.month).zfill(2)
     month_int = int(month)
 
-    out_dir       = (ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month).resolve()
+    out_dir = (ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month).resolve()
     strategy_path = out_dir / "dataset_strategy.csv"
-    pred_path     = (ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv").resolve()
+    pred_path = (
+        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv"
+    ).resolve()
     candidates_path = out_dir / "trade_candidates.csv"
 
     if not strategy_path.exists():
-        raise FileNotFoundError(f"dataset_strategy.csv not found: {strategy_path}\nRun prepare_data.py first.")
+        raise FileNotFoundError(
+            f"dataset_strategy.csv not found: {strategy_path}\nRun prepare_data.py first."
+        )
     if not pred_path.exists():
-        raise FileNotFoundError(f"predictions_results.csv not found: {pred_path}\nRun predict_and_publish.py first.")
+        raise FileNotFoundError(
+            f"predictions_results.csv not found: {pred_path}\nRun predict_and_publish.py first."
+        )
 
-    ds   = pd.read_csv(strategy_path)
+    ds = pd.read_csv(strategy_path)
     pred = pd.read_csv(pred_path)
 
-    ds["symbol"]   = ds["symbol"].astype(str).str.strip()
+    ds["symbol"] = ds["symbol"].astype(str).str.strip()
     pred["symbol"] = pred["symbol"].astype(str).str.strip()
 
     # Drop any previously computed columns so re-runs stay idempotent.
-    RECOMPUTED_COLS = [
-        "pred_lgb_delta", "predict_target_eps", "ttm_eps_forward",
-        "predict_target_price", "pred_upside_pct", "entry_date",
-    ] + TECHNICAL_FEATURE_COLS + REVENUE_FEATURE_COLS
+    RECOMPUTED_COLS = (
+        [
+            "pred_lgb_delta",
+            "predict_target_eps",
+            "ttm_eps_forward",
+            "predict_target_price",
+            "pred_upside_pct",
+            "entry_date",
+        ]
+        + TECHNICAL_FEATURE_COLS
+        + REVENUE_FEATURE_COLS
+    )
     ds = ds.drop(columns=[c for c in RECOMPUTED_COLS if c in ds.columns])
 
     # Keep only pred_lgb_delta from predictions (other cols already in ds).
     pred_cols = ["symbol", "pred_lgb_delta"]
-    pred_merge = pred[[c for c in pred_cols if c in pred.columns]].drop_duplicates("symbol")
+    pred_merge = pred[[c for c in pred_cols if c in pred.columns]].drop_duplicates(
+        "symbol"
+    )
 
     df = ds.merge(pred_merge, on="symbol", how="left")
     df = compute_pred_upside(df, month)
@@ -130,10 +154,12 @@ def main() -> None:
     print(f"entry_date: {entry_date_str}")
 
     # Fetch technical features at entry_date.
-    symbols    = df["symbol"].tolist()
-    close_s    = pd.to_numeric(df.set_index("symbol")["q3_close"],     errors="coerce")
-    volume_s   = pd.to_numeric(df.set_index("symbol")["target_volume"], errors="coerce")
-    tech = fetch_technical_features(symbols, entry_date_str, close_series=close_s, volume_series=volume_s)
+    symbols = df["symbol"].tolist()
+    close_s = pd.to_numeric(df.set_index("symbol")["q3_close"], errors="coerce")
+    volume_s = pd.to_numeric(df.set_index("symbol")["target_volume"], errors="coerce")
+    tech = fetch_technical_features(
+        symbols, entry_date_str, close_series=close_s, volume_series=volume_s
+    )
     # Drop any tech cols already in df to avoid duplicates.
     existing_tech = [c for c in TECHNICAL_FEATURE_COLS if c in df.columns]
     if existing_tech:
@@ -148,11 +174,13 @@ def main() -> None:
         df = df.drop(columns=existing_rev)
     df = df.merge(rev, on="symbol", how="left")
     n_rev = df[REVENUE_FEATURE_COLS].notna().any(axis=1).sum()
-    print(f"Revenue features added: {len(REVENUE_FEATURE_COLS)} cols  ({n_rev}/{len(df)} symbols with data)")
+    print(
+        f"Revenue features added: {len(REVENUE_FEATURE_COLS)} cols  ({n_rev}/{len(df)} symbols with data)"
+    )
 
     # Convenience aliases for downstream scripts (analyze, score, train).
-    df["close"]       = pd.to_numeric(df.get("q3_close"),     errors="coerce")
-    df["ttm_eps"]     = pd.to_numeric(df.get("ttm_eps_official"), errors="coerce")
+    df["close"] = pd.to_numeric(df.get("q3_close"), errors="coerce")
+    df["ttm_eps"] = pd.to_numeric(df.get("ttm_eps_official"), errors="coerce")
     df["volume_lots"] = pd.to_numeric(df.get("target_volume"), errors="coerce") / 1000.0
 
     # Write updated dataset_strategy.csv.
@@ -160,18 +188,26 @@ def main() -> None:
     print(f"dataset_strategy.csv updated: {strategy_path}  ({len(df)} rows)")
 
     # Write trade_candidates.csv.
-    tc_cols = ["symbol", "predict_target_price", "q3_close", "entry_date", "pred_upside_pct"]
+    tc_cols = [
+        "symbol",
+        "predict_target_price",
+        "q3_close",
+        "entry_date",
+        "pred_upside_pct",
+    ]
     tc = df[[c for c in tc_cols if c in df.columns]].copy()
     tc = tc.rename(columns={"q3_close": "close"})
     valid = tc["predict_target_price"].notna() & tc["close"].notna() & tc["close"].gt(0)
-    tc = tc[valid].sort_values("pred_upside_pct", ascending=False).reset_index(drop=True)
+    tc = (
+        tc[valid].sort_values("pred_upside_pct", ascending=False).reset_index(drop=True)
+    )
     tc.to_csv(candidates_path, index=False, encoding="utf-8-sig")
 
     print(f"trade_candidates.csv written: {candidates_path}  ({len(tc)} rows)")
-    print(f"\nTop 10 by pred_upside_pct:")
+    print("\nTop 10 by pred_upside_pct:")
     print(tc.head(10).to_string(index=False))
 
-    print(f"\nfinalize_strategy done")
+    print("\nfinalize_strategy done")
     print(f"- year: {year}, month: {month}")
     print(f"- strategy rows: {len(df)}")
     print(f"- trade_candidates rows: {len(tc)}")

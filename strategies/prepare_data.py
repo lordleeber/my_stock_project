@@ -24,7 +24,9 @@ MIN_VOLUME_LOTS = 500.0
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare strategy inference dataset from DB.")
+    parser = argparse.ArgumentParser(
+        description="Prepare strategy inference dataset from DB."
+    )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -41,7 +43,9 @@ def model_release_date(year: int, month: str) -> str:
 def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
     """Fetch ROE and PE percentile from valuation_daily (TTM-based, PIT by date)."""
     if not symbols:
-        return pd.DataFrame(columns=["symbol", "roe_official", "pe_percentile_official"])
+        return pd.DataFrame(
+            columns=["symbol", "roe_official", "pe_percentile_official"]
+        )
     stmt = text(
         """
         WITH latest AS (
@@ -59,14 +63,20 @@ def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.Da
     return df
 
 
-def fetch_market_sentiment_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
+def fetch_market_sentiment_features(
+    engine, symbols: list[str], end_date: str
+) -> pd.DataFrame:
     """Fetch dealer holding, margin pressure, and short interest features."""
     if not symbols:
-        return pd.DataFrame(columns=[
-            "symbol", "dealer_held_ratio",
-            "margin_usage_ratio", "short_cover_pressure",
-            "sbl_sell_repay_ratio",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "dealer_held_ratio",
+                "margin_usage_ratio",
+                "short_cover_pressure",
+                "sbl_sell_repay_ratio",
+            ]
+        )
 
     stmt_dealer = text(
         """
@@ -108,7 +118,7 @@ def fetch_market_sentiment_features(engine, symbols: list[str], end_date: str) -
     with engine.connect() as conn:
         dealer = pd.read_sql(stmt_dealer, conn, params=params)
         margin = pd.read_sql(stmt_margin, conn, params=params)
-        sbl    = pd.read_sql(stmt_sbl,    conn, params=params)
+        sbl = pd.read_sql(stmt_sbl, conn, params=params)
 
     for df_ in [dealer, margin, sbl]:
         df_["symbol"] = df_["symbol"].astype(str).str.strip()
@@ -116,16 +126,24 @@ def fetch_market_sentiment_features(engine, symbols: list[str], end_date: str) -
     out = pd.DataFrame({"symbol": symbols})
     out = out.merge(dealer, on="symbol", how="left")
     out = out.merge(margin, on="symbol", how="left")
-    out = out.merge(sbl,    on="symbol", how="left")
+    out = out.merge(sbl, on="symbol", how="left")
     return out
 
 
-def fetch_fundamental_features(engine, symbols: list[str], anchor_q: str) -> pd.DataFrame:
+def fetch_fundamental_features(
+    engine, symbols: list[str], anchor_q: str
+) -> pd.DataFrame:
     """Fetch quality metrics from quarterly_reports at anchor_q for PIT alignment."""
     if not symbols:
-        return pd.DataFrame(columns=[
-            "symbol", "nav_per_share", "current_ratio", "eps_acc_yoy", "revenue_acc_yoy",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "nav_per_share",
+                "current_ratio",
+                "eps_acc_yoy",
+                "revenue_acc_yoy",
+            ]
+        )
     stmt = text(
         """
         SELECT symbol, nav_per_share, current_ratio, eps_acc_yoy, revenue_acc_yoy
@@ -142,13 +160,22 @@ def fetch_fundamental_features(engine, symbols: list[str], anchor_q: str) -> pd.
 def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
     """Fetch foreign/trust holding ratios and shareholding concentration for given symbols."""
     if not symbols:
-        return pd.DataFrame(columns=[
-            "symbol", "foreign_held_ratio", "trust_held_ratio",
-            "large_holder_ratio", "large_holder_ratio_wow", "large_holder_two_week_up",
-            "mid_holder_ratio", "mid_holder_ratio_wow",
-            "small_holder_ratio", "small_holder_ratio_wow",
-            "concentration_spread", "concentration_spread_wow",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "foreign_held_ratio",
+                "trust_held_ratio",
+                "large_holder_ratio",
+                "large_holder_ratio_wow",
+                "large_holder_two_week_up",
+                "mid_holder_ratio",
+                "mid_holder_ratio_wow",
+                "small_holder_ratio",
+                "small_holder_ratio_wow",
+                "concentration_spread",
+                "concentration_spread_wow",
+            ]
+        )
 
     stmt_foreign = text(
         """
@@ -231,7 +258,9 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
     return out
 
 
-def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: str) -> pd.DataFrame:
+def fetch_one_year_live(
+    conn, year: int, market: str, month: str, cutoff_date: str
+) -> pd.DataFrame:
     qctx = tp.build_quarter_context(year, month)
     mctx = tp.monthly_context(year, month)
 
@@ -279,9 +308,9 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
       WHERE date = '{prev_q}' AND market = '{market}'
     ),
     this_monthly AS (
-      SELECT symbol, {','.join(mctx['sql_exprs'])}
+      SELECT symbol, {",".join(mctx["sql_exprs"])}
       FROM monthly_revenue
-      WHERE date IN ({','.join([f"'{d}'" for d in mctx['mr_dates']])})
+      WHERE date IN ({",".join([f"'{d}'" for d in mctx["mr_dates"]])})
       GROUP BY symbol
     ),
     eps_hist AS (
@@ -325,7 +354,7 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
       p.prev_margin,
       p.prev_rev,
       p.prev_ni,
-      {','.join([f'm.{c}' for c in mctx['month_cols']])},
+      {",".join([f"m.{c}" for c in mctx["month_cols"]])},
       e.ly_target_eps,
       e.ly_anchor_eps,
       e.prev_eps,
@@ -349,7 +378,9 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
     """
     t0 = time.perf_counter()
     out = pd.read_sql(sql, conn)
-    print(f"[timing] main_sql {market} {year}/{month}: {time.perf_counter() - t0:.2f}s, rows={len(out)}")
+    print(
+        f"[timing] main_sql {market} {year}/{month}: {time.perf_counter() - t0:.2f}s, rows={len(out)}"
+    )
 
     for c in mctx["month_cols"]:
         if c not in out.columns:
@@ -367,7 +398,7 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
             SELECT symbol, date, period_type, account_code, value_num, value_text
             FROM income_statement_xbrl
             WHERE date IN ('{prev_q}', '{anchor_q}')
-              AND account_code IN ({','.join([f"'{c}'" for c in inc_codes])})
+              AND account_code IN ({",".join([f"'{c}'" for c in inc_codes])})
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -377,7 +408,7 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
             SELECT symbol, date, period_type, account_code, value_num, value_text
             FROM balance_sheet_xbrl
             WHERE date = '{anchor_q}'
-              AND account_code IN ({','.join([f"'{c}'" for c in bs_codes])})
+              AND account_code IN ({",".join([f"'{c}'" for c in bs_codes])})
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -387,7 +418,7 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
             SELECT symbol, date, period_type, account_code, value_num, value_text
             FROM cash_flow_xbrl
             WHERE date IN ('{prev_q}', '{anchor_q}')
-              AND account_code IN ({','.join([f"'{c}'" for c in cf_codes])})
+              AND account_code IN ({",".join([f"'{c}'" for c in cf_codes])})
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -406,7 +437,9 @@ def fetch_one_year_live(conn, year: int, market: str, month: str, cutoff_date: s
         )
         t2 = time.perf_counter()
         out = out.merge(xbrl_features, on="symbol", how="left")
-        print(f"[timing] xbrl_merge {market} {year}/{month}: {time.perf_counter() - t2:.2f}s")
+        print(
+            f"[timing] xbrl_merge {market} {year}/{month}: {time.perf_counter() - t2:.2f}s"
+        )
     except Exception as exc:
         print(f"[WARN] skip XBRL feature merge (db) year={year} market={market}: {exc}")
 
@@ -435,7 +468,9 @@ def main() -> None:
     cutoff_date = model_release_date(year, month)
     model_features = tp.model_features_for_month(month)
 
-    output_dir = (Path(__file__).resolve().parent / "output" / str(year) / month).resolve()
+    output_dir = (
+        Path(__file__).resolve().parent / "output" / str(year) / month
+    ).resolve()
     strategy_output_path = output_dir / "dataset_strategy.csv"
 
     frames: list[pd.DataFrame] = []
@@ -448,11 +483,16 @@ def main() -> None:
             y = fetch_one_year_live(conn, year, market, month, cutoff_date)
             if not y.empty:
                 frames.append(y)
-            print(f"[done] fetch db: year={year}, market={market}, month={month}, elapsed={time.perf_counter() - t_market:.2f}s")
+            print(
+                f"[done] fetch db: year={year}, market={market}, month={month}, elapsed={time.perf_counter() - t_market:.2f}s"
+            )
 
         industry_parts: list[pd.DataFrame] = []
         for market in tp.MARKETS:
-            part = pd.read_sql(f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'", conn)
+            part = pd.read_sql(
+                f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'",
+                conn,
+            )
             if not part.empty:
                 industry_parts.append(part[["symbol", "industry"]])
 
@@ -461,24 +501,36 @@ def main() -> None:
 
     df = pd.concat(frames, ignore_index=True)
     if industry_parts:
-        industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates("symbol")
+        industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates(
+            "symbol"
+        )
         df = df.merge(industry_df, on="symbol", how="left")
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
 
     df = df.replace([np.inf, -np.inf], np.nan)
     df["prev_margin"] = tp.safe_div_positive(df["prev_ni"], df["prev_rev"])
     df["anchor_margin"] = tp.safe_div_positive(df["anchor_ni"], df["anchor_rev"])
-    df["anchor_ocf_ratio"] = tp.safe_div_positive(df["anchor_ocf"], df["anchor_ni"]).clip(-5, 5)
-    df["anchor_re_ratio"] = tp.safe_div_positive(df["anchor_retained_earnings"], df["capital"])
+    df["anchor_ocf_ratio"] = tp.safe_div_positive(
+        df["anchor_ocf"], df["anchor_ni"]
+    ).clip(-5, 5)
+    df["anchor_re_ratio"] = tp.safe_div_positive(
+        df["anchor_retained_earnings"], df["capital"]
+    )
     df["margin_momentum"] = df["anchor_margin"] - df["prev_margin"]
     tp.add_month_features(df, month)
 
-    df["ly_seasonality"] = tp.safe_div_positive(df["ly_target_eps"], df["ly_anchor_eps"]).clip(-5, 5)
-    df["anchor_yoy_eps"] = (tp.safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1).clip(-5, 5)
+    df["ly_seasonality"] = tp.safe_div_positive(
+        df["ly_target_eps"], df["ly_anchor_eps"]
+    ).clip(-5, 5)
+    df["anchor_yoy_eps"] = (
+        tp.safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1
+    ).clip(-5, 5)
 
     df["ttm_eps_official"] = compute_ttm_official(df, month)
     df["target_eps"] = pd.to_numeric(df.get("target_eps"), errors="coerce")
-    df["delta_eps"] = df["target_eps"] - pd.to_numeric(df.get("anchor_eps"), errors="coerce")
+    df["delta_eps"] = df["target_eps"] - pd.to_numeric(
+        df.get("anchor_eps"), errors="coerce"
+    )
     df["q2_eps_official"] = pd.to_numeric(df.get("q2_eps"), errors="coerce")
     df["target_volume"] = pd.to_numeric(df.get("q3_volume"), errors="coerce")
     df["pe_current"] = tp.safe_div_positive(df.get("q3_close"), df["ttm_eps_official"])
@@ -493,7 +545,10 @@ def main() -> None:
     df = df[ttm_eps_proxy >= MIN_TTM_EPS].copy()
     rows_after_ttm_filter = len(df)
 
-    volume_ok = pd.to_numeric(df.get("target_volume"), errors="coerce").fillna(0) / 1000.0 > MIN_VOLUME_LOTS
+    volume_ok = (
+        pd.to_numeric(df.get("target_volume"), errors="coerce").fillna(0) / 1000.0
+        > MIN_VOLUME_LOTS
+    )
     df = df[volume_ok].copy()
     rows_after_volume_filter = len(df)
 
@@ -570,7 +625,9 @@ def main() -> None:
         "revenue_acc_yoy",
     ]
     strategy_existing = [c for c in strategy_cols if c in df.columns]
-    strategy_out = df[strategy_existing].copy().sort_values(["symbol"]).reset_index(drop=True)
+    strategy_out = (
+        df[strategy_existing].copy().sort_values(["symbol"]).reset_index(drop=True)
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     strategy_out.to_csv(strategy_output_path, index=False)
@@ -584,7 +641,9 @@ def main() -> None:
     print(f"- rows_before_ttm_filter: {rows_before_ttm_filter}")
     print(f"- rows_after_ttm_filter: {rows_after_ttm_filter}")
     print(f"- rows_after_volume_filter: {rows_after_volume_filter}")
-    print(f"- min_ttm_eps: {MIN_TTM_EPS} (strategies proxy: ly_target_eps + prev_eps + anchor_eps)")
+    print(
+        f"- min_ttm_eps: {MIN_TTM_EPS} (strategies proxy: ly_target_eps + prev_eps + anchor_eps)"
+    )
     print(f"- min_volume_lots: {MIN_VOLUME_LOTS}")
     print(f"- model_feature_count: {len(model_features)}")
     print(f"- elapsed_total_sec: {time.perf_counter() - t_all:.2f}")

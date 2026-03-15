@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +23,9 @@ FEATURE_TRANSFORM = "quantile"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Shared evaluate for train_eps/output/<year>/<month>")
+    parser = argparse.ArgumentParser(
+        description="Shared evaluate for train_eps/output/<year>/<month>"
+    )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -33,12 +35,21 @@ def resolve_month_context(year: int, month: str) -> tuple[Path, Path, Path]:
     month_name = str(month).zfill(2)
     if month_name < "01" or month_name > "12":
         raise ValueError("--month 必須是 01~12")
-    dataset_path = (Path.cwd() / "train_eps" / "output" / str(year) / month_name / "dataset_evaluate.csv").resolve()
+    dataset_path = (
+        Path.cwd()
+        / "train_eps"
+        / "output"
+        / str(year)
+        / month_name
+        / "dataset_evaluate.csv"
+    ).resolve()
     results_dir = (Path.cwd() / "models_eps" / str(year) / month_name).resolve()
     return dataset_path, results_dir
 
 
-def winsorize_train_test(train_df: pd.DataFrame, test_df: pd.DataFrame, cols: list[str], q: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+def winsorize_train_test(
+    train_df: pd.DataFrame, test_df: pd.DataFrame, cols: list[str], q: float
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     if q <= 0:
         return train_df, test_df
     tr = train_df.copy()
@@ -51,7 +62,9 @@ def winsorize_train_test(train_df: pd.DataFrame, test_df: pd.DataFrame, cols: li
     return tr, te
 
 
-def build_lgb_regressor(args: argparse.Namespace, objective: str = "mae", alpha: float | None = None) -> LGBMRegressor:
+def build_lgb_regressor(
+    args: argparse.Namespace, objective: str = "mae", alpha: float | None = None
+) -> LGBMRegressor:
     kwargs: dict[str, float | int | str] = {
         "objective": objective,
         "n_estimators": args.n_estimators,
@@ -159,17 +172,33 @@ def calibrate_interval_scale_by_regime(
         max_scale,
     )
     if target_coverage is None:
-        return np.full(len(test_df), global_scale, dtype=float), "regime_disabled_target_none", global_scale
+        return (
+            np.full(len(test_df), global_scale, dtype=float),
+            "regime_disabled_target_none",
+            global_scale,
+        )
 
     train_reg = train_df.copy()
     test_reg = test_df.copy()
-    train_reg["industry_key"] = train_reg.get("industry", pd.Series(index=train_reg.index)).fillna("unknown").astype(str)
-    test_reg["industry_key"] = test_reg.get("industry", pd.Series(index=test_reg.index)).fillna("unknown").astype(str)
+    train_reg["industry_key"] = (
+        train_reg.get("industry", pd.Series(index=train_reg.index))
+        .fillna("unknown")
+        .astype(str)
+    )
+    test_reg["industry_key"] = (
+        test_reg.get("industry", pd.Series(index=test_reg.index))
+        .fillna("unknown")
+        .astype(str)
+    )
 
     q1 = float(np.quantile(pred_std_train, 0.33))
     q2 = float(np.quantile(pred_std_train, 0.66))
-    train_reg["unc_bucket"] = np.where(pred_std_train <= q1, "low", np.where(pred_std_train <= q2, "mid", "high"))
-    test_reg["unc_bucket"] = np.where(pred_std_test <= q1, "low", np.where(pred_std_test <= q2, "mid", "high"))
+    train_reg["unc_bucket"] = np.where(
+        pred_std_train <= q1, "low", np.where(pred_std_train <= q2, "mid", "high")
+    )
+    test_reg["unc_bucket"] = np.where(
+        pred_std_test <= q1, "low", np.where(pred_std_test <= q2, "mid", "high")
+    )
     train_reg["regime_key"] = train_reg["industry_key"] + "__" + train_reg["unc_bucket"]
     test_reg["regime_key"] = test_reg["industry_key"] + "__" + test_reg["unc_bucket"]
 
@@ -190,7 +219,9 @@ def calibrate_interval_scale_by_regime(
         )
 
     if len(scales) == 0:
-        raise RuntimeError("Calibration failed: no valid regime groups for regime mode.")
+        raise RuntimeError(
+            "Calibration failed: no valid regime groups for regime mode."
+        )
 
     out_scale = np.full(len(test_df), global_scale, dtype=float)
     for i, key in enumerate(test_reg["regime_key"].astype(str).tolist()):
@@ -225,15 +256,28 @@ def calibrate_interval_scale_nonlinear(
         max_scale,
     )
     if target_coverage is None:
-        return np.full(len(pred_std_test), global_scale, dtype=float), "nonlinear_disabled_target_none", global_scale
+        return (
+            np.full(len(pred_std_test), global_scale, dtype=float),
+            "nonlinear_disabled_target_none",
+            global_scale,
+        )
 
     if len(y_true_train) < max(min_samples, min_bin_samples * 2):
-        raise RuntimeError("Calibration failed: nonlinear mode requires more training samples.")
+        raise RuntimeError(
+            "Calibration failed: nonlinear mode requires more training samples."
+        )
 
     half_width = (y_high_train - y_low_train) / 2.0
-    valid = (~np.isnan(y_true_train)) & (~np.isnan(y_mid_train)) & (~np.isnan(half_width)) & (~np.isnan(pred_std_train))
+    valid = (
+        (~np.isnan(y_true_train))
+        & (~np.isnan(y_mid_train))
+        & (~np.isnan(half_width))
+        & (~np.isnan(pred_std_train))
+    )
     if int(np.sum(valid)) < max(min_samples, min_bin_samples * 2):
-        raise RuntimeError("Calibration failed: nonlinear mode has insufficient valid training rows.")
+        raise RuntimeError(
+            "Calibration failed: nonlinear mode has insufficient valid training rows."
+        )
 
     std_v = pred_std_train[valid]
     y_true_v = y_true_train[valid]
@@ -246,7 +290,9 @@ def calibrate_interval_scale_nonlinear(
     edges = np.quantile(std_v, quantiles)
     edges = np.unique(edges)
     if len(edges) < 3:
-        raise RuntimeError("Calibration failed: nonlinear mode has degenerated uncertainty distribution.")
+        raise RuntimeError(
+            "Calibration failed: nonlinear mode has degenerated uncertainty distribution."
+        )
 
     bin_scales = []
     bin_left = []
@@ -267,7 +313,9 @@ def calibrate_interval_scale_nonlinear(
         bin_scales.append(s)
 
     if len(bin_scales) < 2:
-        raise RuntimeError("Calibration failed: nonlinear mode has insufficient populated bins.")
+        raise RuntimeError(
+            "Calibration failed: nonlinear mode has insufficient populated bins."
+        )
 
     bin_scales = np.maximum.accumulate(np.array(bin_scales, dtype=float))
 
@@ -320,7 +368,11 @@ def main() -> None:
     args.interval_method = str(eval_cfg["interval_method"])
     args.interval_low_quantile = float(eval_cfg["interval_low_quantile"])
     args.interval_high_quantile = float(eval_cfg["interval_high_quantile"])
-    args.target_coverage = None if eval_cfg["target_coverage"] is None else float(eval_cfg["target_coverage"])
+    args.target_coverage = (
+        None
+        if eval_cfg["target_coverage"] is None
+        else float(eval_cfg["target_coverage"])
+    )
     args.calibration_mode = str(eval_cfg["calibration_mode"])
     args.min_calib_samples = int(eval_cfg["min_calib_samples"])
     args.min_calib_scale = float(eval_cfg["min_calib_scale"])
@@ -345,7 +397,9 @@ def main() -> None:
         effective_conf_q = args.confidence_quantile
 
         winsor_cols = [c for c in feature_cols if c != "anchor_eps"] + [TARGET_DELTA]
-        train_df, test_df = winsorize_train_test(train_raw, test_raw, winsor_cols, effective_winsor_q)
+        train_df, test_df = winsorize_train_test(
+            train_raw, test_raw, winsor_cols, effective_winsor_q
+        )
         # prepare_data 已完成特徵轉換，evaluate 只讀取最終特徵
         use_features = feature_cols
 
@@ -356,8 +410,12 @@ def main() -> None:
         pred_delta_raw = model.predict(test_df[use_features])
         train_delta_raw = model.predict(train_df[use_features])
 
-        q_low_model = build_lgb_regressor(args, objective="quantile", alpha=float(args.interval_low_quantile))
-        q_high_model = build_lgb_regressor(args, objective="quantile", alpha=float(args.interval_high_quantile))
+        q_low_model = build_lgb_regressor(
+            args, objective="quantile", alpha=float(args.interval_low_quantile)
+        )
+        q_high_model = build_lgb_regressor(
+            args, objective="quantile", alpha=float(args.interval_high_quantile)
+        )
         q_low_model.fit(train_df[use_features], train_df[TARGET_DELTA])
         q_high_model.fit(train_df[use_features], train_df[TARGET_DELTA])
 
@@ -368,7 +426,9 @@ def main() -> None:
 
         # 用 quantile 區間寬度當作不確定性代理，沿用原有 confidence gating 機制。
         pred_delta_std = np.maximum(0.0, (pred_delta_high - pred_delta_low) / 2.0)
-        pred_delta_train_std = np.maximum(0.0, (train_delta_high - train_delta_low) / 2.0)
+        pred_delta_train_std = np.maximum(
+            0.0, (train_delta_high - train_delta_low) / 2.0
+        )
         threshold = float(np.quantile(pred_delta_train_std, effective_conf_q))
         pred_delta = np.where(pred_delta_std > threshold, 0.0, pred_delta_raw)
 
@@ -382,12 +442,14 @@ def main() -> None:
         train_delta_high = np.maximum(train_hi, train_delta_raw)
 
         pred_eps_model = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
-        pred_eps_low   = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_low
-        pred_eps_high  = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_high
+        pred_eps_low = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_low
+        pred_eps_high = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_high
 
-        train_delta_mid  = np.where(pred_delta_train_std > threshold, 0.0, train_delta_raw)
-        train_eps_mid  = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_mid
-        train_eps_low  = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_low
+        train_delta_mid = np.where(
+            pred_delta_train_std > threshold, 0.0, train_delta_raw
+        )
+        train_eps_mid = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_mid
+        train_eps_low = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_low
         train_eps_high = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_high
 
         calib_source = "global"
@@ -414,34 +476,38 @@ def main() -> None:
                 )
             interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
         elif args.calibration_mode == "regime":
-            interval_scale_vec, calib_source, interval_scale = calibrate_interval_scale_by_regime(
-                train_df=train_df,
-                test_df=test_df,
-                y_true_train=train_df[TARGET].to_numpy(dtype=float),
-                y_mid_train=train_eps_mid,
-                y_low_train=train_eps_low,
-                y_high_train=train_eps_high,
-                pred_std_train=pred_delta_train_std,
-                pred_std_test=pred_delta_std,
-                target_coverage=args.target_coverage,
-                min_samples=args.min_calib_samples,
-                min_scale=args.min_calib_scale,
-                max_scale=args.max_calib_scale,
+            interval_scale_vec, calib_source, interval_scale = (
+                calibrate_interval_scale_by_regime(
+                    train_df=train_df,
+                    test_df=test_df,
+                    y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                    y_mid_train=train_eps_mid,
+                    y_low_train=train_eps_low,
+                    y_high_train=train_eps_high,
+                    pred_std_train=pred_delta_train_std,
+                    pred_std_test=pred_delta_std,
+                    target_coverage=args.target_coverage,
+                    min_samples=args.min_calib_samples,
+                    min_scale=args.min_calib_scale,
+                    max_scale=args.max_calib_scale,
+                )
             )
         elif args.calibration_mode == "nonlinear":
-            interval_scale_vec, calib_source, interval_scale = calibrate_interval_scale_nonlinear(
-                y_true_train=train_df[TARGET].to_numpy(dtype=float),
-                y_mid_train=train_eps_mid,
-                y_low_train=train_eps_low,
-                y_high_train=train_eps_high,
-                pred_std_train=pred_delta_train_std,
-                pred_std_test=pred_delta_std,
-                target_coverage=args.target_coverage,
-                min_samples=args.min_calib_samples,
-                min_scale=args.min_calib_scale,
-                max_scale=args.max_calib_scale,
-                n_bins=args.nonlinear_bins,
-                min_bin_samples=args.nonlinear_min_bin_samples,
+            interval_scale_vec, calib_source, interval_scale = (
+                calibrate_interval_scale_nonlinear(
+                    y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                    y_mid_train=train_eps_mid,
+                    y_low_train=train_eps_low,
+                    y_high_train=train_eps_high,
+                    pred_std_train=pred_delta_train_std,
+                    pred_std_test=pred_delta_std,
+                    target_coverage=args.target_coverage,
+                    min_samples=args.min_calib_samples,
+                    min_scale=args.min_calib_scale,
+                    max_scale=args.max_calib_scale,
+                    n_bins=args.nonlinear_bins,
+                    min_bin_samples=args.nonlinear_min_bin_samples,
+                )
             )
         elif args.calibration_mode == "global":
             interval_scale = calibrate_interval_scale(
@@ -465,9 +531,15 @@ def main() -> None:
         pred_eps_high = pred_eps_model + pred_half_width * interval_scale_vec
 
         pred_eps_anchor = test_df["anchor_eps"].to_numpy(dtype=float)
-        pred_eps_med = np.full(len(test_df), float(train_df[TARGET].median()), dtype=float)
+        pred_eps_med = np.full(
+            len(test_df), float(train_df[TARGET].median()), dtype=float
+        )
 
-        for model_name, pred in [("lgb_delta", pred_eps_model), ("baseline_anchor_eps", pred_eps_anchor), ("baseline_train_median", pred_eps_med)]:
+        for model_name, pred in [
+            ("lgb_delta", pred_eps_model),
+            ("baseline_anchor_eps", pred_eps_anchor),
+            ("baseline_train_median", pred_eps_med),
+        ]:
             m = evaluate_metrics(y_true, pred)
             row = {
                 "protocol": "expanding_by_year",
@@ -477,7 +549,9 @@ def main() -> None:
                 "interval_method": args.interval_method,
                 "effective_winsor_q": effective_winsor_q,
                 "effective_confidence_q": effective_conf_q,
-                "target_coverage": args.target_coverage if args.target_coverage is not None else np.nan,
+                "target_coverage": args.target_coverage
+                if args.target_coverage is not None
+                else np.nan,
                 "calibration_mode": args.calibration_mode,
                 "calibration_source": calib_source,
                 "interval_scale": float(np.mean(interval_scale_vec)),

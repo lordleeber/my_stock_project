@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import json
 import pickle
 import re
@@ -53,7 +53,9 @@ def feature_cht_name(feature: str) -> str | None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train shared LightGBM model for models_eps/<year>/<month>")
+    parser = argparse.ArgumentParser(
+        description="Train shared LightGBM model for models_eps/<year>/<month>"
+    )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     return parser.parse_args()
@@ -63,7 +65,9 @@ def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Pat
     month_str = str(args.month).zfill(2)
     if month_str < "01" or month_str > "12":
         raise ValueError("--month 必須是 01~12")
-    month_dir = (Path.cwd() / "train_eps" / "output" / str(args.year) / month_str).resolve()
+    month_dir = (
+        Path.cwd() / "train_eps" / "output" / str(args.year) / month_str
+    ).resolve()
     models_dir = (Path.cwd() / "models_eps" / str(args.year) / month_str).resolve()
 
     dataset = month_dir / "dataset_train.csv"
@@ -86,7 +90,9 @@ def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, model_out, metrics_out, importance_out = resolve_paths(args)
+    month_dir, dataset_path, model_out, metrics_out, importance_out = resolve_paths(
+        args
+    )
     config, config_path = load_shared_config()
     common_cfg = config["common"]
     lgb_cfg = config["lightgbm-train"]
@@ -102,7 +108,11 @@ def main() -> None:
     reg_alpha = float(lgb_cfg["reg_alpha"])
     reg_lambda = float(lgb_cfg["reg_lambda"])
 
-    df = pd.read_csv(dataset_path).replace([np.inf, -np.inf], np.nan).dropna(subset=[TARGET, TARGET_DELTA])
+    df = (
+        pd.read_csv(dataset_path)
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna(subset=[TARGET, TARGET_DELTA])
+    )
 
     # 自動從訓練檔挑特徵欄位，避免每個月份手動維護 FEATURES
     feature_cols = [c for c in df.columns if c not in EXCLUDE_COLUMNS]
@@ -156,14 +166,20 @@ def main() -> None:
         "winsor_quantile": winsor_quantile,
         "model_family": "lightgbm",
         "train_mae_lgb_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
-        "train_mae_baseline_anchor_eps": float(mean_absolute_error(y_true, baseline_eps)),
+        "train_mae_baseline_anchor_eps": float(
+            mean_absolute_error(y_true, baseline_eps)
+        ),
         "feature_transform": "quantile",
         "features": use_features,
     }
 
-    importance_df = pd.DataFrame({"feature": use_features, "importance": model.feature_importances_})
+    importance_df = pd.DataFrame(
+        {"feature": use_features, "importance": model.feature_importances_}
+    )
     importance_df["feature_cht"] = importance_df["feature"].map(feature_cht_name)
-    missing_cht = sorted(importance_df.loc[importance_df["feature_cht"].isna(), "feature"].tolist())
+    missing_cht = sorted(
+        importance_df.loc[importance_df["feature_cht"].isna(), "feature"].tolist()
+    )
     if missing_cht:
         raise ValueError(f"Missing Chinese label for features: {missing_cht}")
     importance_df = importance_df.sort_values("importance", ascending=False)

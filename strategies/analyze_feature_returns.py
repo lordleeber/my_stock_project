@@ -11,12 +11,12 @@ Output:
   - strategies/output/feature_correlation.csv       (correlation summary)
   - Console: quintile analysis per feature
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import bindparam, create_engine, text
 
@@ -30,39 +30,43 @@ from train_eps import prepare_data as tp
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = (2021, 8)
-END   = (2025, 9)   # last month with a "next month" entry_date available
+END = (2025, 9)  # last month with a "next month" entry_date available
 
-FEATURE_COLS = [
-    "pred_upside_pct",
-    "pe_current",
-    "ttm_eps",
-    "volume_lots",
-    "foreign_held_ratio",
-    "trust_held_ratio",
-    "large_holder_ratio",
-    "large_holder_ratio_wow",
-    "large_holder_two_week_up",
-    "mid_holder_ratio",
-    "mid_holder_ratio_wow",
-    "small_holder_ratio",
-    "small_holder_ratio_wow",
-    "concentration_spread",
-    "concentration_spread_wow",
-    # valuation
-    "roe_official",
-    "pe_percentile_official",
-    # market sentiment
-    "dealer_held_ratio",
-    "margin_usage_ratio",
-    "short_cover_pressure",
-    "sbl_sell_repay_ratio",
-    # fundamental quality
-    "anchor_debt_ratio",
-    "pb_ratio",
-    "current_ratio",
-    "eps_acc_yoy",
-    "revenue_acc_yoy",
-] + TECHNICAL_FEATURE_COLS + REVENUE_FEATURE_COLS
+FEATURE_COLS = (
+    [
+        "pred_upside_pct",
+        "pe_current",
+        "ttm_eps",
+        "volume_lots",
+        "foreign_held_ratio",
+        "trust_held_ratio",
+        "large_holder_ratio",
+        "large_holder_ratio_wow",
+        "large_holder_two_week_up",
+        "mid_holder_ratio",
+        "mid_holder_ratio_wow",
+        "small_holder_ratio",
+        "small_holder_ratio_wow",
+        "concentration_spread",
+        "concentration_spread_wow",
+        # valuation
+        "roe_official",
+        "pe_percentile_official",
+        # market sentiment
+        "dealer_held_ratio",
+        "margin_usage_ratio",
+        "short_cover_pressure",
+        "sbl_sell_repay_ratio",
+        # fundamental quality
+        "anchor_debt_ratio",
+        "pb_ratio",
+        "current_ratio",
+        "eps_acc_yoy",
+        "revenue_acc_yoy",
+    ]
+    + TECHNICAL_FEATURE_COLS
+    + REVENUE_FEATURE_COLS
+)
 
 
 def month_iter(start: tuple[int, int], end: tuple[int, int]):
@@ -99,6 +103,7 @@ def prev_trading_day(engine, date_str: str) -> str:
 def fetch_open_prices(engine, symbols: list[str], date_str: str) -> dict[str, float]:
     """Return {symbol: open_price} for the first trading day on or after date_str."""
     from datetime import date, timedelta
+
     end_date = (date.fromisoformat(date_str) + timedelta(days=7)).strftime("%Y-%m-%d")
     stmt = text(
         """
@@ -115,7 +120,11 @@ def fetch_open_prices(engine, symbols: list[str], date_str: str) -> dict[str, fl
         """
     ).bindparams(bindparam("symbols", expanding=True))
     with engine.connect() as conn:
-        df = pd.read_sql(stmt, conn, params={"symbols": symbols, "date_str": date_str, "end_date": end_date})
+        df = pd.read_sql(
+            stmt,
+            conn,
+            params={"symbols": symbols, "date_str": date_str, "end_date": end_date},
+        )
     if df.empty:
         return {}
     df["symbol"] = df["symbol"].astype(str).str.strip()
@@ -127,8 +136,8 @@ def main() -> None:
     engine = create_engine(tp.get_db_url())
 
     for year, month in month_iter(START, END):
-        month_s  = f"{month:02d}"
-        ny, nm   = next_month(year, month)
+        month_s = f"{month:02d}"
+        ny, nm = next_month(year, month)
 
         ds = load_strategy(year, month)
         if ds is None or ds.empty:
@@ -150,24 +159,24 @@ def main() -> None:
 
         symbols = ds["symbol"].tolist()
         entry_opens = fetch_open_prices(engine, symbols, entry_str)
-        exit_opens  = fetch_open_prices(engine, symbols, exit_str)
+        exit_opens = fetch_open_prices(engine, symbols, exit_str)
 
         hit = 0
         for _, row in ds.iterrows():
-            sym        = row["symbol"]
+            sym = row["symbol"]
             entry_open = entry_opens.get(sym)
-            exit_open  = exit_opens.get(sym)
+            exit_open = exit_opens.get(sym)
             if not entry_open or not exit_open or entry_open <= 0:
                 continue
             fwd_return = (exit_open - entry_open) / entry_open * 100.0
             rec = {
-                "year":           year,
-                "month":          month_s,
-                "symbol":         sym,
-                "entry_date":     entry_str,
-                "exit_date":      exit_str,
-                "entry_open":     round(entry_open, 2),
-                "exit_open":      round(exit_open,  2),
+                "year": year,
+                "month": month_s,
+                "symbol": sym,
+                "entry_date": entry_str,
+                "exit_date": exit_str,
+                "entry_open": round(entry_open, 2),
+                "exit_open": round(exit_open, 2),
                 "fwd_return_pct": round(fwd_return, 4),
             }
             for feat in FEATURE_COLS:
@@ -176,7 +185,9 @@ def main() -> None:
             records.append(rec)
             hit += 1
 
-        print(f"[{year}/{month_s}] entry={entry_str} exit={exit_str}  candidates={len(ds)}  matched={hit}")
+        print(
+            f"[{year}/{month_s}] entry={entry_str} exit={exit_str}  candidates={len(ds)}  matched={hit}"
+        )
 
     if not records:
         print("No records collected.")
@@ -188,19 +199,21 @@ def main() -> None:
     # ── Feature correlation table ────────────────────────────────────────────
     corr_rows = []
     for feat in all_features:
-        col   = pd.to_numeric(df[feat], errors="coerce")
+        col = pd.to_numeric(df[feat], errors="coerce")
         valid = df[col.notna()].copy()
         valid["_feat"] = col[col.notna()]
         if valid.empty or valid["_feat"].std() == 0:
             continue
-        pearson  = valid["_feat"].corr(valid["fwd_return_pct"])
+        pearson = valid["_feat"].corr(valid["fwd_return_pct"])
         spearman = valid["_feat"].corr(valid["fwd_return_pct"], method="spearman")
-        corr_rows.append({
-            "feature":    feat,
-            "n":          len(valid),
-            "pearson_r":  round(pearson,  4),
-            "spearman_r": round(spearman, 4),
-        })
+        corr_rows.append(
+            {
+                "feature": feat,
+                "n": len(valid),
+                "pearson_r": round(pearson, 4),
+                "spearman_r": round(spearman, 4),
+            }
+        )
 
     corr_df = pd.DataFrame(corr_rows).sort_values("spearman_r", ascending=False)
 
@@ -214,23 +227,38 @@ def main() -> None:
     print("Quintile Analysis (Q1=lowest, Q5=highest feature value)")
     print("=" * 60)
     for feat in corr_df["feature"].tolist():
-        col   = pd.to_numeric(df[feat], errors="coerce")
+        col = pd.to_numeric(df[feat], errors="coerce")
         valid = df[col.notna()].copy()
         valid["_feat"] = col[col.notna()]
         if len(valid) < 20:
             continue
         try:
-            valid["quintile"] = pd.qcut(valid["_feat"], 5, labels=["Q1","Q2","Q3","Q4","Q5"], duplicates="drop")
+            valid["quintile"] = pd.qcut(
+                valid["_feat"],
+                5,
+                labels=["Q1", "Q2", "Q3", "Q4", "Q5"],
+                duplicates="drop",
+            )
         except Exception:
             continue
-        qt = valid.groupby("quintile", observed=True)["fwd_return_pct"].agg(["mean","median","count"]).round(3)
+        qt = (
+            valid.groupby("quintile", observed=True)["fwd_return_pct"]
+            .agg(["mean", "median", "count"])
+            .round(3)
+        )
         print(f"\n{feat}:")
         print(qt.to_string())
 
     # ── Save outputs ────────────────────────────────────────────────────────
-    df.to_csv(STRATEGIES_OUT / "feature_return_analysis.csv", index=False, encoding="utf-8-sig")
-    corr_df.to_csv(STRATEGIES_OUT / "feature_correlation.csv", index=False, encoding="utf-8-sig")
-    print(f"\nSaved:")
+    df.to_csv(
+        STRATEGIES_OUT / "feature_return_analysis.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+    corr_df.to_csv(
+        STRATEGIES_OUT / "feature_correlation.csv", index=False, encoding="utf-8-sig"
+    )
+    print("\nSaved:")
     print(f"  {STRATEGIES_OUT / 'feature_return_analysis.csv'}  ({len(df)} rows)")
     print(f"  {STRATEGIES_OUT / 'feature_correlation.csv'}")
 

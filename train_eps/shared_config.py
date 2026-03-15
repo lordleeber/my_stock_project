@@ -8,6 +8,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "config.yaml"
 
+
 def _as_mapping(value: Any, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Invalid config format: '{name}' must be a mapping")
@@ -26,5 +27,7 @@ def load_shared_config() -> tuple[dict[str, dict[str, Any]], Path]:
         if section not in root:
             raise ValueError(f"Missing required config section: '{section}'")
 
-    config = {section: _as_mapping(root[section], section) for section in required_sections}
+    config = {
+        section: _as_mapping(root[section], section) for section in required_sections
+    }
     return config, resolved_path

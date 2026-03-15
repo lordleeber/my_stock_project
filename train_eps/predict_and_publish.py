@@ -11,7 +11,9 @@ EXCLUDE_COLUMNS = {"symbol", "name", "industry", "year", "target_eps", "delta_ep
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Predict EPS delta and write predictions_results.csv to models_eps/")
+    parser = argparse.ArgumentParser(
+        description="Predict EPS delta and write predictions_results.csv to models_eps/"
+    )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 10")
     return parser.parse_args()
@@ -22,9 +24,20 @@ def main() -> None:
     year = int(args.year)
     month = str(args.month).zfill(2)
 
-    input_path = (ROOT_DIR / "train_eps" / "output" / f"{year:04d}" / month / "dataset_evaluate.csv").resolve()
-    model_path = (ROOT_DIR / "models_eps" / f"{year:04d}" / month / "model.pkl").resolve()
-    output_path = (ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv").resolve()
+    input_path = (
+        ROOT_DIR
+        / "train_eps"
+        / "output"
+        / f"{year:04d}"
+        / month
+        / "dataset_evaluate.csv"
+    ).resolve()
+    model_path = (
+        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "model.pkl"
+    ).resolve()
+    output_path = (
+        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv"
+    ).resolve()
 
     if not input_path.exists():
         raise FileNotFoundError(f"dataset_evaluate.csv not found: {input_path}")

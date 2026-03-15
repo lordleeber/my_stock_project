@@ -90,26 +90,26 @@ def build_quarter_context(execution_year: int, month: str) -> dict:
         target_q = f"{target_year}Q4"
         anchor_q = f"{target_year}Q3"
         prev_q = f"{target_year}Q2"
-        ly_target_q = f"{target_year-1}Q4"
-        ly_anchor_q = f"{target_year-1}Q3"
+        ly_target_q = f"{target_year - 1}Q4"
+        ly_anchor_q = f"{target_year - 1}Q3"
     elif regime == "q3":
         target_q = f"{target_year}Q3"
         anchor_q = f"{target_year}Q2"
         prev_q = f"{target_year}Q1"
-        ly_target_q = f"{target_year-1}Q3"
-        ly_anchor_q = f"{target_year-1}Q2"
+        ly_target_q = f"{target_year - 1}Q3"
+        ly_anchor_q = f"{target_year - 1}Q2"
     elif regime == "q2":
         target_q = f"{target_year}Q2"
         anchor_q = f"{target_year}Q1"
-        prev_q = f"{target_year-1}Q4"
-        ly_target_q = f"{target_year-1}Q2"
-        ly_anchor_q = f"{target_year-1}Q1"
+        prev_q = f"{target_year - 1}Q4"
+        ly_target_q = f"{target_year - 1}Q2"
+        ly_anchor_q = f"{target_year - 1}Q1"
     else:
         target_q = f"{target_year}Q1"
-        anchor_q = f"{target_year-1}Q4"
-        prev_q = f"{target_year-1}Q3"
-        ly_target_q = f"{target_year-1}Q1"
-        ly_anchor_q = f"{target_year-2}Q4"
+        anchor_q = f"{target_year - 1}Q4"
+        prev_q = f"{target_year - 1}Q3"
+        ly_target_q = f"{target_year - 1}Q1"
+        ly_anchor_q = f"{target_year - 2}Q4"
 
     return {
         "target_year": target_year,
@@ -141,7 +141,10 @@ def monthly_context(execution_year: int, month: str) -> dict:
     month_cols = list(col_to_date.keys())
     mr_dates = sorted(set(col_to_date.values()))
     rename_map = {v: k for k, v in col_to_date.items()}
-    sql_exprs = [f"MAX(CASE WHEN date='{d}' THEN revenue_current END) AS {rename_map[d]}" for d in mr_dates]
+    sql_exprs = [
+        f"MAX(CASE WHEN date='{d}' THEN revenue_current END) AS {rename_map[d]}"
+        for d in mr_dates
+    ]
 
     return {
         "feature_months": feature_months,
@@ -220,7 +223,9 @@ def normalize_api_chunk(payload: object) -> list[dict]:
     raise ValueError(f"Unexpected API payload shape: {type(payload)}")
 
 
-def fetch_all_rows_api(api_base: str, path: str, params: dict, limit: int = 5000) -> pd.DataFrame:
+def fetch_all_rows_api(
+    api_base: str, path: str, params: dict, limit: int = 5000
+) -> pd.DataFrame:
     rows: list[dict] = []
     offset = 0
     while True:
@@ -268,7 +273,9 @@ def ensure_xbrl_value(df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["_value"] = pd.Series(np.nan, index=out.index, dtype=float)
     if "value_text" in out.columns:
-        out["_value"] = out["_value"].fillna(pd.to_numeric(out["value_text"], errors="coerce"))
+        out["_value"] = out["_value"].fillna(
+            pd.to_numeric(out["value_text"], errors="coerce")
+        )
     return out
 
 
@@ -297,7 +304,9 @@ def pivot_xbrl_codes(
     if x.empty:
         return pd.DataFrame(columns=["symbol"] + account_codes)
 
-    pvt = x.pivot_table(index="symbol", columns="account_code", values="_value", aggfunc="last").reset_index()
+    pvt = x.pivot_table(
+        index="symbol", columns="account_code", values="_value", aggfunc="last"
+    ).reset_index()
     for code in account_codes:
         if code not in pvt.columns:
             pvt[code] = np.nan
@@ -312,15 +321,29 @@ def build_cashflow_single_quarter(
     account_codes: list[str],
     symbols: Optional[Set[str]] = None,
 ) -> pd.DataFrame:
-    q3_acc = pivot_xbrl_codes(cf_xbrl, date=q3, period_type="accumulated", account_codes=account_codes, symbols=symbols)
-    q2_acc = pivot_xbrl_codes(cf_xbrl, date=q2, period_type="accumulated", account_codes=account_codes, symbols=symbols)
+    q3_acc = pivot_xbrl_codes(
+        cf_xbrl,
+        date=q3,
+        period_type="accumulated",
+        account_codes=account_codes,
+        symbols=symbols,
+    )
+    q2_acc = pivot_xbrl_codes(
+        cf_xbrl,
+        date=q2,
+        period_type="accumulated",
+        account_codes=account_codes,
+        symbols=symbols,
+    )
     if q3_acc.empty:
         return pd.DataFrame(columns=["symbol"] + account_codes)
 
     m = q3_acc.merge(q2_acc, on="symbol", how="left", suffixes=("_q3acc", "_q2acc"))
     out = pd.DataFrame({"symbol": m["symbol"]})
     for code in account_codes:
-        out[code] = pd.to_numeric(m[f"{code}_q3acc"], errors="coerce") - pd.to_numeric(m[f"{code}_q2acc"], errors="coerce")
+        out[code] = pd.to_numeric(m[f"{code}_q3acc"], errors="coerce") - pd.to_numeric(
+            m[f"{code}_q2acc"], errors="coerce"
+        )
     return out
 
 
@@ -337,11 +360,23 @@ def build_xbrl_feature_frame(
     bs_codes = ["1100", "11XX", "21XX", "1XXX"]
     cf_codes = ["AAAA", "B02700"]
 
-    inc_q3 = pivot_xbrl_codes(inc_xbrl, date=q3, period_type="quarter", account_codes=inc_codes, symbols=symbols)
-    bs_q3 = pivot_xbrl_codes(bs_xbrl, date=q3, period_type="as_of", account_codes=bs_codes, symbols=symbols)
-    cf_q3 = build_cashflow_single_quarter(cf_xbrl, q2=q2, q3=q3, account_codes=cf_codes, symbols=symbols)
+    inc_q3 = pivot_xbrl_codes(
+        inc_xbrl,
+        date=q3,
+        period_type="quarter",
+        account_codes=inc_codes,
+        symbols=symbols,
+    )
+    bs_q3 = pivot_xbrl_codes(
+        bs_xbrl, date=q3, period_type="as_of", account_codes=bs_codes, symbols=symbols
+    )
+    cf_q3 = build_cashflow_single_quarter(
+        cf_xbrl, q2=q2, q3=q3, account_codes=cf_codes, symbols=symbols
+    )
 
-    x = inc_q3.merge(bs_q3, on="symbol", how="outer").merge(cf_q3, on="symbol", how="outer")
+    x = inc_q3.merge(bs_q3, on="symbol", how="outer").merge(
+        cf_q3, on="symbol", how="outer"
+    )
     if x.empty:
         return pd.DataFrame(
             columns=[
@@ -364,7 +399,9 @@ def build_xbrl_feature_frame(
     x["xbrl_current_ratio"] = safe_div_positive(x["11XX"], x["21XX"]).clip(0, 20)
     x["xbrl_cash_to_assets"] = safe_div_positive(x["1100"], x["1XXX"]).clip(0, 1)
     x["xbrl_cfo_to_ni_q"] = safe_div_positive(x["AAAA"], x["8200"]).clip(-10, 10)
-    x["xbrl_capex_to_revenue_q"] = safe_div_positive(x["B02700"].abs(), x["4000"]).clip(0, 10)
+    x["xbrl_capex_to_revenue_q"] = safe_div_positive(x["B02700"].abs(), x["4000"]).clip(
+        0, 10
+    )
 
     feature_cols = [
         "xbrl_gross_margin_q",
@@ -379,7 +416,9 @@ def build_xbrl_feature_frame(
     return x[["symbol"] + feature_cols]
 
 
-def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.DataFrame:
+def fetch_one_year_api(
+    api_base: str, year: int, market: str, month: str
+) -> pd.DataFrame:
     qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
     prev_q = qctx["prev_q"]
@@ -388,13 +427,37 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
     ly_target_q = qctx["ly_target_q"]
     ly_anchor_q = qctx["ly_anchor_q"]
 
-    inc_anchor = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
-    inc_prev = fetch_all_rows_api(api_base, "/raw/income-statements", {"start_date": prev_q, "end_date": prev_q, "market": market})
-    bs_anchor = fetch_all_rows_api(api_base, "/raw/balance-sheets", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
-    cf_anchor = fetch_all_rows_api(api_base, "/raw/cash-flows", {"start_date": anchor_q, "end_date": anchor_q, "market": market})
+    inc_anchor = fetch_all_rows_api(
+        api_base,
+        "/raw/income-statements",
+        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
+    )
+    inc_prev = fetch_all_rows_api(
+        api_base,
+        "/raw/income-statements",
+        {"start_date": prev_q, "end_date": prev_q, "market": market},
+    )
+    bs_anchor = fetch_all_rows_api(
+        api_base,
+        "/raw/balance-sheets",
+        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
+    )
+    cf_anchor = fetch_all_rows_api(
+        api_base,
+        "/raw/cash-flows",
+        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
+    )
     eps_dates = sorted({target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q})
-    qr = fetch_all_rows_api(api_base, "/raw/quarterly-reports", {"start_date": eps_dates[0], "end_date": eps_dates[-1], "market": market})
-    mr = fetch_all_rows_api(api_base, "/raw/monthly-revenue", {"start_date": mctx["mr_start"], "end_date": mctx["mr_end"]})
+    qr = fetch_all_rows_api(
+        api_base,
+        "/raw/quarterly-reports",
+        {"start_date": eps_dates[0], "end_date": eps_dates[-1], "market": market},
+    )
+    mr = fetch_all_rows_api(
+        api_base,
+        "/raw/monthly-revenue",
+        {"start_date": mctx["mr_start"], "end_date": mctx["mr_end"]},
+    )
 
     if inc_anchor.empty:
         return pd.DataFrame()
@@ -405,7 +468,17 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
         return pd.DataFrame()
 
     anchor_data = inc_anchor.merge(
-        bs_anchor[["symbol", "date", "total_equity", "total_liabilities", "total_assets", "share_capital", "retained_earnings"]],
+        bs_anchor[
+            [
+                "symbol",
+                "date",
+                "total_equity",
+                "total_liabilities",
+                "total_assets",
+                "share_capital",
+                "retained_earnings",
+            ]
+        ],
         on=["symbol", "date"],
         how="inner",
     )
@@ -425,10 +498,18 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
             "cash_flow_operating_q": "anchor_ocf",
         }
     )
-    anchor_data["anchor_margin"] = safe_col(anchor_data, "anchor_ni") / safe_col(anchor_data, "anchor_rev").replace(0, np.nan)
-    anchor_data["anchor_non_op_ratio"] = safe_col(anchor_data, "non_operating_income_q") / safe_col(anchor_data, "pretax_income_q").replace(0, np.nan)
-    anchor_data["anchor_roe"] = safe_col(anchor_data, "anchor_ni") / safe_col(anchor_data, "total_equity").replace(0, np.nan)
-    anchor_data["anchor_debt_ratio"] = safe_col(anchor_data, "total_liabilities") / safe_col(anchor_data, "total_assets").replace(0, np.nan)
+    anchor_data["anchor_margin"] = safe_col(anchor_data, "anchor_ni") / safe_col(
+        anchor_data, "anchor_rev"
+    ).replace(0, np.nan)
+    anchor_data["anchor_non_op_ratio"] = safe_col(
+        anchor_data, "non_operating_income_q"
+    ) / safe_col(anchor_data, "pretax_income_q").replace(0, np.nan)
+    anchor_data["anchor_roe"] = safe_col(anchor_data, "anchor_ni") / safe_col(
+        anchor_data, "total_equity"
+    ).replace(0, np.nan)
+    anchor_data["anchor_debt_ratio"] = safe_col(
+        anchor_data, "total_liabilities"
+    ) / safe_col(anchor_data, "total_assets").replace(0, np.nan)
     anchor_data = anchor_data[
         [
             "symbol",
@@ -448,8 +529,12 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
     prev_data = pd.DataFrame(columns=["symbol", "prev_margin", "prev_rev", "prev_ni"])
     if not inc_prev.empty:
         prev_data = inc_prev[["symbol", "revenue_q", "net_income_q"]].copy()
-        prev_data = prev_data.rename(columns={"revenue_q": "prev_rev", "net_income_q": "prev_ni"})
-        prev_data["prev_margin"] = safe_div_positive(prev_data["prev_ni"], prev_data["prev_rev"])
+        prev_data = prev_data.rename(
+            columns={"revenue_q": "prev_rev", "net_income_q": "prev_ni"}
+        )
+        prev_data["prev_margin"] = safe_div_positive(
+            prev_data["prev_ni"], prev_data["prev_rev"]
+        )
         prev_data = prev_data[["symbol", "prev_margin", "prev_rev", "prev_ni"]]
 
     this_monthly = pd.DataFrame(columns=["symbol"] + mctx["month_cols"])
@@ -458,17 +543,32 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
             mr = mr[mr["market"].astype(str).str.upper() == market.upper()].copy()
         mr2 = mr[mr["date"].isin(mctx["mr_dates"])].copy()
         if not mr2.empty:
-            pvt = mr2.pivot_table(index="symbol", columns="date", values="revenue_current", aggfunc="last").reset_index()
+            pvt = mr2.pivot_table(
+                index="symbol", columns="date", values="revenue_current", aggfunc="last"
+            ).reset_index()
             this_monthly = pvt.rename(columns=mctx["rename_map"])
             for c in mctx["month_cols"]:
                 if c not in this_monthly.columns:
                     this_monthly[c] = np.nan
             this_monthly = this_monthly[["symbol"] + mctx["month_cols"]]
 
-    eps_hist = pd.DataFrame(columns=["symbol", "target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"])
+    eps_hist = pd.DataFrame(
+        columns=[
+            "symbol",
+            "target_eps",
+            "ly_target_eps",
+            "ly_anchor_eps",
+            "prev_eps",
+            "anchor_eps",
+        ]
+    )
     if not qr.empty:
-        qr2 = qr[qr["date"].isin([target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q])].copy()
-        p = qr2.pivot_table(index="symbol", columns="date", values="eps_q", aggfunc="last").reset_index()
+        qr2 = qr[
+            qr["date"].isin([target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q])
+        ].copy()
+        p = qr2.pivot_table(
+            index="symbol", columns="date", values="eps_q", aggfunc="last"
+        ).reset_index()
         eps_hist = p.rename(
             columns={
                 target_q: "target_eps",
@@ -478,10 +578,25 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
                 anchor_q: "anchor_eps",
             }
         )
-        for c in ["target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"]:
+        for c in [
+            "target_eps",
+            "ly_target_eps",
+            "ly_anchor_eps",
+            "prev_eps",
+            "anchor_eps",
+        ]:
             if c not in eps_hist.columns:
                 eps_hist[c] = np.nan
-        eps_hist = eps_hist[["symbol", "target_eps", "ly_target_eps", "ly_anchor_eps", "prev_eps", "anchor_eps"]]
+        eps_hist = eps_hist[
+            [
+                "symbol",
+                "target_eps",
+                "ly_target_eps",
+                "ly_anchor_eps",
+                "prev_eps",
+                "anchor_eps",
+            ]
+        ]
 
     out = anchor_data.merge(prev_data, on="symbol", how="left")
     out = out.merge(this_monthly, on="symbol", how="inner")
@@ -489,10 +604,24 @@ def fetch_one_year_api(api_base: str, year: int, market: str, month: str) -> pd.
 
     symbol_universe = set(out["symbol"].astype(str).unique())
     try:
-        inc_xbrl = fetch_all_rows_api(api_base, "/raw/income-statements-xbrl", {"start_date": prev_q, "end_date": anchor_q})
-        bs_xbrl = fetch_all_rows_api(api_base, "/raw/balance-sheets-xbrl", {"start_date": anchor_q, "end_date": anchor_q})
-        cf_xbrl = fetch_all_rows_api(api_base, "/raw/cash-flows-xbrl", {"start_date": prev_q, "end_date": anchor_q})
-        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe)
+        inc_xbrl = fetch_all_rows_api(
+            api_base,
+            "/raw/income-statements-xbrl",
+            {"start_date": prev_q, "end_date": anchor_q},
+        )
+        bs_xbrl = fetch_all_rows_api(
+            api_base,
+            "/raw/balance-sheets-xbrl",
+            {"start_date": anchor_q, "end_date": anchor_q},
+        )
+        cf_xbrl = fetch_all_rows_api(
+            api_base,
+            "/raw/cash-flows-xbrl",
+            {"start_date": prev_q, "end_date": anchor_q},
+        )
+        xbrl_features = build_xbrl_feature_frame(
+            inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe
+        )
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:
         print(f"[WARN] skip XBRL feature merge (api) year={year} market={market}: {e}")
@@ -534,9 +663,9 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     ),
     this_monthly AS (
       SELECT symbol,
-             {','.join(mctx['sql_exprs'])}
+             {",".join(mctx["sql_exprs"])}
       FROM monthly_revenue
-      WHERE date IN ({','.join([f"'{d}'" for d in mctx['mr_dates']])})
+      WHERE date IN ({",".join([f"'{d}'" for d in mctx["mr_dates"]])})
       GROUP BY symbol
     ),
     eps_hist AS (
@@ -547,8 +676,8 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
              (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}') AS anchor_eps
       FROM quarterly_reports qr WHERE qr.date='{target_q}' AND qr.market='{market}'
     )
-    SELECT {qctx['target_year']} AS year, a.*, p.prev_margin, p.prev_rev, p.prev_ni,
-           {','.join([f'm.{c}' for c in mctx['month_cols']])},
+    SELECT {qctx["target_year"]} AS year, a.*, p.prev_margin, p.prev_rev, p.prev_ni,
+           {",".join([f"m.{c}" for c in mctx["month_cols"]])},
            e.target_eps,e.ly_target_eps,e.ly_anchor_eps,e.prev_eps,e.anchor_eps
     FROM anchor_data a
     LEFT JOIN prev_data p ON a.symbol=p.symbol
@@ -583,7 +712,9 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
             """,
             conn,
         )
-        xbrl_features = build_xbrl_feature_frame(inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe)
+        xbrl_features = build_xbrl_feature_frame(
+            inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe
+        )
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:
         print(f"[WARN] skip XBRL feature merge (db) year={year} market={market}: {e}")
@@ -602,7 +733,9 @@ def add_month_features(df: pd.DataFrame, month: str) -> None:
         mom_q = f"{mom_raw}_quantile"
 
         df[yoy_raw] = safe_div_positive(df[f"rev_m{m:02d}"], df[f"rev_m{m:02d}_ly"]) - 1
-        df[mom_raw] = safe_div_positive(df[f"rev_m{m:02d}"], df[f"rev_m{prev_m:02d}"]) - 1
+        df[mom_raw] = (
+            safe_div_positive(df[f"rev_m{m:02d}"], df[f"rev_m{prev_m:02d}"]) - 1
+        )
         add_industry_zscore(df, yoy_raw, yoy_z)
         add_industry_zscore(df, mom_raw, mom_z)
         add_cross_section_quantile(df, yoy_z, yoy_q)
@@ -615,12 +748,16 @@ def main() -> None:
     end_year = int(args.year)
     model_features = model_features_for_month(month)
 
-    month_dir = (Path(__file__).resolve().parent / "output" / str(end_year) / month).resolve()
+    month_dir = (
+        Path(__file__).resolve().parent / "output" / str(end_year) / month
+    ).resolve()
     output_train = month_dir / "dataset_train.csv"
     output_evaluate = month_dir / "dataset_evaluate.csv"
 
     train_columns = ["year"] + model_features + [TARGET, TARGET_DELTA]
-    evaluate_columns = CONTEXT_COLUMNS + ["year"] + model_features + [TARGET, TARGET_DELTA]
+    evaluate_columns = (
+        CONTEXT_COLUMNS + ["year"] + model_features + [TARGET, TARGET_DELTA]
+    )
 
     fetch_years = list(range(START_YEAR, end_year + 1))
     frames: list[pd.DataFrame] = []
@@ -631,19 +768,26 @@ def main() -> None:
             conn.execute(text("SET max_parallel_workers_per_gather = 0"))
             for year in fetch_years:
                 for market in MARKETS:
-                    print(f"fetching data from db: year={year}, market={market}, month={month}")
+                    print(
+                        f"fetching data from db: year={year}, market={market}, month={month}"
+                    )
                     y = fetch_one_year(conn, year, market, month)
                     if not y.empty:
                         frames.append(y)
             industry_parts: list[pd.DataFrame] = []
             for market in MARKETS:
-                part = pd.read_sql(f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'", conn)
+                part = pd.read_sql(
+                    f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'",
+                    conn,
+                )
                 if not part.empty:
                     industry_parts.append(part[["symbol", "industry"]])
     else:
         for year in fetch_years:
             for market in MARKETS:
-                print(f"fetching data from api: year={year}, market={market}, month={month}")
+                print(
+                    f"fetching data from api: year={year}, market={market}, month={month}"
+                )
                 y = fetch_one_year_api(API_BASE, year, market, month)
                 if not y.empty:
                     frames.append(y)
@@ -658,10 +802,14 @@ def main() -> None:
     if not industry_parts:
         industry_df = pd.DataFrame(columns=["symbol", "industry"])
     else:
-        industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates("symbol")
+        industry_df = pd.concat(industry_parts, ignore_index=True).drop_duplicates(
+            "symbol"
+        )
 
     if not frames:
-        raise RuntimeError("No data fetched. Check data source settings and year range.")
+        raise RuntimeError(
+            "No data fetched. Check data source settings and year range."
+        )
 
     df = pd.concat(frames, ignore_index=True)
     if not industry_df.empty:
@@ -669,25 +817,41 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
     df = df.replace([np.inf, -np.inf], np.nan)
 
-    df["prev_margin"] = safe_div_positive(safe_col(df, "prev_ni"), safe_col(df, "prev_rev"))
+    df["prev_margin"] = safe_div_positive(
+        safe_col(df, "prev_ni"), safe_col(df, "prev_rev")
+    )
     df["anchor_margin"] = safe_div_positive(df["anchor_ni"], df["anchor_rev"])
-    df["anchor_ocf_ratio"] = safe_div_positive(df["anchor_ocf"], df["anchor_ni"]).clip(-5, 5)
-    df["anchor_re_ratio"] = safe_div_positive(df["anchor_retained_earnings"], df["capital"])
+    df["anchor_ocf_ratio"] = safe_div_positive(df["anchor_ocf"], df["anchor_ni"]).clip(
+        -5, 5
+    )
+    df["anchor_re_ratio"] = safe_div_positive(
+        df["anchor_retained_earnings"], df["capital"]
+    )
     df["margin_momentum"] = df["anchor_margin"] - df["prev_margin"]
 
     add_month_features(df, month)
 
-    df["ly_seasonality"] = safe_div_positive(df["ly_target_eps"], df["ly_anchor_eps"]).clip(-5, 5)
-    df["anchor_yoy_eps"] = (safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1).clip(-5, 5)
+    df["ly_seasonality"] = safe_div_positive(
+        df["ly_target_eps"], df["ly_anchor_eps"]
+    ).clip(-5, 5)
+    df["anchor_yoy_eps"] = (
+        safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1
+    ).clip(-5, 5)
     df[TARGET_DELTA] = df[TARGET] - df["anchor_eps"]
 
     rows_before_filter = len(df)
-    ttm_eps_proxy = safe_col(df, "ly_target_eps").fillna(0) + safe_col(df, "prev_eps").fillna(0) + safe_col(df, "anchor_eps").fillna(0)
+    ttm_eps_proxy = (
+        safe_col(df, "ly_target_eps").fillna(0)
+        + safe_col(df, "prev_eps").fillna(0)
+        + safe_col(df, "anchor_eps").fillna(0)
+    )
     ttm_ok = ttm_eps_proxy >= float(MIN_TTM_EPS)
     df = df[ttm_ok].copy()
     rows_after_filter = len(df)
 
-    labeled_mask = df[TARGET].notna() & df["anchor_eps"].notna() & df[TARGET_DELTA].notna()
+    labeled_mask = (
+        df[TARGET].notna() & df["anchor_eps"].notna() & df[TARGET_DELTA].notna()
+    )
 
     evaluate_cols = [c for c in evaluate_columns if c in df.columns]
     out = df[evaluate_cols].copy()

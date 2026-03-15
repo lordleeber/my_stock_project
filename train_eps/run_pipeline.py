@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import subprocess
@@ -8,7 +8,9 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run full train_eps pipeline for one year/month")
+    parser = argparse.ArgumentParser(
+        description="Run full train_eps pipeline for one year/month"
+    )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
     parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
@@ -22,7 +24,14 @@ def normalize_month(month: str) -> str:
     return m
 
 
-def append_error_log(log_path: Path, step_name: str, cmd: list[str], returncode: int, stdout: str, stderr: str) -> None:
+def append_error_log(
+    log_path: Path,
+    step_name: str,
+    cmd: list[str],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+) -> None:
     ts = datetime.now().isoformat(timespec="seconds")
     lines = [
         f"[{ts}] TRAIN_EPS PIPELINE FAILED",
@@ -47,10 +56,14 @@ def run_step(step_name: str, cmd: list[str], cwd: Path, log_path: Path) -> None:
     if proc.stdout:
         print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
     if proc.stderr:
-        print(proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr)
+        print(
+            proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr
+        )
 
     if proc.returncode != 0:
-        append_error_log(log_path, step_name, cmd, proc.returncode, proc.stdout, proc.stderr)
+        append_error_log(
+            log_path, step_name, cmd, proc.returncode, proc.stdout, proc.stderr
+        )
         raise SystemExit(proc.returncode)
 
     print(f"[OK] {step_name}")
