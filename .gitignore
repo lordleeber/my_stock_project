@@ -212,7 +212,6 @@ StockDailyUpdate.app/
 
 # Project specific
 data/
-strategy/fundamental/*.csv
 *deprecated/
 
 # Generated artifacts
@@ -223,6 +222,3 @@ result/
 results/
 **/result/
 **/results/
-
-# analysis_randomForest generated artifacts
-analysis_randomForest/**/__pycache__/
