@@ -29,7 +29,7 @@ def main() -> None:
     trades = pd.read_csv(trades_path)
     monthly = pd.read_csv(monthly_path) if monthly_path.exists() else pd.DataFrame()
 
-    closed = trades[trades["exit_reason"] == "not_reselected"].copy()
+    closed = trades[trades["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])].copy()
     still_open = trades[trades["exit_reason"] == "still_open"].copy()
     no_quote = trades[
         trades["exit_reason"].isin(["no_quote_on_exit", "no_quote_on_entry_date"])
