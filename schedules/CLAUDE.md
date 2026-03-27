@@ -44,29 +44,64 @@
 
 目前專案採用 `launchd`，不使用 `cron`。
 
+### Plist 檔案位置
+
+`schedules/` 目錄內的 `.plist` 是 **git 備份**，實際 launchd 讀取的是安裝到 `~/Library/LaunchAgents/` 的版本。兩者是獨立的檔案，不會自動同步。
+
+| 備份（repo） | 安裝位置 |
+|---|---|
+| `schedules/com.poyilee.stock-daily-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist` |
+| `schedules/com.poyilee.stock-weekly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist` |
+| `schedules/com.poyilee.stock-monthly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist` |
+| `schedules/com.poyilee.stock-xbrl-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-xbrl-update.plist` |
+
+### 初次安裝 / 重裝後還原
+
+```bash
+# 將 repo 內的 plist 複製到 LaunchAgents
+cp schedules/com.poyilee.stock-daily-update.plist ~/Library/LaunchAgents/
+cp schedules/com.poyilee.stock-weekly-update.plist ~/Library/LaunchAgents/
+cp schedules/com.poyilee.stock-monthly-update.plist ~/Library/LaunchAgents/
+cp schedules/com.poyilee.stock-xbrl-update.plist ~/Library/LaunchAgents/
+
+# 載入全部
+for label in daily weekly monthly xbrl; do
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-${label}-update.plist
+done
+```
+
+### 修改 plist 後同步
+
+```bash
+# 1. 修改 schedules/ 內的 plist
+# 2. 複製到 LaunchAgents
+cp schedules/com.poyilee.stock-daily-update.plist ~/Library/LaunchAgents/
+
+# 3. 重新載入
+launchctl bootout gui/$(id -u)/com.poyilee.stock-daily-update
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist
+```
+
 ### Current LaunchAgents
 
-- `com.poyilee.stock-daily-update`
-- `com.poyilee.stock-weekly-update`
-- `com.poyilee.stock-monthly-update`
+| Label | Script | 時間 |
+|---|---|---|
+| `com.poyilee.stock-daily-update` | `schedules/daily_update.sh` | 每天 23:00 |
+| `com.poyilee.stock-weekly-update` | `schedules/weekly_update.sh` | 每週日 10:20 |
+| `com.poyilee.stock-monthly-update` | `schedules/monthly_update.sh` | 每天 22:45 |
+| `com.poyilee.stock-xbrl-update` | `schedules/xbrl_update.sh` | 每天 23:50 |
 
-### Daily Schedule (current)
+### macOS 26.4 注意事項
 
-`com.poyilee.stock-daily-update`：
-- Script: `StockDailyUpdate.app`（內部呼叫 `schedules/daily_update.sh`）
-- Time: 每天 `23:00`
+macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath` 寫入 `~/Documents/` 路徑，會導致任務 exit 78 (EX_CONFIG) 且完全不執行。
 
-### Monthly Schedule (current)
+所有 plist 的 stdout/stderr 已改為 `/tmp/`：
+- `/tmp/launchd_daily_stdout.log` / `stderr`
+- `/tmp/launchd_weekly_stdout.log` / `stderr`
+- `/tmp/launchd_monthly_stdout.log` / `stderr`
+- `/tmp/launchd_xbrl_stdout.log` / `stderr`
 
-`com.poyilee.stock-monthly-update`：
-- Script: `schedules/monthly_update.sh`
-- Time: 每天 `22:45`（腳本內再判斷是否在 1~15 日）
-
-### Weekly Schedule (current)
-
-`com.poyilee.stock-weekly-update`：
-- Script: `schedules/weekly_update.sh`
-- Time: 每週日 `10:20`
+真正的執行 log 仍由各 script 自己寫入 `logs/` 目錄（`logs/*_update_*.log`）。
 
 ## Common Commands
 
@@ -95,11 +130,14 @@
 
 ```bash
 # 查看 launchd 任務狀態
-launchctl print gui/$(id -u)/com.poyilee.stock-monthly-update
+launchctl print gui/$(id -u)/com.poyilee.stock-daily-update
 
 # 重新載入某個 launch agent
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist
+launchctl bootout gui/$(id -u)/com.poyilee.stock-daily-update
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist
+
+# 手動立即觸發
+launchctl kickstart -p gui/$(id -u)/com.poyilee.stock-daily-update
 ```
 
 ## Notes
@@ -108,3 +146,4 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-monthl
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
 - 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
 - Daily/Weekly/Monthly/Quarterly 都會寫入對應 `logs/*_update_*.log`。
+- plist 修改後務必同步 `schedules/` 備份並 commit。
