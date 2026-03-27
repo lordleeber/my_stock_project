@@ -32,8 +32,8 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Users/poyilee/Documents/GitHubLL/my_stock_project/logs/launchd_xbrl_update.out.log</string>
+    <string>/tmp/launchd_xbrl_stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/poyilee/Documents/GitHubLL/my_stock_project/logs/launchd_xbrl_update.err.log</string>
+    <string>/tmp/launchd_xbrl_stderr.log</string>
 </dict>
 </plist>

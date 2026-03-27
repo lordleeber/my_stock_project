@@ -238,3 +238,11 @@ services:
     environment:
       - TZ=Asia/Taipei
     command: ["python", "validator.py"]
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.100.0.0/16
+          gateway: 172.100.0.1
