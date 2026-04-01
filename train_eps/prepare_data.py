@@ -20,7 +20,7 @@ START_YEAR = 2020
 
 
 def get_db_url() -> str:
-    return "postgresql://user:password@localhost:5432/stock_db"
+    return "postgresql://user:password@localhost:5419/stock_db"
 
 
 def normalize_month(month: str) -> str:

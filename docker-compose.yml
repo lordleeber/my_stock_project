@@ -207,7 +207,7 @@ services:
       POSTGRES_DB: stock_db
       TZ: Asia/Taipei
     ports:
-      - "5432:5432"
+      - "5419:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
