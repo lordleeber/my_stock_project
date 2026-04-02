@@ -22,6 +22,47 @@ def _parse_statement_categories():
     return categories
 
 
+def _iter_quarters(start_q: str, end_q: str):
+    year, q = int(start_q[:4]), int(start_q[5])
+    end_year, end_q_num = int(end_q[:4]), int(end_q[5])
+    while (year, q) <= (end_year, end_q_num):
+        yield f"{year}Q{q}"
+        q += 1
+        if q > 4:
+            q = 1
+            year += 1
+
+
+def _check_sources(start_env: str, end_env: str, task: str, categories: list, raw_dir: str):
+    raw = Path(raw_dir)
+    missing = []
+
+    for quarter in _iter_quarters(start_env, end_env):
+        year = quarter[:4]
+
+        if task in {"reports", "all"}:
+            reports_dir = raw / "quarterly_reports" / year / quarter
+            for market in ("sii", "otc"):
+                f = reports_dir / f"{market}.csv"
+                if not f.exists():
+                    missing.append(str(f))
+
+        if task in {"statements", "all"}:
+            for category in categories:
+                cat_dir = raw / category / year / quarter
+                for market in ("sii", "otc"):
+                    files = list(cat_dir.glob(f"{market}_*.csv")) if cat_dir.exists() else []
+                    if not files:
+                        missing.append(str(cat_dir / f"{market}_*.csv"))
+
+    if missing:
+        msg = "Error: Required raw source files are missing:\n" + "\n".join(
+            f"  - {p}" for p in missing
+        )
+        return msg
+    return None
+
+
 def _run_statement_category(category):
     if category == "income_statement":
         convert_income_statements_main()
@@ -75,6 +116,14 @@ def main():
             "Error: QUARTERLY_TASK must be one of: reports, detail_xbrl, statements, all"
         )
 
+    categories = _parse_statement_categories() if task in {"statements", "all"} else []
+
+    if task != "detail_xbrl":
+        raw_dir = os.getenv("RAW_DIR", "/app/data/raw")
+        err = _check_sources(start_env, end_env, task, categories, raw_dir)
+        if err:
+            _log_and_fail(err)
+
     if task in {"reports", "all"}:
         convert_quarterly_reports_main()
 
@@ -82,7 +131,7 @@ def main():
         convert_xbrl_main()
 
     if task in {"statements", "all"}:
-        for category in _parse_statement_categories():
+        for category in categories:
             _run_statement_category(category)
 
 

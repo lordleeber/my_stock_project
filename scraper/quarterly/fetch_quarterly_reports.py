@@ -130,7 +130,7 @@ def download_quarterly_report(year, quarter, output_base_dir):
     b_ok = download_mops_balance_sheet(year, quarter, BALANCE_SHEET_DIR)
     c_ok = download_mops_cash_flow(year, quarter, CASH_FLOW_DIR)
 
-    return s_ok or o_ok or m_ok or b_ok or c_ok
+    return s_ok and o_ok and m_ok and b_ok and c_ok
 
 
 def _post_mops(payload, url=MOPS_AJAX_URL):
