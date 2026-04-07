@@ -4,7 +4,7 @@ import csv
 import io
 import os
 from pathlib import Path
-from schemas import COLUMN_MAP, NUMERIC_COLS
+from common.schemas import COLUMN_MAP, NUMERIC_COLS
 
 
 def log_parsing_error(file_path, msg, exception=None):

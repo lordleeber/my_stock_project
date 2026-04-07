@@ -64,7 +64,7 @@ def process_file(csv_file):
         headers = [h.strip() for h in rows[header_idx]]
 
         # 建立映射
-        from schemas import COLUMN_MAP
+        from common.schemas import COLUMN_MAP
 
         inv_map = {v: k for k, v in COLUMN_MAP.items()}
 
