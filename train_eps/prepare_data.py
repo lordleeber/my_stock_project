@@ -670,11 +670,11 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     ),
     eps_hist AS (
       SELECT qr.symbol, qr.eps_q AS target_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{ly_target_q}' AND market='{market}') AS ly_target_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{ly_anchor_q}' AND market='{market}') AS ly_anchor_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{prev_q}' AND market='{market}') AS prev_eps,
-             (SELECT eps_q FROM quarterly_reports WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}') AS anchor_eps
-      FROM quarterly_reports qr WHERE qr.date='{target_q}' AND qr.market='{market}'
+             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_target_q}' AND market='{market}' AND period_type='quarter') AS ly_target_eps,
+             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_anchor_q}' AND market='{market}' AND period_type='quarter') AS ly_anchor_eps,
+             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{prev_q}' AND market='{market}' AND period_type='quarter') AS prev_eps,
+             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}' AND period_type='quarter') AS anchor_eps
+      FROM quarterly_reports_xbrl qr WHERE qr.date='{target_q}' AND qr.market='{market}' AND qr.period_type='quarter'
     )
     SELECT {qctx["target_year"]} AS year, a.*, p.prev_margin, p.prev_rev, p.prev_ni,
            {",".join([f"m.{c}" for c in mctx["month_cols"]])},

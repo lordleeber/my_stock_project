@@ -133,7 +133,7 @@ def fetch_market_sentiment_features(
 def fetch_fundamental_features(
     engine, symbols: list[str], anchor_q: str
 ) -> pd.DataFrame:
-    """Fetch quality metrics from quarterly_reports at anchor_q for PIT alignment."""
+    """Fetch quality metrics from quarterly_reports_xbrl at anchor_q for PIT alignment."""
     if not symbols:
         return pd.DataFrame(
             columns=[
@@ -147,8 +147,8 @@ def fetch_fundamental_features(
     stmt = text(
         """
         SELECT symbol, nav_per_share, current_ratio, eps_acc_yoy, revenue_acc_yoy
-        FROM quarterly_reports
-        WHERE symbol IN :symbols AND date = :anchor_q
+        FROM quarterly_reports_xbrl
+        WHERE symbol IN :symbols AND date = :anchor_q AND period_type = 'quarter'
         """
     ).bindparams(bindparam("symbols", expanding=True))
     with engine.connect() as conn:
@@ -328,8 +328,9 @@ def fetch_one_year_live(
         MAX(CASE WHEN qr.date = '{ly_q4}' THEN qr.eps_q END) AS prev_q4_eps,
         MAX(CASE WHEN qr.date = '{q1}' THEN qr.eps_q END) AS q1_eps,
         MAX(CASE WHEN qr.date = '{q2}' THEN qr.eps_q END) AS q2_eps
-      FROM quarterly_reports qr
+      FROM quarterly_reports_xbrl qr
       WHERE qr.market = '{market}'
+        AND qr.period_type = 'quarter'
         AND qr.date IN ('{target_q}','{ly_target_q}','{ly_anchor_q}','{prev_q}','{anchor_q}','{ly_q1}','{ly_q2}','{ly_q3}','{ly_q4}','{q1}','{q2}')
       GROUP BY qr.symbol
     ),

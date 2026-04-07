@@ -47,7 +47,7 @@ def run():
 
     # 1. 抓取所有歷史 EPS 數據
     df_eps = pd.read_sql(
-        "SELECT date, symbol, eps_q, nav_per_share FROM quarterly_reports ORDER BY symbol, date",
+        "SELECT date, symbol, eps_q, nav_per_share FROM quarterly_reports_xbrl WHERE period_type = 'quarter' ORDER BY symbol, date",
         engine,
     )
     df_prices = pd.read_sql(

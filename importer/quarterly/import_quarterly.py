@@ -1,7 +1,6 @@
 from import_common import import_period_category
 
 QUARTERLY_CATEGORIES = (
-    "quarterly_reports",
     "income_statement",
     "balance_sheet",
     "cash_flow",

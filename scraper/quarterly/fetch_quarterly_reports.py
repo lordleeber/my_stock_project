@@ -12,7 +12,10 @@ import pandas as pd
 FORCE_REPROCESS = os.getenv("FORCE_REPROCESS", "0") == "1"
 
 # URL Templates
+# 上市公司季報 = https://www.twse.com.tw/zh/trading/statistics/index05.html
 SII_URL = "https://www.twse.com.tw/staticFiles/inspection/inspection/05/001/{year}Q{quarter}_C05001.zip"
+# 上櫃公司季報 = https://www.tpex.org.tw/zh-tw/mainboard/listed/financial/summary.html
+# 上櫃公司年季報為4月、6月、9月、12月第20個營業交易日更新。
 OTC_URL = "https://www.tpex.org.tw/storage/statistic/financial/O_{year}Q{quarter}.xls"
 MOPS_AJAX_URL = "https://mopsov.twse.com.tw/mops/web/ajax_t163sb04"
 MOPS_BALANCE_URL = "https://mopsov.twse.com.tw/mops/web/ajax_t163sb05"
@@ -119,18 +122,11 @@ def _year_quarter_dir(base_dir, year, quarter):
 
 
 def download_quarterly_report(year, quarter, output_base_dir):
-    target_dir = _year_quarter_dir(output_base_dir, year, quarter)
-    os.makedirs(target_dir, exist_ok=True)
-
-    s_ok = download_sii(year, quarter, target_dir)
-    time.sleep(2)  # 禮貌性延遲
-    o_ok = download_otc(year, quarter, target_dir)
-    time.sleep(2)  # 禮貌性延遲
     m_ok = download_mops_income_statement(year, quarter, INCOME_STATEMENT_DIR)
     b_ok = download_mops_balance_sheet(year, quarter, BALANCE_SHEET_DIR)
     c_ok = download_mops_cash_flow(year, quarter, CASH_FLOW_DIR)
 
-    return s_ok and o_ok and m_ok and b_ok and c_ok
+    return m_ok and b_ok and c_ok
 
 
 def _post_mops(payload, url=MOPS_AJAX_URL):

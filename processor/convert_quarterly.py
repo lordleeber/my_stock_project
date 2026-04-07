@@ -3,7 +3,6 @@ import re
 import datetime
 import traceback
 from pathlib import Path
-from quarterly.convert_quarterly_reports import main as convert_quarterly_reports_main
 from quarterly.convert_xbrl import main as convert_xbrl_main
 from quarterly.convert_income_statements import main as convert_income_statements_main
 from quarterly.convert_balance_sheet import main as convert_balance_sheet_main
@@ -39,13 +38,6 @@ def _check_sources(start_env: str, end_env: str, task: str, categories: list, ra
 
     for quarter in _iter_quarters(start_env, end_env):
         year = quarter[:4]
-
-        if task in {"reports", "all"}:
-            reports_dir = raw / "quarterly_reports" / year / quarter
-            for market in ("sii", "otc"):
-                f = reports_dir / f"{market}.csv"
-                if not f.exists():
-                    missing.append(str(f))
 
         if task in {"statements", "all"}:
             for category in categories:
@@ -109,11 +101,11 @@ def main():
             f"Error: START_DATE must be <= END_DATE (START_DATE={start_env}, END_DATE={end_env})."
         )
 
-    # QUARTERLY_TASK: reports | detail_xbrl | statements | all
+    # QUARTERLY_TASK: detail_xbrl | statements | all
     task = task.strip().lower()
-    if task not in {"reports", "detail_xbrl", "statements", "all"}:
+    if task not in {"detail_xbrl", "statements", "all"}:
         _log_and_fail(
-            "Error: QUARTERLY_TASK must be one of: reports, detail_xbrl, statements, all"
+            "Error: QUARTERLY_TASK must be one of: detail_xbrl, statements, all"
         )
 
     categories = _parse_statement_categories() if task in {"statements", "all"} else []
@@ -123,9 +115,6 @@ def main():
         err = _check_sources(start_env, end_env, task, categories, raw_dir)
         if err:
             _log_and_fail(err)
-
-    if task in {"reports", "all"}:
-        convert_quarterly_reports_main()
 
     if task == "detail_xbrl":
         convert_xbrl_main()

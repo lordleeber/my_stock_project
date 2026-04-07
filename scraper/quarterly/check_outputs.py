@@ -33,12 +33,6 @@ def check_quarterly_outputs(output_dir, year, quarter):
 
     missing = []
 
-    # reports raw csv/xls
-    reports_dir = base_dir / "raw" / "quarterly_reports" / str(year) / date_str
-    for market in ("sii", "otc"):
-        if not (reports_dir / f"{market}.csv").exists():
-            missing.append(str(reports_dir / f"{market}.csv"))
-
     # statements
     for dataset in datasets:
         target_dir = base_dir / "raw" / dataset / str(year) / date_str

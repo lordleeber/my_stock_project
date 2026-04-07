@@ -435,6 +435,9 @@ class QuarterlyReportRaw(BaseModel):
     symbol: str
     market: str
     name: Optional[str] = None
+    publish_time: Optional[str] = None
+    period: Optional[str] = None
+    period_type: Optional[str] = None
     # Profitability (Quarterly / Accumulated)
     revenue_q: Optional[float] = None
     revenue_acc: Optional[float] = None
@@ -657,6 +660,7 @@ def get_raw_data(
         # 註：季報、財報與月營收使用 YYYYQX/YYYYMXX 格式，應跳過轉換
         periodic_tables = [
             "quarterly_reports",
+            "quarterly_reports_xbrl",
             "income_statement",
             "balance_sheet",
             "cash_flow",
@@ -1204,7 +1208,7 @@ def get_raw_quarterly_reports(
             detail="Invalid date format. Quarterly reports require 'YYYYQX' format (e.g., 2025Q1).",
         )
     return get_raw_data(
-        "quarterly_reports", start_date, end_date, symbol, market, limit, offset
+        "quarterly_reports_xbrl", start_date, end_date, symbol, market, limit, offset
     )
 
 
