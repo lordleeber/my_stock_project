@@ -46,7 +46,7 @@ echo "========================================" | tee -a "$LOG_FILE"
 
 # 1) Scraper quarterly
 echo "[1/3] Running scraper-quarterly for $TARGET_QUARTER..." | tee -a "$LOG_FILE"
-if REPORT_YEAR=$REPORT_YEAR REPORT_QUARTER=$REPORT_QUARTER docker compose run --rm scraper-quarterly 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose run --rm -e REPORT_YEAR=$REPORT_YEAR -e REPORT_QUARTER=$REPORT_QUARTER scraper-quarterly 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Scraper completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Scraper failed" | tee -a "$LOG_FILE"
