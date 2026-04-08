@@ -155,15 +155,15 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 
 ```bash
 # 1. 重新生成資料（從 DB 抓取最新的 pe_percentile_official）
-venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_finalize_strategy.py
-venv/bin/python3 strategies/analyze_feature_returns.py
+venv/bin/python3 strategies/step1_batch_prepare_data.py
+venv/bin/python3 strategies/step2_batch_finalize_strategy.py
+venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
 # 2. 刪除舊模型
 rm -rf models_selection/2022 models_selection/2023 models_selection/2024 models_selection/2025
 
 # 3. 訓練
-venv/bin/python3 strategies/batch_train_selection_model.py
+venv/bin/python3 strategies/step4_batch_train_selection_model.py
 
 # 4. 打分 + 回測 + 統計
 venv/bin/python3 strategies/batch_score_and_publish.py
@@ -296,34 +296,34 @@ df_combined.groupby("symbol")["pe_calculated"].rank(pct=True) * 100
 ### 單月執行
 ```bash
 # 先確保 EPS 預測已產生（train_eps pipeline 完成後自動產出）
-venv/bin/python3 train_eps/predict_and_publish.py --year 2025 --month 10
+venv/bin/python3 train_eps/step4_predict_and_publish.py --year 2025 --month 10
 
-venv/bin/python3 strategies/prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
+venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
+venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10
 ```
 
 ### 批次執行（歷史資料）
 ```bash
-venv/bin/python3 train_eps/batch_predict_and_publish.py
-venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_finalize_strategy.py
+venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
+venv/bin/python3 strategies/step1_batch_prepare_data.py
+venv/bin/python3 strategies/step2_batch_finalize_strategy.py
 ```
 
 ### ML 模型訓練
 ```bash
 # 產生訓練資料（特徵 × 實際報酬配對）
-venv/bin/python3 strategies/analyze_feature_returns.py
+venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
 # 每月訓練一版（walk-forward 回測用，無 look-ahead bias）
-venv/bin/python3 strategies/batch_train_selection_model.py
+venv/bin/python3 strategies/step4_batch_train_selection_model.py
 # 自訂範圍：
-venv/bin/python3 strategies/batch_train_selection_model.py  # 預設 2022-06 ~ 2025-09
+venv/bin/python3 strategies/step4_batch_train_selection_model.py  # 預設 2022-06 ~ 2025-09
 
 # 單月 walk-forward 驗證
-venv/bin/python3 strategies/train_selection_model.py --cutoff-year 2024 --cutoff-month 6
+venv/bin/python3 strategies/step4_train_selection_model.py --cutoff-year 2024 --cutoff-month 6
 
 # 正式訓練（全資料，production 用）
-venv/bin/python3 strategies/train_selection_model.py
+venv/bin/python3 strategies/step4_train_selection_model.py
 ```
 
 ---

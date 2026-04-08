@@ -66,7 +66,7 @@ def main() -> None:
     )
 
     python = sys.executable
-    script = str(ROOT_DIR / "train_eps" / "evaluate.py")
+    script = str(ROOT_DIR / "train_eps" / "step3_evaluate.py")
 
     ok = skipped = failed = 0
 

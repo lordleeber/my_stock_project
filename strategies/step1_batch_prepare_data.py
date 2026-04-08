@@ -1,23 +1,11 @@
 """
-Batch-train one selection model per cutoff month (walk-forward).
-
-For each cutoff month C, trains on feature_return_analysis.csv rows where
-(year, month) <= C, and saves to models_selection/<year>/<month>/.
+Batch-run strategies/prepare_data.py for a range of months.
 
 Usage:
-  venv/bin/python3 strategies/batch_train_selection_model.py
-  venv/bin/python3 strategies/batch_train_selection_model.py --start-year 2023 --start-month 1
-  venv/bin/python3 strategies/batch_train_selection_model.py --start-year 2022 --start-month 6 --end-year 2025 --end-month 8
-  venv/bin/python3 strategies/batch_train_selection_model.py --dry-run
-  venv/bin/python3 strategies/batch_train_selection_model.py --skip-existing
-
-Cutoff semantics:
-  A model at cutoff C is used by the backtester when trading in month C+1.
-  Example: cutoff=2023-07 → used to rank candidates for entering trades in 2023-08.
-
-Default range:
-  START = (2022, 6)  — earliest cutoff with ~10 months of training data
-  END   = (2025, 8)  — last month whose forward return is known (analyze_feature_returns END=2025-09)
+  venv/bin/python3 strategies/step1_batch_prepare_data.py
+  venv/bin/python3 strategies/step1_batch_prepare_data.py --start-year 2023 --start-month 8
+  venv/bin/python3 strategies/step1_batch_prepare_data.py --start-year 2021 --start-month 8 --end-year 2025 --end-month 10
+  venv/bin/python3 strategies/step1_batch_prepare_data.py --dry-run
 """
 
 from __future__ import annotations
@@ -29,8 +17,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-DEFAULT_START = (2022, 6)
-DEFAULT_END = (2025, 9)
+DEFAULT_START = (2021, 8)
+DEFAULT_END = (2025, 10)
 
 
 def month_iter(start: tuple[int, int], end: tuple[int, int]):
@@ -45,7 +33,7 @@ def month_iter(start: tuple[int, int], end: tuple[int, int]):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Batch train one selection model per cutoff month."
+        description="Batch run prepare_data.py for a range of months."
     )
     parser.add_argument("--start-year", type=int, default=DEFAULT_START[0])
     parser.add_argument("--start-month", type=int, default=DEFAULT_START[1])
@@ -57,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip cutoff months where selection_model.pkl already exists",
+        help="Skip months where dataset_strategy.csv already exists",
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Print per-month output"
@@ -72,11 +60,11 @@ def main() -> None:
 
     months = list(month_iter(start, end))
     print(
-        f"Batch train selection model: cutoff {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} cutoffs)"
+        f"Batch prepare_data: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)"
     )
 
     python = sys.executable
-    script = str(ROOT_DIR / "strategies" / "train_selection_model.py")
+    script = str(ROOT_DIR / "strategies" / "step1_prepare_data.py")
 
     ok = skipped = failed = 0
 
@@ -85,30 +73,29 @@ def main() -> None:
         label = f"{year}/{month_s}"
 
         if args.skip_existing:
-            model_path = (
+            out_path = (
                 ROOT_DIR
-                / "models_selection"
+                / "strategies"
+                / "output"
                 / str(year)
                 / month_s
-                / "selection_model.pkl"
+                / "dataset_strategy.csv"
             )
-            if model_path.exists():
+            if out_path.exists():
                 if args.verbose:
-                    print(f"[skip]  cutoff={label}  (selection_model.pkl exists)")
+                    print(f"[skip]  {label}  (dataset_strategy.csv exists)")
                 skipped += 1
                 continue
 
-        cmd = [python, script, "--cutoff-year", str(year), "--cutoff-month", str(month),
-               "--n-bins", "10",
-               "--reg-alpha", "0.05", "--reg-lambda", "0.1"]
+        cmd = [python, script, "--year", str(year), "--month", month_s]
 
         if args.dry_run:
-            print(f"[dry]   cutoff={label}  {' '.join(cmd)}")
+            print(f"[dry]   {label}  {' '.join(cmd)}")
             continue
 
         if args.verbose:
             print(f"\n{'=' * 60}")
-            print(f"[run]   cutoff={label}")
+            print(f"[run]   {label}")
             print(f"{'=' * 60}")
         result = subprocess.run(
             cmd, cwd=str(ROOT_DIR),
@@ -117,10 +104,10 @@ def main() -> None:
         )
         if result.returncode == 0:
             if args.verbose:
-                print(f"[ok]    cutoff={label}")
+                print(f"[ok]    {label}")
             ok += 1
         else:
-            print(f"[FAIL]  cutoff={label}  (returncode={result.returncode})")
+            print(f"[FAIL]  {label}  (returncode={result.returncode})")
             failed += 1
 
     if not args.dry_run:

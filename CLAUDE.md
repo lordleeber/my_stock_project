@@ -51,29 +51,29 @@ docker compose run --rm calculator
 ### ML Pipeline (Python, no Docker)
 ```bash
 # EPS prediction model (train_eps/)
-venv/bin/python3 train_eps/prepare_data.py          --year 2025 --month 10
-venv/bin/python3 train_eps/train.py                 --year 2025 --month 10
-venv/bin/python3 train_eps/evaluate.py              --year 2025 --month 10
-venv/bin/python3 train_eps/predict_and_publish.py   --year 2025 --month 10
+venv/bin/python3 train_eps/step1_prepare_data.py          --year 2025 --month 10
+venv/bin/python3 train_eps/step2_train.py                 --year 2025 --month 10
+venv/bin/python3 train_eps/step3_evaluate.py              --year 2025 --month 10
+venv/bin/python3 train_eps/step4_predict_and_publish.py   --year 2025 --month 10
 # Or one-command:
-venv/bin/python3 train_eps/run_pipeline.py          --year 2025 --month 10
+venv/bin/python3 train_eps/run_pipeline.py                --year 2025 --month 10
 
 # Batch evaluate / predict (historical)
-venv/bin/python3 train_eps/batch_evaluate.py
-venv/bin/python3 train_eps/batch_predict_and_publish.py
+venv/bin/python3 train_eps/step3_batch_evaluate.py
+venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 
 # Strategy features + selection model (strategies/)
-venv/bin/python3 strategies/prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
+venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
+venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10
 
 # Batch (historical)
-venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_finalize_strategy.py
+venv/bin/python3 strategies/step1_batch_prepare_data.py
+venv/bin/python3 strategies/step2_batch_finalize_strategy.py
 
 # Selection model training
-venv/bin/python3 strategies/analyze_feature_returns.py
-venv/bin/python3 strategies/batch_train_selection_model.py
-venv/bin/python3 strategies/train_selection_model.py  # production (full data)
+venv/bin/python3 strategies/step3_analyze_feature_returns.py
+venv/bin/python3 strategies/step4_batch_train_selection_model.py
+venv/bin/python3 strategies/step4_train_selection_model.py  # production (full data)
 
 # Rolling backtest
 venv/bin/python3 backtester/run_rolling.py \

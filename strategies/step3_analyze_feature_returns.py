@@ -30,7 +30,7 @@ from train_eps import prepare_data as tp
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = (2021, 8)
-END = (2025, 9)  # last month with a "next month" entry_date available
+END = (2026, 2)  # last month with a "next month" entry_date available
 
 FEATURE_COLS = (
     [

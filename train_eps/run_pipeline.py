@@ -85,9 +85,9 @@ def main() -> None:
     month = normalize_month(args.month)
 
     repo_root = Path(__file__).resolve().parent.parent
-    prepare_script = repo_root / "train_eps" / "prepare_data.py"
+    prepare_script = repo_root / "train_eps" / "step1_prepare_data.py"
     if not prepare_script.exists():
-        raise FileNotFoundError(f"shared prepare_data.py not found: {prepare_script}")
+        raise FileNotFoundError(f"shared step1_prepare_data.py not found: {prepare_script}")
 
     log_path = repo_root / "error_train_eps.log"
     py = resolve_python_executable(repo_root)
@@ -112,7 +112,7 @@ def main() -> None:
             "train",
             [
                 py,
-                str(repo_root / "train_eps" / "train.py"),
+                str(repo_root / "train_eps" / "step2_train.py"),
                 "--year",
                 str(args.year),
                 "--month",
@@ -123,7 +123,7 @@ def main() -> None:
             "evaluate",
             [
                 py,
-                str(repo_root / "train_eps" / "evaluate.py"),
+                str(repo_root / "train_eps" / "step3_evaluate.py"),
                 "--year",
                 str(args.year),
                 "--month",
@@ -134,7 +134,7 @@ def main() -> None:
             "predict_and_publish",
             [
                 py,
-                str(repo_root / "train_eps" / "predict_and_publish.py"),
+                str(repo_root / "train_eps" / "step4_predict_and_publish.py"),
                 "--year",
                 str(args.year),
                 "--month",

@@ -1,16 +1,17 @@
 """
-Batch-run strategies/finalize_strategy.py for a range of months.
+Batch-run train_eps/predict_and_publish.py for a range of months.
 
 Usage:
-  venv/bin/python3 strategies/batch_finalize_strategy.py
-  venv/bin/python3 strategies/batch_finalize_strategy.py --start-year 2023 --start-month 8
-  venv/bin/python3 strategies/batch_finalize_strategy.py --skip-existing
-  venv/bin/python3 strategies/batch_finalize_strategy.py --dry-run
+  venv/bin/python3 train_eps/batch_predict_and_publish.py
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --start-year 2023 --start-month 8
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --skip-existing
+  venv/bin/python3 train_eps/batch_predict_and_publish.py --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -33,7 +34,7 @@ def month_iter(start: tuple[int, int], end: tuple[int, int]):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Batch run finalize_strategy.py for a range of months."
+        description="Batch run predict_and_publish.py for a range of months."
     )
     parser.add_argument("--start-year", type=int, default=DEFAULT_START[0])
     parser.add_argument("--start-month", type=int, default=DEFAULT_START[1])
@@ -43,10 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip months where trade_candidates.csv already exists",
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Print per-month output"
+        help="Skip months where predictions_results.csv already exists",
     )
     return parser.parse_args()
 
@@ -58,11 +56,11 @@ def main() -> None:
 
     months = list(month_iter(start, end))
     print(
-        f"Batch finalize_strategy: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)"
+        f"Batch predict_and_publish: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)"
     )
 
     python = sys.executable
-    script = str(ROOT_DIR / "strategies" / "finalize_strategy.py")
+    script = str(ROOT_DIR / "train_eps" / "step4_predict_and_publish.py")
 
     ok = skipped = failed = 0
 
@@ -73,35 +71,36 @@ def main() -> None:
         if args.skip_existing:
             out_path = (
                 ROOT_DIR
-                / "strategies"
-                / "output"
+                / "models_eps"
                 / str(year)
                 / month_s
-                / "trade_candidates.csv"
+                / "predictions_results.csv"
             )
             if out_path.exists():
-                if args.verbose:
-                    print(f"[skip]  {label}  (trade_candidates.csv exists)")
+                print(f"[skip]  {label}  (predictions_results.csv exists)")
                 skipped += 1
                 continue
 
         # Skip if prerequisites are missing.
-        strategy_path = (
+        input_path = (
             ROOT_DIR
-            / "strategies"
+            / "train_eps"
             / "output"
             / str(year)
             / month_s
-            / "dataset_strategy.csv"
+            / "dataset_evaluate.csv"
         )
-        pred_path = (
-            ROOT_DIR / "models_eps" / str(year) / month_s / "predictions_results.csv"
-        )
-        if not strategy_path.exists() or not pred_path.exists():
-            if args.verbose:
-                print(
-                    f"[skip]  {label}  (missing dataset_strategy.csv or predictions_results.csv)"
-                )
+        if not input_path.exists():
+            print(
+                f"[skip]  {label}  (missing train_eps/output/{year}/{month_s}/dataset_evaluate.csv)"
+            )
+            skipped += 1
+            continue
+        models_dir = ROOT_DIR / "models_eps" / str(year) / month_s
+        pkl_pattern = re.compile(r"^\d{14}_\d+\.\d+\.pkl$")
+        has_model = any(pkl_pattern.match(p.name) for p in models_dir.glob("*.pkl"))
+        if not has_model:
+            print(f"[skip]  {label}  (no timestamped model pkl in models_eps/{year}/{month_s}/)")
             skipped += 1
             continue
 
@@ -111,25 +110,20 @@ def main() -> None:
             print(f"[dry]   {label}  {' '.join(cmd)}")
             continue
 
-        if args.verbose:
-            print(f"\n{'=' * 60}")
-            print(f"[run]   {label}")
-            print(f"{'=' * 60}")
-        result = subprocess.run(
-            cmd, cwd=str(ROOT_DIR),
-            stdout=None if args.verbose else subprocess.DEVNULL,
-            stderr=None if args.verbose else subprocess.DEVNULL,
-        )
+        print(f"\n{'=' * 60}")
+        print(f"[run]   {label}")
+        print(f"{'=' * 60}")
+        result = subprocess.run(cmd, cwd=str(ROOT_DIR))
         if result.returncode == 0:
-            if args.verbose:
-                print(f"[ok]    {label}")
+            print(f"[ok]    {label}")
             ok += 1
         else:
             print(f"[FAIL]  {label}  (returncode={result.returncode})")
             failed += 1
 
     if not args.dry_run:
-        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
+        print(f"\n{'=' * 60}")
+        print(f"Done: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
 
 
 if __name__ == "__main__":

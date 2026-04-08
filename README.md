@@ -26,37 +26,37 @@ common/           共用 schema、工具模組
 ### 1. EPS 預測（train_eps/）
 
 ```bash
-# 資料準備 → 訓練 → 發布
-venv/bin/python3 train_eps/prepare_data.py   --year 2025 --month 10
-venv/bin/python3 train_eps/train.py          --year 2025 --month 10
-venv/bin/python3 train_eps/gate_and_publish.py
+# 資料準備 → 訓練 → 評估 → 發布（或一鍵執行）
+venv/bin/python3 train_eps/step1_prepare_data.py        --year 2025 --month 10
+venv/bin/python3 train_eps/step2_train.py               --year 2025 --month 10
+venv/bin/python3 train_eps/step3_evaluate.py            --year 2025 --month 10
+venv/bin/python3 train_eps/step4_predict_and_publish.py --year 2025 --month 10
+venv/bin/python3 train_eps/run_pipeline.py              --year 2025 --month 10
 ```
 
 ### 2. 策略特徵工程（strategies/）
 
 ```bash
 # 單月
-venv/bin/python3 strategies/prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/predict_published.py --year 2025 --month 10
-venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
+venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
+venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10
 
 # 批次（歷史資料）
-venv/bin/python3 strategies/batch_prepare_data.py
-venv/bin/python3 strategies/batch_predict_published.py
-venv/bin/python3 strategies/batch_finalize_strategy.py
+venv/bin/python3 strategies/step1_batch_prepare_data.py
+venv/bin/python3 strategies/step2_batch_finalize_strategy.py
 ```
 
 ### 3. 選股模型訓練（strategies/）
 
 ```bash
 # 產生訓練資料
-venv/bin/python3 strategies/analyze_feature_returns.py
+venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
 # Walk-forward 批次訓練（回測用，每月一版）
-venv/bin/python3 strategies/batch_train_selection_model.py
+venv/bin/python3 strategies/step4_batch_train_selection_model.py
 
 # 正式訓練（全資料，production 用）
-venv/bin/python3 strategies/train_selection_model.py
+venv/bin/python3 strategies/step4_train_selection_model.py
 ```
 
 ### 4. 滾動回測（backtester/）
