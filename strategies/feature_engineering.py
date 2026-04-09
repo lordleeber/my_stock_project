@@ -1,13 +1,12 @@
 """
-Shared feature engineering for stock selection model.
+選股模型的共用特徵工程模組。
 
-Fetches pre-computed technical indicators from the technical_indicators table
-and monthly revenue features from the monthly_revenue table,
-for a set of symbols at a given reference date.
+依指定基準日，從 technical_indicators 撈取預計算的技術指標，
+並從 monthly_revenue 撈取月營收特徵。
 
-Used by:
-  - analyze_feature_returns.py  (training data generation)
-  - backtester/score_candidates.py  (production scoring)
+被以下腳本使用：
+  - analyze_feature_returns.py  （訓練資料生成）
+  - backtester/score_candidates.py  （生產選股評分）
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from train_eps import prepare_data as tp
 
-# Columns to fetch from technical_indicators.
+# 從 technical_indicators 撈取的原始欄位。
 _TI_COLS = [
     "ma5",
     "ma10",
@@ -50,8 +49,7 @@ _TI_COLS = [
     "dealer_streak_days",
 ]
 
-# Derived ratio features computed from raw TI values + close price.
-# These are what actually go into the model.
+# 由原始技術指標值與收盤價計算出的比值特徵，這些才是實際進入模型的欄位。
 TECHNICAL_FEATURE_COLS = [
     "close_vs_ma5",
     "close_vs_ma10",
@@ -84,18 +82,17 @@ def fetch_technical_features(
     volume_series: "pd.Series | None" = None,
 ) -> pd.DataFrame:
     """
-    Fetch latest technical indicators from DB on or before ref_date,
-    then compute derived ratio features.
+    從資料庫撈取 ref_date 當天或之前的最新技術指標，並計算衍生比值特徵。
 
-    Args:
-        symbols:       List of stock symbols.
-        ref_date:      Reference date (entry_date). Use most recent row <= this date.
-        close_series:  Optional Series (index=symbol) of close prices for ratio computation.
-                       If None, uses bb_middle as close proxy for bb_position.
-        volume_series: Optional Series (index=symbol) of volumes for vol_vs_vma ratios.
+    參數：
+        symbols:       股票代碼列表。
+        ref_date:      基準日（entry_date），使用 <= 此日期的最新一筆。
+        close_series:  Optional Series（index=symbol），用於計算比值的收盤價。
+                       若為 None，以 bb_middle 作為 bb_position 的代理收盤價。
+        volume_series: Optional Series（index=symbol），用於 vol_vs_vma 比值計算。
 
-    Returns:
-        DataFrame with columns ['symbol'] + TECHNICAL_FEATURE_COLS.
+    回傳：
+        DataFrame，欄位為 ['symbol'] + TECHNICAL_FEATURE_COLS。
     """
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + TECHNICAL_FEATURE_COLS)
@@ -127,7 +124,7 @@ def fetch_technical_features(
     for col in _TI_COLS:
         ti[col] = pd.to_numeric(ti[col], errors="coerce")
 
-    # Use provided close/volume or fall back to bb_middle.
+    # 使用傳入的收盤價／成交量，若無則以 bb_middle 替代。
     if close_series is not None:
         ti["_close"] = ti["symbol"].map(close_series)
     else:
@@ -164,7 +161,7 @@ def fetch_technical_features(
     return ti[["symbol"] + TECHNICAL_FEATURE_COLS].reset_index(drop=True)
 
 
-# ── Institutional Flow Features ──────────────────────────────────────────────
+# ── 法人買賣超特徵 ────────────────────────────────────────────────────────────
 
 INSTITUTIONAL_FLOW_COLS = [
     "foreign_net_5d",
@@ -178,18 +175,18 @@ def fetch_institutional_flow_features(
     ref_date: str,
 ) -> pd.DataFrame:
     """
-    Compute 5-day institutional net buy ratios (% of avg daily volume).
+    計算 5 日法人淨買入比率（佔日均成交量的百分比）。
 
     foreign_net_5d       = sum(foreign_net, 5d) / avg(volume, 5d)
     trust_net_5d         = sum(trust_net, 5d) / avg(volume, 5d)
     smart_money_net_5d   = (sum(foreign_net, 5d) + sum(trust_net, 5d)) / avg(volume, 5d)
 
-    Returns DataFrame with columns ['symbol'] + INSTITUTIONAL_FLOW_COLS.
+    回傳 DataFrame，欄位為 ['symbol'] + INSTITUTIONAL_FLOW_COLS。
     """
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + INSTITUTIONAL_FLOW_COLS)
 
-    # Fetch last 5 trading days of institutional data on or before ref_date.
+    # 撈取 ref_date 當天或之前最近 5 個交易日的法人資料。
     ii_stmt = text(
         """
         WITH ranked AS (
@@ -204,7 +201,7 @@ def fetch_institutional_flow_features(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    # Fetch last 5 trading days of volume from daily_quotes.
+    # 從 daily_quotes 撈取最近 5 個交易日的成交量。
     dq_stmt = text(
         """
         WITH ranked AS (
@@ -263,7 +260,7 @@ def fetch_institutional_flow_features(
     return result[["symbol"] + INSTITUTIONAL_FLOW_COLS].reset_index(drop=True)
 
 
-# ── Price / Volatility Features ───────────────────────────────────────────────
+# ── 價格 / 波動率特徵 ─────────────────────────────────────────────────────────
 
 PRICE_FEATURE_COLS = [
     "hist_vol_20d",
@@ -275,11 +272,11 @@ def fetch_price_features(
     ref_date: str,
 ) -> pd.DataFrame:
     """
-    Compute 20-day annualised historical volatility from close prices.
+    從收盤價計算 20 日年化歷史波動率。
 
     hist_vol_20d = std(daily_log_return, 20d) * sqrt(252)
 
-    Returns DataFrame with columns ['symbol'] + PRICE_FEATURE_COLS.
+    回傳 DataFrame，欄位為 ['symbol'] + PRICE_FEATURE_COLS。
     """
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + PRICE_FEATURE_COLS)
@@ -327,7 +324,7 @@ def fetch_price_features(
     return result[["symbol"] + PRICE_FEATURE_COLS].reset_index(drop=True)
 
 
-# ── Monthly Revenue Features ──────────────────────────────────────────────────
+# ── 月營收特徵 ────────────────────────────────────────────────────────────────
 
 REVENUE_FEATURE_COLS = [
     "revenue_yoy_1m",  # latest month YoY %
@@ -344,22 +341,22 @@ def fetch_revenue_features(
     ref_date: str,  # "YYYY-MM-DD" (entry_date)
 ) -> pd.DataFrame:
     """
-    Fetch monthly revenue features using only data published on or before ref_date.
+    僅使用 ref_date 當天或之前已發布的資料，撈取月營收特徵。
 
-    PIT-safe: filters monthly_revenue by publish_time <= ref_date_compact (YYYYMMDD).
-    For month M with entry_date ~M/11, this picks up revenue published through M/10,
-    which covers month M-1's data (published by the 10th of M).
+    PIT 安全：以 publish_time <= ref_date_compact (YYYYMMDD) 過濾 monthly_revenue。
+    對於 entry_date 約在 M/11 的月份 M，可取得 M/10 前已發布的營收資料，
+    即涵蓋 M-1 月的資料（於 M 月 10 日前發布）。
 
-    Returns DataFrame with columns ['symbol'] + REVENUE_FEATURE_COLS.
-    Missing symbols get NaN for all feature columns.
+    回傳 DataFrame，欄位為 ['symbol'] + REVENUE_FEATURE_COLS。
+    缺少資料的股票，所有特徵欄位填 NaN。
     """
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + REVENUE_FEATURE_COLS)
 
     ref_compact = ref_date.replace("-", "")  # "YYYYMMDD"
 
-    # Fetch up to 6 most recent months per symbol, PIT-filtered by publish_time.
-    # monthly_revenue.date is "YYYYMXX" (e.g. "2025M09") — alphabetical sort is correct.
+    # 每個股票撈取最近 6 個月，以 publish_time 做 PIT 過濾。
+    # monthly_revenue.date 格式為 "YYYYMXX"（如 "2025M09"），字母排序即為時間順序。
     stmt = text(
         """
         WITH rev AS (
@@ -430,7 +427,7 @@ def fetch_revenue_features(
             else np.nan
         )
 
-        # Positive YoY streak: consecutive months from most recent backward
+        # 正 YoY 連續月數：從最新月份往前連續計算
         streak = 0
         for _, row in grp.sort_values("rn").iterrows():
             v = row["yoy_pct"]

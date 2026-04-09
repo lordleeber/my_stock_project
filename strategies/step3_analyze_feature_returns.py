@@ -1,15 +1,15 @@
 """
-Analyze which features correlate with actual 1-month forward returns.
+分析哪些特徵與實際 1 個月遠期報酬相關。
 
-For each month M:
-  - Load dataset_strategy.csv (features for all filtered candidates, incl. technical)
-  - Buy at entry_date open, sell at next month's entry_date open
-  - Compute actual return, then correlate with each feature
+對每個月份 M：
+  - 載入 dataset_strategy.csv（所有候選股的特徵，含技術指標）
+  - 以 entry_date 開盤買入，下個月 entry_date 開盤賣出
+  - 計算實際報酬，再與各特徵做相關性分析
 
-Output:
-  - strategies/output/feature_return_analysis.csv  (per stock per month)
-  - strategies/output/feature_correlation.csv       (correlation summary)
-  - Console: quintile analysis per feature
+輸出：
+  - strategies/output/feature_return_analysis.csv  （每股每月的特徵與報酬）
+  - strategies/output/feature_correlation.csv       （相關性彙總）
+  - 終端機：各特徵的五分位數分析
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from train_eps import prepare_data as tp
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = (2021, 8)
-END = (2026, 2)  # last month with a "next month" entry_date available
+END = (2026, 3)  # 最後一個可計算下月報酬的月份（需要下月 entry_date 存在）
 
 FEATURE_COLS = (
     [
@@ -49,15 +49,15 @@ FEATURE_COLS = (
         "small_holder_ratio_wow",
         "concentration_spread",
         "concentration_spread_wow",
-        # valuation
+        # 估值
         "roe_official",
         "pe_percentile_official",
-        # market sentiment
+        # 市場情緒
         "dealer_held_ratio",
         "margin_usage_ratio",
         "short_cover_pressure",
         "sbl_sell_repay_ratio",
-        # fundamental quality
+        # 財報品質
         "anchor_debt_ratio",
         "pb_ratio",
         "current_ratio",
@@ -150,7 +150,7 @@ def main() -> None:
 
         entry_str = str(ds["entry_date"].iloc[0])
 
-        # exit = trading day before next month's entry_date
+        # 出場日 = 下個月 entry_date 的前一個交易日
         ds_next = load_strategy(ny, nm)
         if ds_next is None or ds_next.empty or "entry_date" not in ds_next.columns:
             print(f"[skip] no next-month dataset_strategy: {ny}/{nm:02d}")

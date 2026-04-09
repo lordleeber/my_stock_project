@@ -1,23 +1,23 @@
 """
-Batch-train one selection model per cutoff month (walk-forward).
+依 walk-forward 方式，為每個 cutoff 月份各訓練一個選股模型。
 
-For each cutoff month C, trains on feature_return_analysis.csv rows where
-(year, month) <= C, and saves to models_selection/<year>/<month>/.
+對每個 cutoff 月份 C，使用 feature_return_analysis.csv 中 (year, month) <= C 的資料訓練，
+並儲存至 models_selection/<year>/<month>/。
 
-Usage:
+用法：
   venv/bin/python3 strategies/batch_train_selection_model.py
   venv/bin/python3 strategies/batch_train_selection_model.py --start-year 2023 --start-month 1
   venv/bin/python3 strategies/batch_train_selection_model.py --start-year 2022 --start-month 6 --end-year 2025 --end-month 8
   venv/bin/python3 strategies/batch_train_selection_model.py --dry-run
   venv/bin/python3 strategies/batch_train_selection_model.py --skip-existing
 
-Cutoff semantics:
-  A model at cutoff C is used by the backtester when trading in month C+1.
-  Example: cutoff=2023-07 → used to rank candidates for entering trades in 2023-08.
+Cutoff 語意：
+  cutoff C 的模型由回測器在 C+1 月交易時使用。
+  範例：cutoff=2023-07 → 用於排序 2023-08 的進場候選股。
 
-Default range:
-  START = (2022, 6)  — earliest cutoff with ~10 months of training data
-  END   = (2026, 2)  — last month whose forward return is known (analyze_feature_returns END=2026-02)
+預設範圍：
+  START = (2022, 6)  — 最早 cutoff（約有 10 個月訓練資料）
+  END   = (2026, 2)  — 最後一個已知遠期報酬的月份（analyze_feature_returns END=2026-02）
 """
 
 from __future__ import annotations

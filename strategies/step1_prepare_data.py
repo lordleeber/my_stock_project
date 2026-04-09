@@ -10,15 +10,15 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import bindparam, create_engine, text
 
-# Ensure repo root is importable when running this script directly.
+# 確保可以從此腳本直接執行時匯入 repo 根目錄
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from train_eps import prepare_data as tp
 
-# Strategies pipeline uses a lower TTM EPS threshold than train_eps
-# to allow a larger universe for ML-based selection.
+# strategies pipeline 使用比 train_eps 更低的 TTM EPS 門檻
+# 以保留更大的候選股宇宙供 ML 選股使用
 MIN_TTM_EPS = 2.0
 MIN_VOLUME_LOTS = 500.0
 
@@ -34,14 +34,14 @@ def parse_args() -> argparse.Namespace:
 
 def model_release_date(year: int, month: str) -> str:
     m = int(month)
-    # Release day convention: 05/08/11 on 15th, others on 10th.
+    # 發布日慣例：5、8、11 月為 15 日，其餘月份為 10 日。
     day = 15 if m in {5, 8, 11} else 10
     day = min(day, calendar.monthrange(year, m)[1])
     return f"{year:04d}-{m:02d}-{day:02d}"
 
 
 def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
-    """Fetch ROE and PE percentile from valuation_daily (TTM-based, PIT by date)."""
+    """從 valuation_daily 撈取 ROE 與 PE 百分位（TTM 基礎，依日期 PIT 對齊）。"""
     if not symbols:
         return pd.DataFrame(
             columns=["symbol", "roe_official", "pe_percentile_official"]
@@ -66,7 +66,7 @@ def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.Da
 def fetch_market_sentiment_features(
     engine, symbols: list[str], end_date: str
 ) -> pd.DataFrame:
-    """Fetch dealer holding, margin pressure, and short interest features."""
+    """撈取自營商持股、融資壓力與借券相關特徵。"""
     if not symbols:
         return pd.DataFrame(
             columns=[
@@ -133,7 +133,7 @@ def fetch_market_sentiment_features(
 def fetch_fundamental_features(
     engine, symbols: list[str], anchor_q: str
 ) -> pd.DataFrame:
-    """Fetch quality metrics from quarterly_reports_xbrl at anchor_q for PIT alignment."""
+    """從 quarterly_reports_xbrl 在 anchor_q 撈取財報品質指標（PIT 對齊）。"""
     if not symbols:
         return pd.DataFrame(
             columns=[
@@ -158,7 +158,7 @@ def fetch_fundamental_features(
 
 
 def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
-    """Fetch foreign/trust holding ratios and shareholding concentration for given symbols."""
+    """撈取外資／投信持股比例與股權集中度特徵。"""
     if not symbols:
         return pd.DataFrame(
             columns=[
@@ -557,20 +557,20 @@ def main() -> None:
         if c not in df.columns:
             df[c] = np.nan
 
-    # Fetch chipflow features (foreign/trust holding + shareholding concentration).
+    # 撈取籌碼流向特徵（外資／投信持股 + 股權集中度）
     symbols = df["symbol"].astype(str).str.strip().unique().tolist()
     chipflow = fetch_chipflow_features(engine, symbols, cutoff_date)
     df = df.merge(chipflow, on="symbol", how="left")
 
-    # Fetch valuation features (ROE, PE percentile).
+    # 撈取估值特徵（ROE、PE 百分位）
     valuation = fetch_valuation_features(engine, symbols, cutoff_date)
     df = df.merge(valuation, on="symbol", how="left")
 
-    # Fetch market sentiment features (dealer holding, margin pressure, SBL).
+    # 撈取市場情緒特徵（自營商持股、融資壓力、借券）
     sentiment = fetch_market_sentiment_features(engine, symbols, cutoff_date)
     df = df.merge(sentiment, on="symbol", how="left")
 
-    # Fetch fundamental quality features at anchor_q for PIT alignment.
+    # 撈取財報品質特徵（以 anchor_q 為基準，PIT 對齊）
     anchor_q = tp.build_quarter_context(year, month)["anchor_q"]
     fundamental = fetch_fundamental_features(engine, symbols, anchor_q)
     df = df.merge(fundamental, on="symbol", how="left")
@@ -598,7 +598,7 @@ def main() -> None:
         "prev_q4_eps",
         "q1_eps",
         "q2_eps",
-        # chipflow
+        # 籌碼流向
         "foreign_held_ratio",
         "trust_held_ratio",
         "large_holder_ratio",
@@ -610,15 +610,15 @@ def main() -> None:
         "small_holder_ratio_wow",
         "concentration_spread",
         "concentration_spread_wow",
-        # valuation
+        # 估值
         "roe_official",
         "pe_percentile_official",
-        # market sentiment
+        # 市場情緒
         "dealer_held_ratio",
         "margin_usage_ratio",
         "short_cover_pressure",
         "sbl_sell_repay_ratio",
-        # fundamental quality
+        # 財報品質
         "anchor_debt_ratio",
         "pb_ratio",
         "current_ratio",

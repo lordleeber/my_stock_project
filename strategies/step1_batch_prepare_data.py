@@ -1,7 +1,7 @@
 """
-Batch-run strategies/prepare_data.py for a range of months.
+批次執行 strategies/prepare_data.py，涵蓋指定月份範圍。
 
-Usage:
+用法：
   venv/bin/python3 strategies/step1_batch_prepare_data.py
   venv/bin/python3 strategies/step1_batch_prepare_data.py --start-year 2023 --start-month 8
   venv/bin/python3 strategies/step1_batch_prepare_data.py --start-year 2021 --start-month 8 --end-year 2025 --end-month 10

@@ -1,7 +1,7 @@
 """
-Batch-run strategies/step2_finalize_strategy.py for a range of months.
+批次執行 strategies/step2_finalize_strategy.py，涵蓋指定月份範圍。
 
-Usage:
+用法：
   venv/bin/python3 strategies/step2_batch_finalize_strategy.py
   venv/bin/python3 strategies/step2_batch_finalize_strategy.py --start-year 2023 --start-month 8
   venv/bin/python3 strategies/step2_batch_finalize_strategy.py --skip-existing
@@ -85,7 +85,7 @@ def main() -> None:
                 skipped += 1
                 continue
 
-        # Skip if prerequisites are missing.
+        # 前置檔案缺失則跳過。
         strategy_path = (
             ROOT_DIR
             / "strategies"

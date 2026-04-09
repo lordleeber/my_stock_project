@@ -1,10 +1,10 @@
 """
-Batch-score all months that have a dataset_strategy.csv.
+批次對所有有 dataset_strategy.csv 的月份進行評分。
 
-Scans strategies/output/ for all year/month directories containing
-dataset_strategy.csv and runs score_and_publish for each one.
+掃描 strategies/output/ 底下所有含 dataset_strategy.csv 的年月目錄，
+依序執行 score_and_publish。
 
-Usage:
+用法：
   venv/bin/python3 strategies/batch_score_and_publish.py
 """
 

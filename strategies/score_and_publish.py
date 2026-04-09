@@ -1,11 +1,11 @@
 """
-Score this month's candidates using the walk-forward selection model.
+使用 walk-forward 選股模型對當月候選股評分。
 
-Input:  strategies/output/<year>/<month>/dataset_strategy.csv
-Model:  walk-forward (latest cutoff < year/month) from models_selection/
-Output: models_selection/<year>/<month>/candidates_scored.csv
+輸入：  strategies/output/<year>/<month>/dataset_strategy.csv
+模型：  walk-forward（最新 cutoff < year/month），來自 models_selection/
+輸出：  models_selection/<year>/<month>/candidates_scored.csv
 
-Usage:
+用法：
   venv/bin/python3 strategies/score_and_publish.py --year 2024 --month 7
   venv/bin/python3 strategies/score_and_publish.py --year 2025 --month 10 --model-dir models_selection/latest
 """
@@ -25,7 +25,7 @@ if str(ROOT_DIR) not in sys.path:
 
 
 def resolve_model_for_month(models_root: Path, year: int, month: int) -> Path | None:
-    """Return the model dir with the latest cutoff strictly before (year, month)."""
+    """回傳 cutoff 嚴格早於 (year, month) 的最新模型目錄。"""
     ym = year * 100 + month
     best: tuple[int, Path] | None = None
 
@@ -67,7 +67,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> Path:
-    """Score candidates for year/month and write candidates_scored.csv to models_selection/<year>/<month>/."""
+    """對 year/month 的候選股評分，並將 candidates_scored.csv 寫入 models_selection/<year>/<month>/。"""
     month_s = str(month).zfill(2)
 
     ds_path = (

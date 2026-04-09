@@ -1,27 +1,25 @@
 """
-Train a stock selection model (LightGBM Ranker, lambdarank) using historical
-feature-return pairs.
+使用歷史特徵-報酬對訓練選股模型（LightGBM Ranker，lambdarank）。
 
-Ranking objective:
-  Within each month, stocks are assigned a relevance label (0 = worst return,
-  n-1 = best return). LightGBM learns to rank stocks within a month so the
-  highest-labelled ones appear at the top.
+排名目標：
+  每個月份內對股票指定 relevance label（0 = 最低報酬，n-1 = 最高報酬）。
+  LightGBM 學習在同一個月內排序股票，使標籤最高的股票排在最前面。
 
-Input:  strategies/output/feature_return_analysis.csv
-Output: models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl
+輸入：  strategies/output/feature_return_analysis.csv
+輸出：  models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl
                                                       feature_importance.csv
                                                       latest.json
 
-Walk-forward design:
-  - Train on data where (year, month) <= cutoff
-  - Evaluate on data where (year, month) > cutoff
-  - Default cutoff: all available data (for production use)
+Walk-forward 設計：
+  - 訓練資料：(year, month) <= cutoff 的資料
+  - 評估資料：(year, month) > cutoff 的資料
+  - 預設 cutoff：所有可用資料（生產模式）
 
-Usage:
-  # Train on all data (production)
+用法：
+  # 使用所有資料訓練（生產）
   venv/bin/python3 strategies/train_selection_model.py
 
-  # Walk-forward evaluation
+  # Walk-forward 評估
   venv/bin/python3 strategies/train_selection_model.py --cutoff-year 2024 --cutoff-month 6
 """
 
@@ -65,15 +63,15 @@ FEATURE_COLS = (
         "small_holder_ratio_wow",
         "concentration_spread",
         "concentration_spread_wow",
-        # valuation
+        # 估值
         "roe_official",
         "pe_percentile_official",
-        # market sentiment
+        # 市場情緒
         "dealer_held_ratio",
         "margin_usage_ratio",
         "short_cover_pressure",
         "sbl_sell_repay_ratio",
-        # fundamental quality
+        # 財報品質
         "anchor_debt_ratio",
         "pb_ratio",
         "current_ratio",
@@ -82,7 +80,7 @@ FEATURE_COLS = (
     ]
     + TECHNICAL_FEATURE_COLS
     + REVENUE_FEATURE_COLS
-)  # includes close_vs_ma5/10/20/60/240, k, d, rsi, macd, bb_position, revenue momentum, etc.
+)  # 包含 close_vs_ma5/10/20/60/240、k、d、rsi、macd、bb_position、月營收動能等
 
 LABEL_COL = "fwd_return_pct"
 
@@ -109,9 +107,9 @@ def parse_args() -> argparse.Namespace:
 
 def build_rank_labels(df: pd.DataFrame, n_bins: int = 5) -> pd.Series:
     """
-    Within each (year, month) group, assign relevance label 0-(n_bins-1).
-    Highest return bucket = label n_bins-1, lowest = label 0.
-    LightGBM lambdarank maximises NDCG, so higher label = should rank higher.
+    對每個 (year, month) 群組，依報酬指定 relevance label 0～(n_bins-1)。
+    最高報酬 bucket = label n_bins-1，最低 = label 0。
+    LightGBM lambdarank 最大化 NDCG，因此 label 越高 = 應排越前面。
     """
     labels = list(range(n_bins))
 
@@ -125,17 +123,17 @@ def build_rank_labels(df: pd.DataFrame, n_bins: int = 5) -> pd.Series:
 
 
 def build_groups(df: pd.DataFrame) -> list[int]:
-    """Return list of group sizes (stocks per month), in row order."""
+    """回傳每個月的 group 大小列表（每月股票數），依列順序排列。"""
     return df.groupby(["year", "month"], sort=False).size().tolist()
 
 
 def spearman_ic(df: pd.DataFrame, pred: np.ndarray) -> float:
-    """Overall Spearman IC between model scores and actual returns."""
+    """計算模型預測分數與實際報酬的整體 Spearman IC。"""
     return pd.Series(pred).corr(pd.Series(df[LABEL_COL].values), method="spearman")
 
 
 def monthly_ic(df: pd.DataFrame, pred: np.ndarray) -> pd.DataFrame:
-    """Per-month Spearman IC."""
+    """計算每個月份的 Spearman IC。"""
     tmp = df[["year", "month", LABEL_COL]].copy()
     tmp["pred"] = pred
     ic = (
@@ -165,10 +163,10 @@ def main() -> None:
     df["month"] = df["month"].astype(str).str.zfill(2)
     df["ym"] = df["year"].astype(int) * 100 + df["month"].astype(int)
 
-    # Must sort so rows are contiguous within each month (required by LGBMRanker group).
+    # 必須排序，使每個月份的資料列連續（LGBMRanker group 參數要求）。
     df = df.sort_values(["year", "month"]).reset_index(drop=True)
 
-    # Walk-forward split.
+    # Walk-forward 資料切分。
     if args.cutoff_year is not None and args.cutoff_month is not None:
         cutoff_ym = args.cutoff_year * 100 + args.cutoff_month
         train_df = df[df["ym"] <= cutoff_ym].copy()
@@ -226,7 +224,7 @@ def main() -> None:
         )
         print(mic.to_string(index=False))
 
-    # Feature importance.
+    # 特徵重要性。
     importance = pd.DataFrame(
         {
             "feature": feat_cols,
@@ -241,7 +239,7 @@ def main() -> None:
     print("\nFeature importance (gain, top 20):")
     print(importance.head(20).to_string(index=False))
 
-    # Save model.
+    # 儲存模型。
     if args.cutoff_year is not None and args.cutoff_month is not None:
         out_dir = (
             ROOT_DIR

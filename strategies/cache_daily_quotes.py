@@ -1,4 +1,4 @@
-"""Cache daily OHLC quotes for the current strategy month."""
+"""快取當月策略所需的每日 OHLC 行情資料。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import bindparam, create_engine, text
 
-# Ensure repo root is importable when running this script directly.
+# 確保可以從此腳本直接執行時匯入 repo 根目錄
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))

@@ -1,16 +1,15 @@
 """
-Finalize monthly strategy data by merging EPS predictions, resolving entry_date,
-and fetching technical features.
+合併 EPS 預測、解析進場日並補充技術指標，完成當月策略資料集。
 
-Reads:
+讀取：
   strategies/output/<year>/<month>/dataset_strategy.csv
   models_eps/<year>/<month>/predictions_results.csv
 
-Writes:
-  strategies/output/<year>/<month>/dataset_strategy.csv  (updated in-place with new columns)
-  strategies/output/<year>/<month>/trade_candidates.csv  (for run_rolling.py)
+寫入：
+  strategies/output/<year>/<month>/dataset_strategy.csv  （原地更新，新增欄位）
+  strategies/output/<year>/<month>/trade_candidates.csv  （供 run_rolling.py 使用）
 
-Usage:
+用法：
   venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
 """
 
@@ -54,7 +53,7 @@ def release_date(year: int, month: int) -> date:
 
 
 def resolve_entry_date(engine, earliest: date) -> str:
-    """Return first actual trading day on or after earliest."""
+    """回傳 earliest 當天或之後第一個實際交易日。"""
     stmt = text("SELECT MIN(date) FROM daily_quotes WHERE date >= :d")
     with engine.connect() as conn:
         row = conn.execute(stmt, {"d": earliest.strftime("%Y-%m-%d")}).fetchone()
@@ -64,7 +63,7 @@ def resolve_entry_date(engine, earliest: date) -> str:
 
 
 def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
-    """Merge EPS prediction delta → predict_target_price → pred_upside_pct."""
+    """合併 EPS 預測 delta → 計算 predict_target_price → pred_upside_pct。"""
     df = df.copy()
 
     anchor = pd.to_numeric(df.get("anchor_eps"), errors="coerce")
@@ -121,7 +120,7 @@ def main() -> None:
     ds["symbol"] = ds["symbol"].astype(str).str.strip()
     pred["symbol"] = pred["symbol"].astype(str).str.strip()
 
-    # Drop any previously computed columns so re-runs stay idempotent.
+    # 刪除先前計算過的欄位，確保重跑時結果一致（idempotent）。
     RECOMPUTED_COLS = (
         [
             "pred_lgb_delta",
@@ -136,7 +135,7 @@ def main() -> None:
     )
     ds = ds.drop(columns=[c for c in RECOMPUTED_COLS if c in ds.columns])
 
-    # Keep only pred_lgb_delta from predictions (other cols already in ds).
+    # 只保留預測檔的 pred_lgb_delta（其他欄位已在 ds 中）。
     pred_cols = ["symbol", "pred_lgb_delta"]
     pred_merge = pred[[c for c in pred_cols if c in pred.columns]].drop_duplicates(
         "symbol"
@@ -145,7 +144,7 @@ def main() -> None:
     df = ds.merge(pred_merge, on="symbol", how="left")
     df = compute_pred_upside(df, month)
 
-    # Resolve entry_date.
+    # 解析進場日。
     rel_dt = release_date(year, month_int)
     earliest = rel_dt + timedelta(days=1)
     engine = create_engine(tp.get_db_url())
@@ -153,21 +152,21 @@ def main() -> None:
     df["entry_date"] = entry_date_str
     print(f"entry_date: {entry_date_str}")
 
-    # Fetch technical features at entry_date.
+    # 撈取 entry_date 的技術指標特徵。
     symbols = df["symbol"].tolist()
     close_s = pd.to_numeric(df.set_index("symbol")["q3_close"], errors="coerce")
     volume_s = pd.to_numeric(df.set_index("symbol")["target_volume"], errors="coerce")
     tech = fetch_technical_features(
         symbols, entry_date_str, close_series=close_s, volume_series=volume_s
     )
-    # Drop any tech cols already in df to avoid duplicates.
+    # 刪除 df 中已存在的技術指標欄位，避免重複。
     existing_tech = [c for c in TECHNICAL_FEATURE_COLS if c in df.columns]
     if existing_tech:
         df = df.drop(columns=existing_tech)
     df = df.merge(tech, on="symbol", how="left")
     print(f"Technical features added: {len(TECHNICAL_FEATURE_COLS)} cols")
 
-    # Fetch monthly revenue features at entry_date (PIT-safe via publish_time filter).
+    # 撈取 entry_date 的月營收特徵（透過 publish_time 過濾，確保 PIT 安全）。
     rev = fetch_revenue_features(symbols, entry_date_str)
     existing_rev = [c for c in REVENUE_FEATURE_COLS if c in df.columns]
     if existing_rev:
@@ -178,16 +177,16 @@ def main() -> None:
         f"Revenue features added: {len(REVENUE_FEATURE_COLS)} cols  ({n_rev}/{len(df)} symbols with data)"
     )
 
-    # Convenience aliases for downstream scripts (analyze, score, train).
+    # 為下游腳本（analyze、score、train）建立便捷欄位別名。
     df["close"] = pd.to_numeric(df.get("q3_close"), errors="coerce")
     df["ttm_eps"] = pd.to_numeric(df.get("ttm_eps_official"), errors="coerce")
     df["volume_lots"] = pd.to_numeric(df.get("target_volume"), errors="coerce") / 1000.0
 
-    # Write updated dataset_strategy.csv.
+    # 寫入更新後的 dataset_strategy.csv。
     df.to_csv(strategy_path, index=False, encoding="utf-8-sig")
     print(f"dataset_strategy.csv updated: {strategy_path}  ({len(df)} rows)")
 
-    # Write trade_candidates.csv.
+    # 寫入 trade_candidates.csv。
     tc_cols = [
         "symbol",
         "predict_target_price",
