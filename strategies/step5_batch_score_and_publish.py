@@ -2,7 +2,7 @@
 批次對所有有 dataset_strategy.csv 的月份進行評分。
 
 掃描 strategies/output/ 底下所有含 dataset_strategy.csv 的年月目錄，
-依序執行 score_and_publish。
+依序執行 step5_score_and_publish。
 
 用法：
   venv/bin/python3 strategies/step5_batch_score_and_publish.py
