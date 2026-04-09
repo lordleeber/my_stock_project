@@ -159,25 +159,25 @@ def monthly_context(execution_year: int, month: str) -> dict:
 
 def model_features_for_month(month: str) -> list[str]:
     common = [
-        "anchor_eps",  # Published EPS at anchor quarter
-        "ly_target_eps",  # EPS of last year's same target quarter
-        "anchor_yoy_eps",  # Anchor EPS year-over-year growth (anchor vs last-year anchor)
-        "anchor_margin",  # Anchor-quarter net income margin
-        "anchor_ocf_ratio",  # Anchor-quarter operating cash flow to net income ratio
-        "anchor_re_ratio",  # Anchor-quarter retained earnings to capital ratio
-        "margin_momentum",  # Anchor-quarter margin minus previous-quarter margin
-        "anchor_roe",  # Anchor-quarter return on equity
-        "anchor_debt_ratio",  # Anchor-quarter debt-to-assets ratio
-        "anchor_non_op_ratio",  # Anchor-quarter non-operating income to pre-tax income ratio
-        "ly_seasonality",  # Last-year target/anchor EPS seasonality ratio
-        "xbrl_gross_margin_q",  # XBRL gross margin (single quarter)
-        "xbrl_op_margin_q",  # XBRL operating margin (single quarter)
-        "xbrl_rd_ratio_q",  # XBRL R&D expense to revenue ratio (single quarter)
-        "xbrl_tax_rate_q",  # XBRL effective tax rate (single quarter)
-        "xbrl_current_ratio",  # XBRL current ratio
-        "xbrl_cash_to_assets",  # XBRL cash to total assets ratio
-        "xbrl_cfo_to_ni_q",  # XBRL operating cash flow to net income ratio (single quarter)
-        "xbrl_capex_to_revenue_q",  # XBRL capex to revenue ratio (single quarter)
+        "anchor_eps",  # 錨點季度已公布每股盈餘
+        "ly_target_eps",  # 去年同目標季度每股盈餘
+        "anchor_yoy_eps",  # 錨點季度 EPS 年增率（錨點 vs 去年同季）
+        "anchor_margin",  # 錨點季度淨利率
+        "anchor_ocf_ratio",  # 錨點季度營業現金流對淨利比
+        "anchor_re_ratio",  # 錨點季度保留盈餘對資本比
+        "margin_momentum",  # 淨利率動能（錨點季度 - 前一季度）
+        "anchor_roe",  # 錨點季度股東權益報酬率
+        "anchor_debt_ratio",  # 錨點季度負債比率
+        "anchor_non_op_ratio",  # 錨點季度業外損益占稅前淨利比
+        "ly_seasonality",  # 去年季節性（目標季度 / 錨點季度 EPS）
+        "xbrl_gross_margin_q",  # XBRL 單季毛利率
+        "xbrl_op_margin_q",  # XBRL 單季營業利益率
+        "xbrl_rd_ratio_q",  # XBRL 單季研發費用率
+        "xbrl_tax_rate_q",  # XBRL 單季有效稅率
+        "xbrl_current_ratio",  # XBRL 流動比率
+        "xbrl_cash_to_assets",  # XBRL 現金資產比
+        "xbrl_cfo_to_ni_q",  # XBRL 單季營業現金流對淨利比
+        "xbrl_capex_to_revenue_q",  # XBRL 單季資本支出對營收比
     ]
 
     monthly: list[str] = []
@@ -201,13 +201,13 @@ def add_industry_zscore(df: pd.DataFrame, col: str, out_col: str) -> None:
     g = df.groupby(["year", "industry"])[col]
     mean = g.transform("mean")
     std = g.transform("std").replace(0, np.nan)
-    # Preserve missingness for downstream model handling instead of imputing to 0.
+    # 保留缺失值供下游模型處理，不填補為 0。
     df[out_col] = ((df[col] - mean) / std).replace([np.inf, -np.inf], np.nan)
 
 
 def add_cross_section_quantile(df: pd.DataFrame, z_col: str, out_col: str) -> None:
     group_cols = ["year", "industry"]
-    # Keep NaN when z-score is missing; do not convert missing to fixed mid quantile.
+    # z-score 缺失時保留 NaN，不轉換為固定中位分位數。
     ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True)
     df[out_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
 
@@ -462,8 +462,8 @@ def fetch_one_year_api(
     if inc_anchor.empty:
         return pd.DataFrame()
 
-    # Keep API sample-retention behavior aligned with DB path:
-    # anchor-quarter rows must exist in income_statement + balance_sheet + cash_flow.
+    # 與 DB 路徑保持一致的樣本保留行為：
+    # 錨點季度必須同時存在於 income_statement + balance_sheet + cash_flow。
     if bs_anchor.empty or cf_anchor.empty:
         return pd.DataFrame()
 

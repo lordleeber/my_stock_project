@@ -1,7 +1,7 @@
 """
-Batch-run train_eps/evaluate.py for a range of months.
+批次執行 train_eps/evaluate.py，涵蓋指定月份範圍。
 
-Usage:
+用法：
   venv/bin/python3 train_eps/batch_evaluate.py
   venv/bin/python3 train_eps/batch_evaluate.py --start-year 2023 --start-month 8
   venv/bin/python3 train_eps/batch_evaluate.py --skip-existing
@@ -19,7 +19,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 def available_months() -> list[tuple[int, int]]:
-    """Return sorted (year, month) tuples where dataset_evaluate.csv exists."""
+    """回傳所有存在 dataset_evaluate.csv 的 (year, month) 排序列表。"""
     output_dir = ROOT_DIR / "train_eps" / "output"
     months = []
     for csv in output_dir.glob("*/*/dataset_evaluate.csv"):

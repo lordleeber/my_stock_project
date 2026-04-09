@@ -39,7 +39,7 @@ def main() -> None:
     if not input_path.exists():
         raise FileNotFoundError(f"dataset_evaluate.csv not found: {input_path}")
 
-    # Pick the pkl with the lowest MAE (format: {timestamp}_{mae:.3f}.pkl).
+    # 選擇 MAE 最低的 pkl（格式：{timestamp}_{mae:.3f}.pkl）。
     pkl_pattern = re.compile(r"^\d{14}_(\d+\.\d+)\.pkl$")
     candidates = []
     for p in models_dir.glob("*.pkl"):
@@ -58,7 +58,7 @@ def main() -> None:
 
     df = pd.read_csv(input_path).replace([np.inf, -np.inf], np.nan)
 
-    # Keep only max-year rows.
+    # 只保留最新年份的資料列。
     y = pd.to_numeric(df["year"], errors="coerce")
     valid_years = y.dropna().astype(int)
     if valid_years.empty:

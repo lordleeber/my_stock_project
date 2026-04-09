@@ -1,7 +1,7 @@
 """
-Batch-run train_eps/predict_and_publish.py for a range of months.
+批次執行 train_eps/predict_and_publish.py，涵蓋指定月份範圍。
 
-Usage:
+用法：
   venv/bin/python3 train_eps/batch_predict_and_publish.py
   venv/bin/python3 train_eps/batch_predict_and_publish.py --start-year 2023 --start-month 8
   venv/bin/python3 train_eps/batch_predict_and_publish.py --skip-existing
@@ -81,7 +81,7 @@ def main() -> None:
                 skipped += 1
                 continue
 
-        # Skip if prerequisites are missing.
+        # 前置檔案缺失則跳過。
         input_path = (
             ROOT_DIR
             / "train_eps"
