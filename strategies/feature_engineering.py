@@ -5,8 +5,8 @@
 並從 monthly_revenue 撈取月營收特徵。
 
 被以下腳本使用：
-  - analyze_feature_returns.py  （訓練資料生成）
-  - backtester/score_candidates.py  （生產選股評分）
+  - step3_analyze_feature_returns.py  （訓練資料生成）
+  - step5_score_and_publish.py        （生產選股評分）
 """
 
 from __future__ import annotations
