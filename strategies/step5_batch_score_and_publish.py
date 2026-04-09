@@ -5,7 +5,7 @@
 依序執行 score_and_publish。
 
 用法：
-  venv/bin/python3 strategies/batch_score_and_publish.py
+  venv/bin/python3 strategies/step5_batch_score_and_publish.py
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from strategies.score_and_publish import score_and_publish
+from strategies.step5_score_and_publish import score_and_publish
 
 
 def parse_args() -> argparse.Namespace:

@@ -129,7 +129,7 @@ def load_candidates_safe(
     if not scored_path.exists():
         raise FileNotFoundError(
             f"candidates_scored.csv not found: {scored_path}\n"
-            f"Run: venv/bin/python3 strategies/score_and_publish.py --year {year} --month {month}"
+            f"Run: venv/bin/python3 strategies/step5_score_and_publish.py --year {year} --month {month}"
         )
 
     df = pd.read_csv(scored_path)

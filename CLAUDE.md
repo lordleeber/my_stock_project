@@ -75,15 +75,16 @@ venv/bin/python3 strategies/step3_analyze_feature_returns.py
 venv/bin/python3 strategies/step4_batch_train_selection_model.py
 venv/bin/python3 strategies/step4_train_selection_model.py  # production (full data)
 
+# Score candidates (production picks — run after step4)
+venv/bin/python3 strategies/step5_score_and_publish.py --year 2025 --month 10
+venv/bin/python3 strategies/step5_batch_score_and_publish.py  # batch all months
+
 # Rolling backtest
 venv/bin/python3 backtester/run_rolling.py \
   --start_year 2022 --start_month 7 \
   --end_year 2025 --end_month 10 \
   --top-n 10 --position-amount 100000
 venv/bin/python3 backtester/summarize_range.py
-
-# Monthly stock picks (production)
-venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 ```
 
 ## Architecture
