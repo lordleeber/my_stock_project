@@ -376,4 +376,4 @@ all_passed, all_errors = validate_all_tables(engine)
 
 After importing, data flows to:
 - **Calculator** (`calculator/CLAUDE.md`) - Computes technical indicators
-- **Backend API** (`backend/CLAUDE.md`) - Serves data to frontend
+- **Backend API** (`backend/CLAUDE.md`) - Serves data via FastAPI

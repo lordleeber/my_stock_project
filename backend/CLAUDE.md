@@ -1,7 +1,7 @@
 # Backend & Data Pipeline Guide (for AI Assistants)
 
 This guide covers two main areas:
-1. **Backend API**: FastAPI backend serving the stock analysis frontend, integrating `scanner/` and `strategy/` modules
+1. **Backend API**: FastAPI backend for stock analysis, integrating `scanner/` and `strategy/` modules
 2. **Data Pipeline**: Complete ETL pipeline (scraper → processor → importer → calculator)
 
 ## Maintaining This Document
@@ -613,7 +613,6 @@ See `calculator/CLAUDE.md` for details.
 | `importer` | Load processed data into PostgreSQL | `importer/CLAUDE.md` |
 | `calculator` | Compute technical indicators | `calculator/CLAUDE.md` |
 | `backend` | FastAPI server (port 8000) | `backend/CLAUDE.md` (this file) |
-| `frontend` | Next.js UI (port 3000) | `frontend/CLAUDE.md` |
 | `db` | PostgreSQL database | N/A |
 
 ---
@@ -627,4 +626,3 @@ For detailed information about each component:
 - **Processor**: `processor/CLAUDE.md` - v3.0 architecture, error handling, validation
 - **Importer**: `importer/CLAUDE.md` - Database import behavior, filtering rules
 - **Calculator**: `calculator/CLAUDE.md` - Technical indicator formulas, computation
-- **Frontend**: `frontend/CLAUDE.md` - React/Next.js UI components, charts

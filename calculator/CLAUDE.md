@@ -232,5 +232,4 @@ The calculator populates data used by these backend endpoints:
 ## Next Steps
 
 After calculation, data is ready for:
-- **Backend API** (`backend/CLAUDE.md`) - Serves data to frontend
-- **Frontend** (`frontend/CLAUDE.md`) - Displays charts and analysis
+- **Backend API** (`backend/CLAUDE.md`) - Serves data via FastAPI

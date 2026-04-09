@@ -86,12 +86,6 @@ venv/bin/python3 backtester/summarize_range.py
 venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 ```
 
-### GCP Deployment
-```bash
-./scripts/deploy_gcp.sh YOUR_PROJECT_ID YOUR_BUCKET_NAME asia-east1
-./scripts/upload_to_gcs.sh YOUR_BUCKET_NAME  # after adding new monthly data
-```
-
 ## Architecture
 
 ### Module Map
@@ -106,10 +100,9 @@ venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 | `strategies/` | Feature engineering, EPS prediction integration, LGBMRanker selection model |
 | `backtester/` | Rolling walk-forward portfolio backtester |
 | `backend/` | FastAPI — full data endpoints (local) |
-| `backend_lite/` | FastAPI — `/selection/score` only (GCP Cloud Run) |
 | `common/` | Shared schemas (`schemas.py`), constants (`CATEGORY_MAP`), HTTP client |
 | `schedules/` | Orchestration shell scripts + macOS launchd plists |
-| `scripts/` | GCP deploy & GCS upload scripts |
+| `scripts/` | GCS upload scripts |
 | `tools/` | One-off data maintenance utilities |
 
 ### Data Flow
@@ -124,18 +117,8 @@ TWSE/TPEx/MOPS/TDCC
     → strategies/ (strategies/output/<year>/<month>/dataset_strategy.csv)
     → models_selection/ (selection_model.pkl per month)
     → backtester/ (backtester/output/rolling/)
-    → backend/ (FastAPI) → frontend/ (Next.js)
+    → backend/ (FastAPI)
 ```
-
-### GCP Architecture
-
-```
-Browser
-  → Cloud Run: frontend (Next.js)
-  → Cloud Run: backend-lite (FastAPI, /selection/score only)
-  → Cloud Storage: strategies/output + models_selection artifacts
-```
-PostgreSQL stays local; models and CSVs are uploaded to GCS.
 
 ### Walk-Forward Design
 
@@ -163,9 +146,6 @@ docker compose build processor importer calculator
 
 ### DB Schema Changes
 Sync all schema changes to `common/schemas.py`.
-
-### backend vs backend_lite
-`backend_lite/` and `backend/` share the `/selection/score` endpoint logic — keep them in sync.
 
 ### Artifacts
 Do not commit generated `.csv`, `.json`, `.pkl` artifacts unless explicitly requested.
