@@ -36,6 +36,11 @@ from train_eps import prepare_data as tp
 
 @dataclass
 class Position:
+    """代表一個持倉單位，記錄進場資訊以供後續計算損益。
+
+    capital_used 為實際使用資金（open_price × shares），
+    與固定金額（position_amount）可能因取整而略有差異。
+    """
     symbol: str
     entry_date: str
     entry_price: float
@@ -44,7 +49,13 @@ class Position:
 
 
 def prev_trading_day(date_str: str) -> str:
-    """回傳嚴格早於 date_str 的最後一個交易日。"""
+    """回傳嚴格早於 date_str 的最後一個交易日。
+
+    用於決定「本月出場日」：新倉在 entry_date 開盤進場，
+    舊倉須在 entry_date 前一個交易日開盤出場，
+    避免同一天既出場又進場造成資金計算混亂。
+    查詢失敗時回傳原始日期作為 fallback，避免整個月跳過。
+    """
     stmt = text("SELECT MAX(date) FROM daily_quotes WHERE date < :d")
     try:
         engine = create_engine(tp.get_db_url())
@@ -82,9 +93,11 @@ def detect_market_regime(ref_date: str) -> str:
     if idx.empty:
         return "Sideways"
 
+    # 同一天可能有多筆資料（不同指數），取平均後再計算均線
     daily = (
         idx.groupby("date", as_index=False)["index_close"].mean().sort_values("date")
     )
+    # MA20：短期趨勢；MA60：中期趨勢；min_periods 允許資料初期均線仍可計算
     daily["ma20"] = daily["index_close"].rolling(20, min_periods=10).mean()
     daily["ma60"] = daily["index_close"].rolling(60, min_periods=20).mean()
     latest = daily.iloc[-1]
@@ -93,12 +106,16 @@ def detect_market_regime(ref_date: str) -> str:
     ma60 = float(latest.get("ma60", np.nan))
     close = float(latest.get("index_close", np.nan))
 
+    # 均線資料不足（歷史資料太短）→ 預設 Sideways，不影響進場
     if np.isnan(ma20) or np.isnan(ma60):
         return "Sideways"
+    # Bull 條件：短均線在長均線之上，市場呈多頭趨勢
     if ma20 > ma60:
         return "Bull"
+    # Bear 條件：短均線下穿長均線，且收盤價低於短均線（雙重確認空頭）
     if ma20 < ma60 and close < ma20:
         return "Bear"
+    # 其餘（MA20 ≤ MA60 但收盤仍在 MA20 之上）→ 盤整，允許進場但降低信心
     return "Sideways"
 
 
@@ -125,10 +142,15 @@ def load_candidates_safe(
 
 
 def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
-    """撈取指定日期的開盤價（含 ±5 日緩衝以處理假日）。"""
+    """撈取指定日期的開盤價（含 ±5 日緩衝以處理假日）。
+
+    回傳 {symbol: open_price} 字典。若某支股票在目標日無行情
+    （停牌、假日等），則不出現在結果中，呼叫方需自行處理缺失。
+    """
     if not symbols:
         return {}
     target = pd.to_datetime(date_str)
+    # 前後各加 5 個日曆日緩衝，確保連假結束後的第一個交易日也能被撈到
     buffer_start = (target - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
     buffer_end = (target + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
     try:
@@ -140,10 +162,11 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
         return {}
     if quotes.empty:
         return {}
-    # 使用目標日當天或之後最近的交易日。
+    # 使用目標日當天或之後最近的交易日（處理目標日為假日的情況）。
     quotes = quotes[quotes["date"] >= target].sort_values("date")
     result: dict[str, float] = {}
     for sym, grp in quotes.groupby("symbol"):
+        # 取最近一個有效交易日的開盤價
         row = grp.iloc[0]
         if pd.notna(row.get("open")):
             result[str(sym).strip()] = float(row["open"])
@@ -153,6 +176,12 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
 def _cost(
     entry_price: float, exit_price: float, shares: int, cost_cfg: CostConfig
 ) -> float:
+    """計算單筆交易的總成本（手續費 + 證交稅）。
+
+    台灣股市成本結構：
+      - 手續費：買賣雙邊各收一次（commission_rate 套用於買賣金額之和）
+      - 證交稅：僅賣出時收取（tax_rate 套用於賣出金額）
+    """
     commission = (entry_price * shares + exit_price * shares) * cost_cfg.commission_rate
     tax = exit_price * shares * cost_cfg.tax_rate
     return commission + tax
