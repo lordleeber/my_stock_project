@@ -16,7 +16,7 @@ class CostConfig:
 def build_position_size(
     entry_open: float, max_position_amount: float, shares_per_lot: int
 ) -> tuple[int, float]:
-    # Use budget-based sizing; no fixed one-lot constraint.
+    # 依預算決定持股數，不限制最小一張。
     shares = int(max_position_amount // entry_open)
     shares = max(shares, 1)
     return shares, float(shares * entry_open)

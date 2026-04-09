@@ -58,7 +58,7 @@ def normalize_quotes(df: pd.DataFrame) -> pd.DataFrame:
 def estimate_quote_window(
     candidates: pd.DataFrame, max_hold_days: int
 ) -> tuple[str, str]:
-    # A generous calendar buffer to cover trading-day-based max hold.
+    # 給足夠的日曆天緩衝，以涵蓋以交易日計算的最大持有天數。
     start = candidates["entry_date"].min().date()
     end = candidates["entry_date"].max().date() + timedelta(
         days=max(60, max_hold_days * 3)

@@ -1,16 +1,15 @@
 """
-Rolling monthly portfolio backtester (Method C).
+滾動月度投資組合回測（Method C）。
 
-Logic per month:
-  1. Detect market regime (Bull / Sideways / Bear) as of entry_date.
-  2. Bear regime → exit ALL current holdings, skip new entries.
-  3. Bull / Sideways → full monthly turnover:
-       - ALL current holdings exit at prev_trading_day(entry_date) open.
-       - ALL new candidates enter at entry_date open.
-  - No "continue holding": every month is a clean rotation, consistent with
-    the model's per-month holding period optimisation and avoids look-ahead
-    bias (exit decision does not require knowing the next month's picks).
-  - Position sizing: fixed amount per stock (default 100,000 TWD).
+每月邏輯：
+  1. 依 entry_date 偵測市場狀態（Bull / Sideways / Bear）。
+  2. Bear 狀態 → 全部出場，跳過新進場。
+  3. Bull / Sideways → 完整月度輪倉：
+       - 所有現有持倉在 prev_trading_day(entry_date) 開盤出場。
+       - 所有新候選股在 entry_date 開盤進場。
+  - 沒有「繼續持有」機制：每月完全換倉，與模型的單月持有期最佳化一致，
+    且避免 look-ahead bias（出場決策不需要知道下月選股）。
+  - 倉位大小：每檔固定金額（預設 100,000 TWD）。
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ class Position:
 
 
 def prev_trading_day(date_str: str) -> str:
-    """Return the last trading day strictly before date_str."""
+    """回傳嚴格早於 date_str 的最後一個交易日。"""
     stmt = text("SELECT MAX(date) FROM daily_quotes WHERE date < :d")
     try:
         engine = create_engine(tp.get_db_url())
@@ -57,7 +56,7 @@ def prev_trading_day(date_str: str) -> str:
 
 
 def detect_market_regime(ref_date: str) -> str:
-    """Return 'Bull', 'Bear', or 'Sideways' based on MA20/MA60 of market_indices up to ref_date."""
+    """依 market_indices 截至 ref_date 的 MA20/MA60 回傳 'Bull'、'Bear' 或 'Sideways'。"""
     stmt = text(
         """
         SELECT date, index_close
@@ -106,7 +105,7 @@ def detect_market_regime(ref_date: str) -> str:
 def load_candidates_safe(
     models_root: Path, year: int, month: int
 ) -> pd.DataFrame | None:
-    """Load pre-computed candidates_scored.csv from models_selection/<year>/<month>/."""
+    """從 models_selection/<year>/<month>/ 載入預先計算的 candidates_scored.csv。"""
     month_s = normalize_month(month)
     scored_path = models_root / f"{year:04d}" / month_s / "candidates_scored.csv"
 
@@ -126,7 +125,7 @@ def load_candidates_safe(
 
 
 def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
-    """Fetch open prices for symbols on a given date (with ±5-day buffer for holidays)."""
+    """撈取指定日期的開盤價（含 ±5 日緩衝以處理假日）。"""
     if not symbols:
         return {}
     target = pd.to_datetime(date_str)
@@ -141,7 +140,7 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
         return {}
     if quotes.empty:
         return {}
-    # Use the closest trading day on or after target date.
+    # 使用目標日當天或之後最近的交易日。
     quotes = quotes[quotes["date"] >= target].sort_values("date")
     result: dict[str, float] = {}
     for sym, grp in quotes.groupby("symbol"):
@@ -166,7 +165,7 @@ def _exit_position(
     exit_reason: str,
     cost_cfg: CostConfig,
 ) -> tuple[dict, float]:
-    """Build a trade log row for an exit. Returns (row_dict, net_pnl)."""
+    """建立出場的交易紀錄列，回傳 (row_dict, net_pnl)。"""
     if exit_price is None:
         return {
             "symbol": pos.symbol,
@@ -270,34 +269,34 @@ def main() -> None:
                 print(f"[skip] no candidates: {year}/{month_s}")
             continue
 
-        # All candidates share the same entry_date (first trading day after release).
+        # 所有候選股共用同一個 entry_date（發布日後第一個交易日）。
         entry_date_str = candidates_df["entry_date"].iloc[0].strftime("%Y-%m-%d")
-        # Exits happen at the open of the trading day before entry_date.
+        # 出場在 entry_date 前一個交易日的開盤執行。
         exit_date_str = prev_trading_day(entry_date_str)
 
-        # Rank candidates by ml_score (guaranteed present — load_candidates_safe raises if model missing).
+        # 依 ml_score 排序候選股（load_candidates_safe 若無模型會直接拋錯，此處有保證）。
         candidates_df = candidates_df.copy().sort_values("ml_score", ascending=False)
         if top_n is not None:
             candidates_df = candidates_df.head(top_n)
 
-        # --- Detect market regime ---
+        # --- 偵測市場狀態 ---
         regime = detect_market_regime(entry_date_str)
         is_bear = regime == "Bear"
 
         if is_bear:
-            # Exit ALL current holdings; skip new entries.
+            # 全部出場，跳過新進場。
             exit_symbols = sorted(portfolio.keys())
             entry_symbols: list[str] = []
         else:
-            # Full monthly turnover: exit everything, enter all new candidates.
+            # 完整月度輪倉：全部出場，再全部進場新候選股。
             exit_symbols = sorted(portfolio.keys())
             entry_symbols = sorted(candidates_df["symbol"].tolist())
 
-        # Fetch exit prices at prev trading day; entry prices at entry_date.
+        # 撈取出場日（前一交易日）與進場日的開盤價。
         exit_open_prices = fetch_open_on_date(exit_symbols, exit_date_str)
         entry_open_prices = fetch_open_on_date(entry_symbols, entry_date_str)
 
-        # --- Process exits ---
+        # --- 處理出場 ---
         month_realized_pnl = 0.0
         for sym in exit_symbols:
             pos = portfolio.pop(sym)
@@ -308,7 +307,7 @@ def main() -> None:
             trade_log.append(row)
             month_realized_pnl += net_pnl
 
-        # --- Process entries (skipped entirely in Bear) ---
+        # --- 處理進場（Bear 狀態下完全跳過）---
         month_entries_failed = 0
         for sym in entry_symbols:
             open_price = entry_open_prices.get(sym)
@@ -349,7 +348,7 @@ def main() -> None:
                 f"realized_pnl={month_realized_pnl:+.0f}"
             )
 
-    # --- Close remaining open positions (mark as unrealized) ---
+    # --- 關閉剩餘未平倉部位（標記為未實現）---
     for sym, pos in portfolio.items():
         trade_log.append(
             {
@@ -376,7 +375,7 @@ def main() -> None:
     trades_df.to_csv(trades_path, index=False, encoding="utf-8-sig")
     monthly_df.to_csv(monthly_path, index=False, encoding="utf-8-sig")
 
-    # Summary stats (closed trades only — excludes still_open)
+    # 統計摘要（僅計算已平倉交易，排除 still_open）
     closed = trades_df[
         trades_df["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])
     ].copy()

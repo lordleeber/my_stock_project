@@ -1,4 +1,4 @@
-"""Summarize rolling backtest results from backtester/output/rolling/."""
+"""彙整 backtester/output/rolling/ 的滾動回測結果。"""
 
 from __future__ import annotations
 
