@@ -29,13 +29,13 @@ REFERER_DIC = {
 }
 
 EMPTY_SIZE_DIC = {
-    "每日收盤行情": 244,
-    "三大法人買賣金額統計表": 519,
-    "三大法人買賣超日報": 1531,
-    "外資及陸資投資持股統計": 1040,
-    "融資融券": 1300,
-    "融券借券": 1483,
-    "本益比殖利率淨值": 216,
+    "每日收盤行情": 5000,
+    "三大法人買賣金額統計表": 300,
+    "三大法人買賣超日報": 5000,
+    "外資及陸資投資持股統計": 5000,
+    "融資融券": 5000,
+    "融券借券": 5000,
+    "本益比殖利率淨值": 5000,
 }
 
 COMMON_HEADERS = {
@@ -197,9 +197,13 @@ def fetch_data(date_string, category, output_dir):
                     ]
                     if len(clean_row) > 1:
                         writer.writerow(clean_row)
-                with open(dst_file_path, "w", encoding="utf-8-sig") as f:
-                    f.write(f_out.getvalue())
-                print(f"[{date_string}] OTC {eng_category} saved.")
+                csv_content = f_out.getvalue()
+                if not csv_content.strip():
+                    print(f"[{date_string}] OTC {eng_category} is empty or no data.")
+                else:
+                    with open(dst_file_path, "w", encoding="utf-8-sig") as f:
+                        f.write(csv_content)
+                    print(f"[{date_string}] OTC {eng_category} saved.")
     except Exception:
         pass
 

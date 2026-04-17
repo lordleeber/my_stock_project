@@ -20,13 +20,13 @@ CATEGORY_DIC = {
 
 # 最小檔案大小檢查 (避免存下錯誤或空的 CSV)
 EMPTY_SIZE_DIC = {
-    "每日收盤行情": 0,
-    "三大法人買賣金額統計表": 2,
-    "三大法人買賣超日報": 2,
-    "外資及陸資投資持股統計": 2498,
-    "融資融券": 818,
-    "融券借券": 1616,
-    "本益比殖利率淨值": 2,
+    "每日收盤行情": 5000,
+    "三大法人買賣金額統計表": 300,
+    "三大法人買賣超日報": 5000,
+    "外資及陸資投資持股統計": 5000,
+    "融資融券": 5000,
+    "融券借券": 5000,
+    "本益比殖利率淨值": 5000,
 }
 
 HEADERS = {
@@ -81,11 +81,15 @@ def fetch_data(date_string, category, output_dir):
                     # 只有欄位數大於 1 的行才寫入 (過濾掉標題與檔尾說明)
                     if len(clean_row) > 1:
                         writer.writerow(clean_row)
-                with open(dst_file_path, "w", encoding="utf-8-sig") as f:
-                    f.write(f_out.getvalue())
-                print(
-                    f"[{date_string}] SII {eng_category} saved and cleaned to {dst_file_path}"
-                )
+                csv_content = f_out.getvalue()
+                if not csv_content.strip():
+                    print(f"[{date_string}] SII {eng_category} is empty or no data.")
+                else:
+                    with open(dst_file_path, "w", encoding="utf-8-sig") as f:
+                        f.write(csv_content)
+                    print(
+                        f"[{date_string}] SII {eng_category} saved and cleaned to {dst_file_path}"
+                    )
         else:
             print(
                 f"[{date_string}] Failed to fetch {eng_category}. Status code: {response.status_code}"
