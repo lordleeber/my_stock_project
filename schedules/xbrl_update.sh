@@ -105,4 +105,4 @@ echo "Target Quarter: $TARGET_QUARTER" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
-find "$LOG_DIR" -name "xbrl_update_*.log" -mtime +180 -delete
+find "$LOG_DIR" -name "xbrl_update_*.log" -mtime +30 -delete
