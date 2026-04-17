@@ -94,4 +94,4 @@ echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
 # 保留最近 90 天的日誌
-find "$LOG_DIR" -name "monthly_update_*.log" -mtime +90 -delete
+find "$LOG_DIR" -name "monthly_update_*.log" -mtime +30 -delete
