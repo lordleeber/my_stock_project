@@ -22,6 +22,12 @@
   - 流程：`scraper-quarterly -> processor(convert_quarterly) -> importer(quarterly categories)`
   - 參數：可選 `YYYYQX`（不給則用上一季）
 
+- `schedules/daily_retry.sh`
+  - 檢查前一天的 daily_update 是否成功，失敗才重跑
+  - 參數：可選 `YYYYMMDD`（不給則用昨天）
+  - 判斷邏輯：搜尋 `logs/daily_update_<target_date>_*.log`，有成功或非交易日則跳過
+  - 由 launchd 在 02:00 及 04:00 各觸發一次
+
 - `schedules/xbrl_update.sh`
   - 流程：`scraper-quarterly python3 scraper/quarterly/fetch_xbrl.py`
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
@@ -35,7 +41,8 @@
 ## Logging
 
 - 腳本都會將執行結果寫到 `logs/`：
-  - `daily_update_*.log`
+  - `daily_update_<TARGET_DATE>_<EXEC_DATE>_<EXEC_TIME>.log`（例：`daily_update_20260416_20260417_020000.log`）
+  - `daily_retry_<TARGET_DATE>_<EXEC_DATE>_<EXEC_TIME>.log`
   - `weekly_update_*.log`
   - `monthly_update_*.log`
   - `quarterly_update_*.log`
@@ -51,6 +58,8 @@
 | 備份（repo） | 安裝位置 |
 |---|---|
 | `schedules/com.poyilee.stock-daily-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist` |
+| `schedules/com.poyilee.stock-daily-retry-1.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-retry-1.plist` |
+| `schedules/com.poyilee.stock-daily-retry-2.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-retry-2.plist` |
 | `schedules/com.poyilee.stock-weekly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist` |
 | `schedules/com.poyilee.stock-monthly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist` |
 | `schedules/com.poyilee.stock-xbrl-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-xbrl-update.plist` |
@@ -86,7 +95,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-
 
 | Label | Script | 時間 |
 |---|---|---|
-| `com.poyilee.stock-daily-update` | `schedules/daily_update.sh` | 每天 23:00 |
+| `com.poyilee.stock-daily-update` | `schedules/daily_update.sh` | 每天 23:30 |
+| `com.poyilee.stock-daily-retry-1` | `schedules/daily_retry.sh` | 每天 02:00 |
+| `com.poyilee.stock-daily-retry-2` | `schedules/daily_retry.sh` | 每天 04:00 |
 | `com.poyilee.stock-weekly-update` | `schedules/weekly_update.sh` | 每週日 10:20 |
 | `com.poyilee.stock-monthly-update` | `schedules/monthly_update.sh` | 每天 22:45 |
 | `com.poyilee.stock-xbrl-update` | `schedules/xbrl_update.sh` | 每天 23:50 |
@@ -97,6 +108,8 @@ macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath`
 
 所有 plist 的 stdout/stderr 已改為 `/tmp/`：
 - `/tmp/launchd_daily_stdout.log` / `stderr`
+- `/tmp/launchd_daily_retry1_stdout.log` / `stderr`
+- `/tmp/launchd_daily_retry2_stdout.log` / `stderr`
 - `/tmp/launchd_weekly_stdout.log` / `stderr`
 - `/tmp/launchd_monthly_stdout.log` / `stderr`
 - `/tmp/launchd_xbrl_stdout.log` / `stderr`

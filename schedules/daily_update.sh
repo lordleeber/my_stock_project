@@ -17,7 +17,7 @@ export END_DATE=$TARGET_DATE
 # 設定日誌目錄
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/daily_update_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="$LOG_DIR/daily_update_${TARGET_DATE}_$(date +%Y%m%d_%H%M%S).log"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Daily Stock Data Update Started" | tee -a "$LOG_FILE"
