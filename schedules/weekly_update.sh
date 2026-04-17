@@ -9,7 +9,9 @@ cd "$(dirname "$0")/.."
 
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/weekly_update_$(date +%Y%m%d_%H%M%S).log"
+EXEC_TS=$(date +%Y%m%d_%H%M%S)
+# TARGET_DATE 尚未確定，先用暫存 log，確定後 rename
+LOG_FILE="$LOG_DIR/weekly_update_PENDING_${EXEC_TS}.log"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Weekly Update Started" | tee -a "$LOG_FILE"
@@ -37,6 +39,11 @@ if ! [[ "$TARGET_DATE" =~ ^[0-9]{8}$ ]]; then
     echo "✗ Failed to parse target date from file: $LATEST_TDCC_FILE" | tee -a "$LOG_FILE"
     exit 1
 fi
+
+# TARGET_DATE 確定後，rename log 為正式格式
+FINAL_LOG="$LOG_DIR/weekly_update_${TARGET_DATE}_${EXEC_TS}.log"
+mv "$LOG_FILE" "$FINAL_LOG"
+LOG_FILE="$FINAL_LOG"
 
 echo "Target Date: $TARGET_DATE" | tee -a "$LOG_FILE"
 

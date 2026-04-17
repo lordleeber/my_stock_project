@@ -6,11 +6,12 @@ cd "$(dirname "$0")/.."
 
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/xbrl_update_$(date +%Y%m%d_%H%M%S).log"
+EXEC_TS=$(date +%Y%m%d_%H%M%S)
 
 ARG1="${1:-}"
 TARGET_DATE=""
 TARGET_QUARTER=""
+SKIP_MODE=0
 
 if [[ -z "$ARG1" ]]; then
     TARGET_DATE="$(date +%Y%m%d)"
@@ -35,38 +36,43 @@ if [[ -n "$TARGET_DATE" ]]; then
     day_num=$((10#$day))
 
     if (( month_num == 2 || month_num == 3 )); then
-        target_year=$((10#$year - 1))
-        target_q=4
+        TARGET_QUARTER="$((10#$year - 1))Q4"
     elif (( month_num == 4 )) || (( month_num == 5 && day_num <= 15 )); then
-        target_year=$((10#$year))
-        target_q=1
+        TARGET_QUARTER="${year}Q1"
     elif (( month_num == 7 )) || (( month_num == 8 && day_num <= 15 )); then
-        target_year=$((10#$year))
-        target_q=2
+        TARGET_QUARTER="${year}Q2"
     elif (( month_num == 10 )) || (( month_num == 11 && day_num <= 15 )); then
-        target_year=$((10#$year))
-        target_q=3
+        TARGET_QUARTER="${year}Q3"
     else
-        echo "========================================" | tee -a "$LOG_FILE"
-        echo "XBRL Window Update Started" | tee -a "$LOG_FILE"
-        echo "Date: $(date)" | tee -a "$LOG_FILE"
-        echo "Input Date: $TARGET_DATE" | tee -a "$LOG_FILE"
-        echo "Outside XBRL fetch windows. Skip." | tee -a "$LOG_FILE"
-        echo "Windows:" | tee -a "$LOG_FILE"
-        echo "  Q4 (prev year): 02/01~03/31" | tee -a "$LOG_FILE"
-        echo "  Q1 (same year): 04/01~05/15" | tee -a "$LOG_FILE"
-        echo "  Q2 (same year): 07/01~08/15" | tee -a "$LOG_FILE"
-        echo "  Q3 (same year): 10/01~11/15" | tee -a "$LOG_FILE"
-        echo "========================================" | tee -a "$LOG_FILE"
-        exit 0
+        SKIP_MODE=1
     fi
-
-    TARGET_QUARTER="${target_year}Q${target_q}"
 fi
 
-if [[ ! "$TARGET_QUARTER" =~ ^([0-9]{4})Q([1-4])$ ]]; then
-    echo "Error: invalid target quarter '$TARGET_QUARTER'"
-    exit 1
+# 確定 log 檔名（TARGET_QUARTER 或 skip）
+if [[ "$SKIP_MODE" -eq 1 ]]; then
+    LOG_FILE="$LOG_DIR/xbrl_update_skip_${EXEC_TS}.log"
+else
+    if [[ ! "$TARGET_QUARTER" =~ ^([0-9]{4})Q([1-4])$ ]]; then
+        echo "Error: invalid target quarter '$TARGET_QUARTER'"
+        exit 1
+    fi
+    LOG_FILE="$LOG_DIR/xbrl_update_${TARGET_QUARTER}_${EXEC_TS}.log"
+fi
+
+# skip 處理
+if [[ "$SKIP_MODE" -eq 1 ]]; then
+    echo "========================================" | tee -a "$LOG_FILE"
+    echo "XBRL Window Update Started" | tee -a "$LOG_FILE"
+    echo "Date: $(date)" | tee -a "$LOG_FILE"
+    echo "Input Date: $TARGET_DATE" | tee -a "$LOG_FILE"
+    echo "Outside XBRL fetch windows. Skip." | tee -a "$LOG_FILE"
+    echo "Windows:" | tee -a "$LOG_FILE"
+    echo "  Q4 (prev year): 02/01~03/31" | tee -a "$LOG_FILE"
+    echo "  Q1 (same year): 04/01~05/15" | tee -a "$LOG_FILE"
+    echo "  Q2 (same year): 07/01~08/15" | tee -a "$LOG_FILE"
+    echo "  Q3 (same year): 10/01~11/15" | tee -a "$LOG_FILE"
+    echo "========================================" | tee -a "$LOG_FILE"
+    exit 0
 fi
 
 REPORT_YEAR="${BASH_REMATCH[1]}"

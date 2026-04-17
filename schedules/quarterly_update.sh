@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/quarterly_update_$(date +%Y%m%d_%H%M%S).log"
+EXEC_TS=$(date +%Y%m%d_%H%M%S)
 
 # Optional arg: YYYYQX
 INPUT_QUARTER="${1:-}"
@@ -37,6 +37,7 @@ else
 fi
 
 TARGET_QUARTER="${REPORT_YEAR}Q${REPORT_QUARTER}"
+LOG_FILE="$LOG_DIR/quarterly_update_${TARGET_QUARTER}_${EXEC_TS}.log"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Quarterly Update Started" | tee -a "$LOG_FILE"

@@ -12,21 +12,10 @@ cd "$(dirname "$0")/.."
 # 設定日誌目錄
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/monthly_update_$(date +%Y%m%d_%H%M%S).log"
+EXEC_TS=$(date +%Y%m%d_%H%M%S)
 
-echo "========================================" | tee -a "$LOG_FILE"
-echo "Monthly Revenue Update Started" | tee -a "$LOG_FILE"
-echo "Date: $(date)" | tee -a "$LOG_FILE"
-echo "========================================" | tee -a "$LOG_FILE"
-
-# 僅在每月 1~15 日執行（公告期間）
+# 計算上個月的年份和月份（log 命名需要，先算）
 TODAY_DAY=$(date +%d)
-if [ "$TODAY_DAY" -lt 1 ] || [ "$TODAY_DAY" -gt 15 ]; then
-    echo "Outside publish window (day=$TODAY_DAY). Skip monthly update." | tee -a "$LOG_FILE"
-    exit 0
-fi
-
-# 計算上個月的年份和月份
 CURRENT_MONTH=$(date +%m)
 CURRENT_YEAR=$(date +%Y)
 
@@ -38,8 +27,23 @@ else
     REVENUE_MONTH=$((10#$CURRENT_MONTH - 1))
 fi
 
+TARGET_MONTH=$(printf "%d%02d" "$REVENUE_YEAR" "$REVENUE_MONTH")
+
 # 用於 processor/importer 的日期格式 (YYYYMMDD，日期固定為 01)
 REVENUE_DATE=$(printf "%d%02d01" "$REVENUE_YEAR" "$REVENUE_MONTH")
+
+LOG_FILE="$LOG_DIR/monthly_update_${TARGET_MONTH}_${EXEC_TS}.log"
+
+echo "========================================" | tee -a "$LOG_FILE"
+echo "Monthly Revenue Update Started" | tee -a "$LOG_FILE"
+echo "Date: $(date)" | tee -a "$LOG_FILE"
+echo "========================================" | tee -a "$LOG_FILE"
+
+# 僅在每月 1~15 日執行（公告期間）
+if [ "$TODAY_DAY" -lt 1 ] || [ "$TODAY_DAY" -gt 15 ]; then
+    echo "Outside publish window (day=$TODAY_DAY). Skip monthly update." | tee -a "$LOG_FILE"
+    exit 0
+fi
 
 echo "Target: ${REVENUE_YEAR}/${REVENUE_MONTH}" | tee -a "$LOG_FILE"
 

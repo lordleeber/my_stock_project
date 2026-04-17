@@ -40,12 +40,13 @@
 
 ## Logging
 
-- 腳本都會將執行結果寫到 `logs/`：
+- 腳本都會將執行結果寫到 `logs/`，格式統一為 `<script>_<TARGET>_<EXEC_DATE>_<EXEC_TIME>.log`：
   - `daily_update_<TARGET_DATE>_<EXEC_DATE>_<EXEC_TIME>.log`（例：`daily_update_20260416_20260417_020000.log`）
   - `daily_retry_<TARGET_DATE>_<EXEC_DATE>_<EXEC_TIME>.log`
-  - `weekly_update_*.log`
-  - `monthly_update_*.log`
-  - `quarterly_update_*.log`
+  - `weekly_update_<TARGET_DATE>_<EXEC_TS>.log`
+  - `monthly_update_<YYYYMM>_<EXEC_TS>.log`（例：`monthly_update_202603_20260410_224500.log`）
+  - `quarterly_update_<YYYYQX>_<EXEC_TS>.log`（例：`quarterly_update_2025Q4_20260115_000000.log`）
+  - `xbrl_update_<YYYYQX>_<EXEC_TS>.log` / `xbrl_update_skip_<EXEC_TS>.log`（視窗外時）
 
 ## launchd Only (macOS)
 
