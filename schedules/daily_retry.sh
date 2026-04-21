@@ -25,14 +25,17 @@ echo "========================================" | tee -a "$LOG_FILE"
 LOG_PATTERN="$LOG_DIR/daily_update_${TARGET_DATE}_*.log"
 
 # 檢查是否已成功完成
-if ls $LOG_PATTERN 2>/dev/null | xargs grep -l "Daily Stock Data Update Completed" 2>/dev/null | grep -q .; then
+# 同時比對 target date 內容，避免舊格式 log（檔名含執行日）誤判
+if ls $LOG_PATTERN 2>/dev/null | xargs grep -l "Daily Stock Data Update Completed" 2>/dev/null \
+   | xargs grep -l "Target Date: $TARGET_DATE" 2>/dev/null | grep -q .; then
     echo "Target date $TARGET_DATE already completed successfully. Skipping." | tee -a "$LOG_FILE"
     echo "========================================" | tee -a "$LOG_FILE"
     exit 0
 fi
 
 # 檢查是否為非交易日
-if ls $LOG_PATTERN 2>/dev/null | xargs grep -l "No valid trading days" 2>/dev/null | grep -q .; then
+if ls $LOG_PATTERN 2>/dev/null | xargs grep -l "No valid trading days" 2>/dev/null \
+   | xargs grep -l "Target Date: $TARGET_DATE" 2>/dev/null | grep -q .; then
     echo "Target date $TARGET_DATE is a non-trading day. Skipping." | tee -a "$LOG_FILE"
     echo "========================================" | tee -a "$LOG_FILE"
     exit 0
