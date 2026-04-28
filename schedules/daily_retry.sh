@@ -45,7 +45,7 @@ fi
 echo "Target date $TARGET_DATE did not complete successfully. Running retry..." | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
-./schedules/daily_update.sh "$TARGET_DATE" 2>&1 | tee -a "$LOG_FILE"
+CALLED_BY_RETRY=1 ./schedules/daily_update.sh "$TARGET_DATE" 2>&1 | tee -a "$LOG_FILE"
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Daily Retry Check Completed" | tee -a "$LOG_FILE"

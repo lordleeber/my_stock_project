@@ -17,7 +17,11 @@ export END_DATE=$TARGET_DATE
 # 設定日誌目錄
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/daily_update_${TARGET_DATE}_$(date +%Y%m%d_%H%M%S).log"
+if [ -n "$CALLED_BY_RETRY" ]; then
+    LOG_FILE="/dev/null"
+else
+    LOG_FILE="$LOG_DIR/daily_update_${TARGET_DATE}_$(date +%Y%m%d_%H%M%S).log"
+fi
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Daily Stock Data Update Started" | tee -a "$LOG_FILE"
@@ -81,5 +85,7 @@ echo "Daily Stock Data Update Completed" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
-# 保留最近 30 天的日誌
-find "$LOG_DIR" -name "daily_update_*.log" -mtime +30 -delete
+# 保留最近 30 天的日誌（由 retry 呼叫時不寫 update log，跳過清理）
+if [ -z "$CALLED_BY_RETRY" ]; then
+    find "$LOG_DIR" -name "daily_update_*.log" -mtime +30 -delete
+fi
