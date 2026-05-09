@@ -24,26 +24,26 @@ backtester/output/rolling/
 
 1. 讀取當月 `dataset_strategy.csv`，用 walk-forward 模型即時打分（`ml_score`）
 2. 取 top-N 候選股（`--top-n`）
-3. 判斷市場狀態（Bull / Sideways / Bear）
-4. **Bear**：全部出場，不進新倉
-5. **Bull / Sideways**：
-   - 不在新名單的持股 → 出場
-   - 新名單中未持有的股票 → 進場
-   - 兩邊都有的股票 → 繼續持有
+3. 完整月度輪倉（不依市場狀態調整行為）：
+   - 全部持倉於前一交易日開盤平倉
+   - 當月 top-N 候選於 entry_date 開盤建倉
+4. 市場狀態（regime）僅作為記錄欄位寫入 `rolling_monthly.csv`，**不影響進出場決策**
 
 所有買賣價格使用 DB 真實開盤價（`daily_quotes.open`）。
 
 ---
 
-## 市場狀態判斷
+## 市場狀態判斷（僅供記錄）
 
-來源：`market_indices` 表（大盤指數）
+來源：`market_indices` 表（大盤指數）。回測會在 `rolling_monthly.csv` 的 `regime` 欄位標記每月狀態，方便事後分析績效與市場環境的相關性，但不會改變進出場行為。
 
 | 狀態 | 條件 |
 |------|------|
 | Bull | MA20 > MA60 |
 | Bear | MA20 < MA60 且 close < MA20 |
 | Sideways | 其他 |
+
+> 歷史版本曾在 Bear 月份「全部出場、空手等」，現已移除 — 因為實測下 Bear 月份平均仍有正期望報酬，跳過反而錯失收益。
 
 ---
 
@@ -128,7 +128,7 @@ venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 | `cost` | 手續費 + 稅 |
 | `net_pnl` | 淨損益 |
 | `return_pct` | 報酬率（% of capital_used） |
-| `exit_reason` | `not_reselected` / `bear_market_exit` / `still_open` |
+| `exit_reason` | `monthly_rotation` / `still_open` |
 
 ### rolling_monthly.csv
 每月持倉狀況與損益摘要。

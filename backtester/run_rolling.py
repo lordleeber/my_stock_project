@@ -308,18 +308,13 @@ def main() -> None:
         if top_n is not None:
             candidates_df = candidates_df.head(top_n)
 
-        # --- 偵測市場狀態 ---
+        # --- 偵測市場狀態（僅供觀察記錄；不影響進出場行為） ---
         regime = detect_market_regime(entry_date_str)
-        is_bear = regime == "Bear"
+        is_bear = False
 
-        if is_bear:
-            # 全部出場，跳過新進場。
-            exit_symbols = sorted(portfolio.keys())
-            entry_symbols: list[str] = []
-        else:
-            # 完整月度輪倉：全部出場，再全部進場新候選股。
-            exit_symbols = sorted(portfolio.keys())
-            entry_symbols = sorted(candidates_df["symbol"].tolist())
+        # 完整月度輪倉：全部出場，再全部進場新候選股。
+        exit_symbols = sorted(portfolio.keys())
+        entry_symbols = sorted(candidates_df["symbol"].tolist())
 
         # 撈取出場日（前一交易日）與進場日的開盤價。
         exit_open_prices = fetch_open_on_date(exit_symbols, exit_date_str)
