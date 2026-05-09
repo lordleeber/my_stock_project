@@ -2,6 +2,8 @@
 
 台股月度 EPS 預測 → ML 選股 → 滾動回測 完整流程。
 
+> **每月公告日後的標準作業流程** → 參見 [`MONTHLY_PLAYBOOK.md`](MONTHLY_PLAYBOOK.md)
+
 ---
 
 ## 架構總覽

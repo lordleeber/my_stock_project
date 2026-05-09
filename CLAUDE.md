@@ -163,3 +163,4 @@ Each major component has its own `CLAUDE.md` with detailed field-level specs:
 - `schedules/CLAUDE.md` — launchd setup, manual run commands
 - `train_eps/CLAUDE.md` — EPS model training calendar, gate rules, feature contracts
 - `strategies/README.md` — hard filters, `dataset_strategy.csv` field reference, ML model spec
+- `MONTHLY_PLAYBOOK.md` — 每月公告日後的 ML pipeline 作業流程（train_eps + strategies + selection model）
