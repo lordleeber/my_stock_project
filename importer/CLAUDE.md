@@ -105,6 +105,7 @@ When `FORCE_REIMPORT=1` or updating existing data:
 Importer strictly only allows **4-digit numeric symbols** (e.g., "2330", "2317"). 
 - Filters out all other symbols including ETFs ("00xxxx"), preferred stocks ("xxxxA/B"), warrants, and REITs.
 - This ensures only ordinary common stocks are stored in the primary database tables.
+- **Exception**: `market_indices` 的 `symbol` 是中文指數名（「櫃買指數」、「臺灣50指數」等），不適用 4 碼數字過濾。在 `import_daily.py` 中獨立成 `DAILY_INDEX_CATEGORIES`，呼叫 `import_daily_market_category` 時傳 `apply_etf_filter=False`。
 
 #### Symbol Whitespace Normalization (shareholding)
 For weekly `shareholding` imports, `symbol` is trimmed before filtering and insert.

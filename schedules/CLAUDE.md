@@ -8,6 +8,7 @@
   - 流程：`scraper-daily -> processor -> audit -> importer -> calculator`
   - 參數：可選 `YYYYMMDD`（不給則用今天）
   - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_dealer_holding.py -> calculate_shareholding_concentration.py -> calculate_valuation.py`
+  - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / audit / importer container（給 retry 在偵測到 stale 狀態時使用）
 
 - `schedules/weekly_update.sh`
   - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding)`
@@ -25,7 +26,15 @@
 - `schedules/daily_retry.sh`
   - 檢查前一天的 daily_update 是否成功，失敗才重跑
   - 參數：可選 `YYYYMMDD`（不給則用昨天）
-  - 判斷邏輯：搜尋 `logs/daily_update_<target_date>_*.log`，有成功或非交易日則跳過
+  - 判斷邏輯（三層完整性檢查，全綠才 skip）：
+    1. **log**：`logs/daily_update_<target_date>_*.log` 是否含 `Daily Stock Data Update Completed`
+    2. **raw**：8 個 daily category × `{sii,otc}` raw 檔是否存在且非 0 byte（含 `market_indices` otc-only）
+    3. **DB**：8 個 daily 表 × `{sii,otc}` 該日是否都有資料（`market_indices` 因 symbol 是中文指數名暫時排除）
+  - 修復路徑：
+    - 非交易日（log 含 `No valid trading days`）→ skip
+    - raw 缺 → 一般重跑（scraper 會補抓）
+    - raw OK 但 DB 缺 → 設 `FORCE_REPROCESS=1` + `FORCE_REIMPORT=1` 讓 processor 重建 stale `processed/all.csv`、importer 覆寫 DB
+    - log 沒成功 → 一般重跑全部
   - 由 launchd 在 02:00 及 04:00 各觸發一次
 
 - `schedules/xbrl_update.sh`

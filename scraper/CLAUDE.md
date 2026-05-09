@@ -94,6 +94,7 @@ REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
 
 - 這次重構目標是「入口與分層一致化」。既有抓取邏輯（TWSE/TPEx/MOPS/TDCC）保持不變。
 - 四個入口（daily/weekly/monthly/quarterly）都會在抓取完成後自動執行對應 `check_outputs`。
+- `daily/check_outputs.py` 偵測到 missing raw 檔時：寫入 `error_scraper.log` 並讓 `scraper_daily.py` 回傳 `exit 1`，讓 `daily_update.sh` 因 `set -e` 中斷，觸發後續 retry。**不再靜默通過**（避免 TWSE 暫時回 empty 時整條 pipeline 假成功而落漏資料）。
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
