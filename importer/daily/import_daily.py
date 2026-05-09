@@ -6,7 +6,6 @@ from import_common import (
 
 DAILY_MARKET_CATEGORIES = (
     "daily_quotes",
-    "market_indices",
     "institutional_investors",
     "foreign_holding",
     "margin_trading",
@@ -14,12 +13,20 @@ DAILY_MARKET_CATEGORIES = (
     "pe_ratio",
 )
 
+# market_indices 的 symbol 是中文指數名（如「櫃買指數」、「臺灣50指數」），
+# 不適用 4 碼數字股票過濾。獨立成一組並傳 apply_etf_filter=False。
+DAILY_INDEX_CATEGORIES = (
+    "market_indices",
+)
+
 DAILY_ALL_CATEGORIES = (
     "institutional_summary",
     "margin_summary",
 )
 
-DAILY_CATEGORIES = set(DAILY_MARKET_CATEGORIES + DAILY_ALL_CATEGORIES)
+DAILY_CATEGORIES = set(
+    DAILY_MARKET_CATEGORIES + DAILY_INDEX_CATEGORIES + DAILY_ALL_CATEGORIES
+)
 
 
 def run(engine, config, import_category=None):
@@ -39,6 +46,18 @@ def run(engine, config, import_category=None):
             table_name=category,
             config=config,
             schema_overrides=daily_schema_overrides,
+        )
+
+    for category in DAILY_INDEX_CATEGORIES:
+        if import_category and import_category != category:
+            continue
+        imported_any |= import_daily_market_category(
+            engine=engine,
+            category=category,
+            table_name=category,
+            config=config,
+            schema_overrides=daily_schema_overrides,
+            apply_etf_filter=False,
         )
 
     for category in DAILY_ALL_CATEGORIES:
