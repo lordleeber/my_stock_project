@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Taiwan stock market analysis platform: EPS prediction → ML stock selection → rolling backtest.
 
-Full pipeline: scrape TWSE/TPEx/MOPS/TDCC → process → import into PostgreSQL → compute indicators → train EPS model → build strategy features → train LGBMRanker → backtest → serve via FastAPI + Next.js.
+Full pipeline: scrape TWSE/TPEx/MOPS/TDCC → process → import into PostgreSQL → compute indicators → train EPS model → build strategy features → train LGBMRanker → backtest → serve via FastAPI.
 
 ## Key Commands
 
