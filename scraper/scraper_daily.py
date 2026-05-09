@@ -81,7 +81,13 @@ def main():
     print("\n=== Starting PAR_VALUE_CHANGE Scraper ===")
     fetch_par_value_change.run_scraper(end_date_env, output_dir)
 
-    check_daily_outputs(date_list, output_dir, market_type)
+    missing = check_daily_outputs(date_list, output_dir, market_type)
+    if missing:
+        print(
+            f"\n[FAIL] {len(missing)} required raw file(s) missing. "
+            f"Failing scraper so retry can be triggered."
+        )
+        return 1
 
     print("\nAll tasks completed.")
     return 0

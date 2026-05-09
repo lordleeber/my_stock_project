@@ -73,9 +73,12 @@ def check_daily_outputs(date_list, output_dir, market_type):
                     missing.append(str(path))
 
     _append_missing(missing, date_list, market_type)
+    return missing
 
 
 if __name__ == "__main__":
+    import sys
+
     output_dir = os.getenv("OUTPUT_DIR", "/app/data")
     market_type = os.getenv("MARKET_TYPE", "ALL").upper()
     dates = os.getenv("DATE_LIST", "")
@@ -83,5 +86,10 @@ if __name__ == "__main__":
 
     if not date_list:
         print("[INFO] DATE_LIST is empty. Skip daily output check.")
-    else:
-        check_daily_outputs(date_list, output_dir, market_type)
+        sys.exit(0)
+
+    missing = check_daily_outputs(date_list, output_dir, market_type)
+    if missing:
+        print(f"[FAIL] {len(missing)} required raw file(s) missing.")
+        sys.exit(1)
+    sys.exit(0)

@@ -41,7 +41,7 @@ fi
 
 # 2. Processor (daily)
 echo "[2/6] Running processor..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE -e FORCE_REPROCESS processor 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Processor completed" | tee -a "$LOG_FILE"
 else
@@ -51,7 +51,7 @@ fi
 
 # 3. Data Quality Checker (runs after processor)
 echo "[3/5] Running data quality checker..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE processor python audit.py 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE -e FORCE_REPROCESS processor python audit.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Data quality check passed" | tee -a "$LOG_FILE"
 else
@@ -62,7 +62,7 @@ fi
 
 # 4. Importer
 echo "[4/5] Running importer..." | tee -a "$LOG_FILE"
-docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE importer python import_daily.py 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm -e START_DATE=$START_DATE -e END_DATE=$END_DATE -e FORCE_REIMPORT importer python import_daily.py 2>&1 | tee -a "$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else
