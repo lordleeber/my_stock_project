@@ -7,7 +7,7 @@ Scraper 已改成與 processor 一致的頻率分層：`daily/`, `weekly/`, `mon
 - `scraper/scraper_daily.py`
 - `scraper/scraper_weekly.py`
 - `scraper/scraper_monthly.py`
-- 季報：**沒有頂層 orchestrator**。`scraper-quarterly` service 沒有預設 command，callers 須直接指定 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`（一般經由 `schedules/xbrl_run_pipeline.sh`）。
+- 季報：**沒有頂層 orchestrator**。`scraper-quarterly` service 沒有預設 command，callers 須直接指定 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`（一般經由 `schedules/xbrl_scrape_daily.sh`）。
 
 Backward compatibility:
 - `scraper/check_daily_outputs.py`, `scraper/check_weekly_outputs.py`, `scraper/check_monthly_outputs.py` 目前是新分層 checker 的 wrapper。
@@ -58,7 +58,7 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - required: `REVENUE_YEAR`, `REVENUE_MONTH`
 
 - Quarterly XBRL
-  - 由 `fetch_xbrl.py` 直接吃 `--year` / `--quarter` 參數（不再使用 `REPORT_YEAR`/`REPORT_QUARTER` 環境變數）。一般透過 `schedules/xbrl_run_pipeline.sh` 觸發。
+  - 由 `fetch_xbrl.py` 直接吃 `--year` / `--quarter` 參數（不再使用 `REPORT_YEAR`/`REPORT_QUARTER` 環境變數）。一般透過 `schedules/xbrl_scrape_daily.sh` 觸發。
 
 ## Raw Output Paths (current)
 
@@ -83,7 +83,7 @@ docker compose run --rm scraper-weekly
 # monthly
 REVENUE_YEAR=2026 REVENUE_MONTH=1 docker compose run --rm scraper-monthly
 
-# quarterly XBRL（一般用 schedules/xbrl_run_pipeline.sh，下面是直接呼叫的 fallback）
+# quarterly XBRL（一般用 schedules/xbrl_scrape_daily.sh，下面是直接呼叫的 fallback）
 docker compose run --rm scraper-quarterly \
     python3 scraper/quarterly/fetch_xbrl.py --year 2025 --quarter 4
 ```

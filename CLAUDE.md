@@ -45,8 +45,8 @@ docker compose run --rm calculator
 ./schedules/weekly_update.sh
 ./schedules/monthly_update.sh
 ./schedules/xbrl_scrape_daily.sh           # 季報 XBRL 每日 scrape（launchd 排程亦走這支；不入庫）
-./schedules/xbrl_run_pipeline.sh           # 季報 XBRL 全鏈路（公告期末/補資料；scrape→process→import）
-./schedules/xbrl_run_pipeline.sh 2025Q4    # 指定季別
+./schedules/xbrl_process_import.sh         # 季報 XBRL process+import（公告期末/補資料；前提是 raw 已存在）
+./schedules/xbrl_process_import.sh 2025Q4  # 指定季別
 ```
 
 > 季報舊路徑（`quarterly_reports`/`income_statement`/`balance_sheet`/`cash_flow` 寫入）已 deprecated。所有季報資料一律改走 XBRL（`*_xbrl` 表）。舊版程式碼保留在各模組 `_deprecated/`，DB 舊表保留為 archive 不再更新。

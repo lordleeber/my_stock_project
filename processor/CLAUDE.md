@@ -217,4 +217,5 @@ docker compose build processor
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`
   - `schedules/monthly_update.sh`
-  - `schedules/xbrl_run_pipeline.sh`（季報 XBRL 全鏈路）
+  - `schedules/xbrl_scrape_daily.sh`（每日 scrape，launchd 排程）
+  - `schedules/xbrl_process_import.sh`（公告期末/補資料用，process+import）

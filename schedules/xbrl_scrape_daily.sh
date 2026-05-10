@@ -8,7 +8,7 @@
 #   Q3 (同年):     10/01 ~ 11/15
 #   其他日期：     skip
 #
-# DB 入庫由 `xbrl_run_pipeline.sh` 手動觸發（公告期末 / 補資料時）。
+# DB 入庫由 `xbrl_process_import.sh` 手動觸發（公告期末 / 補資料時）。
 
 set -euo pipefail
 

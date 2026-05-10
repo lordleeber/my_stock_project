@@ -186,7 +186,7 @@ docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python 
 docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python import_quarterly_xbrl.py
 ```
 
-> 一般情況走 `schedules/xbrl_run_pipeline.sh` 一鍵 scrape→process→import。直接呼叫 importer 適用 backfill 或 debug。
+> 一般情況走 `schedules/xbrl_process_import.sh` 一鍵 process→import（前提是 raw 已存在；scrape 由 `xbrl_scrape_daily.sh` 在公告期內每日累積）。直接呼叫 importer 適用 backfill 或 debug。
 
 ### Force Reimport TDCC Data
 ```bash

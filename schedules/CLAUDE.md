@@ -45,18 +45,19 @@
     - 其他日期：直接 skip
   - 透傳 `FORCE_REPROCESS` 給 scraper container
 
-- `schedules/xbrl_run_pipeline.sh` _（手動觸發）_
-  - 流程：`scrape (fetch_xbrl) -> processor(convert_quarterly_xbrl) -> importer(import_xbrl) -> importer(import_quarterly_xbrl)`
+- `schedules/xbrl_process_import.sh` _（手動觸發）_
+  - 流程：`processor(convert_quarterly_xbrl) -> importer(import_xbrl) -> importer(import_quarterly_xbrl)`
   - 寫入 DB：`balance_sheet_xbrl` / `income_statement_xbrl` / `cash_flow_xbrl` / `xbrl_codebook` / `quarterly_reports_xbrl`
-  - 參數：可選 `YYYYMMDD` 或 `YYYYQX`（規則同 `xbrl_scrape_daily.sh`）
+  - 前提：raw XBRL 已存在（由 `xbrl_scrape_daily.sh` 累積，或手動跑 fetch_xbrl.py）
+  - 參數：可選 `YYYYMMDD` 或 `YYYYQX`；窗口外不再 silent skip，會 error 提示改傳 `YYYYQX`
   - 用途：公告期末把累積的 raw 一次入庫；或補單季資料
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / importer container
 
 - `schedules/backfill_xbrl.sh`
-  - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_run_pipeline.sh`，或一次跑 processor + 兩個 importer。
+  - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。
 
 - `schedules/_deprecated/quarterly_update.sh`
-  - 已停用。原本流程是 `scraper-quarterly -> processor(convert_quarterly) -> importer(import_quarterly)`，餵的是 legacy 季報表。改用 `xbrl_run_pipeline.sh`。
+  - 已停用。原本流程是 `scraper-quarterly -> processor(convert_quarterly) -> importer(import_quarterly)`，餵的是 legacy 季報表。改用 `xbrl_scrape_daily.sh` + `xbrl_process_import.sh`。
 
 ## Logging
 
@@ -66,7 +67,7 @@
   - `weekly_update_<TARGET_DATE>_<EXEC_TS>.log`
   - `monthly_update_<YYYYMM>_<EXEC_TS>.log`（例：`monthly_update_202603_20260410_224500.log`）
   - `xbrl_scrape_<YYYYQX>_<EXEC_TS>.log` / `xbrl_scrape_skip_<EXEC_TS>.log`（每日 scrape；視窗外時 skip）
-  - `xbrl_pipeline_<YYYYQX>_<EXEC_TS>.log` / `xbrl_pipeline_skip_<EXEC_TS>.log`（手動全鏈路）
+  - `xbrl_process_import_<YYYYQX>_<EXEC_TS>.log`（手動 process+import）
 
 ## launchd Only (macOS)
 
@@ -152,9 +153,9 @@ macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath`
 # 手動執行 XBRL daily scrape（以今天判斷）
 ./schedules/xbrl_scrape_daily.sh
 
-# 手動執行 XBRL 全鏈路（公告期末/補資料；scrape→process→import）
-./schedules/xbrl_run_pipeline.sh
-./schedules/xbrl_run_pipeline.sh 2025Q4    # 直接指定季度
+# 手動執行 XBRL process+import（公告期末/補資料；前提 raw 已存在）
+./schedules/xbrl_process_import.sh
+./schedules/xbrl_process_import.sh 2025Q4    # 直接指定季度
 ```
 
 ```bash
@@ -174,5 +175,5 @@ launchctl kickstart -p gui/$(id -u)/com.poyilee.stock-daily-update
 - 執行腳本前請確認 Docker Desktop 已啟動。
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
 - 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
-- Daily/Weekly/Monthly 寫入對應 `logs/*_update_*.log`；XBRL daily scrape 寫入 `logs/xbrl_scrape_*.log`，手動全鏈路寫入 `logs/xbrl_pipeline_*.log`。
+- Daily/Weekly/Monthly 寫入對應 `logs/*_update_*.log`；XBRL daily scrape 寫入 `logs/xbrl_scrape_*.log`，手動 process+import 寫入 `logs/xbrl_process_import_*.log`。
 - plist 修改後務必同步 `schedules/` 備份並 commit。

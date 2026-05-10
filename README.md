@@ -105,5 +105,5 @@ venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 - 共用 DB schema 變更請同步更新 `common/schemas.py`
 - 季報資料一律走 XBRL（`*_xbrl` 表）。舊版季報 pipeline 已停用並移到各模組 `_deprecated/`，DB 舊表保留為 archive。
   - 公告期內每日 scrape：`./schedules/xbrl_scrape_daily.sh`（launchd 自動執行；不入庫）
-  - 公告期末/補資料入庫：`./schedules/xbrl_run_pipeline.sh [YYYYQX]`（scrape→process→import）
+  - 公告期末/補資料入庫：`./schedules/xbrl_process_import.sh [YYYYQX]`（process→import；前提是 raw 已存在）
 - 詳細說明見各子目錄的 `README.md` 與 `CLAUDE.md`
