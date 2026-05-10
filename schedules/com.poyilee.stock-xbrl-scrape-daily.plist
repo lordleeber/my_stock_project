@@ -9,12 +9,12 @@
     </dict>
 
     <key>Label</key>
-    <string>com.poyilee.stock-xbrl-run-pipeline</string>
+    <string>com.poyilee.stock-xbrl-scrape-daily</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/poyilee/Documents/GitHubLL/my_stock_project/schedules/xbrl_run_pipeline.sh</string>
+        <string>/Users/poyilee/Documents/GitHubLL/my_stock_project/schedules/xbrl_scrape_daily.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -32,8 +32,8 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/launchd_xbrl_run_pipeline_stdout.log</string>
+    <string>/tmp/launchd_xbrl_scrape_daily_stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/launchd_xbrl_run_pipeline_stderr.log</string>
+    <string>/tmp/launchd_xbrl_scrape_daily_stderr.log</string>
 </dict>
 </plist>

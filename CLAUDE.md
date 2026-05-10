@@ -44,7 +44,8 @@ docker compose run --rm calculator
 # Other schedules
 ./schedules/weekly_update.sh
 ./schedules/monthly_update.sh
-./schedules/xbrl_run_pipeline.sh           # 季報 XBRL 全鏈路（scrape→process→import）
+./schedules/xbrl_scrape_daily.sh           # 季報 XBRL 每日 scrape（launchd 排程亦走這支；不入庫）
+./schedules/xbrl_run_pipeline.sh           # 季報 XBRL 全鏈路（公告期末/補資料；scrape→process→import）
 ./schedules/xbrl_run_pipeline.sh 2025Q4    # 指定季別
 ```
 
