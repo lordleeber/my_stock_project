@@ -27,11 +27,13 @@ Unified entry points:
 - `convert_daily.py`
 - `convert_weekly.py`
 - `convert_monthly.py`
-- `convert_quarterly.py`
+- `convert_quarterly_xbrl.py` — 季報 XBRL（statement-level + `quarterly_reports_xbrl`）
 - `audit.py` (standalone audit)
 
 Default Docker `processor` service command:
 - `python convert_daily.py`
+
+> 舊的 `convert_quarterly.py`（含 `reports`/`statements`/`detail_xbrl`/`all` 模式，餵舊版 `quarterly_reports`/`income_statement`/`balance_sheet`/`cash_flow`）已 deprecated，移到 `processor/_deprecated/`。對應的 `quarterly/convert_*.py`、`audit_*.py`、`quarterly_statements_converter_common.py` 也搬到 `processor/quarterly/_deprecated/`。
 
 ## Folder Structure
 
@@ -48,14 +50,10 @@ Default Docker `processor` service command:
   - audit: `audit_monthly_revenue.py`
 
 - `quarterly/`
-  - reports: `convert_quarterly_reports.py` + `audit_quarterly_reports.py`
-  - statements:
-    - `convert_income_statements.py` + `audit_income_statements.py`
-    - `convert_balance_sheet.py` + `audit_balance_sheet.py`
-    - `convert_cash_flow.py` + `audit_cash_flow.py`
-  - shared common:
-    - `quarterly_statements_converter_common.py`
-    - `audit_quarterly_common.py`
+  - XBRL converters：
+    - `convert_xbrl.py`：產出 statement-level XBRL（`balance_sheet_xbrl` / `income_statement_xbrl` / `cash_flow_xbrl` + `xbrl_codebook`）
+    - `convert_quarterly_reports_xbrl.py`：產出 `quarterly_reports_xbrl` 寬表
+  - `_deprecated/`：已停用的舊版 converters / audits（`convert_quarterly_reports.py`、`convert_income_statements.py`、`convert_balance_sheet.py`、`convert_cash_flow.py`、`audit_*.py`、`quarterly_statements_converter_common.py`）
 
 ## Strict Date Rules (Required)
 
@@ -71,7 +69,7 @@ Expected format by entry point:
 - `convert_daily.py`: `YYYYMMDD`
 - `convert_weekly.py`: `YYYYMMDD`
 - `convert_monthly.py`: at least `YYYYMM` prefix (can be `YYYYMMDD`)
-- `convert_quarterly.py`: `YYYYQX`
+- `convert_quarterly_xbrl.py`: `YYYYQX`（START_DATE 與 END_DATE 必須相等，單季處理）
 
 `audit.py` rules:
 
@@ -89,10 +87,9 @@ Common:
 - `RAW_DIR` (default `/app/data/raw`)
 - `PROCESSED_DIR` (default `/app/data/processed`)
 
-Quarterly-specific:
+Quarterly XBRL:
 
-- `QUARTERLY_TASK` (required): `reports` | `detail_xbrl` | `statements` | `all`
-- `QUARTERLY_STATEMENT_CATEGORIES`: `income_statement,balance_sheet,cash_flow` (optional subset)
+- 透過 `convert_quarterly_xbrl.py` 一鍵處理 statement-level + `quarterly_reports_xbrl`，不再使用 `QUARTERLY_TASK` / `QUARTERLY_STATEMENT_CATEGORIES`。
 
 Audit output controls:
 
@@ -111,29 +108,25 @@ START_DATE=20240105 END_DATE=20240105 docker compose run --rm processor python c
 # 3) Monthly revenue
 START_DATE=20240101 END_DATE=20240131 docker compose run --rm processor python convert_monthly.py
 
-# 4) Quarterly: reports + 3 statements
-QUARTERLY_TASK=all START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python convert_quarterly.py
+# 4) Quarterly XBRL（statement-level + quarterly_reports_xbrl 一鍵）
+START_DATE=2025Q4 END_DATE=2025Q4 docker compose run --rm processor python convert_quarterly_xbrl.py
 
-# 5) Quarterly: only statements, only income_statement
-QUARTERLY_TASK=statements QUARTERLY_STATEMENT_CATEGORIES=income_statement \
-START_DATE=2024Q1 END_DATE=2024Q1 docker compose run --rm processor python convert_quarterly.py
-
-# 6) Quarterly: detail XBRL facts (raw html -> processed csv)
-QUARTERLY_TASK=detail_xbrl START_DATE=2025Q3 END_DATE=2025Q3 \
-docker compose run --rm processor python convert_quarterly.py
-
-# 7) Standalone audit (single date only)
+# 5) Standalone audit (single date only)
 START_DATE=20240102 END_DATE=20240102 docker compose run --rm processor python audit.py
 ```
 
-For `QUARTERLY_TASK=detail_xbrl`, outputs are:
-- `processed/balance_sheet_xbrl/.../all.csv`
-- `processed/cash_flow_xbrl/.../all_accumulated.csv`
-- `processed/income_statement_xbrl/.../all_quarter.csv` (Q4 is derived by `Q4_acc - Q3_acc`; fallback to `Q4_acc` if prior data is missing)
-- `processed/income_statement_xbrl/.../all_accumulated.csv`
-- `processed/xbrl_codebook.csv`
+`convert_quarterly_xbrl.py` 會依序執行：
+1. `quarterly/convert_xbrl.py`（statement-level）：
+   - `processed/balance_sheet_xbrl/.../all.csv`
+   - `processed/cash_flow_xbrl/.../all_accumulated.csv`
+   - `processed/income_statement_xbrl/.../all_quarter.csv`（Q4 由 `Q4_acc - Q3_acc` 反推；缺則 fallback `Q4_acc`）
+   - `processed/income_statement_xbrl/.../all_accumulated.csv`
+   - `processed/xbrl_codebook.csv`
+2. `quarterly/convert_quarterly_reports_xbrl.py`：
+   - `processed/quarterly_reports_xbrl/.../all_quarter.csv`
+   - `processed/quarterly_reports_xbrl/.../all_accumulated.csv`
 
-`detail_xbrl` raw filename rules (strict, fail-fast):
+XBRL raw filename rules (strict, fail-fast):
 
 - Only allow `YYYYQX_symbol_YYYYMMDD.html`.
 - Any raw html that does not match this format must stop conversion immediately.
@@ -215,9 +208,8 @@ docker compose build processor
   - `最後賣價 -> last_ask`
   - `最後買量(千股)/(張數) -> last_bid_volume`
   - `最後賣量(千股)/(張數) -> last_ask_volume`
-- **Financial statements dual-track**: `quarterly_reports`, `income_statement`, `cash_flow` include both `_q` (single quarter) and `_acc` (accumulated) fields.
-  - **Single-quarter logic**: For Q2~Q4, processor reads previous quarter processed CSV and calculates `q = current_acc - prev_acc`. If historical data is missing, fallback is `q = acc`.
-  - **Run order**: Because of temporal dependency, historical backfills must run in chronological order (for example `2024Q1 -> Q2 -> Q3 ...`).
+- **Financial statements dual-track (XBRL)**：`quarterly_reports_xbrl` 與 `income_statement_xbrl` 同時存在 `quarter` 與 `accumulated` 兩種 `period_type`。Q4 single-quarter 是 `Q4_acc - Q3_acc` 反推（缺前期則 fallback `Q4_acc`），歷史 backfill 仍須依季別順序跑。
+  - 注：legacy 的 `quarterly_reports` / `income_statement` / `balance_sheet` / `cash_flow` 表已停止寫入，相關處理流程在 `_deprecated/`。
 - **Important change**: `daily_quotes` no longer includes `pe_ratio` (to keep SII/OTC consistent). PE data is handled by standalone `pe_ratio` category.
 - `margin_summary` is a derived category: it is generated from `raw/margin_trading/*` and written to `processed/margin_summary/.../all.csv` (there is no `raw/margin_summary` input folder).
 - Some sources include trailing unnamed columns; mapping already handles these to avoid parse failures.
@@ -225,4 +217,4 @@ docker compose build processor
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`
   - `schedules/monthly_update.sh`
-  - `schedules/quarterly_update.sh`
+  - `schedules/xbrl_run_pipeline.sh`（季報 XBRL 全鏈路）

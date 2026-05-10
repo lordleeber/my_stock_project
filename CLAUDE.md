@@ -44,9 +44,11 @@ docker compose run --rm calculator
 # Other schedules
 ./schedules/weekly_update.sh
 ./schedules/monthly_update.sh
-./schedules/quarterly_update.sh 2025Q3
-./schedules/xbrl_update.sh
+./schedules/xbrl_run_pipeline.sh           # 季報 XBRL 全鏈路（scrape→process→import）
+./schedules/xbrl_run_pipeline.sh 2025Q4    # 指定季別
 ```
+
+> 季報舊路徑（`quarterly_reports`/`income_statement`/`balance_sheet`/`cash_flow` 寫入）已 deprecated。所有季報資料一律改走 XBRL（`*_xbrl` 表）。舊版程式碼保留在各模組 `_deprecated/`，DB 舊表保留為 archive 不再更新。
 
 ### ML Pipeline (Python, no Docker)
 ```bash

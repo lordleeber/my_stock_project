@@ -103,4 +103,5 @@ venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 
 - 產生的 csv / json / pkl artifacts 不 commit，除非明確要求
 - 共用 DB schema 變更請同步更新 `common/schemas.py`
+- 季報資料一律走 XBRL（`*_xbrl` 表）。舊版季報 pipeline（`quarterly_reports` / `income_statement` / `balance_sheet` / `cash_flow`）已停用並移到各模組 `_deprecated/`，DB 舊表保留為 archive。新版觸發方式：`./schedules/xbrl_run_pipeline.sh [YYYYQX]`
 - 詳細說明見各子目錄的 `README.md` 與 `CLAUDE.md`

@@ -55,18 +55,19 @@ services:
       - REVENUE_MONTH=${REVENUE_MONTH:-}
       - TZ=Asia/Taipei
 
-  # 季報 (每季結束後 45 日執行)
+  # 季報 XBRL (公告窗口執行；callers 必須明確指定 command)
   scraper-quarterly:
     # IMPORTANT:
     # - No code volume mount for /app (scraper code is baked into image).
     # - Any code change under scraper/ requires: docker compose build scraper-quarterly
+    # - 不再提供預設 command。XBRL 流程一律走 schedules/xbrl_run_pipeline.sh，
+    #   裡面會明確呼叫 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`。
     build:
       context: .
       dockerfile: scraper/Dockerfile
     volumes:
       - ./data:/app/data
       - ./active_stocks.txt:/app/active_stocks.txt:ro
-    command: python scraper/scraper_quarterly.py
     environment:
       - OUTPUT_DIR=/app/data
       - TZ=Asia/Taipei

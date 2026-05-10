@@ -7,12 +7,11 @@ Scraper 已改成與 processor 一致的頻率分層：`daily/`, `weekly/`, `mon
 - `scraper/scraper_daily.py`
 - `scraper/scraper_weekly.py`
 - `scraper/scraper_monthly.py`
-- `scraper/scraper_quarterly.py`
+- 季報：**沒有頂層 orchestrator**。`scraper-quarterly` service 沒有預設 command，callers 須直接指定 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`（一般經由 `schedules/xbrl_run_pipeline.sh`）。
 
 Backward compatibility:
-- `scraper/check_daily_outputs.py`, `scraper/check_weekly_outputs.py`, `scraper/check_monthly_outputs.py`, `scraper/check_quarterly_outputs.py` 目前是新分層 checker 的 wrapper。
-
-- `scraper-quarterly` -> `python scraper/scraper_quarterly.py`
+- `scraper/check_daily_outputs.py`, `scraper/check_weekly_outputs.py`, `scraper/check_monthly_outputs.py` 目前是新分層 checker 的 wrapper。
+- 舊的季報抓取（`scraper/scraper_quarterly.py`、`scraper/check_quarterly_outputs.py`、`scraper/quarterly/fetch_quarterly_reports.py`、`scraper/quarterly/check_outputs.py`）已 deprecated，移到 `scraper/_deprecated/` 與 `scraper/quarterly/_deprecated/`。
 
 ### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
 
@@ -42,8 +41,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - `check_outputs.py`: monthly 輸出檢查
 
 - `quarterly/`
-  - `fetch_quarterly_reports.py`: 季報抓取（quarterly_reports + 三大報表 raw）
-  - `check_outputs.py`: quarterly 輸出檢查
+  - `fetch_xbrl.py`: 季報 XBRL 抓取（MOPS XBRL HTML），輸出到 `data/raw/xbrl/YYYY/YYYYQX/`
+  - `_deprecated/`: 已停用的舊版季報抓取（`fetch_quarterly_reports.py`、`check_outputs.py`）
 
 ## Required Env Vars
 
@@ -58,8 +57,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 - Monthly
   - required: `REVENUE_YEAR`, `REVENUE_MONTH`
 
-- Quarterly
-  - required: `REPORT_YEAR`, `REPORT_QUARTER`
+- Quarterly XBRL
+  - 由 `fetch_xbrl.py` 直接吃 `--year` / `--quarter` 參數（不再使用 `REPORT_YEAR`/`REPORT_QUARTER` 環境變數）。一般透過 `schedules/xbrl_run_pipeline.sh` 觸發。
 
 ## Raw Output Paths (current)
 
@@ -67,11 +66,9 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 - Monthly revenue:
   - snapshot: `data/raw/monthly_revenue/YYYY/YYYYMXX/tmp.csv` (overwritten each run)
   - cumulative: `data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv` (append only newly published rows)
-- Quarterly reports: `data/raw/quarterly_reports/YYYY/YYYYQX/{sii,otc}.{xls,csv}`
-- Quarterly statements:
-  - `data/raw/income_statement/YYYY/YYYYQX/{sii,otc}_*.csv`
-  - `data/raw/balance_sheet/YYYY/YYYYQX/{sii,otc}_*.csv`
-  - `data/raw/cash_flow/YYYY/YYYYQX/{sii,otc}_*.csv`
+- Quarterly XBRL: `data/raw/xbrl/YYYY/YYYYQX/<symbol>/...`（HTML / XBRL files）
+
+> Legacy raw paths（不再寫入，僅作 archive）: `data/raw/quarterly_reports/`、`data/raw/income_statement/`、`data/raw/balance_sheet/`、`data/raw/cash_flow/`
 - Weekly shareholding: `data/raw/shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv`
 
 ## Commands
@@ -86,14 +83,15 @@ docker compose run --rm scraper-weekly
 # monthly
 REVENUE_YEAR=2026 REVENUE_MONTH=1 docker compose run --rm scraper-monthly
 
-# quarterly
-REPORT_YEAR=2025 REPORT_QUARTER=3 docker compose run --rm scraper-quarterly
+# quarterly XBRL（一般用 schedules/xbrl_run_pipeline.sh，下面是直接呼叫的 fallback）
+docker compose run --rm scraper-quarterly \
+    python3 scraper/quarterly/fetch_xbrl.py --year 2025 --quarter 4
 ```
 
 ## Notes
 
 - 這次重構目標是「入口與分層一致化」。既有抓取邏輯（TWSE/TPEx/MOPS/TDCC）保持不變。
-- 四個入口（daily/weekly/monthly/quarterly）都會在抓取完成後自動執行對應 `check_outputs`。
+- daily/weekly/monthly 入口會在抓取完成後自動執行對應 `check_outputs`；quarterly XBRL 目前沒有 check_outputs（後續可補）。
 - `daily/check_outputs.py` 偵測到 missing raw 檔時：寫入 `error_scraper.log` 並讓 `scraper_daily.py` 回傳 `exit 1`，讓 `daily_update.sh` 因 `set -e` 中斷，觸發後續 retry。**不再靜默通過**（避免 TWSE 暫時回 empty 時整條 pipeline 假成功而落漏資料）。
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。

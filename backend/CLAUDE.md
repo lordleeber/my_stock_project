@@ -168,13 +168,15 @@ AI assistant guardrails:
 | `/raw/stock-info` | GET | `symbol?`, `industry?`, `market?`, `limit`, `offset` | `List[StockInfoRaw]` |
 | `/raw/stock-tags` | GET | `symbol?`, `tag?`, `limit`, `offset` | `List[StockTagRaw]` |
 | `/raw/dividend` | GET | `start_date`, `end_date`, `symbol?`, `limit`, `offset` | `List[DividendRaw]` |
-| `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` |
-| `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` |
-| `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` |
-| `/raw/cash-flows` | GET | Same as quarterly-reports | `List[CashFlowRaw]` |
+| `/raw/quarterly-reports` | GET | `start_date` (YYYYQX), `end_date`, `symbol`, `limit`, `offset` | `List[QuarterlyReportRaw]` — 後端讀 `quarterly_reports_xbrl`（仍持續更新） |
+| `/raw/income-statements` | GET | Same as quarterly-reports | `List[IncomeStatementRaw]` _(legacy: 讀 `income_statement`, frozen)_ |
+| `/raw/balance-sheets` | GET | Same as quarterly-reports | `List[BalanceSheetRaw]` _(legacy: 讀 `balance_sheet`, frozen)_ |
+| `/raw/cash-flows` | GET | Same as quarterly-reports | `List[CashFlowRaw]` _(legacy: 讀 `cash_flow`, frozen)_ |
 | `/raw/income-statements-xbrl` | GET | `start_date` (YYYYQX), `end_date`, `symbol?`, `limit`, `offset` | `List[XbrlStatementRaw]` |
 | `/raw/balance-sheets-xbrl` | GET | Same as income-statements-xbrl | `List[XbrlStatementRaw]` |
 | `/raw/cash-flows-xbrl` | GET | Same as income-statements-xbrl | `List[XbrlStatementRaw]` |
+
+> _legacy, frozen_：`income-statements` / `balance-sheets` / `cash-flows` 仍指向舊表 `income_statement` / `balance_sheet` / `cash_flow`，這三張表已停止寫入，endpoint 僅可查既有資料當 archive。新查詢請改走 `*_xbrl` endpoint。`/raw/quarterly-reports` 已切到 `quarterly_reports_xbrl`，無此問題。
 
 **Purpose:** Provides direct access to standardized "raw" data from every table in the database. 
 - **Features:** Supports pagination via `limit` (max 5000) & `offset`. 
@@ -524,10 +526,8 @@ data/
 │   ├── <daily_category>/YYYY/YYYYMMDD/{sii,otc}.csv
 │   ├── monthly_revenue/YYYY/YYYYMXX/tmp.csv
 │   ├── monthly_revenue/YYYY/YYYYMXX/market.csv
-│   ├── quarterly_reports/YYYY/YYYYQX/{sii,otc}.{xls,csv}
-│   ├── income_statement/YYYY/YYYYQX/{sii,otc}_*.csv
-│   ├── balance_sheet/YYYY/YYYYQX/{sii,otc}_*.csv
-│   ├── cash_flow/YYYY/YYYYQX/{sii,otc}_*.csv
+│   ├── xbrl/YYYY/YYYYQX/<symbol>/...                # 季報 XBRL HTML
+│   ├── quarterly_reports/, income_statement/, balance_sheet/, cash_flow/  # legacy raw, archive only
 │   └── shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv
 ├── processed/                    # Processor output (cleaned CSVs)
 │   └── category-specific normalized CSV outputs

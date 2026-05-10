@@ -63,12 +63,14 @@ docker compose run --rm -e START_DATE=20260207 -e END_DATE=20260207 importer pyt
 # Monthly import
 docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer python import_monthly.py
 
-# Quarterly import
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
+# Quarterly XBRL import (statement-level: balance_sheet_xbrl/income_statement_xbrl/cash_flow_xbrl + xbrl_codebook)
+docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python import_xbrl.py
 
-# Quarterly XBRL import
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly_xbrl.py
+# Quarterly XBRL import (quarterly_reports_xbrl 寬表)
+docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python import_quarterly_xbrl.py
 ```
+
+> 舊的 `import_quarterly.py`（餵 `quarterly_reports`/`income_statement`/`balance_sheet`/`cash_flow`）已 deprecated，移到 `importer/_deprecated/`，對應的 `quarterly/import_quarterly.py` 也搬到 `importer/quarterly/_deprecated/`。所有季報資料一律走 XBRL。
 
 **Important Notes**:
 - `FORCE_REIMPORT` must be passed via `-e` flag, not as a shell env var prefix
@@ -81,9 +83,9 @@ docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python 
 | `import_daily.py` | Daily categories | daily_quotes, market_indices, institutional_investors, institutional_summary, foreign_holding, margin_trading, margin_sbl, margin_summary, pe_ratio |
 | `import_weekly.py` | Weekly categories | shareholding |
 | `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
-| `import_quarterly.py` | Quarterly categories | quarterly_reports, income_statement, balance_sheet, cash_flow |
 | `import_quarterly_xbrl.py` | Quarterly XBRL report table | quarterly_reports_xbrl (from `processed/quarterly_reports_xbrl/.../all_quarter.csv` + `all_accumulated.csv`) |
 | `import_xbrl.py` | Quarterly XBRL statement tables | balance_sheet_xbrl, income_statement_xbrl, cash_flow_xbrl (+ xbrl_codebook) |
+| ~~`import_quarterly.py`~~ | _deprecated_ | 移到 `importer/_deprecated/`；舊的 quarterly_reports/income_statement/balance_sheet/cash_flow 表不再寫入 |
 
 `import_daily.py` runs all daily categories in sequence for the date range.  
 For long ranges (for example a full year), runtime can be very long; this is expected and not a hang.
@@ -132,7 +134,7 @@ The processor adds `pced_file`, `pced_row`, `pced_col` columns to processed CSVs
 The importer **no longer relies on automatic type inference**. It uses `common/schemas.py` as a single source of truth:
 - Every `pl.read_csv` call uses `schema_overrides` from the shared schema.
 - This prevents numeric symbols from being incorrectly detected as integers (bigint).
-- **Dual-Column Support**: For flow statements (`income_statement`, `cash_flow`, `quarterly_reports`), the importer correctly handles both single-quarter (`_q`) and accumulated (`_acc`) fields as defined in the schema.
+- **Dual-Column Support (legacy)**: For the deprecated flow statements (`income_statement`, `cash_flow`, `quarterly_reports`), the importer correctly handles both single-quarter (`_q`) and accumulated (`_acc`) fields. 這些表已停止寫入，新資料走 `quarterly_reports_xbrl` 的 `period_type` 欄位區分 `quarter` / `accumulated`。
 - **XBRL statement import (`import_xbrl.py`)**: Quarterly statement XBRL exports are converted from wide `codeN/valueN` CSV into row-based records before DB import:
   - `balance_sheet_xbrl`: reads `all.csv` (period type `as_of`)
   - `income_statement_xbrl`: reads `all_quarter.csv` + `all_accumulated.csv`
@@ -175,20 +177,16 @@ done
 docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer python import_monthly.py
 ```
 
-### Import Quarterly Reports
-```bash
-# Use YYYYQX format for quarterly reports
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly.py
-```
-
 ### Import Quarterly XBRL
 ```bash
-# Import quarterly_reports_xbrl table
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_quarterly_xbrl.py
+# Statement-level (income/balance/cashflow + codebook)
+docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python import_xbrl.py
 
-# Import statement-level xbrl tables (income/balance/cashflow + codebook)
-docker compose run --rm -e START_DATE=2025Q3 -e END_DATE=2025Q3 importer python import_xbrl.py
+# quarterly_reports_xbrl 寬表
+docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python import_quarterly_xbrl.py
 ```
+
+> 一般情況走 `schedules/xbrl_run_pipeline.sh` 一鍵 scrape→process→import。直接呼叫 importer 適用 backfill 或 debug。
 
 ### Force Reimport TDCC Data
 ```bash
@@ -362,7 +360,7 @@ START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer python im
 
 **Files**:
 - `validator.py`: Statistical validation logic
-- `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_quarterly.py`, `import_quarterly_xbrl.py`: Frequency-based import entry points
+- `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_xbrl.py`, `import_quarterly_xbrl.py`: Frequency-based import entry points
 
 **Key Functions**:
 ```python

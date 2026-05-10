@@ -19,10 +19,6 @@
   - 只在每月 1~15 日執行（公告窗口），其餘日期直接 skip
   - 流程：`scraper-monthly -> (day 15 only) generate_active_stocks -> processor(convert_monthly) -> importer(monthly_revenue, FORCE_REIMPORT=1)`
 
-- `schedules/quarterly_update.sh`
-  - 流程：`scraper-quarterly -> processor(convert_quarterly) -> importer(quarterly categories)`
-  - 參數：可選 `YYYYQX`（不給則用上一季）
-
 - `schedules/daily_retry.sh`
   - 檢查前一天的 daily_update 是否成功，失敗才重跑
   - 參數：可選 `YYYYMMDD`（不給則用昨天）
@@ -37,8 +33,9 @@
     - log 沒成功 → 一般重跑全部
   - 由 launchd 在 02:00 及 04:00 各觸發一次
 
-- `schedules/xbrl_update.sh`
-  - 流程：`scraper-quarterly python3 scraper/quarterly/fetch_xbrl.py`
+- `schedules/xbrl_run_pipeline.sh`
+  - 流程：`scrape (fetch_xbrl) -> processor(convert_quarterly_xbrl) -> importer(import_xbrl) -> importer(import_quarterly_xbrl)`
+  - 寫入 DB：`balance_sheet_xbrl` / `income_statement_xbrl` / `cash_flow_xbrl` / `xbrl_codebook` / `quarterly_reports_xbrl`
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
   - 規則（不傳參數時，用今天日期判斷）：
     - `02/01~03/31`：抓「前一年 Q4」
@@ -46,6 +43,13 @@
     - `07/01~08/15`：抓「同年 Q2」
     - `10/01~11/15`：抓「同年 Q3」
     - 其他日期：直接 skip
+  - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / importer container
+
+- `schedules/backfill_xbrl.sh`
+  - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後仍須手動跑 processor + 兩個 importer，或對每季呼叫 `xbrl_run_pipeline.sh`。
+
+- `schedules/_deprecated/quarterly_update.sh`
+  - 已停用。原本流程是 `scraper-quarterly -> processor(convert_quarterly) -> importer(import_quarterly)`，餵的是 legacy 季報表。改用 `xbrl_run_pipeline.sh`。
 
 ## Logging
 
@@ -54,8 +58,7 @@
   - `daily_retry_<TARGET_DATE>_<EXEC_DATE>_<EXEC_TIME>.log`
   - `weekly_update_<TARGET_DATE>_<EXEC_TS>.log`
   - `monthly_update_<YYYYMM>_<EXEC_TS>.log`（例：`monthly_update_202603_20260410_224500.log`）
-  - `quarterly_update_<YYYYQX>_<EXEC_TS>.log`（例：`quarterly_update_2025Q4_20260115_000000.log`）
-  - `xbrl_update_<YYYYQX>_<EXEC_TS>.log` / `xbrl_update_skip_<EXEC_TS>.log`（視窗外時）
+  - `xbrl_pipeline_<YYYYQX>_<EXEC_TS>.log` / `xbrl_pipeline_skip_<EXEC_TS>.log`（視窗外時）
 
 ## launchd Only (macOS)
 
@@ -72,7 +75,7 @@
 | `schedules/com.poyilee.stock-daily-retry-2.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-retry-2.plist` |
 | `schedules/com.poyilee.stock-weekly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist` |
 | `schedules/com.poyilee.stock-monthly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist` |
-| `schedules/com.poyilee.stock-xbrl-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-xbrl-update.plist` |
+| `schedules/com.poyilee.stock-xbrl-run-pipeline.plist` | `~/Library/LaunchAgents/com.poyilee.stock-xbrl-run-pipeline.plist` |
 
 ### 初次安裝 / 重裝後還原
 
@@ -81,11 +84,11 @@
 cp schedules/com.poyilee.stock-daily-update.plist ~/Library/LaunchAgents/
 cp schedules/com.poyilee.stock-weekly-update.plist ~/Library/LaunchAgents/
 cp schedules/com.poyilee.stock-monthly-update.plist ~/Library/LaunchAgents/
-cp schedules/com.poyilee.stock-xbrl-update.plist ~/Library/LaunchAgents/
+cp schedules/com.poyilee.stock-xbrl-run-pipeline.plist ~/Library/LaunchAgents/
 
 # 載入全部
-for label in daily weekly monthly xbrl; do
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-${label}-update.plist
+for label in daily-update weekly-update monthly-update xbrl-run-pipeline; do
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-${label}.plist
 done
 ```
 
@@ -110,7 +113,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-
 | `com.poyilee.stock-daily-retry-2` | `schedules/daily_retry.sh` | 每天 04:00 |
 | `com.poyilee.stock-weekly-update` | `schedules/weekly_update.sh` | 每週日 10:20 |
 | `com.poyilee.stock-monthly-update` | `schedules/monthly_update.sh` | 每天 22:45 |
-| `com.poyilee.stock-xbrl-update` | `schedules/xbrl_update.sh` | 每天 23:50 |
+| `com.poyilee.stock-xbrl-run-pipeline` | `schedules/xbrl_run_pipeline.sh` | 每天 23:50 |
 
 ### macOS 26.4 注意事項
 
@@ -122,7 +125,7 @@ macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath`
 - `/tmp/launchd_daily_retry2_stdout.log` / `stderr`
 - `/tmp/launchd_weekly_stdout.log` / `stderr`
 - `/tmp/launchd_monthly_stdout.log` / `stderr`
-- `/tmp/launchd_xbrl_stdout.log` / `stderr`
+- `/tmp/launchd_xbrl_run_pipeline_stdout.log` / `stderr`
 
 真正的執行 log 仍由各 script 自己寫入 `logs/` 目錄（`logs/*_update_*.log`）。
 
@@ -138,17 +141,14 @@ macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath`
 # 手動執行 monthly
 ./schedules/monthly_update.sh
 
-# 手動執行 quarterly（指定季度）
-./schedules/quarterly_update.sh 2025Q3
+# 手動執行 XBRL 全鏈路（以今天判斷）
+./schedules/xbrl_run_pipeline.sh
 
-# 手動執行 xbrl window update（以今天判斷）
-./schedules/xbrl_update.sh
+# 手動執行 XBRL 全鏈路（指定日期判斷）
+./schedules/xbrl_run_pipeline.sh 20260304
 
-# 手動執行 xbrl window update（指定日期判斷）
-./schedules/xbrl_update.sh 20260304
-
-# 手動執行 xbrl window update（直接指定季度）
-./schedules/xbrl_update.sh 2025Q4
+# 手動執行 XBRL 全鏈路（直接指定季度）
+./schedules/xbrl_run_pipeline.sh 2025Q4
 ```
 
 ```bash
@@ -168,5 +168,5 @@ launchctl kickstart -p gui/$(id -u)/com.poyilee.stock-daily-update
 - 執行腳本前請確認 Docker Desktop 已啟動。
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
 - 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
-- Daily/Weekly/Monthly/Quarterly 都會寫入對應 `logs/*_update_*.log`。
+- Daily/Weekly/Monthly 寫入對應 `logs/*_update_*.log`；XBRL 寫入 `logs/xbrl_pipeline_*.log`。
 - plist 修改後務必同步 `schedules/` 備份並 commit。

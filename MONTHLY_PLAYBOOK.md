@@ -152,10 +152,10 @@ monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 
 ./schedules/monthly_update.sh
 ```
 
-季報月（5/8/11/3）若 quarterly 沒進，需手動：
+季報月（5/8/11/3）若 XBRL 沒進，需手動：
 ```bash
-./schedules/quarterly_update.sh 2026Q1
-./schedules/xbrl_update.sh         # 視窗內會自動抓對應季 XBRL
+./schedules/xbrl_run_pipeline.sh           # 視窗內依今天日期決定季別，scrape→process→import 一鍵
+./schedules/xbrl_run_pipeline.sh 2026Q1    # 直接指定季別（補跑或視窗外）
 ```
 
 ---
