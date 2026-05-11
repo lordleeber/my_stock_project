@@ -34,7 +34,9 @@ def main() -> None:
     #   "bear_market_exit"  → 熊市訊號觸發的全部出場
     #   "still_open"        → 回測結束時仍持有，未計算損益
     #   "no_quote_on_exit"  → 出場日找不到行情，損益為 NaN
-    closed = trades[trades["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])].copy()
+    closed = trades[
+        trades["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])
+    ].copy()
     still_open = trades[trades["exit_reason"] == "still_open"].copy()
     no_quote = trades[
         trades["exit_reason"].isin(["no_quote_on_exit", "no_quote_on_entry_date"])

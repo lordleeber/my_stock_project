@@ -122,7 +122,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-
 | `com.poyilee.stock-daily-retry-2` | `schedules/daily_retry.sh` | 每天 04:00 |
 | `com.poyilee.stock-weekly-update` | `schedules/weekly_update.sh` | 每週日 10:20 |
 | `com.poyilee.stock-monthly-update` | `schedules/monthly_update.sh` | 每天 22:45 |
-| `com.poyilee.stock-xbrl-scrape-daily` | `schedules/xbrl_scrape_daily.sh` | 每天 23:55 |
+| `com.poyilee.stock-xbrl-scrape-daily` | `schedules/xbrl_scrape_daily.sh` | 每天 23:50 |
 
 ### macOS 26.4 注意事項
 

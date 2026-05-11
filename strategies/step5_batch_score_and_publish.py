@@ -25,9 +25,7 @@ from strategies.step5_score_and_publish import score_and_publish
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch-score all months.")
-    parser.add_argument(
-        "--verbose", action="store_true", help="Print per-month output"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Print per-month output")
     return parser.parse_args()
 
 
@@ -71,7 +69,10 @@ def main() -> None:
             if args.verbose:
                 score_and_publish(year, month)
             else:
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with (
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
                     score_and_publish(year, month)
             ok += 1
         except Exception as exc:

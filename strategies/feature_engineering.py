@@ -256,7 +256,9 @@ def fetch_institutional_flow_features(
         agg["foreign_net_sum"] + agg["trust_net_sum"], agg["avg_volume"]
     )
 
-    result = sym_df.merge(agg[["symbol"] + INSTITUTIONAL_FLOW_COLS], on="symbol", how="left")
+    result = sym_df.merge(
+        agg[["symbol"] + INSTITUTIONAL_FLOW_COLS], on="symbol", how="left"
+    )
     return result[["symbol"] + INSTITUTIONAL_FLOW_COLS].reset_index(drop=True)
 
 

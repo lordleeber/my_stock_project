@@ -41,6 +41,7 @@ class Position:
     capital_used 為實際使用資金（open_price × shares），
     與固定金額（position_amount）可能因取整而略有差異。
     """
+
     symbol: str
     entry_date: str
     entry_price: float

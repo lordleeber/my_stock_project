@@ -87,7 +87,9 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     prepare_script = repo_root / "train_eps" / "step1_prepare_data.py"
     if not prepare_script.exists():
-        raise FileNotFoundError(f"shared step1_prepare_data.py not found: {prepare_script}")
+        raise FileNotFoundError(
+            f"shared step1_prepare_data.py not found: {prepare_script}"
+        )
 
     log_path = repo_root / "error_train_eps.log"
     py = resolve_python_executable(repo_root)

@@ -100,7 +100,9 @@ def main() -> None:
         pkl_pattern = re.compile(r"^\d{14}_\d+\.\d+\.pkl$")
         has_model = any(pkl_pattern.match(p.name) for p in models_dir.glob("*.pkl"))
         if not has_model:
-            print(f"[skip]  {label}  (no timestamped model pkl in models_eps/{year}/{month_s}/)")
+            print(
+                f"[skip]  {label}  (no timestamped model pkl in models_eps/{year}/{month_s}/)"
+            )
             skipped += 1
             continue
 

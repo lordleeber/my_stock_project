@@ -45,9 +45,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip months where trade_candidates.csv already exists",
     )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Print per-month output"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Print per-month output")
     return parser.parse_args()
 
 
@@ -116,7 +114,8 @@ def main() -> None:
             print(f"[run]   {label}")
             print(f"{'=' * 60}")
         result = subprocess.run(
-            cmd, cwd=str(ROOT_DIR),
+            cmd,
+            cwd=str(ROOT_DIR),
             stdout=None if args.verbose else subprocess.DEVNULL,
             stderr=None if args.verbose else subprocess.DEVNULL,
         )
@@ -129,7 +128,9 @@ def main() -> None:
             failed += 1
 
     if not args.dry_run:
-        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
+        print(
+            f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}"
+        )
 
 
 if __name__ == "__main__":

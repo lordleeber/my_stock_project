@@ -15,9 +15,7 @@ DAILY_MARKET_CATEGORIES = (
 
 # market_indices 的 symbol 是中文指數名（如「櫃買指數」、「臺灣50指數」），
 # 不適用 4 碼數字股票過濾。獨立成一組並傳 apply_etf_filter=False。
-DAILY_INDEX_CATEGORIES = (
-    "market_indices",
-)
+DAILY_INDEX_CATEGORIES = ("market_indices",)
 
 DAILY_ALL_CATEGORIES = (
     "institutional_summary",
