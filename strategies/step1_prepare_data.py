@@ -40,7 +40,9 @@ def model_release_date(year: int, month: str) -> str:
     return f"{year:04d}-{m:02d}-{day:02d}"
 
 
-def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
+def fetch_valuation_features(
+    engine, symbols: list[str], cutoff_date: str
+) -> pd.DataFrame:
     """從 valuation_daily 撈取 ROE 與 PE 百分位（TTM 基礎，依日期 PIT 對齊）。"""
     if not symbols:
         return pd.DataFrame(
@@ -52,19 +54,21 @@ def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.Da
             SELECT symbol, roe_official, pe_percentile_official,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM valuation_daily
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, roe_official, pe_percentile_official FROM latest WHERE rn = 1
         """
     ).bindparams(bindparam("symbols", expanding=True))
     with engine.connect() as conn:
-        df = pd.read_sql(stmt, conn, params={"symbols": symbols, "end_date": end_date})
+        df = pd.read_sql(
+            stmt, conn, params={"symbols": symbols, "cutoff_date": cutoff_date}
+        )
     df["symbol"] = df["symbol"].astype(str).str.strip()
     return df
 
 
 def fetch_market_sentiment_features(
-    engine, symbols: list[str], end_date: str
+    engine, symbols: list[str], cutoff_date: str
 ) -> pd.DataFrame:
     """撈取自營商持股、融資壓力與借券相關特徵。"""
     if not symbols:
@@ -84,7 +88,7 @@ def fetch_market_sentiment_features(
             SELECT symbol, dealer_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM dealer_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, dealer_held_ratio FROM latest WHERE rn = 1
         """
@@ -96,7 +100,7 @@ def fetch_market_sentiment_features(
             SELECT symbol, margin_usage_ratio, short_cover_pressure,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM margin_pressure_analysis
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, margin_usage_ratio, short_cover_pressure FROM latest WHERE rn = 1
         """
@@ -108,13 +112,13 @@ def fetch_market_sentiment_features(
             SELECT symbol, sbl_sell_repay_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM short_interest_analysis
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, sbl_sell_repay_ratio FROM latest WHERE rn = 1
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    params = {"symbols": symbols, "end_date": end_date}
+    params = {"symbols": symbols, "cutoff_date": cutoff_date}
     with engine.connect() as conn:
         dealer = pd.read_sql(stmt_dealer, conn, params=params)
         margin = pd.read_sql(stmt_margin, conn, params=params)
@@ -157,7 +161,9 @@ def fetch_fundamental_features(
     return df
 
 
-def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
+def fetch_chipflow_features(
+    engine, symbols: list[str], cutoff_date: str
+) -> pd.DataFrame:
     """撈取外資／投信持股比例與股權集中度特徵。"""
     if not symbols:
         return pd.DataFrame(
@@ -183,7 +189,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
             SELECT symbol, foreign_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM foreign_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, foreign_held_ratio FROM latest WHERE rn = 1
         """
@@ -195,7 +201,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
             SELECT symbol, trust_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM trust_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, trust_held_ratio FROM latest WHERE rn = 1
         """
@@ -211,7 +217,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
                    concentration_spread, concentration_spread_wow,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM shareholding_concentration
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         ),
         latest_two AS (
             SELECT symbol,
@@ -242,7 +248,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    params = {"symbols": symbols, "end_date": end_date}
+    params = {"symbols": symbols, "cutoff_date": cutoff_date}
     with engine.connect() as conn:
         foreign = pd.read_sql(stmt_foreign, conn, params=params)
         trust = pd.read_sql(stmt_trust, conn, params=params)
@@ -481,7 +487,7 @@ def fetch_one_year_live(
     return out
 
 
-def compute_ttm_official(df: pd.DataFrame, month: str) -> pd.Series:
+def compute_ttm_eps_by_month(df: pd.DataFrame, month: str) -> pd.Series:
     if month in {"02", "03", "04"}:
         cols = ["ly_q1_eps", "ly_q2_eps", "ly_q3_eps", "ly_q4_eps"]
     elif month in {"05", "06", "07"}:
@@ -563,12 +569,11 @@ def main() -> None:
         tp.safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1
     ).clip(-5, 5)
 
-    df["ttm_eps"] = compute_ttm_official(df, month)
+    df["ttm_eps"] = compute_ttm_eps_by_month(df, month)
     df["target_eps"] = pd.to_numeric(df.get("target_eps"), errors="coerce")
     df["delta_eps"] = df["target_eps"] - pd.to_numeric(
         df.get("anchor_eps"), errors="coerce"
     )
-    df["q2_eps_official"] = pd.to_numeric(df.get("ty_q2_eps"), errors="coerce")
     df["volume_lots"] = pd.to_numeric(df.get("quote_volume"), errors="coerce") / 1000.0
     df["pe_current"] = tp.safe_div_positive(df.get("close"), df["ttm_eps"])
     df["feature_cutoff_date"] = cutoff_date

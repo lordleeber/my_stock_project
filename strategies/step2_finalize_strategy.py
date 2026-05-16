@@ -72,16 +72,18 @@ def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
 
     ttm = pd.to_numeric(df.get("ttm_eps"), errors="coerce")
 
+    # TTM 滾動：把目前 TTM 視窗中最舊的那一季踢出、塞入 predict_target_eps。
+    # 月份對應的 rolloff 季別需與 step1 compute_ttm_eps_by_month 的 playbook 一致。
     if month in {"05", "06", "07"}:
-        oldest = pd.to_numeric(df.get("ly_q2_eps"), errors="coerce")
+        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q2_eps"), errors="coerce")
     elif month in {"08", "09", "10"}:
-        oldest = pd.to_numeric(df.get("ly_q3_eps"), errors="coerce")
+        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q3_eps"), errors="coerce")
     elif month in {"11", "12", "01"}:
-        oldest = pd.to_numeric(df.get("ly_q4_eps"), errors="coerce")
+        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q4_eps"), errors="coerce")
     else:
-        oldest = pd.to_numeric(df.get("ly_q1_eps"), errors="coerce")
+        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q1_eps"), errors="coerce")
 
-    df["ttm_eps_forward"] = ttm - oldest + df["predict_target_eps"]
+    df["ttm_eps_forward"] = ttm - ttm_rolloff_eps + df["predict_target_eps"]
     df["predict_target_price"] = (
         pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward"]
     )
