@@ -17,6 +17,7 @@ import pickle
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -112,11 +113,12 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
             f"[WARN] features missing in dataset_strategy.csv (will be filled with 0): {missing}"
         )
 
+    # 缺欄位填 NaN（不是 0），與 step4 訓練端對齊：LightGBM 原生 NaN handling。
     for c in feature_cols:
         if c not in df.columns:
-            df[c] = 0.0
+            df[c] = np.nan
 
-    X = df[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    X = df[feature_cols].apply(pd.to_numeric, errors="coerce")
     df["ml_score"] = model.predict(X)
     df["ml_rank"] = df["ml_score"].rank(ascending=False, method="first").astype(int)
     # 標註此次評分使用的 selection model cutoff（walk-forward 來源），

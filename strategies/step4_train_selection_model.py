@@ -192,7 +192,8 @@ def main() -> None:
     if missing:
         print(f"[WARN] features not in training data (will be skipped): {missing}")
 
-    X_train = train_df[feat_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    # 保留 NaN 讓 LightGBM 原生 NaN handling 學最佳分裂方向；不再 fillna(0)。
+    X_train = train_df[feat_cols].apply(pd.to_numeric, errors="coerce")
     y_train = build_rank_labels(train_df, n_bins=args.n_bins)
     train_groups = build_groups(train_df)
 
@@ -202,6 +203,7 @@ def main() -> None:
         learning_rate=args.learning_rate,
         num_leaves=args.num_leaves,
         subsample=0.8,
+        subsample_freq=1,  # subsample 需要 freq>0 才生效，預設 0 等於 silently disabled
         colsample_bytree=0.8,
         min_child_samples=5,
         reg_alpha=args.reg_alpha,
@@ -217,7 +219,7 @@ def main() -> None:
 
     eval_ic = None
     if not eval_df.empty:
-        X_eval = eval_df[feat_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+        X_eval = eval_df[feat_cols].apply(pd.to_numeric, errors="coerce")
         eval_pred = model.predict(X_eval)
         eval_ic = spearman_ic(eval_df, eval_pred)
         print(f"Eval  Spearman IC: {eval_ic:.4f}")
