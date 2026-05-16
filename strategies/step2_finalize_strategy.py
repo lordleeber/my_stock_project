@@ -198,7 +198,12 @@ def main() -> None:
         "pred_upside_pct",
     ]
     tc = df[[c for c in tc_cols if c in df.columns]].copy()
-    valid = tc["predict_target_price"].notna() & tc["close"].notna() & tc["close"].gt(0)
+    valid = (
+        tc["predict_target_price"].notna()
+        & tc["close"].notna()
+        & tc["close"].gt(0)
+        & tc["pred_upside_pct"].gt(0)
+    )
     tc = (
         tc[valid].sort_values("pred_upside_pct", ascending=False).reset_index(drop=True)
     )
