@@ -279,24 +279,58 @@ def fetch_one_year_live(
     q2 = f"{target_year}Q2"
 
     sql = f"""
-    WITH anchor_data AS (
+    WITH bs_anchor AS (
+      SELECT
+        symbol,
+        MAX(CASE WHEN account_code = '1XXX' THEN value_num END) AS total_assets,
+        MAX(CASE WHEN account_code = '2XXX' THEN value_num END) AS total_liabilities,
+        MAX(CASE WHEN account_code = '3XXX' THEN value_num END) AS total_equity,
+        MAX(CASE WHEN account_code = '3300' THEN value_num END) AS retained_earnings
+      FROM balance_sheet_xbrl
+      WHERE date = '{anchor_q}'
+        AND period_type = 'as_of'
+        AND account_code IN ('1XXX', '2XXX', '3XXX', '3300')
+      GROUP BY symbol
+    ),
+    cf_anchor AS (
+      SELECT
+        acc_anchor.symbol,
+        CASE
+          WHEN RIGHT('{anchor_q}', 2) = 'Q1' THEN acc_anchor.ocf_acc
+          ELSE acc_anchor.ocf_acc - COALESCE(acc_prev.ocf_acc, 0)
+        END AS anchor_ocf
+      FROM (
+        SELECT symbol, value_num AS ocf_acc
+        FROM cash_flow_xbrl
+        WHERE date = '{anchor_q}' AND period_type = 'accumulated' AND account_code = 'AAAA'
+      ) acc_anchor
+      LEFT JOIN (
+        SELECT symbol, value_num AS ocf_acc
+        FROM cash_flow_xbrl
+        WHERE date = '{prev_q}' AND period_type = 'accumulated' AND account_code = 'AAAA'
+      ) acc_prev ON acc_anchor.symbol = acc_prev.symbol
+    ),
+    anchor_data AS (
       SELECT
         '{market}' AS market,
-        i.symbol,
-        i.name,
-        i.revenue_q AS anchor_rev,
-        i.net_income_q AS anchor_ni,
-        i.net_income_q / NULLIF(i.revenue_q, 0) AS anchor_margin,
-        i.non_operating_income_q / NULLIF(i.pretax_income_q, 0) AS anchor_non_op_ratio,
-        i.net_income_q / NULLIF(b.total_equity, 0) AS anchor_roe,
-        b.total_liabilities / NULLIF(b.total_assets, 0) AS anchor_debt_ratio,
-        b.share_capital AS capital,
-        b.retained_earnings AS anchor_retained_earnings,
-        c.cash_flow_operating_q AS anchor_ocf
-      FROM income_statement i
-      JOIN balance_sheet b ON i.symbol = b.symbol AND i.date = b.date
-      JOIN cash_flow c ON i.symbol = c.symbol AND i.date = c.date
-      WHERE i.date = '{anchor_q}' AND i.market = '{market}'
+        q.symbol,
+        si.name,
+        q.revenue_q AS anchor_rev,
+        q.net_income_q AS anchor_ni,
+        q.net_income_q / NULLIF(q.revenue_q, 0) AS anchor_margin,
+        q.non_op_income_q / NULLIF(q.pretax_income_q, 0) AS anchor_non_op_ratio,
+        q.net_income_q / NULLIF(bs.total_equity, 0) AS anchor_roe,
+        bs.total_liabilities / NULLIF(bs.total_assets, 0) AS anchor_debt_ratio,
+        q.capital,
+        bs.retained_earnings AS anchor_retained_earnings,
+        cf.anchor_ocf
+      FROM quarterly_reports_xbrl q
+      LEFT JOIN stock_info si ON q.symbol = si.symbol
+      LEFT JOIN bs_anchor bs ON q.symbol = bs.symbol
+      LEFT JOIN cf_anchor cf ON q.symbol = cf.symbol
+      WHERE q.date = '{anchor_q}'
+        AND q.period_type = 'quarter'
+        AND COALESCE(si.market, q.market) = '{market}'
     ),
     prev_data AS (
       SELECT
@@ -304,8 +338,8 @@ def fetch_one_year_live(
         revenue_q AS prev_rev,
         net_income_q AS prev_ni,
         CASE WHEN revenue_q > 0 THEN net_income_q / revenue_q END AS prev_margin
-      FROM income_statement
-      WHERE date = '{prev_q}' AND market = '{market}'
+      FROM quarterly_reports_xbrl
+      WHERE date = '{prev_q}' AND period_type = 'quarter'
     ),
     this_monthly AS (
       SELECT symbol, {",".join(mctx["sql_exprs"])}

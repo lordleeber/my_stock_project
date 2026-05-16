@@ -165,5 +165,5 @@ Each major component has its own `CLAUDE.md` with detailed field-level specs:
 - `importer/CLAUDE.md` — import behavior, ETF/preferred stock filtering
 - `schedules/CLAUDE.md` — launchd setup, manual run commands
 - `train_eps/CLAUDE.md` — EPS model training calendar, gate rules, feature contracts
-- `strategies/README.md` — hard filters, `dataset_strategy.csv` field reference, ML model spec
+- `strategies/CLAUDE.md` — pipeline layout, XBRL table dependencies, anchor cash-flow conversion, step1 filters, walk-forward ordering
 - `MONTHLY_PLAYBOOK.md` — 每月公告日後的 ML pipeline 作業流程（train_eps + strategies + selection model）
