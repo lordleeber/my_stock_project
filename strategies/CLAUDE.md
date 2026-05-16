@@ -74,6 +74,34 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
 
 See [`MONTHLY_PLAYBOOK.md`](../MONTHLY_PLAYBOOK.md) for the strict ordering rule.
 
+## ⚠️ `models_selection/<Y>/<M>/` Directory Has Dual Meaning
+
+Same directory, two files with different temporal labels:
+
+| File | `M` interpretation |
+|---|---|
+| `selection_model.pkl` | M is **cutoff** — training used data up to cohort M's fwd_return |
+| `candidates_scored.csv` | M is **target** — scored by a model with cutoff **< M** (walk-forward) |
+
+Example: `models_selection/2026/04/candidates_scored.csv` lists April candidates scored by `models_selection/2026/03/selection_model.pkl` (or earlier). The April model in the same directory was trained later and is used for **May** candidates.
+
+To remove ambiguity, step5 writes a `scored_by_model_cutoff` column into `candidates_scored.csv` (value like `"2026/03"`) so the model source is always self-evident from the file alone.
+
+## EPS Column Naming in `dataset_strategy.csv`
+
+Two prefix families distinguish year:
+
+| Prefix | Meaning |
+|---|---|
+| `ly_*` | **last year** — Q1/Q2/Q3/Q4 of `target_year − 1` |
+| `ty_*` | **target year** — Q1/Q2 of `target_year` (the year being predicted) |
+| `anchor_*` | The most recent fully-published quarter as of cutoff |
+| `target_*` | The quarter being predicted (NaN for live inference; actual value in historical batch) |
+
+Note `ty_q1_eps` / `ty_q2_eps` may equal `anchor_eps` or `target_eps` depending on the playbook month — see `build_quarter_context` in `train_eps/step1_prepare_data.py` for the exact mapping per month. The columns hold the raw quarter EPS regardless of role.
+
+Legacy column `prev_q4_eps` (always identical to `ly_q4_eps`) was removed; downstream should use `ly_q4_eps`.
+
 ## Rules
 
 - Do NOT add new SQL paths to deprecated tables (`income_statement`, `balance_sheet`, `cash_flow`, `quarterly_reports`).

@@ -359,9 +359,8 @@ def fetch_one_year_live(
         MAX(CASE WHEN qr.date = '{ly_q2}' THEN qr.eps_q END) AS ly_q2_eps,
         MAX(CASE WHEN qr.date = '{ly_q3}' THEN qr.eps_q END) AS ly_q3_eps,
         MAX(CASE WHEN qr.date = '{ly_q4}' THEN qr.eps_q END) AS ly_q4_eps,
-        MAX(CASE WHEN qr.date = '{ly_q4}' THEN qr.eps_q END) AS prev_q4_eps,
-        MAX(CASE WHEN qr.date = '{q1}' THEN qr.eps_q END) AS q1_eps,
-        MAX(CASE WHEN qr.date = '{q2}' THEN qr.eps_q END) AS q2_eps
+        MAX(CASE WHEN qr.date = '{q1}' THEN qr.eps_q END) AS ty_q1_eps,
+        MAX(CASE WHEN qr.date = '{q2}' THEN qr.eps_q END) AS ty_q2_eps
       FROM quarterly_reports_xbrl qr
       WHERE qr.market = '{market}'
         AND qr.period_type = 'quarter'
@@ -399,9 +398,8 @@ def fetch_one_year_live(
       e.ly_q2_eps,
       e.ly_q3_eps,
       e.ly_q4_eps,
-      e.prev_q4_eps,
-      e.q1_eps,
-      e.q2_eps,
+      e.ty_q1_eps,
+      e.ty_q2_eps,
       q.q3_date,
       q.q3_close,
       q.q3_volume
@@ -485,11 +483,11 @@ def compute_ttm_official(df: pd.DataFrame, month: str) -> pd.Series:
     if month in {"02", "03", "04"}:
         cols = ["ly_q1_eps", "ly_q2_eps", "ly_q3_eps", "ly_q4_eps"]
     elif month in {"05", "06", "07"}:
-        cols = ["ly_q2_eps", "ly_q3_eps", "prev_q4_eps", "q1_eps"]
+        cols = ["ly_q2_eps", "ly_q3_eps", "ly_q4_eps", "ty_q1_eps"]
     elif month in {"08", "09", "10"}:
-        cols = ["ly_q3_eps", "prev_q4_eps", "q1_eps", "q2_eps"]
+        cols = ["ly_q3_eps", "ly_q4_eps", "ty_q1_eps", "ty_q2_eps"]
     elif month in {"11", "12", "01"}:
-        cols = ["ly_q4_eps", "q1_eps", "q2_eps", "anchor_eps"]
+        cols = ["ly_q4_eps", "ty_q1_eps", "ty_q2_eps", "anchor_eps"]
     else:
         return pd.Series(np.nan, index=df.index)
     return sum(pd.to_numeric(df.get(c), errors="coerce") for c in cols)
@@ -566,7 +564,7 @@ def main() -> None:
     df["delta_eps"] = df["target_eps"] - pd.to_numeric(
         df.get("anchor_eps"), errors="coerce"
     )
-    df["q2_eps_official"] = pd.to_numeric(df.get("q2_eps"), errors="coerce")
+    df["q2_eps_official"] = pd.to_numeric(df.get("ty_q2_eps"), errors="coerce")
     df["target_volume"] = pd.to_numeric(df.get("q3_volume"), errors="coerce")
     df["pe_current"] = tp.safe_div_positive(df.get("q3_close"), df["ttm_eps_official"])
     df["feature_cutoff_date"] = cutoff_date
@@ -629,9 +627,8 @@ def main() -> None:
         "ly_q2_eps",
         "ly_q3_eps",
         "ly_q4_eps",
-        "prev_q4_eps",
-        "q1_eps",
-        "q2_eps",
+        "ty_q1_eps",
+        "ty_q2_eps",
         # 籌碼流向
         "foreign_held_ratio",
         "trust_held_ratio",

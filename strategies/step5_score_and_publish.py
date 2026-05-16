@@ -119,6 +119,9 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
     X = df[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
     df["ml_score"] = model.predict(X)
     df["ml_rank"] = df["ml_score"].rank(ascending=False, method="first").astype(int)
+    # 標註此次評分使用的 selection model cutoff（walk-forward 來源），
+    # 避免日後看 candidates_scored.csv 誤以為是當月訓練的模型打的分。
+    df["scored_by_model_cutoff"] = f"{model_dir.parent.name}/{model_dir.name}"
 
     out = df.sort_values("ml_rank").reset_index(drop=True)
 
