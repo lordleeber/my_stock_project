@@ -51,6 +51,16 @@
 - 11/15 (announce Oct revenue + Q3 report): train current year `Q4 eps delta`.
 - 12/10 (announce Nov revenue): train current year `Q4 eps delta`.
 
+### Playbook Source of Truth
+
+「月份 → 目標季度」映射的單一 source of truth 在 `train_eps/shared_config.py`：
+
+- `MONTH_TO_TARGET_QNUM`：`{"01": 4, "02": 1, ..., "12": 4}` 純資料表
+- `target_quarter_for_playbook(execution_year, month) → (target_year, qnum)`：含 January 推前一年的邏輯
+- `shift_quarter(year, qnum, delta)` / `format_quarter(year, qnum)`：跨年季度位移與字串格式化
+
+`step1_prepare_data.build_quarter_context` 與 `step4_predict_and_publish` 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM`**。不要在其他檔案複製月份映射表。
+
 ## Evaluate Output Contract
 - `evaluate.py` writes only:
   - `models_eps/<year>/<month>/evaluate_by_fold.json`
