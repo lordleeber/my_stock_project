@@ -47,6 +47,8 @@ class Position:
     entry_price: float
     shares: int
     capital_used: float
+    cohort_year: int = 0
+    cohort_month: int = 0
 
 
 def prev_trading_day(date_str: str) -> str:
@@ -317,6 +319,18 @@ def main() -> None:
         exit_symbols = sorted(portfolio.keys())
         entry_symbols = sorted(candidates_df["symbol"].tolist())
 
+        # 記錄被結算 cohort 的識別資訊（同一輪的部位都來自同一個 cohort）。
+        # 首輪 portfolio 為空時三個欄位留空，realized_net_pnl 必為 0。
+        if exit_symbols:
+            sample_pos = portfolio[exit_symbols[0]]
+            cohort_year = sample_pos.cohort_year
+            cohort_month = f"{sample_pos.cohort_month:02d}"
+            cohort_entry_date = sample_pos.entry_date
+        else:
+            cohort_year = None
+            cohort_month = None
+            cohort_entry_date = None
+
         # 撈取出場日（前一交易日）與進場日的開盤價。
         exit_open_prices = fetch_open_on_date(exit_symbols, exit_date_str)
         entry_open_prices = fetch_open_on_date(entry_symbols, entry_date_str)
@@ -347,6 +361,8 @@ def main() -> None:
                 entry_price=open_price,
                 shares=shares,
                 capital_used=capital_used,
+                cohort_year=year,
+                cohort_month=int(month),
             )
 
         portfolio_capital = sum(p.capital_used for p in portfolio.values())
@@ -356,6 +372,9 @@ def main() -> None:
                 "month": month_s,
                 "exit_date": exit_date_str,
                 "entry_date": entry_date_str,
+                "cohort_year": cohort_year,
+                "cohort_month": cohort_month,
+                "cohort_entry_date": cohort_entry_date,
                 "regime": regime,
                 "holdings_count": len(portfolio),
                 "exits": len(exit_symbols),

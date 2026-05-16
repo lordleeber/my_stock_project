@@ -166,4 +166,5 @@ Each major component has its own `CLAUDE.md` with detailed field-level specs:
 - `schedules/CLAUDE.md` — launchd setup, manual run commands
 - `train_eps/CLAUDE.md` — EPS model training calendar, gate rules, feature contracts
 - `strategies/CLAUDE.md` — pipeline layout, XBRL table dependencies, anchor cash-flow conversion, step1 filters, walk-forward ordering
+- `backtester/CLAUDE.md` — rolling_monthly.csv column semantics (cohort vs rotation), still-open handling
 - `MONTHLY_PLAYBOOK.md` — 每月公告日後的 ML pipeline 作業流程（train_eps + strategies + selection model）
