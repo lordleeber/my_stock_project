@@ -8,6 +8,7 @@ from typing import Optional, Set
 import numpy as np
 import pandas as pd
 import requests
+from shared_config import format_quarter, shift_quarter, target_quarter_for_playbook
 from sqlalchemy import create_engine, text
 
 TARGET = "target_eps"
@@ -68,56 +69,19 @@ def feature_months_for_calendar_month(month: str) -> list[int]:
 
 
 def build_quarter_context(execution_year: int, month: str) -> dict:
-    if month == "01":
-        target_year = execution_year - 1
-        regime = "q4"
-    elif month in {"02", "03", "04"}:
-        target_year = execution_year
-        regime = "q1"
-    elif month in {"11", "12"}:
-        target_year = execution_year
-        regime = "q4"
-    elif month in {"08", "09", "10"}:
-        target_year = execution_year
-        regime = "q3"
-    elif month in {"05", "06", "07"}:
-        target_year = execution_year
-        regime = "q2"
-    else:
-        raise ValueError(f"Unsupported month: {month}")
-
-    if regime == "q4":
-        target_q = f"{target_year}Q4"
-        anchor_q = f"{target_year}Q3"
-        prev_q = f"{target_year}Q2"
-        ly_target_q = f"{target_year - 1}Q4"
-        ly_anchor_q = f"{target_year - 1}Q3"
-    elif regime == "q3":
-        target_q = f"{target_year}Q3"
-        anchor_q = f"{target_year}Q2"
-        prev_q = f"{target_year}Q1"
-        ly_target_q = f"{target_year - 1}Q3"
-        ly_anchor_q = f"{target_year - 1}Q2"
-    elif regime == "q2":
-        target_q = f"{target_year}Q2"
-        anchor_q = f"{target_year}Q1"
-        prev_q = f"{target_year - 1}Q4"
-        ly_target_q = f"{target_year - 1}Q2"
-        ly_anchor_q = f"{target_year - 1}Q1"
-    else:
-        target_q = f"{target_year}Q1"
-        anchor_q = f"{target_year - 1}Q4"
-        prev_q = f"{target_year - 1}Q3"
-        ly_target_q = f"{target_year - 1}Q1"
-        ly_anchor_q = f"{target_year - 2}Q4"
+    # Playbook 規則統一在 shared_config.target_quarter_for_playbook，這裡只負責
+    # 由 (target_year, target_qnum) 推導 anchor / prev / 去年同期等季度字串。
+    target_year, target_qnum = target_quarter_for_playbook(execution_year, month)
+    anchor_y, anchor_qn = shift_quarter(target_year, target_qnum, -1)
+    prev_y, prev_qn = shift_quarter(target_year, target_qnum, -2)
 
     return {
         "target_year": target_year,
-        "target_q": target_q,
-        "anchor_q": anchor_q,
-        "prev_q": prev_q,
-        "ly_target_q": ly_target_q,
-        "ly_anchor_q": ly_anchor_q,
+        "target_q": format_quarter(target_year, target_qnum),
+        "anchor_q": format_quarter(anchor_y, anchor_qn),
+        "prev_q": format_quarter(prev_y, prev_qn),
+        "ly_target_q": format_quarter(target_year - 1, target_qnum),
+        "ly_anchor_q": format_quarter(anchor_y - 1, anchor_qn),
     }
 
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from shared_config import MONTH_TO_TARGET_QNUM
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -16,23 +17,6 @@ EXCLUDE_COLUMNS = {
     "anchor_quarter",
     "target_eps",
     "delta_eps",
-}
-
-# playbook month → target quarter 編號（與 build_quarter_context 對齊）。
-# 01 月也對應 Q4（target_year 已在 dataset 內被往前推一年，這裡只需算季）。
-MONTH_TO_TARGET_QNUM = {
-    "01": 4,
-    "02": 1,
-    "03": 1,
-    "04": 1,
-    "05": 2,
-    "06": 2,
-    "07": 2,
-    "08": 3,
-    "09": 3,
-    "10": 3,
-    "11": 4,
-    "12": 4,
 }
 
 
