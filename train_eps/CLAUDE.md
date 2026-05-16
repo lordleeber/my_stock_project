@@ -10,7 +10,6 @@
 - Month model folders (model artifacts):
   - `models_eps/<year>/<month>`
 - Shared scripts:
-  - `prepare_data.py`
   - `train.py`
   - `evaluate.py`
   - `predict_and_publish.py`

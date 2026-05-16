@@ -28,13 +28,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from common.db import get_db_url
+
 from strategies.feature_engineering import (
     fetch_technical_features,
     TECHNICAL_FEATURE_COLS,
     fetch_revenue_features,
     REVENUE_FEATURE_COLS,
 )
-from train_eps import prepare_data as tp
 
 
 def parse_args() -> argparse.Namespace:
@@ -149,7 +150,7 @@ def main() -> None:
     # 解析進場日。
     rel_dt = release_date(year, month_int)
     earliest = rel_dt + timedelta(days=1)
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     entry_date_str = resolve_entry_date(engine, earliest)
     df["entry_date"] = entry_date_str
     print(f"entry_date: {entry_date_str}")

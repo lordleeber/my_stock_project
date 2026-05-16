@@ -31,7 +31,7 @@ if str(ROOT_DIR) not in sys.path:
 from backtester.data_loader import fetch_quotes_from_db
 from backtester.simulator import CostConfig
 from backtester.utils import month_iter, normalize_month
-from train_eps import prepare_data as tp
+from common.db import get_db_url
 
 
 @dataclass
@@ -61,7 +61,7 @@ def prev_trading_day(date_str: str) -> str:
     """
     stmt = text("SELECT MAX(date) FROM daily_quotes WHERE date < :d")
     try:
-        engine = create_engine(tp.get_db_url())
+        engine = create_engine(get_db_url())
         with engine.connect() as conn:
             result = conn.execute(stmt, {"d": date_str}).scalar()
         return str(result) if result else date_str
@@ -80,30 +80,40 @@ def detect_market_regime(ref_date: str) -> str:
         """
     )
     try:
-        engine = create_engine(tp.get_db_url())
+        engine = create_engine(get_db_url())
         with engine.connect() as conn:
-            idx = pd.read_sql(stmt, conn, params={"ref_date": ref_date})
+            market_idx_df = pd.read_sql(stmt, conn, params={"ref_date": ref_date})
     except Exception as exc:
         print(f"[WARN] market regime query failed: {exc}")
         return "Sideways"
 
-    if idx.empty:
+    if market_idx_df.empty:
         return "Sideways"
 
-    idx["date"] = pd.to_datetime(idx["date"], errors="coerce")
-    idx["index_close"] = pd.to_numeric(idx["index_close"], errors="coerce")
-    idx = idx.dropna(subset=["date", "index_close"]).sort_values("date")
-    if idx.empty:
+    market_idx_df["date"] = pd.to_datetime(market_idx_df["date"], errors="coerce")
+    market_idx_df["index_close"] = pd.to_numeric(
+        market_idx_df["index_close"], errors="coerce"
+    )
+    market_idx_df = market_idx_df.dropna(subset=["date", "index_close"]).sort_values(
+        "date"
+    )
+    if market_idx_df.empty:
         return "Sideways"
 
     # 同一天可能有多筆資料（不同指數），取平均後再計算均線
-    daily = (
-        idx.groupby("date", as_index=False)["index_close"].mean().sort_values("date")
+    daily_market_idx = (
+        market_idx_df.groupby("date", as_index=False)["index_close"]
+        .mean()
+        .sort_values("date")
     )
     # MA20：短期趨勢；MA60：中期趨勢；min_periods 允許資料初期均線仍可計算
-    daily["ma20"] = daily["index_close"].rolling(20, min_periods=10).mean()
-    daily["ma60"] = daily["index_close"].rolling(60, min_periods=20).mean()
-    latest = daily.iloc[-1]
+    daily_market_idx["ma20"] = (
+        daily_market_idx["index_close"].rolling(20, min_periods=10).mean()
+    )
+    daily_market_idx["ma60"] = (
+        daily_market_idx["index_close"].rolling(60, min_periods=20).mean()
+    )
+    latest = daily_market_idx.iloc[-1]
 
     ma20 = float(latest.get("ma20", np.nan))
     ma60 = float(latest.get("ma60", np.nan))
@@ -313,7 +323,6 @@ def main() -> None:
 
         # --- 偵測市場狀態（僅供觀察記錄；不影響進出場行為） ---
         regime = detect_market_regime(entry_date_str)
-        is_bear = False
 
         # 完整月度輪倉：全部出場，再全部進場新候選股。
         exit_symbols = sorted(portfolio.keys())
@@ -339,14 +348,17 @@ def main() -> None:
         month_realized_pnl = 0.0
         for sym in exit_symbols:
             pos = portfolio.pop(sym)
-            exit_reason = "bear_market_exit" if is_bear else "monthly_rotation"
             row, net_pnl = _exit_position(
-                pos, exit_date_str, exit_open_prices.get(sym), exit_reason, cost_cfg
+                pos,
+                exit_date_str,
+                exit_open_prices.get(sym),
+                "monthly_rotation",
+                cost_cfg,
             )
             trade_log.append(row)
             month_realized_pnl += net_pnl
 
-        # --- 處理進場（Bear 狀態下完全跳過）---
+        # --- 處理進場 ---
         month_entries_failed = 0
         for sym in entry_symbols:
             open_price = entry_open_prices.get(sym)
@@ -385,9 +397,8 @@ def main() -> None:
             }
         )
         if args.verbose:
-            regime_tag = " [BEAR — all exited]" if is_bear else f" [{regime}]"
             print(
-                f"[{year}/{month_s}] entry={entry_date_str}{regime_tag} | "
+                f"[{year}/{month_s}] entry={entry_date_str} [{regime}] | "
                 f"holdings={len(portfolio)} | exits={len(exit_symbols)} entries={len(entry_symbols)} | "
                 f"realized_pnl={month_realized_pnl:+.0f}"
             )
@@ -420,9 +431,7 @@ def main() -> None:
     monthly_df.to_csv(monthly_path, index=False, encoding="utf-8-sig")
 
     # 統計摘要（僅計算已平倉交易，排除 still_open）
-    closed = trades_df[
-        trades_df["exit_reason"].isin(["monthly_rotation", "bear_market_exit"])
-    ].copy()
+    closed = trades_df[trades_df["exit_reason"] == "monthly_rotation"].copy()
     total_net_pnl = closed["net_pnl"].sum() if not closed.empty else 0.0
     win_count = int((closed["net_pnl"] > 0).sum()) if not closed.empty else 0
     loss_count = int((closed["net_pnl"] < 0).sum()) if not closed.empty else 0

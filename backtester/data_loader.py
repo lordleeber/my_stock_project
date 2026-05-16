@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from train_eps import prepare_data as tp
+from common.db import get_db_url
 
 
 # 候選股 CSV 必須包含的欄位；缺少任一欄位會在載入時提前失敗，避免後續計算出現隱性錯誤
@@ -108,7 +108,7 @@ def fetch_quotes_from_db(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         out = pd.read_sql(
             stmt,

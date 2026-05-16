@@ -16,7 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from train_eps import prepare_data as tp
+from common.db import get_db_url
 
 
 def parse_args() -> argparse.Namespace:
@@ -187,7 +187,7 @@ def main() -> None:
     month_s = f"{month:02d}"
     base_dir = (Path.cwd() / "strategies" / "output").resolve()
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         cache_one_period(
             conn=conn, base_dir=base_dir, year=year, month=month, label="Current month"

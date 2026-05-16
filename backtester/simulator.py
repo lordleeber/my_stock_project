@@ -173,9 +173,9 @@ def simulate_one(
             "entry_price": entry_open,
         }
 
-    pos = position_cfg or {"shares_per_lot": 1000, "max_position_amount": 200000}
-    shares_per_lot = int(pos.get("shares_per_lot", 1000))
-    max_position_amount = float(pos.get("max_position_amount", 200000))
+    pos_cfg = position_cfg or {"shares_per_lot": 1000, "max_position_amount": 200000}
+    shares_per_lot = int(pos_cfg.get("shares_per_lot", 1000))
+    max_position_amount = float(pos_cfg.get("max_position_amount", 200000))
     shares_bought, capital_used = build_position_size(
         entry_open, max_position_amount, shares_per_lot
     )
@@ -195,12 +195,11 @@ def simulate_one(
     # 追蹤最高價，用於計算移動停損（trailing stop）
     highest_high = entry_open
 
-    q = sym_quotes.reset_index(drop=True)
-    for i, day in q.iterrows():
-        day_high = float(day["high"]) if pd.notna(day["high"]) else np.nan
-        day_low = float(day["low"]) if pd.notna(day["low"]) else np.nan
-        day_close = float(day["close"]) if pd.notna(day["close"]) else np.nan
-        day_date = pd.to_datetime(day["date"]).strftime("%Y-%m-%d")
+    for i, day_row in sym_quotes.iterrows():
+        day_high = float(day_row["high"]) if pd.notna(day_row["high"]) else np.nan
+        day_low = float(day_row["low"]) if pd.notna(day_row["low"]) else np.nan
+        day_close = float(day_row["close"]) if pd.notna(day_row["close"]) else np.nan
+        day_date = pd.to_datetime(day_row["date"]).strftime("%Y-%m-%d")
 
         # 更新歷史最高價（只在有效高價時更新，避免資料缺漏導致停損下移）
         if pd.notna(day_high):
@@ -298,7 +297,7 @@ def simulate_one(
             )
 
     # 迴圈結束但未觸發任何出場條件：行情資料在 end_date 前截止（資料不足）
-    last = q.tail(1).iloc[0]
+    last = sym_quotes.tail(1).iloc[0]
     last_close = float(last["close"]) if pd.notna(last["close"]) else np.nan
     last_date = pd.to_datetime(last["date"]).strftime("%Y-%m-%d")
     gross_pnl = (
@@ -425,13 +424,13 @@ def aggregate_monthly(trades: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_equity_curve(trades: pd.DataFrame) -> pd.DataFrame:
-    x = trades[trades["status"].isin(["sold", "open_until_end"])].copy()
-    if x.empty:
+    realized = trades[trades["status"].isin(["sold", "open_until_end"])].copy()
+    if realized.empty:
         return pd.DataFrame(columns=["date", "daily_net_pnl", "cum_net_pnl"])
-    x["date"] = pd.to_datetime(x["exit_date"], errors="coerce")
-    x = x.dropna(subset=["date"]).copy()
+    realized["date"] = pd.to_datetime(realized["exit_date"], errors="coerce")
+    realized = realized.dropna(subset=["date"]).copy()
     daily = (
-        x.groupby("date", as_index=False)["net_pnl"]
+        realized.groupby("date", as_index=False)["net_pnl"]
         .sum()
         .rename(columns={"net_pnl": "daily_net_pnl"})
     )

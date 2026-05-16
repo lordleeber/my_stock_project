@@ -24,8 +24,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from common.db import get_db_url
+
 from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATURE_COLS
-from train_eps import prepare_data as tp
 
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
@@ -133,7 +134,7 @@ def fetch_open_prices(engine, symbols: list[str], date_str: str) -> dict[str, fl
 
 def main() -> None:
     records: list[dict] = []
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
 
     for year, month in month_iter(START, END):
         month_s = f"{month:02d}"

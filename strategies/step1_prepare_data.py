@@ -15,7 +15,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from train_eps import prepare_data as tp
+from common.db import get_db_url
+from train_eps import step1_prepare_data as tp
+
 
 # Pseudo-TTM = ly_target_eps + pre_anchor_eps + anchor_eps
 # （兩個最近季 + 同期去年 target 季當 TTM 近似，並非連續 3 季）。
@@ -507,7 +509,7 @@ def main() -> None:
 
     frames: list[pd.DataFrame] = []
     t_all = time.perf_counter()
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         for market in tp.MARKETS:
             t_market = time.perf_counter()

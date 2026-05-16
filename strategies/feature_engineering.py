@@ -22,7 +22,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from train_eps import prepare_data as tp
+from common.db import get_db_url
+
 
 # 從 technical_indicators 撈取的原始欄位。
 _TI_COLS = [
@@ -113,7 +114,7 @@ def fetch_technical_features(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         ti = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
 
@@ -217,7 +218,7 @@ def fetch_institutional_flow_features(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         ii_df = pd.read_sql(
             ii_stmt, conn, params={"symbols": symbols, "ref_date": ref_date}
@@ -298,7 +299,7 @@ def fetch_price_features(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         df = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
 
@@ -376,7 +377,7 @@ def fetch_revenue_features(
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    engine = create_engine(tp.get_db_url())
+    engine = create_engine(get_db_url())
     with engine.connect() as conn:
         df = pd.read_sql(
             stmt, conn, params={"symbols": symbols, "ref_compact": ref_compact}

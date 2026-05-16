@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Set
 
@@ -11,6 +12,12 @@ import requests
 from shared_config import format_quarter, shift_quarter, target_quarter_for_playbook
 from sqlalchemy import create_engine, text
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from common.db import get_db_url
+
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 CONTEXT_COLUMNS = ["symbol", "name", "industry"]
@@ -18,10 +25,6 @@ MIN_TTM_EPS = 1.0
 API_BASE = os.getenv("BACKEND_API_BASE", "http://100.103.191.79:8000")
 MARKETS = ("sii", "otc")
 START_YEAR = 2020
-
-
-def get_db_url() -> str:
-    return "postgresql://user:password@localhost:5419/stock_db"
 
 
 def normalize_month(month: str) -> str:
