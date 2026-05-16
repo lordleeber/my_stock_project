@@ -30,7 +30,7 @@ from train_eps import prepare_data as tp
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = (2021, 8)
-END = (2026, 3)  # 最後一個可計算下月報酬的月份（需要下月 entry_date 存在）
+END = (2026, 4)  # 最後一個可計算下月報酬的月份（需要下月 entry_date 存在）
 
 FEATURE_COLS = (
     [
