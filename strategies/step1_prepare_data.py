@@ -368,13 +368,15 @@ def fetch_one_year_live(
       GROUP BY qr.symbol
     ),
     quote_latest AS (
-      SELECT symbol, q3_date, q3_close, q3_volume
+      -- 最新一筆 daily_quotes（在 cutoff_date 當天或之前）；
+      -- 與真正季度 (ly_q*/ty_q*) 無關，原 q3_* 命名沿用 deprecated。
+      SELECT symbol, quote_date, close, quote_volume
       FROM (
         SELECT
           d.symbol,
-          d.date AS q3_date,
-          d.close AS q3_close,
-          d.volume AS q3_volume,
+          d.date AS quote_date,
+          d.close AS close,
+          d.volume AS quote_volume,
           ROW_NUMBER() OVER (PARTITION BY d.symbol ORDER BY d.date DESC) AS rn
         FROM daily_quotes d
         JOIN anchor_data a ON a.symbol = d.symbol
@@ -400,9 +402,9 @@ def fetch_one_year_live(
       e.ly_q4_eps,
       e.ty_q1_eps,
       e.ty_q2_eps,
-      q.q3_date,
-      q.q3_close,
-      q.q3_volume
+      q.quote_date,
+      q.close,
+      q.quote_volume
     FROM anchor_data a
     LEFT JOIN prev_data p ON a.symbol = p.symbol
     JOIN this_monthly m ON a.symbol = m.symbol
@@ -559,14 +561,14 @@ def main() -> None:
         tp.safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1
     ).clip(-5, 5)
 
-    df["ttm_eps_official"] = compute_ttm_official(df, month)
+    df["ttm_eps"] = compute_ttm_official(df, month)
     df["target_eps"] = pd.to_numeric(df.get("target_eps"), errors="coerce")
     df["delta_eps"] = df["target_eps"] - pd.to_numeric(
         df.get("anchor_eps"), errors="coerce"
     )
     df["q2_eps_official"] = pd.to_numeric(df.get("ty_q2_eps"), errors="coerce")
-    df["target_volume"] = pd.to_numeric(df.get("q3_volume"), errors="coerce")
-    df["pe_current"] = tp.safe_div_positive(df.get("q3_close"), df["ttm_eps_official"])
+    df["volume_lots"] = pd.to_numeric(df.get("quote_volume"), errors="coerce") / 1000.0
+    df["pe_current"] = tp.safe_div_positive(df.get("close"), df["ttm_eps"])
     df["feature_cutoff_date"] = cutoff_date
 
     rows_before_ttm_filter = len(df)
@@ -579,7 +581,7 @@ def main() -> None:
     rows_after_ttm_filter = len(df)
 
     volume_ok = (
-        pd.to_numeric(df.get("target_volume"), errors="coerce").fillna(0) / 1000.0
+        pd.to_numeric(df.get("volume_lots"), errors="coerce").fillna(0)
         > MIN_VOLUME_LOTS
     )
     df = df[volume_ok].copy()
@@ -607,7 +609,7 @@ def main() -> None:
     fundamental = fetch_fundamental_features(engine, symbols, anchor_q)
     df = df.merge(fundamental, on="symbol", how="left")
     df["pb_ratio"] = tp.safe_div_positive(
-        pd.to_numeric(df.get("q3_close"), errors="coerce"),
+        pd.to_numeric(df.get("close"), errors="coerce"),
         pd.to_numeric(df.get("nav_per_share"), errors="coerce"),
     )
 
@@ -618,11 +620,10 @@ def main() -> None:
         "year",
         "anchor_eps",
         "pe_current",
-        "ttm_eps_official",
-        "target_volume",
-        "q3_volume",
-        "q3_date",
-        "q3_close",
+        "ttm_eps",
+        "volume_lots",
+        "quote_date",
+        "close",
         "ly_q1_eps",
         "ly_q2_eps",
         "ly_q3_eps",

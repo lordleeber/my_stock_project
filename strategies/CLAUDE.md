@@ -102,6 +102,20 @@ Note `ty_q1_eps` / `ty_q2_eps` may equal `anchor_eps` or `target_eps` depending 
 
 Legacy column `prev_q4_eps` (always identical to `ly_q4_eps`) was removed; downstream should use `ly_q4_eps`.
 
+## Quote Snapshot Columns
+
+`dataset_strategy.csv` carries the **latest daily-quote snapshot at or before cutoff_date** (not a quarterly value):
+
+| Column | Meaning |
+|---|---|
+| `quote_date` | The trading date of the snapshot (typically equals cutoff_date unless cutoff falls on a non-trading day) |
+| `close` | Close price on `quote_date` |
+| `volume_lots` | Volume in lots (張，= shares ÷ 1000) on `quote_date` |
+| `ttm_eps` | Trailing-twelve-month EPS computed from quarterly EPS columns per the playbook month's anchor selection |
+| `pe_current` | `close / ttm_eps` |
+
+Legacy columns `q3_close` / `q3_date` / `q3_volume` (the `q3_` prefix was an internal SQL CTE artifact, **not** related to fiscal Q3) and `target_volume` / `ttm_eps_official` (step1 raw names) were removed because they sat alongside true quarterly columns (`ly_q3_eps`, etc.) and invited misreading. The canonical names above are emitted directly by step1; step2 no longer adds duplicate aliases.
+
 ## Rules
 
 - Do NOT add new SQL paths to deprecated tables (`income_statement`, `balance_sheet`, `cash_flow`, `quarterly_reports`).

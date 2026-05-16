@@ -70,7 +70,7 @@ def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
     pred_delta = pd.to_numeric(df.get("pred_lgb_delta"), errors="coerce")
     df["predict_target_eps"] = anchor + pred_delta
 
-    ttm = pd.to_numeric(df.get("ttm_eps_official"), errors="coerce")
+    ttm = pd.to_numeric(df.get("ttm_eps"), errors="coerce")
 
     if month in {"05", "06", "07"}:
         oldest = pd.to_numeric(df.get("ly_q2_eps"), errors="coerce")
@@ -85,7 +85,7 @@ def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
     df["predict_target_price"] = (
         pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward"]
     )
-    close = pd.to_numeric(df.get("q3_close"), errors="coerce")
+    close = pd.to_numeric(df.get("close"), errors="coerce")
     df["pred_upside_pct"] = (
         (df["predict_target_price"] - close) / close * 100.0
     ).where(close > 0)
@@ -154,8 +154,11 @@ def main() -> None:
 
     # 撈取 entry_date 的技術指標特徵。
     symbols = df["symbol"].tolist()
-    close_s = pd.to_numeric(df.set_index("symbol")["q3_close"], errors="coerce")
-    volume_s = pd.to_numeric(df.set_index("symbol")["target_volume"], errors="coerce")
+    close_s = pd.to_numeric(df.set_index("symbol")["close"], errors="coerce")
+    # volume_lots 在 csv 內為單位「張」，技術指標 vma* 以「股」為單位，這裡轉回股數。
+    volume_s = (
+        pd.to_numeric(df.set_index("symbol")["volume_lots"], errors="coerce") * 1000.0
+    )
     tech = fetch_technical_features(
         symbols, entry_date_str, close_series=close_s, volume_series=volume_s
     )
@@ -177,10 +180,8 @@ def main() -> None:
         f"Revenue features added: {len(REVENUE_FEATURE_COLS)} cols  ({n_rev}/{len(df)} symbols with data)"
     )
 
-    # 為下游腳本（analyze、score、train）建立便捷欄位別名。
-    df["close"] = pd.to_numeric(df.get("q3_close"), errors="coerce")
-    df["ttm_eps"] = pd.to_numeric(df.get("ttm_eps_official"), errors="coerce")
-    df["volume_lots"] = pd.to_numeric(df.get("target_volume"), errors="coerce") / 1000.0
+    # close / ttm_eps / volume_lots 由 step1 emit 為 canonical 欄位，
+    # step2 不再加同義別名（避免兩個入口同一份資料）。
 
     # 寫入更新後的 dataset_strategy.csv。
     df.to_csv(strategy_path, index=False, encoding="utf-8-sig")
@@ -190,12 +191,11 @@ def main() -> None:
     tc_cols = [
         "symbol",
         "predict_target_price",
-        "q3_close",
+        "close",
         "entry_date",
         "pred_upside_pct",
     ]
     tc = df[[c for c in tc_cols if c in df.columns]].copy()
-    tc = tc.rename(columns={"q3_close": "close"})
     valid = tc["predict_target_price"].notna() & tc["close"].notna() & tc["close"].gt(0)
     tc = (
         tc[valid].sort_values("pred_upside_pct", ascending=False).reset_index(drop=True)
