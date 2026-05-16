@@ -104,9 +104,9 @@ def monthly_context(execution_year: int, month: str) -> dict:
 
     month_cols = list(col_to_date.keys())
     mr_dates = sorted(set(col_to_date.values()))
-    rename_map = {v: k for k, v in col_to_date.items()}
+    date_to_col = {v: k for k, v in col_to_date.items()}
     sql_exprs = [
-        f"MAX(CASE WHEN date='{d}' THEN revenue_current END) AS {rename_map[d]}"
+        f"MAX(CASE WHEN date='{d}' THEN revenue_current END) AS {date_to_col[d]}"
         for d in mr_dates
     ]
 
@@ -116,7 +116,7 @@ def monthly_context(execution_year: int, month: str) -> dict:
         "mr_dates": mr_dates,
         "mr_start": mr_dates[0],
         "mr_end": mr_dates[-1],
-        "rename_map": rename_map,
+        "date_to_col": date_to_col,
         "sql_exprs": sql_exprs,
     }
 
@@ -520,7 +520,7 @@ def fetch_one_year_api(
             pvt = mr2.pivot_table(
                 index="symbol", columns="date", values="revenue_current", aggfunc="last"
             ).reset_index()
-            this_monthly = pvt.rename(columns=mctx["rename_map"])
+            this_monthly = pvt.rename(columns=mctx["date_to_col"])
             for c in mctx["month_cols"]:
                 if c not in this_monthly.columns:
                     this_monthly[c] = np.nan
