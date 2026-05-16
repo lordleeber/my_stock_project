@@ -316,34 +316,36 @@ def pivot_xbrl_codes(
 def build_cashflow_single_quarter(
     cf_xbrl: pd.DataFrame,
     *,
-    q2: str,
-    q3: str,
+    prev_q: str,
+    anchor_q: str,
     account_codes: list[str],
     symbols: Optional[Set[str]] = None,
 ) -> pd.DataFrame:
-    q3_acc = pivot_xbrl_codes(
+    anchor_acc = pivot_xbrl_codes(
         cf_xbrl,
-        date=q3,
+        date=anchor_q,
         period_type="accumulated",
         account_codes=account_codes,
         symbols=symbols,
     )
-    q2_acc = pivot_xbrl_codes(
+    prev_acc = pivot_xbrl_codes(
         cf_xbrl,
-        date=q2,
+        date=prev_q,
         period_type="accumulated",
         account_codes=account_codes,
         symbols=symbols,
     )
-    if q3_acc.empty:
+    if anchor_acc.empty:
         return pd.DataFrame(columns=["symbol"] + account_codes)
 
-    m = q3_acc.merge(q2_acc, on="symbol", how="left", suffixes=("_q3acc", "_q2acc"))
-    out = pd.DataFrame({"symbol": m["symbol"]})
+    merged = anchor_acc.merge(
+        prev_acc, on="symbol", how="left", suffixes=("_anchor_acc", "_prev_acc")
+    )
+    out = pd.DataFrame({"symbol": merged["symbol"]})
     for code in account_codes:
-        out[code] = pd.to_numeric(m[f"{code}_q3acc"], errors="coerce") - pd.to_numeric(
-            m[f"{code}_q2acc"], errors="coerce"
-        )
+        out[code] = pd.to_numeric(
+            merged[f"{code}_anchor_acc"], errors="coerce"
+        ) - pd.to_numeric(merged[f"{code}_prev_acc"], errors="coerce")
     return out
 
 
@@ -352,30 +354,38 @@ def build_xbrl_feature_frame(
     bs_xbrl: pd.DataFrame,
     cf_xbrl: pd.DataFrame,
     *,
-    q2: str,
-    q3: str,
+    prev_q: str,
+    anchor_q: str,
     symbols: Optional[Set[str]] = None,
 ) -> pd.DataFrame:
     inc_codes = ["4000", "5900", "6300", "6900", "7900", "7950", "8200"]
     bs_codes = ["1100", "11XX", "21XX", "1XXX"]
     cf_codes = ["AAAA", "B02700"]
 
-    inc_q3 = pivot_xbrl_codes(
+    inc_anchor = pivot_xbrl_codes(
         inc_xbrl,
-        date=q3,
+        date=anchor_q,
         period_type="quarter",
         account_codes=inc_codes,
         symbols=symbols,
     )
-    bs_q3 = pivot_xbrl_codes(
-        bs_xbrl, date=q3, period_type="as_of", account_codes=bs_codes, symbols=symbols
+    bs_anchor = pivot_xbrl_codes(
+        bs_xbrl,
+        date=anchor_q,
+        period_type="as_of",
+        account_codes=bs_codes,
+        symbols=symbols,
     )
-    cf_q3 = build_cashflow_single_quarter(
-        cf_xbrl, q2=q2, q3=q3, account_codes=cf_codes, symbols=symbols
+    cf_anchor = build_cashflow_single_quarter(
+        cf_xbrl,
+        prev_q=prev_q,
+        anchor_q=anchor_q,
+        account_codes=cf_codes,
+        symbols=symbols,
     )
 
-    x = inc_q3.merge(bs_q3, on="symbol", how="outer").merge(
-        cf_q3, on="symbol", how="outer"
+    x = inc_anchor.merge(bs_anchor, on="symbol", how="outer").merge(
+        cf_anchor, on="symbol", how="outer"
     )
     if x.empty:
         return pd.DataFrame(
@@ -620,7 +630,12 @@ def fetch_one_year_api(
             {"start_date": prev_q, "end_date": anchor_q},
         )
         xbrl_features = build_xbrl_feature_frame(
-            inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe
+            inc_xbrl,
+            bs_xbrl,
+            cf_xbrl,
+            prev_q=prev_q,
+            anchor_q=anchor_q,
+            symbols=symbol_universe,
         )
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:
@@ -713,7 +728,12 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
             conn,
         )
         xbrl_features = build_xbrl_feature_frame(
-            inc_xbrl, bs_xbrl, cf_xbrl, q2=prev_q, q3=anchor_q, symbols=symbol_universe
+            inc_xbrl,
+            bs_xbrl,
+            cf_xbrl,
+            prev_q=prev_q,
+            anchor_q=anchor_q,
+            symbols=symbol_universe,
         )
         out = out.merge(xbrl_features, on="symbol", how="left")
     except Exception as e:

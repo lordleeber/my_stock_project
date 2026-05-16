@@ -442,7 +442,7 @@ def main() -> None:
         train_delta_low = np.minimum(train_lo, train_delta_raw)
         train_delta_high = np.maximum(train_hi, train_delta_raw)
 
-        pred_eps_model = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
+        pred_eps_from_delta = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta
         pred_eps_low = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_low
         pred_eps_high = test_df["anchor_eps"].to_numpy(dtype=float) + pred_delta_high
 
@@ -528,8 +528,8 @@ def main() -> None:
             )
 
         pred_half_width = (pred_eps_high - pred_eps_low) / 2.0
-        pred_eps_low = pred_eps_model - pred_half_width * interval_scale_vec
-        pred_eps_high = pred_eps_model + pred_half_width * interval_scale_vec
+        pred_eps_low = pred_eps_from_delta - pred_half_width * interval_scale_vec
+        pred_eps_high = pred_eps_from_delta + pred_half_width * interval_scale_vec
 
         pred_eps_anchor = test_df["anchor_eps"].to_numpy(dtype=float)
         pred_eps_med = np.full(
@@ -537,7 +537,7 @@ def main() -> None:
         )
 
         for model_name, pred in [
-            ("lgb_delta", pred_eps_model),
+            ("lgb_delta", pred_eps_from_delta),
             ("baseline_anchor_eps", pred_eps_anchor),
             ("baseline_train_median", pred_eps_med),
         ]:

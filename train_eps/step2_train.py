@@ -153,7 +153,7 @@ def main() -> None:
     )
     model.fit(x_data, y_delta)
 
-    pred_eps = df["anchor_eps"].to_numpy(dtype=float) + model.predict(x_data)
+    pred_eps_from_delta = df["anchor_eps"].to_numpy(dtype=float) + model.predict(x_data)
     baseline_eps = df["anchor_eps"].to_numpy(dtype=float)
     y_true = df[TARGET].to_numpy(dtype=float)
 
@@ -164,7 +164,9 @@ def main() -> None:
         "main_metric": "mae",
         "winsor_quantile": winsor_quantile,
         "model_family": "lightgbm",
-        "train_mae_lgb_pred_eps": float(mean_absolute_error(y_true, pred_eps)),
+        "train_mae_lgb_pred_eps": float(
+            mean_absolute_error(y_true, pred_eps_from_delta)
+        ),
         "train_mae_baseline_anchor_eps": float(
             mean_absolute_error(y_true, baseline_eps)
         ),
