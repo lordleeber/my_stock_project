@@ -454,12 +454,12 @@ def main() -> None:
         train_eps_high = train_df["anchor_eps"].to_numpy(dtype=float) + train_delta_high
 
         calib_source = "global"
-        interval_scale_vec = np.full(len(test_df), 1.0, dtype=float)
+        per_row_scale = np.full(len(test_df), 1.0, dtype=float)
         if args.calibration_mode == "latest_year":
             latest_year = int(train_df["year"].astype(int).max())
             latest_mask = train_df["year"].astype(int).to_numpy() == latest_year
             if int(np.sum(latest_mask)) >= args.min_calib_samples:
-                interval_scale = calibrate_interval_scale(
+                scale_value = calibrate_interval_scale(
                     train_df.loc[latest_mask, TARGET].to_numpy(dtype=float),
                     train_eps_mid[latest_mask],
                     train_eps_low[latest_mask],
@@ -475,43 +475,41 @@ def main() -> None:
                     f"Calibration failed: latest_year mode requires >= {args.min_calib_samples} rows in latest year "
                     f"(latest_year={latest_year}, rows={int(np.sum(latest_mask))})."
                 )
-            interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
+            per_row_scale = np.full(len(test_df), scale_value, dtype=float)
         elif args.calibration_mode == "regime":
-            interval_scale_vec, calib_source, interval_scale = (
-                calibrate_interval_scale_by_regime(
-                    train_df=train_df,
-                    test_df=test_df,
-                    y_true_train=train_df[TARGET].to_numpy(dtype=float),
-                    y_mid_train=train_eps_mid,
-                    y_low_train=train_eps_low,
-                    y_high_train=train_eps_high,
-                    pred_std_train=pred_delta_train_std,
-                    pred_std_test=pred_delta_std,
-                    target_coverage=args.target_coverage,
-                    min_samples=args.min_calib_samples,
-                    min_scale=args.min_calib_scale,
-                    max_scale=args.max_calib_scale,
-                )
+            # 第三項是 global fallback scale，已被吸收到 per_row_scale 內，外部不需要再用。
+            per_row_scale, calib_source, _ = calibrate_interval_scale_by_regime(
+                train_df=train_df,
+                test_df=test_df,
+                y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                y_mid_train=train_eps_mid,
+                y_low_train=train_eps_low,
+                y_high_train=train_eps_high,
+                pred_std_train=pred_delta_train_std,
+                pred_std_test=pred_delta_std,
+                target_coverage=args.target_coverage,
+                min_samples=args.min_calib_samples,
+                min_scale=args.min_calib_scale,
+                max_scale=args.max_calib_scale,
             )
         elif args.calibration_mode == "nonlinear":
-            interval_scale_vec, calib_source, interval_scale = (
-                calibrate_interval_scale_nonlinear(
-                    y_true_train=train_df[TARGET].to_numpy(dtype=float),
-                    y_mid_train=train_eps_mid,
-                    y_low_train=train_eps_low,
-                    y_high_train=train_eps_high,
-                    pred_std_train=pred_delta_train_std,
-                    pred_std_test=pred_delta_std,
-                    target_coverage=args.target_coverage,
-                    min_samples=args.min_calib_samples,
-                    min_scale=args.min_calib_scale,
-                    max_scale=args.max_calib_scale,
-                    n_bins=args.nonlinear_bins,
-                    min_bin_samples=args.nonlinear_min_bin_samples,
-                )
+            # 第三項是 global fallback scale，已被吸收到 per_row_scale 內，外部不需要再用。
+            per_row_scale, calib_source, _ = calibrate_interval_scale_nonlinear(
+                y_true_train=train_df[TARGET].to_numpy(dtype=float),
+                y_mid_train=train_eps_mid,
+                y_low_train=train_eps_low,
+                y_high_train=train_eps_high,
+                pred_std_train=pred_delta_train_std,
+                pred_std_test=pred_delta_std,
+                target_coverage=args.target_coverage,
+                min_samples=args.min_calib_samples,
+                min_scale=args.min_calib_scale,
+                max_scale=args.max_calib_scale,
+                n_bins=args.nonlinear_bins,
+                min_bin_samples=args.nonlinear_min_bin_samples,
             )
         elif args.calibration_mode == "global":
-            interval_scale = calibrate_interval_scale(
+            scale_value = calibrate_interval_scale(
                 train_df[TARGET].to_numpy(dtype=float),
                 train_eps_mid,
                 train_eps_low,
@@ -521,15 +519,15 @@ def main() -> None:
                 args.min_calib_scale,
                 args.max_calib_scale,
             )
-            interval_scale_vec = np.full(len(test_df), interval_scale, dtype=float)
+            per_row_scale = np.full(len(test_df), scale_value, dtype=float)
         else:
             raise ValueError(
                 "Invalid calibration_mode. Allowed values: latest_year, regime, nonlinear, global."
             )
 
         pred_half_width = (pred_eps_high - pred_eps_low) / 2.0
-        pred_eps_low = pred_eps_from_delta - pred_half_width * interval_scale_vec
-        pred_eps_high = pred_eps_from_delta + pred_half_width * interval_scale_vec
+        pred_eps_low = pred_eps_from_delta - pred_half_width * per_row_scale
+        pred_eps_high = pred_eps_from_delta + pred_half_width * per_row_scale
 
         pred_eps_anchor = test_df["anchor_eps"].to_numpy(dtype=float)
         pred_eps_med = np.full(
@@ -555,7 +553,7 @@ def main() -> None:
                 else np.nan,
                 "calibration_mode": args.calibration_mode,
                 "calibration_source": calib_source,
-                "interval_scale": float(np.mean(interval_scale_vec)),
+                "interval_scale": float(np.mean(per_row_scale)),
                 **m,
                 "n_train": len(train_df),
                 "n_test": len(test_df),
