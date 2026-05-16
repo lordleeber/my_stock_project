@@ -70,16 +70,17 @@ def feature_months_for_calendar_month(month: str) -> list[int]:
 
 def build_quarter_context(execution_year: int, month: str) -> dict:
     # Playbook 規則統一在 shared_config.target_quarter_for_playbook，這裡只負責
-    # 由 (target_year, target_qnum) 推導 anchor / prev / 去年同期等季度字串。
+    # 由 (target_year, target_qnum) 推導 anchor / pre_anchor / 去年同期等季度字串。
+    # pre_anchor 指「anchor 前一季」（= target 前兩季），用來算 QoQ momentum。
     target_year, target_qnum = target_quarter_for_playbook(execution_year, month)
     anchor_y, anchor_qn = shift_quarter(target_year, target_qnum, -1)
-    prev_y, prev_qn = shift_quarter(target_year, target_qnum, -2)
+    pre_anchor_y, pre_anchor_qn = shift_quarter(target_year, target_qnum, -2)
 
     return {
         "target_year": target_year,
         "target_q": format_quarter(target_year, target_qnum),
         "anchor_q": format_quarter(anchor_y, anchor_qn),
-        "prev_q": format_quarter(prev_y, prev_qn),
+        "pre_anchor_q": format_quarter(pre_anchor_y, pre_anchor_qn),
         "ly_target_q": format_quarter(target_year - 1, target_qnum),
         "ly_anchor_q": format_quarter(anchor_y - 1, anchor_qn),
     }
@@ -280,7 +281,7 @@ def pivot_xbrl_codes(
 def build_cashflow_single_quarter(
     cf_xbrl: pd.DataFrame,
     *,
-    prev_q: str,
+    pre_anchor_q: str,
     anchor_q: str,
     account_codes: list[str],
     symbols: Optional[Set[str]] = None,
@@ -292,9 +293,9 @@ def build_cashflow_single_quarter(
         account_codes=account_codes,
         symbols=symbols,
     )
-    prev_acc = pivot_xbrl_codes(
+    pre_anchor_acc = pivot_xbrl_codes(
         cf_xbrl,
-        date=prev_q,
+        date=pre_anchor_q,
         period_type="accumulated",
         account_codes=account_codes,
         symbols=symbols,
@@ -303,13 +304,16 @@ def build_cashflow_single_quarter(
         return pd.DataFrame(columns=["symbol"] + account_codes)
 
     merged = anchor_acc.merge(
-        prev_acc, on="symbol", how="left", suffixes=("_anchor_acc", "_prev_acc")
+        pre_anchor_acc,
+        on="symbol",
+        how="left",
+        suffixes=("_anchor_acc", "_pre_anchor_acc"),
     )
     out = pd.DataFrame({"symbol": merged["symbol"]})
     for code in account_codes:
         out[code] = pd.to_numeric(
             merged[f"{code}_anchor_acc"], errors="coerce"
-        ) - pd.to_numeric(merged[f"{code}_prev_acc"], errors="coerce")
+        ) - pd.to_numeric(merged[f"{code}_pre_anchor_acc"], errors="coerce")
     return out
 
 
@@ -318,7 +322,7 @@ def build_xbrl_feature_frame(
     bs_xbrl: pd.DataFrame,
     cf_xbrl: pd.DataFrame,
     *,
-    prev_q: str,
+    pre_anchor_q: str,
     anchor_q: str,
     symbols: Optional[Set[str]] = None,
 ) -> pd.DataFrame:
@@ -342,7 +346,7 @@ def build_xbrl_feature_frame(
     )
     cf_anchor = build_cashflow_single_quarter(
         cf_xbrl,
-        prev_q=prev_q,
+        pre_anchor_q=pre_anchor_q,
         anchor_q=anchor_q,
         account_codes=cf_codes,
         symbols=symbols,
@@ -395,7 +399,7 @@ def fetch_one_year_api(
 ) -> pd.DataFrame:
     qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
-    prev_q = qctx["prev_q"]
+    pre_anchor_q = qctx["pre_anchor_q"]
     anchor_q = qctx["anchor_q"]
     target_q = qctx["target_q"]
     ly_target_q = qctx["ly_target_q"]
@@ -406,10 +410,10 @@ def fetch_one_year_api(
         "/raw/income-statements",
         {"start_date": anchor_q, "end_date": anchor_q, "market": market},
     )
-    inc_prev = fetch_all_rows_api(
+    inc_pre_anchor = fetch_all_rows_api(
         api_base,
         "/raw/income-statements",
-        {"start_date": prev_q, "end_date": prev_q, "market": market},
+        {"start_date": pre_anchor_q, "end_date": pre_anchor_q, "market": market},
     )
     bs_anchor = fetch_all_rows_api(
         api_base,
@@ -421,7 +425,7 @@ def fetch_one_year_api(
         "/raw/cash-flows",
         {"start_date": anchor_q, "end_date": anchor_q, "market": market},
     )
-    eps_dates = sorted({target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q})
+    eps_dates = sorted({target_q, ly_target_q, ly_anchor_q, pre_anchor_q, anchor_q})
     qr = fetch_all_rows_api(
         api_base,
         "/raw/quarterly-reports",
@@ -500,16 +504,20 @@ def fetch_one_year_api(
         ]
     ]
 
-    prev_data = pd.DataFrame(columns=["symbol", "prev_margin", "prev_rev", "prev_ni"])
-    if not inc_prev.empty:
-        prev_data = inc_prev[["symbol", "revenue_q", "net_income_q"]].copy()
-        prev_data = prev_data.rename(
-            columns={"revenue_q": "prev_rev", "net_income_q": "prev_ni"}
+    pre_anchor_data = pd.DataFrame(
+        columns=["symbol", "pre_anchor_margin", "pre_anchor_rev", "pre_anchor_ni"]
+    )
+    if not inc_pre_anchor.empty:
+        pre_anchor_data = inc_pre_anchor[["symbol", "revenue_q", "net_income_q"]].copy()
+        pre_anchor_data = pre_anchor_data.rename(
+            columns={"revenue_q": "pre_anchor_rev", "net_income_q": "pre_anchor_ni"}
         )
-        prev_data["prev_margin"] = safe_div_positive(
-            prev_data["prev_ni"], prev_data["prev_rev"]
+        pre_anchor_data["pre_anchor_margin"] = safe_div_positive(
+            pre_anchor_data["pre_anchor_ni"], pre_anchor_data["pre_anchor_rev"]
         )
-        prev_data = prev_data[["symbol", "prev_margin", "prev_rev", "prev_ni"]]
+        pre_anchor_data = pre_anchor_data[
+            ["symbol", "pre_anchor_margin", "pre_anchor_rev", "pre_anchor_ni"]
+        ]
 
     this_monthly = pd.DataFrame(columns=["symbol"] + mctx["month_cols"])
     if not mr.empty:
@@ -532,13 +540,15 @@ def fetch_one_year_api(
             "target_eps",
             "ly_target_eps",
             "ly_anchor_eps",
-            "prev_eps",
+            "pre_anchor_eps",
             "anchor_eps",
         ]
     )
     if not qr.empty:
         qr2 = qr[
-            qr["date"].isin([target_q, ly_target_q, ly_anchor_q, prev_q, anchor_q])
+            qr["date"].isin(
+                [target_q, ly_target_q, ly_anchor_q, pre_anchor_q, anchor_q]
+            )
         ].copy()
         p = qr2.pivot_table(
             index="symbol", columns="date", values="eps_q", aggfunc="last"
@@ -548,7 +558,7 @@ def fetch_one_year_api(
                 target_q: "target_eps",
                 ly_target_q: "ly_target_eps",
                 ly_anchor_q: "ly_anchor_eps",
-                prev_q: "prev_eps",
+                pre_anchor_q: "pre_anchor_eps",
                 anchor_q: "anchor_eps",
             }
         )
@@ -556,7 +566,7 @@ def fetch_one_year_api(
             "target_eps",
             "ly_target_eps",
             "ly_anchor_eps",
-            "prev_eps",
+            "pre_anchor_eps",
             "anchor_eps",
         ]:
             if c not in eps_hist.columns:
@@ -567,12 +577,12 @@ def fetch_one_year_api(
                 "target_eps",
                 "ly_target_eps",
                 "ly_anchor_eps",
-                "prev_eps",
+                "pre_anchor_eps",
                 "anchor_eps",
             ]
         ]
 
-    out = anchor_data.merge(prev_data, on="symbol", how="left")
+    out = anchor_data.merge(pre_anchor_data, on="symbol", how="left")
     out = out.merge(this_monthly, on="symbol", how="inner")
     out = out.merge(eps_hist, on="symbol", how="inner")
 
@@ -581,7 +591,7 @@ def fetch_one_year_api(
         inc_xbrl = fetch_all_rows_api(
             api_base,
             "/raw/income-statements-xbrl",
-            {"start_date": prev_q, "end_date": anchor_q},
+            {"start_date": pre_anchor_q, "end_date": anchor_q},
         )
         bs_xbrl = fetch_all_rows_api(
             api_base,
@@ -591,13 +601,13 @@ def fetch_one_year_api(
         cf_xbrl = fetch_all_rows_api(
             api_base,
             "/raw/cash-flows-xbrl",
-            {"start_date": prev_q, "end_date": anchor_q},
+            {"start_date": pre_anchor_q, "end_date": anchor_q},
         )
         xbrl_features = build_xbrl_feature_frame(
             inc_xbrl,
             bs_xbrl,
             cf_xbrl,
-            prev_q=prev_q,
+            pre_anchor_q=pre_anchor_q,
             anchor_q=anchor_q,
             symbols=symbol_universe,
         )
@@ -612,7 +622,7 @@ def fetch_one_year_api(
 def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
-    prev_q = qctx["prev_q"]
+    pre_anchor_q = qctx["pre_anchor_q"]
     anchor_q = qctx["anchor_q"]
     target_q = qctx["target_q"]
     ly_target_q = qctx["ly_target_q"]
@@ -632,13 +642,13 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
       JOIN cash_flow c ON i.symbol=c.symbol AND i.date=c.date
       WHERE i.date='{anchor_q}' AND i.market='{market}'
     ),
-    prev_data AS (
+    pre_anchor_data AS (
       SELECT
         symbol,
-        revenue_q AS prev_rev,
-        net_income_q AS prev_ni,
-        CASE WHEN revenue_q > 0 THEN net_income_q/revenue_q END AS prev_margin
-      FROM income_statement WHERE date='{prev_q}' AND market='{market}'
+        revenue_q AS pre_anchor_rev,
+        net_income_q AS pre_anchor_ni,
+        CASE WHEN revenue_q > 0 THEN net_income_q/revenue_q END AS pre_anchor_margin
+      FROM income_statement WHERE date='{pre_anchor_q}' AND market='{market}'
     ),
     this_monthly AS (
       SELECT symbol,
@@ -651,15 +661,15 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
       SELECT qr.symbol, qr.eps_q AS target_eps,
              (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_target_q}' AND market='{market}' AND period_type='quarter') AS ly_target_eps,
              (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_anchor_q}' AND market='{market}' AND period_type='quarter') AS ly_anchor_eps,
-             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{prev_q}' AND market='{market}' AND period_type='quarter') AS prev_eps,
+             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{pre_anchor_q}' AND market='{market}' AND period_type='quarter') AS pre_anchor_eps,
              (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}' AND period_type='quarter') AS anchor_eps
       FROM quarterly_reports_xbrl qr WHERE qr.date='{target_q}' AND qr.market='{market}' AND qr.period_type='quarter'
     )
-    SELECT {qctx["target_year"]} AS year, a.*, p.prev_margin, p.prev_rev, p.prev_ni,
+    SELECT {qctx["target_year"]} AS year, a.*, p.pre_anchor_margin, p.pre_anchor_rev, p.pre_anchor_ni,
            {",".join([f"m.{c}" for c in mctx["month_cols"]])},
-           e.target_eps,e.ly_target_eps,e.ly_anchor_eps,e.prev_eps,e.anchor_eps
+           e.target_eps,e.ly_target_eps,e.ly_anchor_eps,e.pre_anchor_eps,e.anchor_eps
     FROM anchor_data a
-    LEFT JOIN prev_data p ON a.symbol=p.symbol
+    LEFT JOIN pre_anchor_data p ON a.symbol=p.symbol
     JOIN this_monthly m ON a.symbol=m.symbol
     JOIN eps_hist e ON a.symbol=e.symbol
     """
@@ -670,7 +680,7 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
         inc_xbrl = pd.read_sql(
             f"""
             SELECT * FROM income_statement_xbrl
-            WHERE date IN ('{prev_q}','{anchor_q}')
+            WHERE date IN ('{pre_anchor_q}','{anchor_q}')
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -686,7 +696,7 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
         cf_xbrl = pd.read_sql(
             f"""
             SELECT * FROM cash_flow_xbrl
-            WHERE date IN ('{prev_q}','{anchor_q}')
+            WHERE date IN ('{pre_anchor_q}','{anchor_q}')
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
             conn,
@@ -695,7 +705,7 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
             inc_xbrl,
             bs_xbrl,
             cf_xbrl,
-            prev_q=prev_q,
+            pre_anchor_q=pre_anchor_q,
             anchor_q=anchor_q,
             symbols=symbol_universe,
         )
@@ -806,8 +816,8 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
     df = df.replace([np.inf, -np.inf], np.nan)
 
-    df["prev_margin"] = safe_div_positive(
-        safe_col(df, "prev_ni"), safe_col(df, "prev_rev")
+    df["pre_anchor_margin"] = safe_div_positive(
+        safe_col(df, "pre_anchor_ni"), safe_col(df, "pre_anchor_rev")
     )
     df["anchor_margin"] = safe_div_positive(df["anchor_ni"], df["anchor_rev"])
     df["anchor_ocf_ratio"] = safe_div_positive(df["anchor_ocf"], df["anchor_ni"]).clip(
@@ -816,7 +826,7 @@ def main() -> None:
     df["anchor_re_ratio"] = safe_div_positive(
         df["anchor_retained_earnings"], df["capital"]
     )
-    df["margin_momentum"] = df["anchor_margin"] - df["prev_margin"]
+    df["margin_momentum"] = df["anchor_margin"] - df["pre_anchor_margin"]
 
     add_month_features(df, month)
 
@@ -864,7 +874,7 @@ def main() -> None:
     rows_before_filter = len(df)
     ttm_eps_proxy = (
         safe_col(df, "ly_target_eps").fillna(0)
-        + safe_col(df, "prev_eps").fillna(0)
+        + safe_col(df, "pre_anchor_eps").fillna(0)
         + safe_col(df, "anchor_eps").fillna(0)
     )
     ttm_ok = ttm_eps_proxy >= float(MIN_TTM_EPS)

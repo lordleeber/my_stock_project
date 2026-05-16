@@ -266,7 +266,7 @@ def fetch_one_year_live(
 
     target_year = qctx["target_year"]
     target_q = qctx["target_q"]
-    prev_q = qctx["prev_q"]
+    pre_anchor_q = qctx["pre_anchor_q"]
     anchor_q = qctx["anchor_q"]
     ly_target_q = qctx["ly_target_q"]
     ly_anchor_q = qctx["ly_anchor_q"]
@@ -297,7 +297,7 @@ def fetch_one_year_live(
         acc_anchor.symbol,
         CASE
           WHEN RIGHT('{anchor_q}', 2) = 'Q1' THEN acc_anchor.ocf_acc
-          ELSE acc_anchor.ocf_acc - COALESCE(acc_prev.ocf_acc, 0)
+          ELSE acc_anchor.ocf_acc - COALESCE(acc_pre_anchor.ocf_acc, 0)
         END AS anchor_ocf
       FROM (
         SELECT symbol, value_num AS ocf_acc
@@ -307,8 +307,8 @@ def fetch_one_year_live(
       LEFT JOIN (
         SELECT symbol, value_num AS ocf_acc
         FROM cash_flow_xbrl
-        WHERE date = '{prev_q}' AND period_type = 'accumulated' AND account_code = 'AAAA'
-      ) acc_prev ON acc_anchor.symbol = acc_prev.symbol
+        WHERE date = '{pre_anchor_q}' AND period_type = 'accumulated' AND account_code = 'AAAA'
+      ) acc_pre_anchor ON acc_anchor.symbol = acc_pre_anchor.symbol
     ),
     anchor_data AS (
       SELECT
@@ -332,14 +332,14 @@ def fetch_one_year_live(
         AND q.period_type = 'quarter'
         AND COALESCE(si.market, q.market) = '{market}'
     ),
-    prev_data AS (
+    pre_anchor_data AS (
       SELECT
         symbol,
-        revenue_q AS prev_rev,
-        net_income_q AS prev_ni,
-        CASE WHEN revenue_q > 0 THEN net_income_q / revenue_q END AS prev_margin
+        revenue_q AS pre_anchor_rev,
+        net_income_q AS pre_anchor_ni,
+        CASE WHEN revenue_q > 0 THEN net_income_q / revenue_q END AS pre_anchor_margin
       FROM quarterly_reports_xbrl
-      WHERE date = '{prev_q}' AND period_type = 'quarter'
+      WHERE date = '{pre_anchor_q}' AND period_type = 'quarter'
     ),
     this_monthly AS (
       SELECT symbol, {",".join(mctx["sql_exprs"])}
@@ -353,7 +353,7 @@ def fetch_one_year_live(
         MAX(CASE WHEN qr.date = '{target_q}' THEN qr.eps_q END) AS target_eps,
         MAX(CASE WHEN qr.date = '{ly_target_q}' THEN qr.eps_q END) AS ly_target_eps,
         MAX(CASE WHEN qr.date = '{ly_anchor_q}' THEN qr.eps_q END) AS ly_anchor_eps,
-        MAX(CASE WHEN qr.date = '{prev_q}' THEN qr.eps_q END) AS prev_eps,
+        MAX(CASE WHEN qr.date = '{pre_anchor_q}' THEN qr.eps_q END) AS pre_anchor_eps,
         MAX(CASE WHEN qr.date = '{anchor_q}' THEN qr.eps_q END) AS anchor_eps,
         MAX(CASE WHEN qr.date = '{ly_q1}' THEN qr.eps_q END) AS ly_q1_eps,
         MAX(CASE WHEN qr.date = '{ly_q2}' THEN qr.eps_q END) AS ly_q2_eps,
@@ -364,7 +364,7 @@ def fetch_one_year_live(
       FROM quarterly_reports_xbrl qr
       WHERE qr.market = '{market}'
         AND qr.period_type = 'quarter'
-        AND qr.date IN ('{target_q}','{ly_target_q}','{ly_anchor_q}','{prev_q}','{anchor_q}','{ly_q1}','{ly_q2}','{ly_q3}','{ly_q4}','{q1}','{q2}')
+        AND qr.date IN ('{target_q}','{ly_target_q}','{ly_anchor_q}','{pre_anchor_q}','{anchor_q}','{ly_q1}','{ly_q2}','{ly_q3}','{ly_q4}','{q1}','{q2}')
       GROUP BY qr.symbol
     ),
     quote_latest AS (
@@ -387,13 +387,13 @@ def fetch_one_year_live(
     SELECT
       {target_year} AS year,
       a.*,
-      p.prev_margin,
-      p.prev_rev,
-      p.prev_ni,
+      p.pre_anchor_margin,
+      p.pre_anchor_rev,
+      p.pre_anchor_ni,
       {",".join([f"m.{c}" for c in mctx["month_cols"]])},
       e.ly_target_eps,
       e.ly_anchor_eps,
-      e.prev_eps,
+      e.pre_anchor_eps,
       e.anchor_eps,
       e.target_eps,
       e.ly_q1_eps,
@@ -406,7 +406,7 @@ def fetch_one_year_live(
       q.close,
       q.quote_volume
     FROM anchor_data a
-    LEFT JOIN prev_data p ON a.symbol = p.symbol
+    LEFT JOIN pre_anchor_data p ON a.symbol = p.symbol
     JOIN this_monthly m ON a.symbol = m.symbol
     JOIN eps_hist e ON a.symbol = e.symbol
     LEFT JOIN quote_latest q ON a.symbol = q.symbol
@@ -432,7 +432,7 @@ def fetch_one_year_live(
             f"""
             SELECT symbol, date, period_type, account_code, value_num, value_text
             FROM income_statement_xbrl
-            WHERE date IN ('{prev_q}', '{anchor_q}')
+            WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
               AND account_code IN ({",".join([f"'{c}'" for c in inc_codes])})
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
@@ -452,7 +452,7 @@ def fetch_one_year_live(
             f"""
             SELECT symbol, date, period_type, account_code, value_num, value_text
             FROM cash_flow_xbrl
-            WHERE date IN ('{prev_q}', '{anchor_q}')
+            WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
               AND account_code IN ({",".join([f"'{c}'" for c in cf_codes])})
               AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
             """,
@@ -466,8 +466,8 @@ def fetch_one_year_live(
             inc_xbrl,
             bs_xbrl,
             cf_xbrl,
-            q2=prev_q,
-            q3=anchor_q,
+            pre_anchor_q=pre_anchor_q,
+            anchor_q=anchor_q,
             symbols=symbol_universe,
         )
         t2 = time.perf_counter()
@@ -543,7 +543,9 @@ def main() -> None:
     df["industry"] = df.get("industry", pd.Series(index=df.index)).fillna("unknown")
 
     df = df.replace([np.inf, -np.inf], np.nan)
-    df["prev_margin"] = tp.safe_div_positive(df["prev_ni"], df["prev_rev"])
+    df["pre_anchor_margin"] = tp.safe_div_positive(
+        df["pre_anchor_ni"], df["pre_anchor_rev"]
+    )
     df["anchor_margin"] = tp.safe_div_positive(df["anchor_ni"], df["anchor_rev"])
     df["anchor_ocf_ratio"] = tp.safe_div_positive(
         df["anchor_ocf"], df["anchor_ni"]
@@ -551,7 +553,7 @@ def main() -> None:
     df["anchor_re_ratio"] = tp.safe_div_positive(
         df["anchor_retained_earnings"], df["capital"]
     )
-    df["margin_momentum"] = df["anchor_margin"] - df["prev_margin"]
+    df["margin_momentum"] = df["anchor_margin"] - df["pre_anchor_margin"]
     tp.add_month_features(df, month)
 
     df["ly_seasonality"] = tp.safe_div_positive(
@@ -574,7 +576,7 @@ def main() -> None:
     rows_before_ttm_filter = len(df)
     ttm_eps_proxy = (
         pd.to_numeric(df.get("ly_target_eps"), errors="coerce").fillna(0)
-        + pd.to_numeric(df.get("prev_eps"), errors="coerce").fillna(0)
+        + pd.to_numeric(df.get("pre_anchor_eps"), errors="coerce").fillna(0)
         + pd.to_numeric(df.get("anchor_eps"), errors="coerce").fillna(0)
     )
     df = df[ttm_eps_proxy >= MIN_TTM_EPS].copy()
@@ -675,7 +677,7 @@ def main() -> None:
     print(f"- rows_after_ttm_filter: {rows_after_ttm_filter}")
     print(f"- rows_after_volume_filter: {rows_after_volume_filter}")
     print(
-        f"- min_ttm_eps: {MIN_TTM_EPS} (strategies proxy: ly_target_eps + prev_eps + anchor_eps)"
+        f"- min_ttm_eps: {MIN_TTM_EPS} (strategies proxy: ly_target_eps + pre_anchor_eps + anchor_eps)"
     )
     print(f"- min_volume_lots: {MIN_VOLUME_LOTS}")
     print(f"- model_feature_count: {len(model_features)}")

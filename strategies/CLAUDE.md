@@ -22,9 +22,9 @@ Step1 reads from:
 
 | Table | Purpose | Filter |
 |---|---|---|
-| `quarterly_reports_xbrl` | anchor & previous quarter wide-format facts (revenue_q, net_income_q, pretax_income_q, non_op_income_q, capital, eps_q) | `date IN (anchor_q, prev_q, ...)` AND `period_type='quarter'` |
+| `quarterly_reports_xbrl` | anchor & pre-anchor quarter wide-format facts (revenue_q, net_income_q, pretax_income_q, non_op_income_q, capital, eps_q) | `date IN (anchor_q, pre_anchor_q, ...)` AND `period_type='quarter'` |
 | `balance_sheet_xbrl` | total_assets (1XXX), total_liabilities (2XXX), total_equity (3XXX), retained_earnings (3300) | `date=anchor_q` AND `period_type='as_of'` AND `account_code IN (...)` |
-| `cash_flow_xbrl` | operating cash flow (AAAA, accumulated) — converted to single-quarter | `date IN (anchor_q, prev_q)` AND `period_type='accumulated'` AND `account_code='AAAA'` |
+| `cash_flow_xbrl` | operating cash flow (AAAA, accumulated) — converted to single-quarter | `date IN (anchor_q, pre_anchor_q)` AND `period_type='accumulated'` AND `account_code='AAAA'` |
 | `stock_info` | name + industry + canonical market | LEFT JOIN, fallback to `quarterly_reports_xbrl.market` |
 | `monthly_revenue` | monthly revenue features | `date IN mctx.mr_dates` |
 | `daily_quotes` | latest close/volume on or before cutoff_date | `date <= cutoff_date` AND `market=...` |
@@ -38,11 +38,11 @@ Step1 reads from:
 `cash_flow_xbrl` only stores `period_type='accumulated'` (year-to-date values). For the anchor quarter's single-quarter OCF:
 
 ```
-anchor_ocf = (anchor_q acc) − (prev_q acc)        if anchor_q is Q2/Q3/Q4
+anchor_ocf = (anchor_q acc) − (pre_anchor_q acc)  if anchor_q is Q2/Q3/Q4
            = anchor_q acc                         if anchor_q is Q1 (no Y-T-D before Q1)
 ```
 
-The SQL uses `CASE WHEN RIGHT(anchor_q, 2) = 'Q1' THEN ... ELSE ... END` to handle the Q1 special case. `prev_q` for a Q1 anchor is the prior year's Q4, whose accumulated value is the full-year — subtracting it would yield garbage.
+The SQL uses `CASE WHEN RIGHT(anchor_q, 2) = 'Q1' THEN ... ELSE ... END` to handle the Q1 special case. `pre_anchor_q` for a Q1 anchor is the prior year's Q4, whose accumulated value is the full-year — subtracting it would yield garbage.
 
 ## Market Label Inconsistency
 
@@ -52,7 +52,7 @@ About 1–2% of symbols have different market labels across tables (e.g., `quart
 
 | Filter | Threshold |
 |---|---|
-| TTM EPS proxy | `ly_target_eps + prev_eps + anchor_eps ≥ 2.0` |
+| TTM EPS proxy | `ly_target_eps + pre_anchor_eps + anchor_eps ≥ 2.0` |
 | Min average volume | `volume_lots ≥ 500` |
 
 Hard filter values are constants in `step1_prepare_data.py` near the top — change with care; backtester reproducibility depends on them.

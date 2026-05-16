@@ -31,7 +31,7 @@ train_selection_model.py     訓練 LGBMRanker → models_selection/<cutoff>/sel
 | TTM EPS proxy | > 2.0 |
 | 日均成交量 | > 500 張 |
 
-TTM EPS proxy = `ly_target_eps + prev_eps + anchor_eps`
+TTM EPS proxy = `ly_target_eps + pre_anchor_eps + anchor_eps`
 
 ---
 
