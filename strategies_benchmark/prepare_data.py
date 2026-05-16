@@ -17,9 +17,10 @@ if str(ROOT_DIR) not in sys.path:
 
 from train_eps import prepare_data as tp
 
-# Strategies pipeline uses a lower TTM EPS threshold than train_eps
-# to allow a larger universe for ML-based selection.
-MIN_TTM_EPS = 2.0
+# Pseudo-TTM = ly_target_eps + pre_anchor_eps + anchor_eps
+# （兩個最近季 + 同期去年 target 季當 TTM 近似，並非連續 3 季）。
+# strategies 採比 train_eps 寬鬆的門檻，保留更大的候選股宇宙。
+MIN_PSEUDO_TTM_EPS = 2.0
 MIN_VOLUME_LOTS = 500.0
 
 
@@ -40,7 +41,9 @@ def model_release_date(year: int, month: str) -> str:
     return f"{year:04d}-{m:02d}-{day:02d}"
 
 
-def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
+def fetch_valuation_features(
+    engine, symbols: list[str], cutoff_date: str
+) -> pd.DataFrame:
     """Fetch ROE and PE percentile from valuation_daily (TTM-based, PIT by date)."""
     if not symbols:
         return pd.DataFrame(
@@ -52,19 +55,21 @@ def fetch_valuation_features(engine, symbols: list[str], end_date: str) -> pd.Da
             SELECT symbol, roe_official, pe_percentile_official,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM valuation_daily
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, roe_official, pe_percentile_official FROM latest WHERE rn = 1
         """
     ).bindparams(bindparam("symbols", expanding=True))
     with engine.connect() as conn:
-        df = pd.read_sql(stmt, conn, params={"symbols": symbols, "end_date": end_date})
+        df = pd.read_sql(
+            stmt, conn, params={"symbols": symbols, "cutoff_date": cutoff_date}
+        )
     df["symbol"] = df["symbol"].astype(str).str.strip()
     return df
 
 
 def fetch_market_sentiment_features(
-    engine, symbols: list[str], end_date: str
+    engine, symbols: list[str], cutoff_date: str
 ) -> pd.DataFrame:
     """Fetch dealer holding, margin pressure, and short interest features."""
     if not symbols:
@@ -84,7 +89,7 @@ def fetch_market_sentiment_features(
             SELECT symbol, dealer_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM dealer_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, dealer_held_ratio FROM latest WHERE rn = 1
         """
@@ -96,7 +101,7 @@ def fetch_market_sentiment_features(
             SELECT symbol, margin_usage_ratio, short_cover_pressure,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM margin_pressure_analysis
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, margin_usage_ratio, short_cover_pressure FROM latest WHERE rn = 1
         """
@@ -108,13 +113,13 @@ def fetch_market_sentiment_features(
             SELECT symbol, sbl_sell_repay_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM short_interest_analysis
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, sbl_sell_repay_ratio FROM latest WHERE rn = 1
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    params = {"symbols": symbols, "end_date": end_date}
+    params = {"symbols": symbols, "cutoff_date": cutoff_date}
     with engine.connect() as conn:
         dealer = pd.read_sql(stmt_dealer, conn, params=params)
         margin = pd.read_sql(stmt_margin, conn, params=params)
@@ -157,7 +162,9 @@ def fetch_fundamental_features(
     return df
 
 
-def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.DataFrame:
+def fetch_chipflow_features(
+    engine, symbols: list[str], cutoff_date: str
+) -> pd.DataFrame:
     """Fetch foreign/trust holding ratios and shareholding concentration for given symbols."""
     if not symbols:
         return pd.DataFrame(
@@ -183,7 +190,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
             SELECT symbol, foreign_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM foreign_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, foreign_held_ratio FROM latest WHERE rn = 1
         """
@@ -195,7 +202,7 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
             SELECT symbol, trust_held_ratio,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM trust_holding
-            WHERE symbol IN :symbols AND date <= :end_date
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol, trust_held_ratio FROM latest WHERE rn = 1
         """
@@ -211,38 +218,28 @@ def fetch_chipflow_features(engine, symbols: list[str], end_date: str) -> pd.Dat
                    concentration_spread, concentration_spread_wow,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM shareholding_concentration
-            WHERE symbol IN :symbols AND date <= :end_date
-        ),
-        latest_two AS (
-            SELECT symbol,
-                   MAX(CASE WHEN rn = 1 THEN large_holder_ratio END)     AS large_holder_ratio,
-                   MAX(CASE WHEN rn = 1 THEN large_holder_ratio_wow END) AS large_holder_ratio_wow,
-                   MAX(CASE WHEN rn = 2 THEN large_holder_ratio_wow END) AS prev_large_holder_ratio_wow,
-                   MAX(CASE WHEN rn = 1 THEN mid_holder_ratio END)       AS mid_holder_ratio,
-                   MAX(CASE WHEN rn = 1 THEN mid_holder_ratio_wow END)   AS mid_holder_ratio_wow,
-                   MAX(CASE WHEN rn = 1 THEN small_holder_ratio END)     AS small_holder_ratio,
-                   MAX(CASE WHEN rn = 1 THEN small_holder_ratio_wow END) AS small_holder_ratio_wow,
-                   MAX(CASE WHEN rn = 1 THEN concentration_spread END)   AS concentration_spread,
-                   MAX(CASE WHEN rn = 1 THEN concentration_spread_wow END) AS concentration_spread_wow
-            FROM ranked WHERE rn <= 2
-            GROUP BY symbol
+            WHERE symbol IN :symbols AND date <= :cutoff_date
         )
         SELECT symbol,
-               large_holder_ratio,
-               large_holder_ratio_wow,
-               CASE WHEN large_holder_ratio_wow > 0 AND prev_large_holder_ratio_wow > 0
-                    THEN 1 ELSE 0 END AS large_holder_two_week_up,
-               mid_holder_ratio,
-               mid_holder_ratio_wow,
-               small_holder_ratio,
-               small_holder_ratio_wow,
-               concentration_spread,
-               concentration_spread_wow
-        FROM latest_two
+               MAX(CASE WHEN rn = 1 THEN large_holder_ratio END)     AS large_holder_ratio,
+               MAX(CASE WHEN rn = 1 THEN large_holder_ratio_wow END) AS large_holder_ratio_wow,
+               CASE
+                   WHEN MAX(CASE WHEN rn = 1 THEN large_holder_ratio_wow END) > 0
+                    AND MAX(CASE WHEN rn = 2 THEN large_holder_ratio_wow END) > 0
+                   THEN 1 ELSE 0
+               END AS large_holder_two_week_up,
+               MAX(CASE WHEN rn = 1 THEN mid_holder_ratio END)       AS mid_holder_ratio,
+               MAX(CASE WHEN rn = 1 THEN mid_holder_ratio_wow END)   AS mid_holder_ratio_wow,
+               MAX(CASE WHEN rn = 1 THEN small_holder_ratio END)     AS small_holder_ratio,
+               MAX(CASE WHEN rn = 1 THEN small_holder_ratio_wow END) AS small_holder_ratio_wow,
+               MAX(CASE WHEN rn = 1 THEN concentration_spread END)   AS concentration_spread,
+               MAX(CASE WHEN rn = 1 THEN concentration_spread_wow END) AS concentration_spread_wow
+        FROM ranked WHERE rn <= 2
+        GROUP BY symbol
         """
     ).bindparams(bindparam("symbols", expanding=True))
 
-    params = {"symbols": symbols, "end_date": end_date}
+    params = {"symbols": symbols, "cutoff_date": cutoff_date}
     with engine.connect() as conn:
         foreign = pd.read_sql(stmt_foreign, conn, params=params)
         trust = pd.read_sql(stmt_trust, conn, params=params)
@@ -534,19 +531,18 @@ def main() -> None:
     df["delta_eps"] = df["target_eps"] - pd.to_numeric(
         df.get("anchor_eps"), errors="coerce"
     )
-    df["q2_eps_official"] = pd.to_numeric(df.get("q2_eps"), errors="coerce")
     df["target_volume"] = pd.to_numeric(df.get("q3_volume"), errors="coerce")
     df["pe_current"] = tp.safe_div_positive(df.get("q3_close"), df["ttm_eps_official"])
     df["feature_cutoff_date"] = cutoff_date
 
-    rows_before_ttm_filter = len(df)
-    ttm_eps_proxy = (
+    rows_before_pseudo_ttm_filter = len(df)
+    pseudo_ttm_eps_sum = (
         pd.to_numeric(df.get("ly_target_eps"), errors="coerce").fillna(0)
         + pd.to_numeric(df.get("pre_anchor_eps"), errors="coerce").fillna(0)
         + pd.to_numeric(df.get("anchor_eps"), errors="coerce").fillna(0)
     )
-    df = df[ttm_eps_proxy >= MIN_TTM_EPS].copy()
-    rows_after_ttm_filter = len(df)
+    df = df[pseudo_ttm_eps_sum >= MIN_PSEUDO_TTM_EPS].copy()
+    rows_after_pseudo_ttm_filter = len(df)
 
     volume_ok = (
         pd.to_numeric(df.get("target_volume"), errors="coerce").fillna(0) / 1000.0
@@ -641,11 +637,12 @@ def main() -> None:
     print(f"- cutoff_date: {cutoff_date}")
     print(f"- strategy_output: {strategy_output_path}")
     print(f"- rows_strategy: {len(strategy_out)}")
-    print(f"- rows_before_ttm_filter: {rows_before_ttm_filter}")
-    print(f"- rows_after_ttm_filter: {rows_after_ttm_filter}")
+    print(f"- rows_before_pseudo_ttm_filter: {rows_before_pseudo_ttm_filter}")
+    print(f"- rows_after_pseudo_ttm_filter: {rows_after_pseudo_ttm_filter}")
     print(f"- rows_after_volume_filter: {rows_after_volume_filter}")
     print(
-        f"- min_ttm_eps: {MIN_TTM_EPS} (strategies proxy: ly_target_eps + pre_anchor_eps + anchor_eps)"
+        f"- min_pseudo_ttm_eps: {MIN_PSEUDO_TTM_EPS} "
+        f"(pseudo-TTM sum = ly_target_eps + pre_anchor_eps + anchor_eps)"
     )
     print(f"- min_volume_lots: {MIN_VOLUME_LOTS}")
     print(f"- model_feature_count: {len(model_features)}")
