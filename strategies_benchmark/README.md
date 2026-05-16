@@ -133,7 +133,27 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 
 ## Benchmark 結果與可重現性
 
-### 基準回測結果
+> ⚠️ **A3（2026/03 凍結）已成為 historical baseline**。當前 `strategies/` 已演進到 A4 配置（修正 subsample 沉默 no-op + 切回 LightGBM 原生 NaN handling），新的回測數字記錄於下方「A4 當前基準」段落。`strategies_benchmark/` 與 `backtester_benchmark/` 仍保留 A3 凍結時的 code 與 csv 作為歷史記錄。
+
+### A4 當前基準（2026/05，commit fd837fb 之後）
+
+| 指標 | 同 A3 範圍（2022/07 – 2025/10） | 延伸範圍（2022/07 – 2026/04） |
+|------|------|------|
+| 閉倉交易數 | 390 | 450 |
+| 勝率 | 63.6%（248/142） | 64.7%（291/159） |
+| Net PnL | **2,700,071 TWD** | **3,512,589 TWD** |
+
+A4 與 A3 的差異不能完全歸因於程式碼變動：A3 凍結（2026/03）到 A4 量測（2026/05）期間，下游資料管線經歷多次重構（XBRL migration、playbook 集中化、模糊命名清除），導致同月份 `dataset_strategy.csv` 內容已非完全等價。**單就 A1+B1 改動**的隔離影響——同 2022/07–2026/04 範圍 before/after：Net PnL +2.01%、勝率 -1.33pp，落在 `pe_percentile_official` ±1.5% noise floor 邊緣，差異不具統計顯著性。
+
+```
+A4 配置：
+- 訓練：n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10
+- 正則：reg_alpha=0.05, reg_lambda=0.1
+- A1：subsample=0.8, subsample_freq=1（A3 時 freq 漏設 = bagging silently disabled）
+- B1：LightGBM 原生 NaN handling（A3 時用 fillna(0) 蓋掉）
+```
+
+### A3 凍結基準（2026/03，historical）
 
 | 指標 | 數值 |
 |------|------|
@@ -144,14 +164,17 @@ Walk-forward scoring 由 `backtester/run_rolling.py` 在回測時即時執行，
 | Gross PnL | 2,449,920 TWD |
 | Net PnL | **2,263,822 TWD** |
 
-結果存放於 `backtester_benchmark/rolling_summary.json`。
+結果存放於 `backtester_benchmark/rolling_summary.json`（凍結的 frozen csv 與 PnL artifact）。
 
-> **舊基準 A2**（無正則化）：Net PnL=2,134,045，勝率=65.3%。
-> **舊基準**（quintile labels, n_estimators=200, num_leaves=15）：Net PnL=2,029,746，勝率=64.33%。
+> **A3 之前的 historical baselines**：
+> - **A2**（無正則化）：Net PnL=2,134,045，勝率=65.3%
+> - **quintile baseline**（n_estimators=200, num_leaves=15, n_bins=5）：Net PnL=2,029,746，勝率=64.33%
 
 ---
 
 ### 重現方法
+
+執行下列命令重新生成 **A4 基準**（用當前 `strategies/` code path）：
 
 ```bash
 # 1. 重新生成資料（從 DB 抓取最新的 pe_percentile_official）
@@ -160,13 +183,13 @@ venv/bin/python3 strategies/step2_batch_finalize_strategy.py
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
 # 2. 刪除舊模型
-rm -rf models_selection/2022 models_selection/2023 models_selection/2024 models_selection/2025
+rm -rf models_selection/2022 models_selection/2023 models_selection/2024 models_selection/2025 models_selection/2026
 
 # 3. 訓練
 venv/bin/python3 strategies/step4_batch_train_selection_model.py
 
 # 4. 打分 + 回測 + 統計
-venv/bin/python3 strategies/batch_score_and_publish.py
+venv/bin/python3 strategies/step5_batch_score_and_publish.py
 venv/bin/python3 backtester/run_rolling.py \
   --start_year 2022 --start_month 7 \
   --end_year 2025 --end_month 10 \
@@ -174,7 +197,9 @@ venv/bin/python3 backtester/run_rolling.py \
 venv/bin/python3 backtester/summarize_range.py
 ```
 
-> **注意**：由於 `pe_percentile_official` 會隨 DB 資料更新而微幅變動，重現結果可能與上方基準數字有小幅差異（實測 PnL 差距約 ±1.5%），這是預期行為。比較兩個策略時，應在同一次生成的資料上進行。
+> **A3 不可重現**：上述命令會產生 A4 數字，**不會**還原 A3 的 2,263,822。原因：A3 凍結（2026/03）至今 `strategies/` 已歷經 A1+B1 修正、XBRL 資料管線遷移、playbook/命名重構。要看 A3 的 frozen 結果，直接讀 `backtester_benchmark/rolling_summary.json` 與 `strategies_benchmark/output/*.csv`，不要重跑。
+>
+> **可重現性 caveat**：即便在 A4 範圍內，`pe_percentile_official` 會隨 DB 每日 daily_quotes 新增而微幅變動（實測 PnL 差距約 ±1.5%）。比較兩個策略應在同一次生成的資料上進行。
 
 ---
 
@@ -287,7 +312,9 @@ df_combined.groupby("symbol")["pe_calculated"].rank(pct=True) * 100
 
 **分析**：53 特徵 / ~300 股每月的設定下，模型確實有輕微過擬合。極輕的 L1+L2 正則化（alpha=0.05, lambda=0.1）在不手動移除特徵的前提下達到隱式特徵選擇效果，同時保留有用的交互作用。過強的正則化（≥0.1/0.5）則過度抑制模型容量。
 
-**新基準 (A3)**：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10, reg_alpha=0.05, reg_lambda=0.1`
+**A3 配置**（historical）：`n_estimators=500, learning_rate=0.03, num_leaves=31, n_bins=10, reg_alpha=0.05, reg_lambda=0.1, subsample=0.8 (silently disabled), fillna(0)`
+
+> 後續 A4（2026/05）在此之上修正 `subsample_freq=1` 啟用 bagging、改用 LightGBM 原生 NaN handling。見頂部「A4 當前基準」段落。
 
 ---
 
