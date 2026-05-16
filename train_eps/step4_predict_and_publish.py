@@ -8,7 +8,32 @@ import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-EXCLUDE_COLUMNS = {"symbol", "name", "industry", "year", "target_eps", "delta_eps"}
+EXCLUDE_COLUMNS = {
+    "symbol",
+    "name",
+    "industry",
+    "year",
+    "anchor_quarter",
+    "target_eps",
+    "delta_eps",
+}
+
+# playbook month → target quarter 編號（與 build_quarter_context 對齊）。
+# 01 月也對應 Q4（target_year 已在 dataset 內被往前推一年，這裡只需算季）。
+MONTH_TO_TARGET_QNUM = {
+    "01": 4,
+    "02": 1,
+    "03": 1,
+    "04": 1,
+    "05": 2,
+    "06": 2,
+    "07": 2,
+    "08": 3,
+    "09": 3,
+    "10": 3,
+    "11": 4,
+    "12": 4,
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +107,15 @@ def main() -> None:
     if "target_eps" in df.columns:
         out["y_true"] = df["target_eps"]
     out["pred_lgb_delta"] = pred_delta
-    out["fold"] = "year_" + out["year"].astype(int).astype(str)
+    # target_quarter / trained_at_month / model_pkl 是 metadata 欄位，
+    # 標示「這份 predictions 是在哪個 playbook 跑出來、預測哪個季度、用哪個 pkl」，
+    # 取代原本的 fold 欄（與 year 同義冗餘）。
+    qnum = MONTH_TO_TARGET_QNUM[month]
+    out["target_quarter"] = out["year"].astype(int).astype(str) + f"Q{qnum}"
+    if "anchor_quarter" in df.columns:
+        out["anchor_quarter"] = df["anchor_quarter"].values
+    out["trained_at_month"] = f"{year:04d}/{month}"
+    out["model_pkl"] = model_path.name
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False)

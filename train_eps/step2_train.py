@@ -13,7 +13,7 @@ from sklearn.metrics import mean_absolute_error
 
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
-EXCLUDE_COLUMNS = {"year", TARGET, TARGET_DELTA}
+EXCLUDE_COLUMNS = {"year", "anchor_quarter", TARGET, TARGET_DELTA}
 
 BASE_DIR = Path(__file__).resolve().parent
 

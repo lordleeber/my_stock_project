@@ -64,6 +64,43 @@ All artifacts written to `models_eps/<year>/<month>/`:
 - `evaluate_by_fold.json` — walk-forward evaluation metrics per fold
 - `predictions_results.csv` — EPS delta predictions for the latest year (consumed by `strategies/finalize_strategy.py`)
 
+### `predictions_results.csv` columns
+| Column | Meaning |
+|---|---|
+| `year`, `symbol`, `name`, `industry` | Per-row context |
+| `y_true` | Actual target EPS for that target_year/target_quarter (NaN for live future predictions) |
+| `pred_lgb_delta` | Model-predicted EPS delta |
+| `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from `year` + playbook `month`) |
+| `anchor_quarter` | The quarter whose financials drove the features, e.g. `"2025Q1"` (the row's `anchor_eps`/`xbrl_*_q` came from here) |
+| `trained_at_month` | Path-level identifier, e.g. `"2026/05"` — when this prediction run happened |
+| `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the month dir) |
+
+Looking at the csv alone tells you everything: which quarter was predicted, which quarter's data fed the features, when training happened, and which model checkpoint produced the numbers. Legacy column `fold` (which was just `"year_" + str(year)`) was removed.
+
+## ⚠️ `dataset_train.csv` vs `dataset_evaluate.csv` Naming
+
+Both files contain the **same rows** (every (year, symbol) combination with a valid label). The difference is column set:
+
+| File | Columns |
+|---|---|
+| `dataset_train.csv` | `year`, `anchor_quarter`, features, `target_eps`, `delta_eps` (minimal — what `train.py` reads) |
+| `dataset_evaluate.csv` | + `symbol`, `name`, `industry` (with context — what `evaluate.py`/`predict_and_publish.py` read) |
+
+The names suggest a train/test row split, but it is **not** that. Walk-forward fold splits are done inside `evaluate.py` based on `year`. Treat the names as "lean dataset for training" vs "dataset with row context for evaluation/publishing".
+
+## `anchor_quarter` Column
+
+Both datasets carry an `anchor_quarter` string column (e.g., `"2025Q1"` for a May-playbook row with `year=2025`). The mapping is:
+
+| Playbook month | `anchor_quarter` formula |
+|---|---|
+| 02-04 | `f"{year-1}Q4"` |
+| 05-07 | `f"{year}Q1"` |
+| 08-10 | `f"{year}Q2"` |
+| 11-12, 01 | `f"{year}Q3"` |
+
+This column is **metadata only** — all three downstream scripts list `anchor_quarter` in their `EXCLUDE_COLUMNS` set so LGBM never sees it as a feature. Its job is to make `anchor_eps`/`xbrl_*_q` self-explanatory without needing to know the playbook month context.
+
 ## Model Naming Convention
 - `train.py` saves the model as `{timestamp}_{train_mae:.3f}.pkl` directly to `models_eps/<year>/<month>/`.
 - The metric in the filename is the **in-sample train MAE** (`train_mae_lgb_pred_eps`), lower is better.

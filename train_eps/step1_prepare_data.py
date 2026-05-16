@@ -754,9 +754,14 @@ def main() -> None:
     output_train = month_dir / "dataset_train.csv"
     output_evaluate = month_dir / "dataset_evaluate.csv"
 
-    train_columns = ["year"] + model_features + [TARGET, TARGET_DELTA]
+    # anchor_quarter 是 metadata 欄位（非 feature），各下游 step2/3/4 的
+    # EXCLUDE_COLUMNS 已加入忽略，純粹標記該列 anchor_eps 對應的實際季度。
+    train_columns = ["year", "anchor_quarter"] + model_features + [TARGET, TARGET_DELTA]
     evaluate_columns = (
-        CONTEXT_COLUMNS + ["year"] + model_features + [TARGET, TARGET_DELTA]
+        CONTEXT_COLUMNS
+        + ["year", "anchor_quarter"]
+        + model_features
+        + [TARGET, TARGET_DELTA]
     )
 
     fetch_years = list(range(START_YEAR, end_year + 1))
@@ -838,6 +843,39 @@ def main() -> None:
         safe_div_positive(df["anchor_eps"], df["ly_anchor_eps"]) - 1
     ).clip(-5, 5)
     df[TARGET_DELTA] = df[TARGET] - df["anchor_eps"]
+
+    # 每列依其 target_year + playbook month 推得 anchor 對應的實際季度
+    anchor_year_offset = {
+        "02": -1,
+        "03": -1,
+        "04": -1,
+        "05": 0,
+        "06": 0,
+        "07": 0,
+        "08": 0,
+        "09": 0,
+        "10": 0,
+        "11": 0,
+        "12": 0,
+        "01": 0,
+    }
+    anchor_q_num = {
+        "02": 4,
+        "03": 4,
+        "04": 4,
+        "05": 1,
+        "06": 1,
+        "07": 1,
+        "08": 2,
+        "09": 2,
+        "10": 2,
+        "11": 3,
+        "12": 3,
+        "01": 3,
+    }
+    df["anchor_quarter"] = (df["year"].astype(int) + anchor_year_offset[month]).astype(
+        str
+    ) + f"Q{anchor_q_num[month]}"
 
     rows_before_filter = len(df)
     ttm_eps_proxy = (

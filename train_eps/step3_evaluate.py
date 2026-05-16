@@ -14,6 +14,7 @@ EVAL_EXCLUDE_COLUMNS = {
     "name",
     "industry",
     "year",
+    "anchor_quarter",
     TARGET,
     TARGET_DELTA,
 }
