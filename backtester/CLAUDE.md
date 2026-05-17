@@ -8,6 +8,13 @@
 
 ```bash
 # Roll forward over a month range; outputs in backtester/output/rolling/
+# --end_year / --end_month optional: if omitted, auto-detect latest month
+# with candidates_scored.csv AND DB daily_quotes coverage for entry_date.
+venv/bin/python3 backtester/run_rolling.py \
+  --start_year 2022 --start_month 7 \
+  --top-n 10 --position-amount 100000
+
+# Explicit end (override auto-detect)
 venv/bin/python3 backtester/run_rolling.py \
   --start_year 2022 --start_month 7 \
   --end_year 2026 --end_month 4 \
@@ -16,6 +23,21 @@ venv/bin/python3 backtester/run_rolling.py \
 # Print aggregate summary from latest rolling_trades.csv
 venv/bin/python3 backtester/summarize_range.py
 ```
+
+## End-month auto-detection
+
+When `--end_year` and/or `--end_month` are omitted, `run_rolling.py` scans
+`models_selection/<Y>/<MM>/` (newest first) and picks the latest month where:
+
+1. `candidates_scored.csv` exists, AND
+2. its `entry_date` has at least one matching record in `daily_quotes` (i.e.
+   `daily_quotes.date >= entry_date` returns a row).
+
+Rule (2) catches the case where `candidates_scored.csv` was published for a
+month whose rotation date hasn't yet been quoted in the DB (e.g.
+`entry_date=2026-05-16` while DB max date is `2026-05-15`) — those months
+would otherwise produce `entries_failed_no_quote=10` and pollute the run.
+The resolved end is printed to stdout at start (`[auto-detect] end = YYYY/MM`).
 
 ## Output Files (`backtester/output/rolling/`)
 

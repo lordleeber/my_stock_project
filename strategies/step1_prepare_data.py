@@ -421,61 +421,61 @@ def fetch_one_year_live(
             out[c] = np.nan
 
     symbol_universe = set(out["symbol"].astype(str).unique())
-    try:
-        inc_codes = ["4000", "5900", "6300", "6900", "7900", "7950", "8200"]
-        bs_codes = ["1100", "11XX", "21XX", "1XXX"]
-        cf_codes = ["AAAA", "B02700"]
+    # XBRL feature merge 不再用 try/except 包裹 — 失敗應直接 propagate。
+    # 過去 silent skip 會讓樣本少掉 xbrl_* 特徵卻照常進 dataset_strategy.csv，
+    # 屬於 silent feature degradation（與 train_eps 0049435 同類問題）。
+    inc_codes = ["4000", "5900", "6300", "6900", "7900", "7950", "8200"]
+    bs_codes = ["1100", "11XX", "21XX", "1XXX"]
+    cf_codes = ["AAAA", "B02700"]
 
-        t1 = time.perf_counter()
-        inc_xbrl = pd.read_sql(
-            f"""
-            SELECT symbol, date, period_type, account_code, value_num, value_text
-            FROM income_statement_xbrl
-            WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
-              AND account_code IN ({",".join([f"'{c}'" for c in inc_codes])})
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        bs_xbrl = pd.read_sql(
-            f"""
-            SELECT symbol, date, period_type, account_code, value_num, value_text
-            FROM balance_sheet_xbrl
-            WHERE date = '{anchor_q}'
-              AND account_code IN ({",".join([f"'{c}'" for c in bs_codes])})
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        cf_xbrl = pd.read_sql(
-            f"""
-            SELECT symbol, date, period_type, account_code, value_num, value_text
-            FROM cash_flow_xbrl
-            WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
-              AND account_code IN ({",".join([f"'{c}'" for c in cf_codes])})
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        print(
-            f"[timing] xbrl_fetch {market} {year}/{month}: {time.perf_counter() - t1:.2f}s "
-            f"(inc={len(inc_xbrl)}, bs={len(bs_xbrl)}, cf={len(cf_xbrl)})"
-        )
-        xbrl_features = tp.build_xbrl_feature_frame(
-            inc_xbrl,
-            bs_xbrl,
-            cf_xbrl,
-            pre_anchor_q=pre_anchor_q,
-            anchor_q=anchor_q,
-            symbols=symbol_universe,
-        )
-        t2 = time.perf_counter()
-        out = out.merge(xbrl_features, on="symbol", how="left")
-        print(
-            f"[timing] xbrl_merge {market} {year}/{month}: {time.perf_counter() - t2:.2f}s"
-        )
-    except Exception as exc:
-        print(f"[WARN] skip XBRL feature merge (db) year={year} market={market}: {exc}")
+    t1 = time.perf_counter()
+    inc_xbrl = pd.read_sql(
+        f"""
+        SELECT symbol, date, period_type, account_code, value_num, value_text
+        FROM income_statement_xbrl
+        WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
+          AND account_code IN ({",".join([f"'{c}'" for c in inc_codes])})
+          AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
+        """,
+        conn,
+    )
+    bs_xbrl = pd.read_sql(
+        f"""
+        SELECT symbol, date, period_type, account_code, value_num, value_text
+        FROM balance_sheet_xbrl
+        WHERE date = '{anchor_q}'
+          AND account_code IN ({",".join([f"'{c}'" for c in bs_codes])})
+          AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
+        """,
+        conn,
+    )
+    cf_xbrl = pd.read_sql(
+        f"""
+        SELECT symbol, date, period_type, account_code, value_num, value_text
+        FROM cash_flow_xbrl
+        WHERE date IN ('{pre_anchor_q}', '{anchor_q}')
+          AND account_code IN ({",".join([f"'{c}'" for c in cf_codes])})
+          AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
+        """,
+        conn,
+    )
+    print(
+        f"[timing] xbrl_fetch {market} {year}/{month}: {time.perf_counter() - t1:.2f}s "
+        f"(inc={len(inc_xbrl)}, bs={len(bs_xbrl)}, cf={len(cf_xbrl)})"
+    )
+    xbrl_features = tp.build_xbrl_feature_frame(
+        inc_xbrl,
+        bs_xbrl,
+        cf_xbrl,
+        pre_anchor_q=pre_anchor_q,
+        anchor_q=anchor_q,
+        symbols=symbol_universe,
+    )
+    t2 = time.perf_counter()
+    out = out.merge(xbrl_features, on="symbol", how="left")
+    print(
+        f"[timing] xbrl_merge {market} {year}/{month}: {time.perf_counter() - t2:.2f}s"
+    )
 
     return out
 
@@ -572,24 +572,31 @@ def main() -> None:
     df["feature_cutoff_date"] = cutoff_date
 
     rows_before_pseudo_ttm_filter = len(df)
+    # 不再 fillna(0)：缺 EPS ≠ EPS=0，silent 0-fill 會讓三季中只要有一季是 NaN
+    # 的樣本被當作該季 EPS=0 計入 pseudo-TTM，可能誤判通過 MIN_PSEUDO_TTM_EPS。
+    # NaN 經 sum 傳遞後產生 NaN；用 .fillna(False) 讓 NaN row 直接 fail filter。
     pseudo_ttm_eps_sum = (
-        pd.to_numeric(df.get("ly_target_eps"), errors="coerce").fillna(0)
-        + pd.to_numeric(df.get("pre_anchor_eps"), errors="coerce").fillna(0)
-        + pd.to_numeric(df.get("anchor_eps"), errors="coerce").fillna(0)
+        pd.to_numeric(df.get("ly_target_eps"), errors="coerce")
+        + pd.to_numeric(df.get("pre_anchor_eps"), errors="coerce")
+        + pd.to_numeric(df.get("anchor_eps"), errors="coerce")
     )
-    df = df[pseudo_ttm_eps_sum >= MIN_PSEUDO_TTM_EPS].copy()
+    df = df[(pseudo_ttm_eps_sum >= MIN_PSEUDO_TTM_EPS).fillna(False)].copy()
     rows_after_pseudo_ttm_filter = len(df)
 
-    volume_ok = (
-        pd.to_numeric(df.get("volume_lots"), errors="coerce").fillna(0)
-        > MIN_VOLUME_LOTS
-    )
-    df = df[volume_ok].copy()
+    volume_ok = pd.to_numeric(df.get("volume_lots"), errors="coerce") > MIN_VOLUME_LOTS
+    df = df[volume_ok.fillna(False)].copy()
     rows_after_volume_filter = len(df)
 
-    for c in model_features:
-        if c not in df.columns:
-            df[c] = np.nan
+    # 不再 silent 補 NaN：model_features 都應該由前面的 SQL / add_month_features /
+    # XBRL merge / Python 計算產生。若到這裡仍缺欄，代表上游 schema bug，
+    # 該欄會 silent 變 NaN 進入 dataset_strategy.csv，掩蓋真正的問題。
+    missing_model_features = [c for c in model_features if c not in df.columns]
+    if missing_model_features:
+        raise RuntimeError(
+            f"step1 缺 train_eps model_features 欄位：{missing_model_features}。"
+            "可能 SQL 沒回該欄、add_month_features 漏處理該月份、或 XBRL merge 沒產生 xbrl_* 欄。"
+            "請修正上游後重跑，不要 silent 補 NaN。"
+        )
 
     # 撈取籌碼流向特徵（外資／投信持股 + 股權集中度）
     symbols = df["symbol"].astype(str).str.strip().unique().tolist()

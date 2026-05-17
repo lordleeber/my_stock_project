@@ -94,11 +94,20 @@ def load_strategy(year: int, month: int) -> pd.DataFrame | None:
 
 
 def prev_trading_day(engine, date_str: str) -> str:
-    """Return the last trading day strictly before date_str."""
+    """Return the last trading day strictly before date_str.
+
+    若 daily_quotes 沒有 < date_str 的資料，直接 raise — 不要 silent fallback
+    到 date_str 本身（會是同一天甚至未來日，下游 exit_open 撈出的價格錯誤）。
+    """
     stmt = text("SELECT MAX(date) FROM daily_quotes WHERE date < :d")
     with engine.connect() as conn:
         result = conn.execute(stmt, {"d": date_str}).scalar()
-    return str(result) if result else date_str
+    if not result:
+        raise RuntimeError(
+            f"daily_quotes 沒有 < {date_str} 的交易日資料 — "
+            "可能 DB 未匯入該日期之前的報價，無法決定 exit_date。"
+        )
+    return str(result)
 
 
 def fetch_open_prices(engine, symbols: list[str], date_str: str) -> dict[str, float]:

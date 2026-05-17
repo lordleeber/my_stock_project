@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -12,43 +11,6 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from common.db import get_db_url
-
-
-# 候選股 CSV 必須包含的欄位；缺少任一欄位會在載入時提前失敗，避免後續計算出現隱性錯誤
-REQUIRED_CANDIDATE_COLUMNS = {"symbol", "predict_target_price", "close", "entry_date"}
-
-
-def load_candidates(path: Path) -> pd.DataFrame:
-    """載入候選股清單 CSV，做基本型別轉換與缺值過濾。
-
-    回傳值保證：
-      - symbol 為去空白的字串
-      - entry_date 為 pd.Timestamp（已剔除無法解析的列）
-      - predict_target_price / close 已轉為數值（允許 NaN）
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"candidates not found: {path}")
-
-    df = pd.read_csv(path)
-    # 提前驗證欄位完整性，缺欄位代表上游流程有問題
-    missing = REQUIRED_CANDIDATE_COLUMNS - set(df.columns)
-    if missing:
-        raise ValueError(f"candidates missing required columns: {sorted(missing)}")
-
-    out = df.copy()
-    out["symbol"] = out["symbol"].astype(str).str.strip()
-    out["entry_date"] = pd.to_datetime(out["entry_date"], errors="coerce")
-    out["predict_target_price"] = pd.to_numeric(
-        out["predict_target_price"], errors="coerce"
-    )
-    out["close"] = pd.to_numeric(out["close"], errors="coerce")
-
-    # 剔除 symbol 或 entry_date 無效的列，這些列無法參與回測
-    out = out.dropna(subset=["symbol", "entry_date"])
-    out = out[out["symbol"] != ""].copy()
-    if out.empty:
-        raise RuntimeError("candidates exists but has no usable symbol/entry_date rows")
-    return out.reset_index(drop=True)
 
 
 def normalize_quotes(df: pd.DataFrame) -> pd.DataFrame:
@@ -68,22 +30,6 @@ def normalize_quotes(df: pd.DataFrame) -> pd.DataFrame:
         .drop_duplicates(subset=["symbol", "date"], keep="last")
         .reset_index(drop=True)
     )
-
-
-def estimate_quote_window(
-    candidates: pd.DataFrame, max_hold_days: int
-) -> tuple[str, str]:
-    """依候選股的 entry_date 範圍估算需要撈取的行情時間窗口。
-
-    結束日加上足夠的日曆天緩衝（至少 60 天，或持有天數 ×3），
-    以確保最大持有期間（以交易日計）都落在撈取範圍內。
-    """
-    # 給足夠的日曆天緩衝，以涵蓋以交易日計算的最大持有天數。
-    start = candidates["entry_date"].min().date()
-    end = candidates["entry_date"].max().date() + timedelta(
-        days=max(60, max_hold_days * 3)
-    )
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
 def fetch_quotes_from_db(

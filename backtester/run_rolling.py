@@ -57,16 +57,20 @@ def prev_trading_day(date_str: str) -> str:
     用於決定「本月出場日」：新倉在 entry_date 開盤進場，
     舊倉須在 entry_date 前一個交易日開盤出場，
     避免同一天既出場又進場造成資金計算混亂。
-    查詢失敗時回傳原始日期作為 fallback，避免整個月跳過。
+    若 DB 查詢失敗或查不到更早交易日，直接拋錯 — 任何 fallback 都會
+    造成出場/進場同日，污染 cohort PnL 歸屬。
     """
     stmt = text("SELECT MAX(date) FROM daily_quotes WHERE date < :d")
-    try:
-        engine = create_engine(get_db_url())
-        with engine.connect() as conn:
-            result = conn.execute(stmt, {"d": date_str}).scalar()
-        return str(result) if result else date_str
-    except Exception:
-        return date_str
+    engine = create_engine(get_db_url())
+    with engine.connect() as conn:
+        result = conn.execute(stmt, {"d": date_str}).scalar()
+    if not result:
+        raise RuntimeError(
+            f"prev_trading_day({date_str!r}): no earlier trading day found in "
+            "daily_quotes. Either the DB is missing history or the entry_date is "
+            "before the first record. Refusing to fall back to entry_date itself."
+        )
+    return str(result)
 
 
 def detect_market_regime(ref_date: str) -> str:
@@ -159,6 +163,8 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
 
     回傳 {symbol: open_price} 字典。若某支股票在目標日無行情
     （停牌、假日等），則不出現在結果中，呼叫方需自行處理缺失。
+    DB 例外不在這裡吞掉 — 連線/查詢失敗會直接 propagate，
+    避免把基礎建設錯誤偽裝成「全部標的當天沒行情」。
     """
     if not symbols:
         return {}
@@ -166,13 +172,9 @@ def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
     # 前後各加 5 個日曆日緩衝，確保連假結束後的第一個交易日也能被撈到
     buffer_start = (target - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
     buffer_end = (target + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
-    try:
-        quotes = fetch_quotes_from_db(
-            symbols=symbols, start_date=buffer_start, end_date=buffer_end
-        )
-    except Exception as exc:
-        print(f"[WARN] fetch_quotes failed for {date_str}: {exc}")
-        return {}
+    quotes = fetch_quotes_from_db(
+        symbols=symbols, start_date=buffer_start, end_date=buffer_end
+    )
     if quotes.empty:
         return {}
     # 使用目標日當天或之後最近的交易日（處理目標日為假日的情況）。
@@ -244,14 +246,87 @@ def _exit_position(
     }, net_pnl
 
 
+def auto_detect_end_month(models_root: Path) -> tuple[int, int]:
+    """掃 models_root 找最新可回測的月份。
+
+    條件：
+      - `<Y>/<MM>/candidates_scored.csv` 存在
+      - CSV 中的 entry_date 在 daily_quotes 中至少有當天或之後的紀錄
+        （隱含 entry_date ≤ 今天，且該日已實際進到 DB）
+
+    從最新月反向搜尋，遇到第一個符合條件的就回傳。
+    """
+    engine = create_engine(get_db_url())
+
+    def year_dirs() -> list[Path]:
+        return sorted(
+            (
+                p
+                for p in models_root.iterdir()
+                if p.is_dir() and p.name.isdigit() and len(p.name) == 4
+            ),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+
+    def month_dirs(year_dir: Path) -> list[Path]:
+        return sorted(
+            (
+                p
+                for p in year_dir.iterdir()
+                if p.is_dir() and p.name.isdigit() and len(p.name) == 2
+            ),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+
+    with engine.connect() as conn:
+        for year_dir in year_dirs():
+            for month_dir in month_dirs(year_dir):
+                csv_path = month_dir / "candidates_scored.csv"
+                if not csv_path.exists():
+                    continue
+                # 既然檔案存在就必須能讀；壞檔案要被看見，不要靜默跳過。
+                df = pd.read_csv(csv_path, nrows=1)
+                if "entry_date" not in df.columns or df.empty:
+                    raise ValueError(
+                        f"{csv_path}: missing 'entry_date' column or empty file"
+                    )
+                entry_date = pd.to_datetime(df["entry_date"].iloc[0])
+                if pd.isna(entry_date):
+                    raise ValueError(
+                        f"{csv_path}: first row's entry_date is unparseable"
+                    )
+                has_quote = conn.execute(
+                    text("SELECT 1 FROM daily_quotes WHERE date >= :d LIMIT 1"),
+                    {"d": entry_date.strftime("%Y-%m-%d")},
+                ).scalar()
+                if has_quote:
+                    return (int(year_dir.name), int(month_dir.name))
+    raise ValueError(
+        f"No usable candidates_scored.csv found under {models_root} "
+        "(file missing or entry_date has no daily_quotes coverage)."
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Rolling monthly portfolio backtester."
     )
     parser.add_argument("--start_year", type=int, required=True)
     parser.add_argument("--start_month", type=int, required=True)
-    parser.add_argument("--end_year", type=int, required=True)
-    parser.add_argument("--end_month", type=int, required=True)
+    parser.add_argument(
+        "--end_year",
+        type=int,
+        default=None,
+        help="Last backtest year (default: auto-detect latest month with candidates_scored.csv + daily_quotes coverage)",
+    )
+    parser.add_argument(
+        "--end_month",
+        type=int,
+        default=None,
+        help="Last backtest month (default: auto-detect, same rule as --end_year)",
+    )
     parser.add_argument(
         "--position-amount",
         type=float,
@@ -292,12 +367,18 @@ def main() -> None:
         else (Path.cwd() / "models_selection").resolve()
     )
 
+    if args.end_year is None or args.end_month is None:
+        end_year, end_month = auto_detect_end_month(models_root)
+        print(f"[auto-detect] end = {end_year}/{normalize_month(end_month)}")
+    else:
+        end_year, end_month = args.end_year, args.end_month
+
     portfolio: dict[str, Position] = {}
     trade_log: list[dict] = []
     monthly_rows: list[dict] = []
 
     for year, month in month_iter(
-        args.start_year, args.start_month, args.end_year, args.end_month
+        args.start_year, args.start_month, end_year, end_month
     ):
         month_s = normalize_month(month)
         try:
@@ -438,7 +519,7 @@ def main() -> None:
 
     summary = {
         "start": f"{args.start_year}/{normalize_month(args.start_month)}",
-        "end": f"{args.end_year}/{normalize_month(args.end_month)}",
+        "end": f"{end_year}/{normalize_month(end_month)}",
         "position_amount": position_amount,
         "top_n": top_n,
         "cost_config": {

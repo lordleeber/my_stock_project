@@ -213,10 +213,15 @@ def main() -> None:
     if not eval_df.empty:
         print(f"Eval data:     {len(eval_df)} rows  ({eval_df['ym'].nunique()} months)")
 
-    feat_cols = [c for c in FEATURE_COLS if c in train_df.columns]
     missing = [c for c in FEATURE_COLS if c not in train_df.columns]
     if missing:
-        print(f"[WARN] features not in training data (will be skipped): {missing}")
+        raise RuntimeError(
+            f"Training data missing required features: {missing}. "
+            "feature_return_analysis.csv schema 與 step4 FEATURE_COLS 不同步 — "
+            "可能 step3 漏帶欄位或 step1/2 沒產出該特徵。請修正 schema 後重跑，"
+            "不要 silent 跳過特徵繼續訓練（會造成模型行為與 step5 不一致）。"
+        )
+    feat_cols = list(FEATURE_COLS)
 
     # 保留 NaN 讓 LightGBM 原生 NaN handling 學最佳分裂方向；不再 fillna(0)。
     X_train = train_df[feat_cols].apply(pd.to_numeric, errors="coerce")

@@ -22,7 +22,6 @@ import pickle
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -119,14 +118,12 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
 
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
-        print(
-            f"[WARN] features missing in dataset_strategy.csv (will be filled with 0): {missing}"
+        raise RuntimeError(
+            f"dataset_strategy.csv missing model features: {missing}. "
+            f"Model {model_path} 訓練看過這些特徵，但 scoring 端 dataset_strategy.csv "
+            "沒有對應欄位 — 代表 step1/2 ↔ step4 schema 不同步。請補齊欄位後重跑，"
+            "不要 silent 補 NaN 繼續評分（model 從沒看過該欄為 NaN 的訓練樣本，預測不可信）。"
         )
-
-    # 缺欄位填 NaN（不是 0），與 step4 訓練端對齊：LightGBM 原生 NaN handling。
-    for c in feature_cols:
-        if c not in df.columns:
-            df[c] = np.nan
 
     X = df[feature_cols].apply(pd.to_numeric, errors="coerce")
     df["ml_score"] = model.predict(X)
@@ -137,12 +134,11 @@ def score_and_publish(year: int, month: int, model_dir: Path | None = None) -> P
     # train_through_date  = "YYYY-MM-DD" 該 cohort 的 cutoff_date（具體日期，避免歧義）
     tt_label = f"{model_dir.parent.name}/{model_dir.name}"
     df["scored_by_train_through"] = tt_label
-    try:
-        df["scored_by_train_through_date"] = model_release_date(
-            int(model_dir.parent.name), model_dir.name
-        )
-    except Exception:
-        df["scored_by_train_through_date"] = None
+    # model_dir 結構固定為 models_selection/<YYYY>/<MM>/，
+    # model_release_date 失敗代表目錄命名異常，應直接 propagate 不要 silent 吞錯。
+    df["scored_by_train_through_date"] = model_release_date(
+        int(model_dir.parent.name), model_dir.name
+    )
 
     out = df.sort_values("ml_rank").reset_index(drop=True)
 

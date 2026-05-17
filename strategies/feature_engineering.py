@@ -119,7 +119,11 @@ def fetch_technical_features(
         ti = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
 
     if ti.empty:
-        return pd.DataFrame(columns=["symbol"] + TECHNICAL_FEATURE_COLS)
+        raise RuntimeError(
+            f"technical_indicators 在 ref_date={ref_date} 沒有任何 symbol 的資料 — "
+            f"傳入 {len(symbols)} 個 symbols 全部無 PIT 技術指標。"
+            "通常代表 DB 未匯入該日期或 calculator 未跑完，請補資料再執行。"
+        )
 
     ti["symbol"] = ti["symbol"].astype(str).str.strip()
     for col in _TI_COLS:
@@ -155,9 +159,13 @@ def fetch_technical_features(
     bb_range = ti["bb_upper"] - ti["bb_lower"]
     ti["bb_position"] = ((ti["_close"] - ti["bb_lower"]) / bb_range).where(bb_range > 0)
 
-    for col in TECHNICAL_FEATURE_COLS:
-        if col not in ti.columns:
-            ti[col] = np.nan
+    # 不再 silent 補 NaN：TECHNICAL_FEATURE_COLS 全部在上方計算建立，
+    # 若到這裡仍缺欄代表函式內部 bug，應直接 raise。
+    missing_cols = [c for c in TECHNICAL_FEATURE_COLS if c not in ti.columns]
+    if missing_cols:
+        raise RuntimeError(
+            f"fetch_technical_features 內部 bug：未建立欄位 {missing_cols}"
+        )
 
     return ti[["symbol"] + TECHNICAL_FEATURE_COLS].reset_index(drop=True)
 
@@ -386,9 +394,11 @@ def fetch_revenue_features(
     sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
 
     if df.empty:
-        for col in REVENUE_FEATURE_COLS:
-            sym_df[col] = np.nan
-        return sym_df
+        raise RuntimeError(
+            f"monthly_revenue 在 publish_time <= {ref_compact} 沒有任何資料 — "
+            f"傳入 {len(symbols)} 個 symbols 全部無已發布月營收。"
+            "通常代表 DB 未匯入或 publish_time 欄位為空，請補資料再執行。"
+        )
 
     df["symbol"] = df["symbol"].astype(str).str.strip()
     for col in ["yoy_pct", "mom_pct", "cumulative_yoy_pct"]:

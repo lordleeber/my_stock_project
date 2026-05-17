@@ -54,13 +54,22 @@ def release_date(year: int, month: int) -> date:
 
 
 def resolve_entry_date(engine, earliest: date) -> str:
-    """回傳 earliest 當天或之後第一個實際交易日。"""
+    """回傳 earliest 當天或之後第一個實際交易日。
+
+    若 daily_quotes 沒有 >= earliest 的資料（通常代表 DB 還沒更新到該日期），
+    直接 raise — 不要 silent fallback 到 calendar date，否則後續所有 quote /
+    technical lookup 都會錯到非交易日。
+    """
+    earliest_str = earliest.strftime("%Y-%m-%d")
     stmt = text("SELECT MIN(date) FROM daily_quotes WHERE date >= :d")
     with engine.connect() as conn:
-        row = conn.execute(stmt, {"d": earliest.strftime("%Y-%m-%d")}).fetchone()
-    if row and row[0]:
-        return str(row[0])
-    return earliest.strftime("%Y-%m-%d")
+        row = conn.execute(stmt, {"d": earliest_str}).fetchone()
+    if not (row and row[0]):
+        raise RuntimeError(
+            f"daily_quotes 沒有 >= {earliest_str} 的交易日資料 — "
+            "可能 DB 未匯入該日期之後的報價，請先補資料再執行。"
+        )
+    return str(row[0])
 
 
 def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
