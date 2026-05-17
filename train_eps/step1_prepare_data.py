@@ -9,13 +9,18 @@ from typing import Optional, Set
 import numpy as np
 import pandas as pd
 import requests
-from shared_config import format_quarter, shift_quarter, target_quarter_for_playbook
 from sqlalchemy import create_engine, text
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+_HERE = Path(__file__).resolve().parent
+ROOT_DIR = _HERE.parent
+# 讓本檔同時支援「直接執行」與「被 strategies 反向 import」兩種啟動方式：
+# 前者只會把 _HERE 加進 sys.path，後者只會把 ROOT_DIR 加進 sys.path。
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from shared_config import format_quarter, shift_quarter, target_quarter_for_playbook
 from common.db import get_db_url
 
 TARGET = "target_eps"
