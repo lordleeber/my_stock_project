@@ -6,21 +6,28 @@
   LightGBM 學習在同一個月內排序股票，使標籤最高的股票排在最前面。
 
 輸入：  strategies/output/feature_return_analysis.csv
-輸出：  models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl
-                                                      feature_importance.csv
-                                                      latest.json
+輸出：  models_selection/<train_through_year>/<train_through_month>/selection_model.pkl
+                                                                    feature_importance.csv
+                                                                    latest.json
 
-Walk-forward 設計：
-  - 訓練資料：(year, month) <= cutoff 的資料
-  - 評估資料：(year, month) > cutoff 的資料
-  - 預設 cutoff：所有可用資料（生產模式）
+Walk-forward 設計（術語見 strategies/CLAUDE.md § Date Convention）：
+  - train_through = 訓練資料 cohort 上界（含），cohort 級別的 YYYY/MM 標籤
+  - train_through_date = train_through cohort 的 cutoff_date (YYYY-MM-DD)
+  - 訓練資料：(year, month) <= train_through 的 cohort
+  - 評估資料：(year, month) > train_through 的 cohort
+  - 預設：不指定 → 用所有可用資料（生產模式，train_through="all"）
+
+⚠ 不要把 `train_through_date` 跟 target cohort 的 `cutoff_date` 搞混：
+   train_through_date = "這顆 model 看過資料看到哪天"（=訓練上界 cohort 的 cutoff_date）
+   target cutoff_date = "step5 對哪一天的 candidates 評分"（=當月 cohort 的 cutoff_date）
+   兩者差一個 cycle。
 
 用法：
   # 使用所有資料訓練（生產）
-  venv/bin/python3 strategies/train_selection_model.py
+  venv/bin/python3 strategies/step4_train_selection_model.py
 
-  # Walk-forward 評估
-  venv/bin/python3 strategies/train_selection_model.py --cutoff-year 2024 --cutoff-month 6
+  # Walk-forward 訓練：train_through = 2024/06（cohort 2024-06-10）
+  venv/bin/python3 strategies/step4_train_selection_model.py --train-through-year 2024 --train-through-month 6
 """
 
 from __future__ import annotations
@@ -44,7 +51,8 @@ except ImportError:
     print("lightgbm not installed. Run: pip install lightgbm")
     sys.exit(1)
 
-from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATURE_COLS
+from strategies.feature_engineering import REVENUE_FEATURE_COLS, TECHNICAL_FEATURE_COLS
+from strategies.step1_prepare_data import model_release_date
 
 FEATURE_COLS = (
     [
@@ -89,8 +97,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train LightGBM Ranker for stock selection."
     )
-    parser.add_argument("--cutoff-year", type=int, default=None)
-    parser.add_argument("--cutoff-month", type=int, default=None)
+    parser.add_argument(
+        "--train-through-year",
+        type=int,
+        default=None,
+        help="Walk-forward 訓練上界 cohort 的年份；不指定則用所有資料",
+    )
+    parser.add_argument(
+        "--train-through-month",
+        type=int,
+        default=None,
+        help="Walk-forward 訓練上界 cohort 的月份（1~12）",
+    )
     parser.add_argument("--n-estimators", type=int, default=500)
     parser.add_argument("--learning-rate", type=float, default=0.03)
     parser.add_argument("--num-leaves", type=int, default=31)
@@ -171,18 +189,26 @@ def main() -> None:
     df = df.sort_values(["year", "month"]).reset_index(drop=True)
 
     # Walk-forward 資料切分。
-    if args.cutoff_year is not None and args.cutoff_month is not None:
-        cutoff_ym = args.cutoff_year * 100 + args.cutoff_month
-        train_df = df[df["ym"] <= cutoff_ym].copy()
-        eval_df = df[df["ym"] > cutoff_ym].copy()
-        cutoff_label = f"{args.cutoff_year:04d}/{args.cutoff_month:02d}"
+    if args.train_through_year is not None and args.train_through_month is not None:
+        train_through_ym = args.train_through_year * 100 + args.train_through_month
+        train_df = df[df["ym"] <= train_through_ym].copy()
+        eval_df = df[df["ym"] > train_through_ym].copy()
+        train_through_label = (
+            f"{args.train_through_year:04d}/{args.train_through_month:02d}"
+        )
+        train_through_date = model_release_date(
+            args.train_through_year, f"{args.train_through_month:02d}"
+        )
     else:
         train_df = df.copy()
         eval_df = pd.DataFrame()
-        cutoff_label = "all"
+        train_through_label = "all"
+        train_through_date = None
 
     print(
-        f"Training data: {len(train_df)} rows  ({train_df['ym'].nunique()} months)  cutoff={cutoff_label}"
+        f"Training data: {len(train_df)} rows  ({train_df['ym'].nunique()} months)  "
+        f"train_through={train_through_label}"
+        + (f" (date {train_through_date})" if train_through_date else "")
     )
     if not eval_df.empty:
         print(f"Eval data:     {len(eval_df)} rows  ({eval_df['ym'].nunique()} months)")
@@ -246,12 +272,12 @@ def main() -> None:
     print(importance.head(20).to_string(index=False))
 
     # 儲存模型。
-    if args.cutoff_year is not None and args.cutoff_month is not None:
+    if args.train_through_year is not None and args.train_through_month is not None:
         out_dir = (
             ROOT_DIR
             / "models_selection"
-            / f"{args.cutoff_year:04d}"
-            / f"{args.cutoff_month:02d}"
+            / f"{args.train_through_year:04d}"
+            / f"{args.train_through_month:02d}"
         ).resolve()
     else:
         out_dir = (ROOT_DIR / "models_selection" / "latest").resolve()
@@ -267,7 +293,8 @@ def main() -> None:
         "model_path": str(model_path),
         "objective": "lambdarank",
         "feature_cols": feat_cols,
-        "cutoff": cutoff_label,
+        "train_through": train_through_label,
+        "train_through_date": train_through_date,
         "train_rows": int(len(train_df)),
         "train_months": int(train_df["ym"].nunique()),
         "train_spearman_ic": round(float(train_ic), 4),

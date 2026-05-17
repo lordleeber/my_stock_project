@@ -19,8 +19,11 @@
 比對對象:
   1. dataset_strategy.csv     — rows / cols added/removed / 共有 numeric 欄位的平均絕對差
   2. trade_candidates.csv     — 候選股集合 Jaccard、共有 symbol 的 pred_upside_pct Spearman
-  3. selection_model latest.json (cutoff) — train/eval IC、feature count
-  4. candidates_scored.csv    — top-N overlap、ml_rank Spearman、scored_by_model_cutoff 是否一致
+  3. selection_model latest.json (train_through) — train/eval IC、feature count
+  4. candidates_scored.csv    — top-N overlap、ml_rank Spearman、scored_by_train_through 是否一致
+
+舊版 schema (models_selection_old/) 的 latest.json key 是 `cutoff`、
+candidates_scored.csv column 是 `scored_by_model_cutoff`；本 script 會 fallback 讀。
 """
 
 from __future__ import annotations
@@ -231,6 +234,8 @@ def compute_trade_candidates_metrics(
 def compute_selection_model_metrics(
     old_meta: dict | None, new_meta: dict | None
 ) -> dict:
+    """新版 latest.json 用 `train_through` key；舊版用 `cutoff` — 兩者都不直接列出，但
+    train/eval IC、feature count、train_rows 兩個 schema 共用。"""
     out = {
         "sm_train_ic_old": np.nan,
         "sm_train_ic_new": np.nan,
@@ -267,7 +272,7 @@ def compute_candidates_scored_metrics(
         "cs_top10_overlap": np.nan,
         "cs_top20_overlap": np.nan,
         "cs_ml_rank_spearman": np.nan,
-        "cs_model_cutoff_match": "",
+        "cs_train_through_match": "",
     }
     note = ""
     if old_cs is None or new_cs is None:
@@ -298,25 +303,28 @@ def compute_candidates_scored_metrics(
             merged["ml_rank_old"], merged["ml_rank_new"]
         )
 
-    # scored_by_model_cutoff 比對
-    def _cutoff(df: pd.DataFrame) -> str | None:
-        if "scored_by_model_cutoff" not in df.columns:
-            return None
-        vals = df["scored_by_model_cutoff"].dropna().unique()
-        return str(vals[0]) if len(vals) >= 1 else None
+    # walk-forward 來源比對：新版 column 是 `scored_by_train_through`，
+    # 舊版（models_selection_old/）是 `scored_by_model_cutoff`，fallback 讀。
+    def _train_through(df: pd.DataFrame) -> str | None:
+        for col in ("scored_by_train_through", "scored_by_model_cutoff"):
+            if col in df.columns:
+                vals = df[col].dropna().unique()
+                if len(vals) >= 1:
+                    return str(vals[0])
+        return None
 
-    c_old = _cutoff(old_cs)
-    c_new = _cutoff(new_cs)
+    c_old = _train_through(old_cs)
+    c_new = _train_through(new_cs)
     if c_old is None and c_new is None:
-        out["cs_model_cutoff_match"] = "both_missing"
+        out["cs_train_through_match"] = "both_missing"
     elif c_old is None:
-        out["cs_model_cutoff_match"] = f"old_missing; new={c_new}"
+        out["cs_train_through_match"] = f"old_missing; new={c_new}"
     elif c_new is None:
-        out["cs_model_cutoff_match"] = f"new_missing; old={c_old}"
+        out["cs_train_through_match"] = f"new_missing; old={c_old}"
     elif c_old == c_new:
-        out["cs_model_cutoff_match"] = f"match:{c_old}"
+        out["cs_train_through_match"] = f"match:{c_old}"
     else:
-        out["cs_model_cutoff_match"] = f"diff: old={c_old} new={c_new}"
+        out["cs_train_through_match"] = f"diff: old={c_old} new={c_new}"
     return out, note
 
 
@@ -446,14 +454,14 @@ def print_summary(df: pd.DataFrame) -> None:
         for _, r in bad_months.head(10).iterrows():
             print(f"  {int(r['year'])}/{r['month']}: {r['notes']}")
 
-    cutoff_diff = df[df["cs_model_cutoff_match"].astype(str).str.startswith("diff:")]
-    if not cutoff_diff.empty:
+    tt_diff = df[df["cs_train_through_match"].astype(str).str.startswith("diff:")]
+    if not tt_diff.empty:
         print(
-            f"\n[scored_by_model_cutoff differs]  {len(cutoff_diff)} months  "
+            f"\n[scored_by_train_through differs]  {len(tt_diff)} months  "
             "(walk-forward picked a different model)"
         )
-        for _, r in cutoff_diff.head(10).iterrows():
-            print(f"  {int(r['year'])}/{r['month']}: {r['cs_model_cutoff_match']}")
+        for _, r in tt_diff.head(10).iterrows():
+            print(f"  {int(r['year'])}/{r['month']}: {r['cs_train_through_match']}")
 
 
 def main() -> None:
@@ -510,7 +518,7 @@ def main() -> None:
         "cs_top10_overlap",
         "cs_top20_overlap",
         "cs_ml_rank_spearman",
-        "cs_model_cutoff_match",
+        "cs_train_through_match",
         "notes",
     ]
     df = df.reindex(columns=column_order)

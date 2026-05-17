@@ -4,7 +4,11 @@
 
 > 資料管線（scraper / processor / importer / calculator）由 launchd 自動排程，不在本 playbook 範圍。詳見 [`schedules/CLAUDE.md`](schedules/CLAUDE.md)。
 
-> **Date narration convention**: 所有 `M/10`、`M/15`、`cohort M`、`cutoff M-1` 等月份 token，在敘述/log/註解時都要展成具體 `YYYY-MM-DD`。例如不要寫「04 模型」，要寫「cohort 2026/04 (cutoff_date 2026-04-10) 的模型」。formula 與 PIT 假日修正規則見 [`strategies/CLAUDE.md` § Date Convention](strategies/CLAUDE.md#date-convention-read-first)（single source of truth）。
+> **Date narration convention**: 所有 `M/10`、`M/15`、`cohort M`、`train_through M-1` 等月份 token，在敘述/log/註解時都要展成具體 `YYYY-MM-DD`。
+> - **`cutoff_date`** = target cohort 的 PIT 截斷日（例：cohort 2026/04 (cutoff_date 2026-04-10)）。
+> - **`train_through_date`** = selection model 訓練資料上界 cohort 的 `cutoff_date`（例：train_through=2026/04 → train_through_date 2026-04-10）。
+> - 不要寫「model 的 cutoff_date」— 用 `train_through_date`。
+> 完整規則見 [`strategies/CLAUDE.md` § Date Convention](strategies/CLAUDE.md#date-convention-read-first)（single source of truth）。
 
 ---
 
@@ -51,9 +55,9 @@ venv/bin/python3 strategies/step2_finalize_strategy.py --year $YEAR --month $MON
 # ③ 重建 fwd_return ground truth（現在 M-1 的 exit_date 才能定義出來）
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
-# ④ 訓 cutoff = M-1 的 selection model（用最新 ground truth）
+# ④ 訓 train_through=M-1 的 selection model（用最新 ground truth）
 venv/bin/python3 strategies/step4_train_selection_model.py \
-  --cutoff-year $PREV_YEAR --cutoff-month $PREV_MONTH
+  --train-through-year $PREV_YEAR --train-through-month $PREV_MONTH
 
 # ⑤ 對本月候選打分，產出最終選股名單
 venv/bin/python3 strategies/step5_score_and_publish.py --year $YEAR --month $MONTH
@@ -82,13 +86,13 @@ step3       需要 M 的 entry_date 來定義 M-1 的 exit_date
             M-1 的 fwd_return（被當成 step4 訓練標籤）
                             │
                             ▼
-step4       訓 cutoff=M-1 的新模型
+step4       訓 train_through=M-1 的新模型
                             │
                             ▼
-step5(M)    walk-forward 自動挑到剛訓好的 M-1 模型
+step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 ```
 
-> 跳過 step3 / step4 也能跑出 step5 名單，但 step5 會退回去用更舊的 cutoff（例如 M-2、M-3），喪失最新一個月的訓練訊號。
+> 跳過 step3 / step4 也能跑出 step5 名單，但 step5 會退回去用更舊的 train_through（例如 M-2、M-3），喪失最新一個月的訓練訊號。
 
 ---
 
@@ -111,26 +115,26 @@ step5(M)    walk-forward 自動挑到剛訓好的 M-1 模型
 ### 04 月（4/11）
 - 新到資料：3 月營收 + **前年年報**
 - 04 模型可用 Q4 為 anchor（含 Q4 完整 XBRL），比 03 模型多 2 個 XBRL 特徵
-- 重訓 selection model cutoff = 03
+- 重訓 selection model train_through = 03（train_through_date = 上一個 03/10）
 
 ### 05 月（5/16，因 5/15 是 Q1 季報日）
 - 新到資料：4 月營收 + **Q1 季報**
 - 05 模型 anchor 從 Q4 切換到 **Q1**，所有後續 06、07 月模型也以 Q1 為 anchor
-- 重訓 selection model cutoff = 04
+- 重訓 selection model train_through = 04（train_through_date = 04/10）
 
 ### 08 月（8/16）
 - 新到資料：7 月營收 + **Q2 季報**
 - 08 模型 anchor 切換到 **Q2**
-- 重訓 selection model cutoff = 07
+- 重訓 selection model train_through = 07（train_through_date = 07/10）
 
 ### 11 月（11/16）
 - 新到資料：10 月營收 + **Q3 季報**
 - 11 模型 anchor 切換到 **Q3**
-- 重訓 selection model cutoff = 10
+- 重訓 selection model train_through = 10（train_through_date = 10/10）
 
 ### 跨年的 01 月
 - `PREV_YEAR = YYYY-1`、`PREV_MONTH = 12`
-- 訓 cutoff = (YYYY-1)/12 的 selection model
+- 訓 train_through=(YYYY-1)/12 的 selection model（train_through_date = (YYYY-1)-12-10）
 
 ---
 
@@ -173,13 +177,13 @@ monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 
               ├── train_eps 04
               ├── strategies step1+2 04
               ├── strategies step3 (現在能算出 03 月的 fwd_return)
-              ├── strategies step4 cutoff=03
+              ├── strategies step4 train_through=03 (train_through_date 2026-03-10)
               └── strategies step5 04 → 名單出爐
 4/13 (Mon)    名單按開盤價建倉 (entry_date)
               ...持有約 25 個交易日 (依 5 月 entry 而定) ...
 5/15 (Fri)    Q1 季報日 → cutoff_date
 5/15 開盤      上一月 cohort 平倉 (5/15 開盤等於下一輪 entry 前一交易日)
-5/16 (Sat)    跑 5 月份 playbook → 訓 cutoff=04 的 selection model、出 5 月名單
+5/16 (Sat)    跑 5 月份 playbook → 訓 train_through=04 (2026-04-10) 的 selection model、出 5 月名單
 ```
 
 ---
@@ -187,7 +191,7 @@ monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 
 ## 常見問題
 
 ### Q1: 為什麼 step5 顯示 `model used: 2026/02` 而不是最新？
-A: 你跳過了 step3 + step4。`models_selection/2026/03/` 可能只有 `candidates_scored.csv` 沒有 `selection_model.pkl`。step5 的 walk-forward 規則是「最新有 pkl 的 cutoff < 目標月」。
+A: 你跳過了 step3 + step4。`models_selection/2026/03/` 可能只有 `candidates_scored.csv` 沒有 `selection_model.pkl`。step5 的 walk-forward 規則是「最新有 pkl 的 train_through < 目標月」。
 
 ### Q2: train_eps 同一個月份重跑兩次，model MAE 一樣是不是 bug？
 A: 不是。`prepare_data` 用 PIT cutoff（M/10 或 M/15）截斷資料，固定 `seed=42`，相同輸入 → 相同模型。MAE 數字相同就代表 PIT 行為正確。

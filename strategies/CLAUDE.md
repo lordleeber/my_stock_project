@@ -6,14 +6,28 @@
 
 ## Date Convention (READ FIRST)
 
-**Anywhere you talk about a "month" in this module — in code comments, log lines, PR descriptions, chat, this doc — append the concrete `YYYY-MM-DD` (the cohort's `cutoff_date`).** A bare `YYYY/MM` label is ambiguous: it can mean cohort, cutoff, target, training-data upper bound, or holding period. The date disambiguates.
+**Anywhere you talk about a "month" in this module — in code comments, log lines, PR descriptions, chat, this doc — append the concrete `YYYY-MM-DD`.** A bare `YYYY/MM` label is ambiguous: it can mean cohort, target, model training upper bound, or holding period. The date disambiguates.
+
+**Two distinct date terms — do NOT mix them**:
+
+| Term | Belongs to | Meaning |
+|---|---|---|
+| `cutoff_date` | **target cohort** | 該 cohort 的 PIT 特徵截斷日；step1 / step5 「站在這天」評分。等於 `dataset_strategy.csv.quote_date`（差別只在假日修正）。 |
+| `train_through_date` | **selection model** | 該 model 訓練資料涵蓋到的最後 cohort 的 `cutoff_date`。等於「model 看過資料看到哪天」。 |
+
+`cutoff` 這個字根 **只配 target**；model 端永遠用 `train_through`。同一句話可以同時出現兩個，但不會混淆：
+
+> step5 scores **target 2026/05 (cutoff_date 2026-05-15)** using the **train_through=2026/04 (train_through_date 2026-04-10)** model.
+
+兩個日期差一個 cycle (cohort M 的 cutoff_date vs cohort M−1 的 cutoff_date) — 同一個日期可以同時是 target_M 的 cutoff_date 跟 target_{M+1} 訓練那顆 model 的 train_through_date，視場景而定。
 
 Examples of correct narration:
 
 - ✅ "cohort 2026/04 (cutoff_date 2026-04-10)"
-- ✅ "step5 scores 2026/05 (2026-05-15) using the cutoff=2026/04 (2026-04-10) model"
-- ✅ "training set covers 2021/08 (2021-08-10) → 2026/04 (2026-04-10), ~45 cohorts"
-- ❌ "April model" / "2026/04" alone — which date? which role?
+- ✅ "step5 scores target 2026/05 (cutoff_date 2026-05-15) using train_through=2026/04 (train_through_date 2026-04-10) model"
+- ✅ "training set covers 2021/08 (2021-08-10) → 2026/04 (2026-04-10), ~45 cohorts (train_through_date = 2026-04-10)"
+- ❌ "April model" / "2026/04" alone — which date? cohort, target, or train_through?
+- ❌ "model's cutoff_date 2026-04-10" — 用詞錯誤，model 端要用 `train_through_date`
 
 ### The canonical date formula
 
@@ -34,9 +48,9 @@ day = 15 if month in {5, 8, 11} else 10
 
 If a narration needs to distinguish the **calendar formula date** vs the **actual PIT date**, use "cutoff_date YYYY-MM-DD (quote_date YYYY-MM-DD)" or just pull `quote_date` from the artifact directly.
 
-### Three dates per cohort
+### Four dates per cohort
 
-Every (year, month) cohort owns three dates that flow through the pipeline:
+Every (year, month) cohort owns four flow-through dates:
 
 | Date | Defined by | Stored where | Meaning |
 |---|---|---|---|
@@ -49,13 +63,13 @@ So a single cohort label "2026/04" silently references **four dates** (2026-04-1
 
 ### Walk-forward terminology
 
-| Term | Meaning |
-|---|---|
-| **Target cohort** M | The month whose candidates we are scoring (step5 inference target). Has cutoff_date `D_M`. |
-| **Walk-forward cutoff** = M−1 | The selection model used to score target M was trained with `(year, month) ≤ M−1` cohorts. Its cutoff_date is `D_{M−1}`. |
-| **Training data range** | All cohorts from 2021/08 (2021-08-10) through M−1 inclusive — **not a single month**, a cumulative pool. |
+| Term | Belongs to | Concretely |
+|---|---|---|
+| **Target cohort** M | step5 inference | The cohort being scored. Has `cutoff_date` `D_M`. |
+| **train_through** = M−1 | the model | The selection model used to score target M was trained with `(year, month) ≤ M−1` cohorts. Its `train_through_date` is `D_{M−1}` (= cohort M−1's `cutoff_date`). |
+| **Training data range** | the model | All cohorts from 2021/08 (2021-08-10) through M−1 inclusive — **not a single month**, a cumulative pool with upper bound = train_through_date. |
 
-The selection model at `models_selection/<Y>/<M>/selection_model.pkl` is trained right after target cohort M's `entry_date` opens (because that's the trading day where cohort M−1's `exit_date` realises and its `fwd_return_pct` becomes computable).
+Time-wise: the `train_through=M−1` model is **trained on target cohort M's `cutoff_date`** — that's the same trading day where cohort M−1's `exit_date` realises and its `fwd_return_pct` becomes the model's freshest training label. So one calendar date plays two roles simultaneously: target M's `cutoff_date` AND the moment after which train_through=M−1 model is trainable. Always disambiguate by saying which role you mean.
 
 ## Pipeline Layout
 
@@ -64,7 +78,7 @@ The selection model at `models_selection/<Y>/<M>/selection_model.pkl` is trained
 | 1 | `step1_prepare_data.py --year Y --month M` | `output/<Y>/<M>/dataset_strategy.csv` (40 cols, after ttm/volume filter) |
 | 2 | `step2_finalize_strategy.py --year Y --month M` | enrich `dataset_strategy.csv` with technical/revenue/EPS-prediction features (76 cols); write `trade_candidates.csv` |
 | 3 | `step3_analyze_feature_returns.py` | `feature_return_analysis.csv` (fwd_return ground truth) |
-| 4 | `step4_train_selection_model.py --cutoff-year Y --cutoff-month M` | `models_selection/<Y>/<M>/selection_model.pkl` + feature_importance + latest.json |
+| 4 | `step4_train_selection_model.py --train-through-year Y --train-through-month M` | `models_selection/<Y>/<M>/selection_model.pkl` + feature_importance + latest.json |
 | 5 | `step5_score_and_publish.py --year Y --month M` | `models_selection/<Y>/<M>/candidates_scored.csv` (final picks by `ml_rank`) |
 
 Batch variants (`stepN_batch_*.py`) loop the same logic over month ranges.
@@ -121,16 +135,16 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
 
 ## Walk-Forward Selection Model
 
-- Models stored at `models_selection/<cutoff_year>/<cutoff_month>/`
-- Scoring target cohort M (step5) picks the latest model whose cutoff < M
-- Training cutoff-M−1 model requires step3 fwd_return reaching cohort M−1, which requires step1+2 for cohort M (entry_date) to be done first
+- Models stored at `models_selection/<train_through_year>/<train_through_month>/`
+- Scoring target cohort M (step5) picks the latest model whose `train_through < M`
+- Training the `train_through=M−1` model requires step3 fwd_return reaching cohort M−1, which requires step1+2 for cohort M (entry_date) to be done first
 
 Concrete example for target 2026/05 (cutoff_date 2026-05-15):
 
-1. 2026-05-15 (Fri): cohort 2026/05's `quote_date` snapshot taken; cohort 2026/04's `exit_date` realises here too → `fwd_return_pct` for 2026/04 cohort becomes computable.
+1. 2026-05-15 (Fri): target 2026/05's `quote_date` snapshot taken; cohort 2026/04's `exit_date` realises here too → `fwd_return_pct` for 2026/04 cohort becomes computable.
 2. step3 re-runs → `feature_return_analysis.csv` now includes 2026/04 (entry 2026-04-13 → exit 2026-05-15) rows.
-3. step4 trains cutoff=2026/04 (2026-04-10) selection model using `(year, month) ≤ 2026/04` rows (2021/08 → 2026/04, ~45 cohorts).
-4. step5 scores 2026/05 (2026-05-15) candidates with that cutoff=2026/04 model. Walk-forward picks it via `cutoff < target`.
+3. step4 trains `train_through=2026/04 (train_through_date 2026-04-10)` selection model using `(year, month) ≤ 2026/04` rows (2021/08 → 2026/04, ~45 cohorts).
+4. step5 scores target 2026/05 (cutoff_date 2026-05-15) candidates with that `train_through=2026/04` model. Walk-forward picks it via `train_through < target`.
 
 See [`MONTHLY_PLAYBOOK.md`](../MONTHLY_PLAYBOOK.md) for the strict ordering rule.
 
@@ -140,12 +154,19 @@ Same directory, two files with different temporal labels:
 
 | File | `M` interpretation |
 |---|---|
-| `selection_model.pkl` | M is **cutoff** — training used data up to cohort M's fwd_return |
-| `candidates_scored.csv` | M is **target** — scored by a model with cutoff **< M** (walk-forward) |
+| `selection_model.pkl` | M is **train_through** — training used data up to cohort M's fwd_return |
+| `candidates_scored.csv` | M is **target** — scored by a model with **train_through < M** (walk-forward) |
 
-Example: `models_selection/2026/04/candidates_scored.csv` lists target-2026/04 (2026-04-10) candidates scored by `models_selection/2026/03/selection_model.pkl` (cutoff 2026/03 = 2026-03-10). The 2026/04 model in the same directory was trained later (at 2026-05-15, after cohort 2026/04's fwd_return realised) and is used for target **2026/05 (2026-05-15)** candidates.
+Example: `models_selection/2026/04/candidates_scored.csv` lists target-2026/04 (cutoff_date 2026-04-10) candidates scored by `models_selection/2026/03/selection_model.pkl` (train_through=2026/03, train_through_date 2026-03-10). The 2026/04 model in the same directory was trained later (at 2026-05-15, after cohort 2026/04's fwd_return realised) and is used for target **2026/05 (cutoff_date 2026-05-15)** candidates.
 
-To remove ambiguity, step5 writes a `scored_by_model_cutoff` column into `candidates_scored.csv` (value like `"2026/03"`, which expands to cutoff_date 2026-03-10 per the [Date Convention](#date-convention-read-first)) so the model source is always self-evident from the file alone.
+To remove ambiguity, step5 writes two columns into `candidates_scored.csv`:
+
+- `scored_by_train_through` (value like `"2026/03"`) — cohort-level label of the model used
+- `scored_by_train_through_date` (value like `"2026-03-10"`) — that cohort's `cutoff_date`, the model's training upper bound
+
+so the model source is always self-evident from the file alone, without consulting any other artifact.
+
+> **Legacy schema note**: artifacts in `models_selection_old/` use the older names — `latest.json["cutoff"]` and `candidates_scored.csv.scored_by_model_cutoff` — same values, but the names mixed `cutoff` (a target-side term) with model-side semantics. The current schema separates the two namespaces. `compare_versions.py` reads both names with fallback.
 
 ## EPS Column Naming in `dataset_strategy.csv`
 
@@ -179,6 +200,7 @@ Legacy columns `q3_close` / `q3_date` / `q3_volume` (the `q3_` prefix was an int
 ## Rules
 
 - **Date narration**: see [Date Convention](#date-convention-read-first). Any mention of "month M" in PRs / chat / log lines / code comments must carry the concrete `YYYY-MM-DD`. CLI args and directory layouts (`--year/--month`, `<Y>/<M>/`) keep the month-only form for terseness, but prose around them must expand.
+- **Date terms**: `cutoff_date` belongs to target / cohort; `train_through_date` belongs to selection model. Don't write "model's cutoff_date" — say `train_through_date`.
 - Do NOT add new SQL paths to deprecated tables (`income_statement`, `balance_sheet`, `cash_flow`, `quarterly_reports`).
 - Do NOT commit generated `output/`, `models_selection/`, or csv/pkl artifacts unless asked.
 - When adding XBRL account_codes, verify coverage across periods (some codes appear sparsely; check `data/processed/xbrl_codebook.csv`).
