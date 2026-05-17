@@ -33,8 +33,7 @@
 - If any step fails, pipeline stops immediately and writes error details to repo root `error_train_eps.log`.
 
 ## Data Source
-- `prepare_data.py` defaults to DB mode (`--data-source db`).
-- API mode is available with `--data-source api`.
+- `prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
 
 ## Monthly Training Calendar
 - 01/10 (announce previous Dec revenue): train previous year `Q4 eps delta`.
@@ -119,17 +118,17 @@ This column is **metadata only** — all three downstream scripts list `anchor_q
 ## Typical Commands
 ```bash
 # Step-by-step
-venv/bin/python3 train_eps/prepare_data.py --year 2025 --month 11 --data-source api
-venv/bin/python3 train_eps/train.py --year 2025 --month 11
-venv/bin/python3 train_eps/evaluate.py --year 2025 --month 11
-venv/bin/python3 train_eps/predict_and_publish.py --year 2025 --month 11
+venv/bin/python3 train_eps/step1_prepare_data.py --year 2025 --month 11
+venv/bin/python3 train_eps/step2_train.py --year 2025 --month 11
+venv/bin/python3 train_eps/step3_evaluate.py --year 2025 --month 11
+venv/bin/python3 train_eps/step4_predict_and_publish.py --year 2025 --month 11
 
 # One command pipeline
-venv/bin/python3 train_eps/run_pipeline.py --year 2025 --month 11 --data-source api
+venv/bin/python3 train_eps/run_pipeline.py --year 2025 --month 11
 
 # Batch historical
-venv/bin/python3 train_eps/batch_evaluate.py
-venv/bin/python3 train_eps/batch_predict_and_publish.py
+venv/bin/python3 train_eps/step3_batch_evaluate.py
+venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 ```
 
 ## Health Metrics
@@ -151,7 +150,7 @@ venv/bin/python3 train_eps/batch_predict_and_publish.py
 - Default `--start-year` is `2020` (same as global fetch range).
 - For 2020 rows, features that depend on 2019 historical quarters may be missing (`NaN`), including previous-Q4-related fields.
 - Missing feature values are allowed in training (LightGBM handles `NaN` natively).
-- For both DB and API paths, anchor-quarter samples must have `income_statement + balance_sheet + cash_flow`; otherwise rows are excluded.
+- Anchor-quarter samples must have `income_statement_xbrl + balance_sheet_xbrl + cash_flow_xbrl`; otherwise rows are excluded.
 - Monthly revenue is handled with full-market scope (`sii + otc`) in pipeline output.
 - XBRL features are included for 11-month model:
   - `xbrl_gross_margin_q`, `xbrl_op_margin_q`, `xbrl_rd_ratio_q`, `xbrl_tax_rate_q`
@@ -160,7 +159,6 @@ venv/bin/python3 train_eps/batch_predict_and_publish.py
   - `Q3 single-quarter = Q3 accumulated - Q2 accumulated`
 - In quantile feature flow, missing values are preserved (no fill to `0`/`0.5`) and remain `NaN` for model-side handling.
 - `APPLY_TRADING_FILTER` flag has been removed (no trading-filter switch in current prepare pipeline).
-- API mode can be slow; prefer DB mode if available.
 
 ## Rules
 - Keep feature definitions consistent across `prepare_data.py`, `train.py`, `evaluate.py`.

@@ -13,7 +13,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="01~12")
-    parser.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
     return parser.parse_args()
 
 
@@ -101,8 +100,6 @@ def main() -> None:
         str(args.year),
         "--month",
         month,
-        "--data-source",
-        args.data_source,
     ]
 
     steps = [

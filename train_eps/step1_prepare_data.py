@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 from typing import Optional, Set
 
 import numpy as np
 import pandas as pd
-import requests
 from sqlalchemy import create_engine, text
 
 _HERE = Path(__file__).resolve().parent
@@ -27,7 +25,6 @@ TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
 CONTEXT_COLUMNS = ["symbol", "name", "industry"]
 MIN_TTM_EPS = 1.0
-API_BASE = os.getenv("BACKEND_API_BASE", "http://100.103.191.79:8000")
 MARKETS = ("sii", "otc")
 START_YEAR = 2020
 
@@ -163,10 +160,11 @@ def model_features_for_month(month: str) -> list[str]:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Shared prepare dataset from DB/API")
+    p = argparse.ArgumentParser(
+        description="Prepare dataset from PostgreSQL (XBRL only)"
+    )
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--month", type=str, required=True, help="01~12")
-    p.add_argument("--data-source", type=str, choices=["db", "api"], default="db")
     return p.parse_args()
 
 
@@ -183,38 +181,6 @@ def add_cross_section_quantile(df: pd.DataFrame, z_col: str, out_col: str) -> No
     # z-score 缺失時保留 NaN，不轉換為固定中位分位數。
     ranks = df.groupby(group_cols)[z_col].rank(method="average", pct=True)
     df[out_col] = np.ceil(ranks * 10.0).clip(1.0, 10.0) / 10.0
-
-
-def normalize_api_chunk(payload: object) -> list[dict]:
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        for key in ("value", "data", "items", "results", "rows"):
-            v = payload.get(key)
-            if isinstance(v, list):
-                return v
-    raise ValueError(f"Unexpected API payload shape: {type(payload)}")
-
-
-def fetch_all_rows_api(
-    api_base: str, path: str, params: dict, limit: int = 5000
-) -> pd.DataFrame:
-    rows: list[dict] = []
-    offset = 0
-    while True:
-        q = dict(params)
-        q["limit"] = limit
-        q["offset"] = offset
-        resp = requests.get(f"{api_base.rstrip('/')}{path}", params=q, timeout=60)
-        resp.raise_for_status()
-        chunk = normalize_api_chunk(resp.json())
-        if not chunk:
-            break
-        rows.extend(chunk)
-        if len(chunk) < limit:
-            break
-        offset += limit
-    return pd.DataFrame(rows)
 
 
 def safe_col(df: pd.DataFrame, col: str) -> pd.Series:
@@ -400,231 +366,6 @@ def build_xbrl_feature_frame(
         "xbrl_capex_to_revenue_q",
     ]
     return x[["symbol"] + feature_cols]
-
-
-def fetch_one_year_api(
-    api_base: str, year: int, market: str, month: str
-) -> pd.DataFrame:
-    qctx = build_quarter_context(year, month)
-    mctx = monthly_context(year, month)
-    pre_anchor_q = qctx["pre_anchor_q"]
-    anchor_q = qctx["anchor_q"]
-    target_q = qctx["target_q"]
-    ly_target_q = qctx["ly_target_q"]
-    ly_anchor_q = qctx["ly_anchor_q"]
-
-    inc_anchor = fetch_all_rows_api(
-        api_base,
-        "/raw/income-statements",
-        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
-    )
-    inc_pre_anchor = fetch_all_rows_api(
-        api_base,
-        "/raw/income-statements",
-        {"start_date": pre_anchor_q, "end_date": pre_anchor_q, "market": market},
-    )
-    bs_anchor = fetch_all_rows_api(
-        api_base,
-        "/raw/balance-sheets",
-        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
-    )
-    cf_anchor = fetch_all_rows_api(
-        api_base,
-        "/raw/cash-flows",
-        {"start_date": anchor_q, "end_date": anchor_q, "market": market},
-    )
-    eps_dates = sorted({target_q, ly_target_q, ly_anchor_q, pre_anchor_q, anchor_q})
-    qr = fetch_all_rows_api(
-        api_base,
-        "/raw/quarterly-reports",
-        {"start_date": eps_dates[0], "end_date": eps_dates[-1], "market": market},
-    )
-    mr = fetch_all_rows_api(
-        api_base,
-        "/raw/monthly-revenue",
-        {"start_date": mctx["mr_start"], "end_date": mctx["mr_end"]},
-    )
-
-    if inc_anchor.empty:
-        return pd.DataFrame()
-
-    # 與 DB 路徑保持一致的樣本保留行為：
-    # 錨點季度必須同時存在於 income_statement + balance_sheet + cash_flow。
-    if bs_anchor.empty or cf_anchor.empty:
-        return pd.DataFrame()
-
-    anchor_data = inc_anchor.merge(
-        bs_anchor[
-            [
-                "symbol",
-                "date",
-                "total_equity",
-                "total_liabilities",
-                "total_assets",
-                "share_capital",
-                "retained_earnings",
-            ]
-        ],
-        on=["symbol", "date"],
-        how="inner",
-    )
-    anchor_data = anchor_data.merge(
-        cf_anchor[["symbol", "date", "cash_flow_operating_q"]],
-        on=["symbol", "date"],
-        how="inner",
-    )
-    if anchor_data.empty:
-        return pd.DataFrame()
-    anchor_data = anchor_data.rename(
-        columns={
-            "revenue_q": "anchor_rev",
-            "net_income_q": "anchor_ni",
-            "share_capital": "capital",
-            "retained_earnings": "anchor_retained_earnings",
-            "cash_flow_operating_q": "anchor_ocf",
-        }
-    )
-    anchor_data["anchor_margin"] = safe_col(anchor_data, "anchor_ni") / safe_col(
-        anchor_data, "anchor_rev"
-    ).replace(0, np.nan)
-    anchor_data["anchor_non_op_ratio"] = safe_col(
-        anchor_data, "non_operating_income_q"
-    ) / safe_col(anchor_data, "pretax_income_q").replace(0, np.nan)
-    anchor_data["anchor_roe"] = safe_col(anchor_data, "anchor_ni") / safe_col(
-        anchor_data, "total_equity"
-    ).replace(0, np.nan)
-    anchor_data["anchor_debt_ratio"] = safe_col(
-        anchor_data, "total_liabilities"
-    ) / safe_col(anchor_data, "total_assets").replace(0, np.nan)
-    anchor_data = anchor_data[
-        [
-            "symbol",
-            "name",
-            "anchor_rev",
-            "anchor_ni",
-            "anchor_margin",
-            "anchor_non_op_ratio",
-            "anchor_roe",
-            "anchor_debt_ratio",
-            "capital",
-            "anchor_retained_earnings",
-            "anchor_ocf",
-        ]
-    ]
-
-    pre_anchor_data = pd.DataFrame(
-        columns=["symbol", "pre_anchor_margin", "pre_anchor_rev", "pre_anchor_ni"]
-    )
-    if not inc_pre_anchor.empty:
-        pre_anchor_data = inc_pre_anchor[["symbol", "revenue_q", "net_income_q"]].copy()
-        pre_anchor_data = pre_anchor_data.rename(
-            columns={"revenue_q": "pre_anchor_rev", "net_income_q": "pre_anchor_ni"}
-        )
-        pre_anchor_data["pre_anchor_margin"] = safe_div_positive(
-            pre_anchor_data["pre_anchor_ni"], pre_anchor_data["pre_anchor_rev"]
-        )
-        pre_anchor_data = pre_anchor_data[
-            ["symbol", "pre_anchor_margin", "pre_anchor_rev", "pre_anchor_ni"]
-        ]
-
-    this_monthly = pd.DataFrame(columns=["symbol"] + mctx["month_cols"])
-    if not mr.empty:
-        if "market" in mr.columns:
-            mr = mr[mr["market"].astype(str).str.upper() == market.upper()].copy()
-        mr2 = mr[mr["date"].isin(mctx["mr_dates"])].copy()
-        if not mr2.empty:
-            pvt = mr2.pivot_table(
-                index="symbol", columns="date", values="revenue_current", aggfunc="last"
-            ).reset_index()
-            this_monthly = pvt.rename(columns=mctx["date_to_col"])
-            for c in mctx["month_cols"]:
-                if c not in this_monthly.columns:
-                    this_monthly[c] = np.nan
-            this_monthly = this_monthly[["symbol"] + mctx["month_cols"]]
-
-    eps_hist = pd.DataFrame(
-        columns=[
-            "symbol",
-            "target_eps",
-            "ly_target_eps",
-            "ly_anchor_eps",
-            "pre_anchor_eps",
-            "anchor_eps",
-        ]
-    )
-    if not qr.empty:
-        qr2 = qr[
-            qr["date"].isin(
-                [target_q, ly_target_q, ly_anchor_q, pre_anchor_q, anchor_q]
-            )
-        ].copy()
-        p = qr2.pivot_table(
-            index="symbol", columns="date", values="eps_q", aggfunc="last"
-        ).reset_index()
-        eps_hist = p.rename(
-            columns={
-                target_q: "target_eps",
-                ly_target_q: "ly_target_eps",
-                ly_anchor_q: "ly_anchor_eps",
-                pre_anchor_q: "pre_anchor_eps",
-                anchor_q: "anchor_eps",
-            }
-        )
-        for c in [
-            "target_eps",
-            "ly_target_eps",
-            "ly_anchor_eps",
-            "pre_anchor_eps",
-            "anchor_eps",
-        ]:
-            if c not in eps_hist.columns:
-                eps_hist[c] = np.nan
-        eps_hist = eps_hist[
-            [
-                "symbol",
-                "target_eps",
-                "ly_target_eps",
-                "ly_anchor_eps",
-                "pre_anchor_eps",
-                "anchor_eps",
-            ]
-        ]
-
-    out = anchor_data.merge(pre_anchor_data, on="symbol", how="left")
-    out = out.merge(this_monthly, on="symbol", how="inner")
-    out = out.merge(eps_hist, on="symbol", how="inner")
-
-    symbol_universe = set(out["symbol"].astype(str).unique())
-    # Silent try/except 已移除：XBRL feature merge 失敗應直接 propagate。
-    # 過去 silent skip 會讓樣本少掉 xbrl_gross_margin_q 等特徵卻照常入訓練集，
-    # 屬於 silent feature degradation。
-    inc_xbrl = fetch_all_rows_api(
-        api_base,
-        "/raw/income-statements-xbrl",
-        {"start_date": pre_anchor_q, "end_date": anchor_q},
-    )
-    bs_xbrl = fetch_all_rows_api(
-        api_base,
-        "/raw/balance-sheets-xbrl",
-        {"start_date": anchor_q, "end_date": anchor_q},
-    )
-    cf_xbrl = fetch_all_rows_api(
-        api_base,
-        "/raw/cash-flows-xbrl",
-        {"start_date": pre_anchor_q, "end_date": anchor_q},
-    )
-    xbrl_features = build_xbrl_feature_frame(
-        inc_xbrl,
-        bs_xbrl,
-        cf_xbrl,
-        pre_anchor_q=pre_anchor_q,
-        anchor_q=anchor_q,
-        symbols=symbol_universe,
-    )
-    out = out.merge(xbrl_features, on="symbol", how="left")
-
-    out["year"] = qctx["target_year"]
-    return out
 
 
 def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
@@ -817,41 +558,24 @@ def main() -> None:
     fetch_years = list(range(START_YEAR, end_year + 1))
     frames: list[pd.DataFrame] = []
 
-    if args.data_source == "db":
-        engine = create_engine(get_db_url())
-        with engine.connect() as conn:
-            conn.execute(text("SET max_parallel_workers_per_gather = 0"))
-            for year in fetch_years:
-                for market in MARKETS:
-                    print(
-                        f"fetching data from db: year={year}, market={market}, month={month}"
-                    )
-                    y = fetch_one_year(conn, year, market, month)
-                    if not y.empty:
-                        frames.append(y)
-            industry_parts: list[pd.DataFrame] = []
-            for market in MARKETS:
-                part = pd.read_sql(
-                    f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'",
-                    conn,
-                )
-                if not part.empty:
-                    industry_parts.append(part[["symbol", "industry"]])
-    else:
+    engine = create_engine(get_db_url())
+    with engine.connect() as conn:
+        conn.execute(text("SET max_parallel_workers_per_gather = 0"))
         for year in fetch_years:
             for market in MARKETS:
                 print(
-                    f"fetching data from api: year={year}, market={market}, month={month}"
+                    f"fetching data from db: year={year}, market={market}, month={month}"
                 )
-                y = fetch_one_year_api(API_BASE, year, market, month)
+                y = fetch_one_year(conn, year, market, month)
                 if not y.empty:
                     frames.append(y)
-        industry_parts = []
+        industry_parts: list[pd.DataFrame] = []
         for market in MARKETS:
-            part = fetch_all_rows_api(API_BASE, "/raw/stock-info", {"market": market})
-            if not part.empty and "symbol" in part.columns:
-                if "industry" not in part.columns:
-                    part["industry"] = np.nan
+            part = pd.read_sql(
+                f"SELECT symbol, industry FROM stock_info WHERE market = '{market}'",
+                conn,
+            )
+            if not part.empty:
                 industry_parts.append(part[["symbol", "industry"]])
 
     if not industry_parts:
@@ -972,12 +696,9 @@ def main() -> None:
     out_debug.to_csv(output_evaluate, index=False)
 
     print("prepare_data completed")
-    print(f"- data_source: {args.data_source}")
     print(f"- month: {month}")
     print(f"- markets: {','.join(MARKETS)}")
     print(f"- years: {START_YEAR}~{end_year}")
-    if args.data_source == "api":
-        print(f"- api_base: {API_BASE}")
     print(f"- output_train: {output_train}")
     print(f"- output_evaluate: {output_evaluate}")
     print(f"- min_ttm_eps: {MIN_TTM_EPS}")
