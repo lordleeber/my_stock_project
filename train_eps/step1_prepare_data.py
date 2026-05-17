@@ -595,39 +595,52 @@ def fetch_one_year_api(
     out = out.merge(eps_hist, on="symbol", how="inner")
 
     symbol_universe = set(out["symbol"].astype(str).unique())
-    try:
-        inc_xbrl = fetch_all_rows_api(
-            api_base,
-            "/raw/income-statements-xbrl",
-            {"start_date": pre_anchor_q, "end_date": anchor_q},
-        )
-        bs_xbrl = fetch_all_rows_api(
-            api_base,
-            "/raw/balance-sheets-xbrl",
-            {"start_date": anchor_q, "end_date": anchor_q},
-        )
-        cf_xbrl = fetch_all_rows_api(
-            api_base,
-            "/raw/cash-flows-xbrl",
-            {"start_date": pre_anchor_q, "end_date": anchor_q},
-        )
-        xbrl_features = build_xbrl_feature_frame(
-            inc_xbrl,
-            bs_xbrl,
-            cf_xbrl,
-            pre_anchor_q=pre_anchor_q,
-            anchor_q=anchor_q,
-            symbols=symbol_universe,
-        )
-        out = out.merge(xbrl_features, on="symbol", how="left")
-    except Exception as e:
-        print(f"[WARN] skip XBRL feature merge (api) year={year} market={market}: {e}")
+    # Silent try/except 已移除：XBRL feature merge 失敗應直接 propagate。
+    # 過去 silent skip 會讓樣本少掉 xbrl_gross_margin_q 等特徵卻照常入訓練集，
+    # 屬於 silent feature degradation。
+    inc_xbrl = fetch_all_rows_api(
+        api_base,
+        "/raw/income-statements-xbrl",
+        {"start_date": pre_anchor_q, "end_date": anchor_q},
+    )
+    bs_xbrl = fetch_all_rows_api(
+        api_base,
+        "/raw/balance-sheets-xbrl",
+        {"start_date": anchor_q, "end_date": anchor_q},
+    )
+    cf_xbrl = fetch_all_rows_api(
+        api_base,
+        "/raw/cash-flows-xbrl",
+        {"start_date": pre_anchor_q, "end_date": anchor_q},
+    )
+    xbrl_features = build_xbrl_feature_frame(
+        inc_xbrl,
+        bs_xbrl,
+        cf_xbrl,
+        pre_anchor_q=pre_anchor_q,
+        anchor_q=anchor_q,
+        symbols=symbol_universe,
+    )
+    out = out.merge(xbrl_features, on="symbol", how="left")
 
     out["year"] = qctx["target_year"]
     return out
 
 
 def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
+    """Build one year's training/evaluation row set entirely from XBRL tables.
+
+    Anchor 入庫資料來源（皆 XBRL；舊的 income_statement / balance_sheet / cash_flow
+    legacy 表已停更，禁止使用）：
+      - 損益表 / 現金股本：quarterly_reports_xbrl (wide-format, period_type='quarter')
+      - 資產負債：balance_sheet_xbrl (long-format, period_type='as_of', account_code 取
+                  1XXX/2XXX/3XXX/3300)
+      - 營業現金流：cash_flow_xbrl (long-format, period_type='accumulated', account_code
+                  'AAAA')，逐季差值由 build_cashflow_single_quarter 計算
+
+    語意上維持原版 INNER JOIN（income + BS + CF 三者皆有資料才保留），不對缺資料的 symbol
+    做 silent fallback。
+    """
     qctx = build_quarter_context(year, month)
     mctx = monthly_context(year, month)
     pre_anchor_q = qctx["pre_anchor_q"]
@@ -636,27 +649,24 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     ly_target_q = qctx["ly_target_q"]
     ly_anchor_q = qctx["ly_anchor_q"]
 
+    # ── 1. 主查：quarterly_reports_xbrl + monthly_revenue + eps_hist + stock_info(name)
     sql = f"""
-    WITH anchor_data AS (
-      SELECT i.symbol, i.name, i.revenue_q AS anchor_rev, i.net_income_q AS anchor_ni,
-             i.net_income_q/NULLIF(i.revenue_q,0) AS anchor_margin,
-             i.non_operating_income_q/NULLIF(i.pretax_income_q,0) AS anchor_non_op_ratio,
-             i.net_income_q/NULLIF(b.total_equity,0) AS anchor_roe,
-             b.total_liabilities/NULLIF(b.total_assets,0) AS anchor_debt_ratio,
-             b.share_capital AS capital, b.retained_earnings AS anchor_retained_earnings,
-             c.cash_flow_operating_q AS anchor_ocf
-      FROM income_statement i
-      JOIN balance_sheet b ON i.symbol=b.symbol AND i.date=b.date
-      JOIN cash_flow c ON i.symbol=c.symbol AND i.date=c.date
-      WHERE i.date='{anchor_q}' AND i.market='{market}'
+    WITH anchor_inc AS (
+      SELECT q.symbol,
+             q.revenue_q       AS anchor_rev,
+             q.net_income_q    AS anchor_ni,
+             q.non_op_income_q,
+             q.pretax_income_q,
+             q.capital
+      FROM quarterly_reports_xbrl q
+      WHERE q.date='{anchor_q}' AND q.market='{market}' AND q.period_type='quarter'
     ),
-    pre_anchor_data AS (
-      SELECT
-        symbol,
-        revenue_q AS pre_anchor_rev,
-        net_income_q AS pre_anchor_ni,
-        CASE WHEN revenue_q > 0 THEN net_income_q/revenue_q END AS pre_anchor_margin
-      FROM income_statement WHERE date='{pre_anchor_q}' AND market='{market}'
+    pre_anchor_inc AS (
+      SELECT symbol,
+             revenue_q    AS pre_anchor_rev,
+             net_income_q AS pre_anchor_ni
+      FROM quarterly_reports_xbrl
+      WHERE date='{pre_anchor_q}' AND market='{market}' AND period_type='quarter'
     ),
     this_monthly AS (
       SELECT symbol,
@@ -666,60 +676,98 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
       GROUP BY symbol
     ),
     eps_hist AS (
-      SELECT qr.symbol, qr.eps_q AS target_eps,
-             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_target_q}' AND market='{market}' AND period_type='quarter') AS ly_target_eps,
-             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{ly_anchor_q}' AND market='{market}' AND period_type='quarter') AS ly_anchor_eps,
-             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{pre_anchor_q}' AND market='{market}' AND period_type='quarter') AS pre_anchor_eps,
-             (SELECT eps_q FROM quarterly_reports_xbrl WHERE symbol=qr.symbol AND date='{anchor_q}' AND market='{market}' AND period_type='quarter') AS anchor_eps
-      FROM quarterly_reports_xbrl qr WHERE qr.date='{target_q}' AND qr.market='{market}' AND qr.period_type='quarter'
+      -- 用 CASE-WHEN pivot 從 anchor 期間附近的所有相關季 EPS。
+      -- target_q（如 2026Q2）公告日尚未到時，target_eps 自然 NaN，這是 live prediction
+      -- 的正常狀態；其餘 ly_target / ly_anchor / pre_anchor / anchor 都是已過去的季，
+      -- 任一缺值代表上游 XBRL 入庫真的有洞，會在 labeled_mask 過濾時被處理。
+      SELECT symbol,
+             MAX(CASE WHEN date='{target_q}'     THEN eps_q END) AS target_eps,
+             MAX(CASE WHEN date='{ly_target_q}'  THEN eps_q END) AS ly_target_eps,
+             MAX(CASE WHEN date='{ly_anchor_q}'  THEN eps_q END) AS ly_anchor_eps,
+             MAX(CASE WHEN date='{pre_anchor_q}' THEN eps_q END) AS pre_anchor_eps,
+             MAX(CASE WHEN date='{anchor_q}'     THEN eps_q END) AS anchor_eps
+      FROM quarterly_reports_xbrl
+      WHERE date IN ('{target_q}','{ly_target_q}','{ly_anchor_q}','{pre_anchor_q}','{anchor_q}')
+        AND market='{market}' AND period_type='quarter'
+      GROUP BY symbol
+    ),
+    name_lookup AS (
+      SELECT symbol, name FROM stock_info WHERE market='{market}'
     )
-    SELECT {qctx["target_year"]} AS year, a.*, p.pre_anchor_margin, p.pre_anchor_rev, p.pre_anchor_ni,
+    SELECT {qctx["target_year"]} AS year, ai.*,
+           n.name,
+           pi.pre_anchor_rev, pi.pre_anchor_ni,
            {",".join([f"m.{c}" for c in mctx["month_cols"]])},
-           e.target_eps,e.ly_target_eps,e.ly_anchor_eps,e.pre_anchor_eps,e.anchor_eps
-    FROM anchor_data a
-    LEFT JOIN pre_anchor_data p ON a.symbol=p.symbol
-    JOIN this_monthly m ON a.symbol=m.symbol
-    JOIN eps_hist e ON a.symbol=e.symbol
+           e.target_eps, e.ly_target_eps, e.ly_anchor_eps, e.pre_anchor_eps, e.anchor_eps
+    FROM anchor_inc ai
+    LEFT JOIN pre_anchor_inc pi ON ai.symbol=pi.symbol
+    LEFT JOIN name_lookup n     ON ai.symbol=n.symbol
+    JOIN this_monthly m         ON ai.symbol=m.symbol
+    LEFT JOIN eps_hist e        ON ai.symbol=e.symbol
     """
     out = pd.read_sql(sql, conn)
 
+    # ── 2. 拉 XBRL long-format（income / BS / CF）— anchor 與 pre_anchor 兩季
+    inc_xbrl = pd.read_sql(
+        f"SELECT * FROM income_statement_xbrl WHERE date IN ('{pre_anchor_q}','{anchor_q}')",
+        conn,
+    )
+    bs_xbrl = pd.read_sql(
+        f"SELECT * FROM balance_sheet_xbrl WHERE date='{anchor_q}'",
+        conn,
+    )
+    cf_xbrl = pd.read_sql(
+        f"SELECT * FROM cash_flow_xbrl WHERE date IN ('{pre_anchor_q}','{anchor_q}')",
+        conn,
+    )
+
+    # ── 3. anchor BS：1XXX/2XXX/3XXX/3300 → total_assets/_liabilities/_equity/retained_earnings
+    bs_anchor = pivot_xbrl_codes(
+        bs_xbrl,
+        date=anchor_q,
+        period_type="as_of",
+        account_codes=["1XXX", "2XXX", "3XXX", "3300"],
+    ).rename(
+        columns={
+            "1XXX": "total_assets",
+            "2XXX": "total_liabilities",
+            "3XXX": "total_equity",
+            "3300": "anchor_retained_earnings",
+        }
+    )
+
+    # ── 4. anchor CF：AAAA = 營業活動現金流（accumulated → 單季差值）
+    cf_anchor = build_cashflow_single_quarter(
+        cf_xbrl,
+        pre_anchor_q=pre_anchor_q,
+        anchor_q=anchor_q,
+        account_codes=["AAAA"],
+    ).rename(columns={"AAAA": "anchor_ocf"})
+
+    # ── 5. INNER MERGE：必須同時有 income + BS + CF anchor 資料才保留樣本
+    out = out.merge(bs_anchor, on="symbol", how="inner")
+    out = out.merge(cf_anchor, on="symbol", how="inner")
+
+    # ── 6. 衍生 ratio（原 SQL 用 NULLIF(.,0)，這裡用 .replace(0, NaN) 等價語意）
+    out["anchor_non_op_ratio"] = out["non_op_income_q"] / out[
+        "pretax_income_q"
+    ].replace(0, np.nan)
+    out["anchor_roe"] = out["anchor_ni"] / out["total_equity"].replace(0, np.nan)
+    out["anchor_debt_ratio"] = out["total_liabilities"] / out["total_assets"].replace(
+        0, np.nan
+    )
+
+    # ── 7. XBRL ratio features（xbrl_gross_margin_q / xbrl_op_margin_q / …）
     symbol_universe = set(out["symbol"].astype(str).unique())
-    try:
-        inc_xbrl = pd.read_sql(
-            f"""
-            SELECT * FROM income_statement_xbrl
-            WHERE date IN ('{pre_anchor_q}','{anchor_q}')
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        bs_xbrl = pd.read_sql(
-            f"""
-            SELECT * FROM balance_sheet_xbrl
-            WHERE date = '{anchor_q}'
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        cf_xbrl = pd.read_sql(
-            f"""
-            SELECT * FROM cash_flow_xbrl
-            WHERE date IN ('{pre_anchor_q}','{anchor_q}')
-              AND symbol IN (SELECT symbol FROM stock_info WHERE market = '{market}')
-            """,
-            conn,
-        )
-        xbrl_features = build_xbrl_feature_frame(
-            inc_xbrl,
-            bs_xbrl,
-            cf_xbrl,
-            pre_anchor_q=pre_anchor_q,
-            anchor_q=anchor_q,
-            symbols=symbol_universe,
-        )
-        out = out.merge(xbrl_features, on="symbol", how="left")
-    except Exception as e:
-        print(f"[WARN] skip XBRL feature merge (db) year={year} market={market}: {e}")
+    xbrl_features = build_xbrl_feature_frame(
+        inc_xbrl,
+        bs_xbrl,
+        cf_xbrl,
+        pre_anchor_q=pre_anchor_q,
+        anchor_q=anchor_q,
+        symbols=symbol_universe,
+    )
+    out = out.merge(xbrl_features, on="symbol", how="left")
 
     return out
 
@@ -880,13 +928,16 @@ def main() -> None:
     ) + f"Q{anchor_q_num[month]}"
 
     rows_before_filter = len(df)
+    # TTM proxy 不再 fillna(0)：缺 EPS 不等於 EPS=0，silent 0-fill 會讓真正資料不齊全
+    # 的樣本被誤判為「TTM EPS=0」並 (依 MIN_TTM_EPS 設定) 被當作低 EPS 過濾 / 通過。
+    # 改成 NaN 直接落入 ttm_ok=False，被嚴格排除。
     ttm_eps_proxy = (
-        safe_col(df, "ly_target_eps").fillna(0)
-        + safe_col(df, "pre_anchor_eps").fillna(0)
-        + safe_col(df, "anchor_eps").fillna(0)
+        safe_col(df, "ly_target_eps")
+        + safe_col(df, "pre_anchor_eps")
+        + safe_col(df, "anchor_eps")
     )
     ttm_ok = ttm_eps_proxy >= float(MIN_TTM_EPS)
-    df = df[ttm_ok].copy()
+    df = df[ttm_ok.fillna(False)].copy()
     rows_after_filter = len(df)
 
     labeled_mask = (
@@ -897,14 +948,23 @@ def main() -> None:
     out = df[evaluate_cols].copy()
     out["year"] = out["year"].astype(int)
 
-    out_labeled = out.loc[labeled_mask].copy()
-    out_labeled = out_labeled[out_labeled["year"].astype(int) <= end_year].copy()
+    # dataset_train：只收有 label 的列（model 訓練必須要 target）
+    out_train_src = out.loc[labeled_mask].copy()
+    out_train_src = out_train_src[out_train_src["year"].astype(int) <= end_year].copy()
+    train_cols = [c for c in train_columns if c in out_train_src.columns]
+    out_train = out_train_src[train_cols].copy()
 
-    train_cols = [c for c in train_columns if c in out_labeled.columns]
-    out_train = out_labeled[train_cols].copy()
-
-    evaluate_labeled_cols = [c for c in evaluate_columns if c in out_labeled.columns]
-    out_debug = out_labeled[evaluate_labeled_cols].copy()
+    # dataset_evaluate：除了 labeled 列，**保留 end_year 的 live 列** (target_eps 為 NaN
+    # 也照收) — 給 step4 inference 用。
+    #
+    # 原版本只寫 labeled 列；當 playbook 在 target_quarter 公告日之前跑（例如 5/15 ~ 8/15
+    # 之間預測 Q2 EPS，但 Q2 8/15 才公告），end_year 的 row 全 unlabeled 被剔光 →
+    # step4 silent fallback 到 max(year)=去年 → 整份預測錯一年。
+    eval_mask = labeled_mask | (out["year"].astype(int) == end_year)
+    out_debug_src = out.loc[eval_mask].copy()
+    out_debug_src = out_debug_src[out_debug_src["year"].astype(int) <= end_year].copy()
+    evaluate_labeled_cols = [c for c in evaluate_columns if c in out_debug_src.columns]
+    out_debug = out_debug_src[evaluate_labeled_cols].copy()
 
     output_train.parent.mkdir(parents=True, exist_ok=True)
     out_train.to_csv(output_train, index=False)
