@@ -4,6 +4,8 @@
 
 > 資料管線（scraper / processor / importer / calculator）由 launchd 自動排程，不在本 playbook 範圍。詳見 [`schedules/CLAUDE.md`](schedules/CLAUDE.md)。
 
+> **Date narration convention**: 所有 `M/10`、`M/15`、`cohort M`、`cutoff M-1` 等月份 token，在敘述/log/註解時都要展成具體 `YYYY-MM-DD`。例如不要寫「04 模型」，要寫「cohort 2026/04 (cutoff_date 2026-04-10) 的模型」。formula 與 PIT 假日修正規則見 [`strategies/CLAUDE.md` § Date Convention](strategies/CLAUDE.md#date-convention-read-first)（single source of truth）。
+
 ---
 
 ## 公告日曆（cutoff_date）
