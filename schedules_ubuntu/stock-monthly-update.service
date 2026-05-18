@@ -1,0 +1,10 @@
+[Unit]
+Description=Taiwan stock monthly revenue update (script self-gates to day 1-15)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/Documents/GitHubLL/my_stock_project/schedules/monthly_update.sh
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+StandardOutput=journal
+StandardError=journal

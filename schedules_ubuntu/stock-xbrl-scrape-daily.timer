@@ -1,0 +1,10 @@
+[Unit]
+Description=Run stock-xbrl-scrape-daily.service at 23:50 daily (script skips outside announcement window)
+
+[Timer]
+OnCalendar=*-*-* 23:50:00
+Persistent=false
+Unit=stock-xbrl-scrape-daily.service
+
+[Install]
+WantedBy=timers.target

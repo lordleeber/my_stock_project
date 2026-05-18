@@ -1,0 +1,11 @@
+[Unit]
+Description=Run stock-daily-retry.service at 02:00 and 04:00 daily
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+OnCalendar=*-*-* 04:00:00
+Persistent=false
+Unit=stock-daily-retry.service
+
+[Install]
+WantedBy=timers.target

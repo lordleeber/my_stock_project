@@ -1,0 +1,10 @@
+[Unit]
+Description=Taiwan stock XBRL daily scrape (accumulate raw quarterly reports)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/Documents/GitHubLL/my_stock_project/schedules/xbrl_scrape_daily.sh
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+StandardOutput=journal
+StandardError=journal

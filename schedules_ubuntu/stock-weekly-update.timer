@@ -1,0 +1,10 @@
+[Unit]
+Description=Run stock-weekly-update.service on Sundays at 10:20
+
+[Timer]
+OnCalendar=Sun *-*-* 10:20:00
+Persistent=false
+Unit=stock-weekly-update.service
+
+[Install]
+WantedBy=timers.target

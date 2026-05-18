@@ -1,0 +1,10 @@
+[Unit]
+Description=Taiwan stock weekly update (TDCC shareholding)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Documents/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/Documents/GitHubLL/my_stock_project/schedules/weekly_update.sh
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+StandardOutput=journal
+StandardError=journal

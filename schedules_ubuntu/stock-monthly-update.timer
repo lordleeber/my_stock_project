@@ -1,0 +1,10 @@
+[Unit]
+Description=Run stock-monthly-update.service at 22:45 daily (script skips outside day 1-15)
+
+[Timer]
+OnCalendar=*-*-* 22:45:00
+Persistent=false
+Unit=stock-monthly-update.service
+
+[Install]
+WantedBy=timers.target
