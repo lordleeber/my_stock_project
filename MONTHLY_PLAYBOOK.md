@@ -51,6 +51,12 @@ venv/bin/python3 train_eps/run_pipeline.py --year $YEAR --month $MONTH
 # ② strategies 本月候選（cutoff = M/10 或 M/15）
 venv/bin/python3 strategies/step1_prepare_data.py      --year $YEAR --month $MONTH
 venv/bin/python3 strategies/step2_finalize_strategy.py --year $YEAR --month $MONTH
+# ↑ 若 DB 還沒匯入下個交易日報價（典型情境：cutoff 是週五、entry_date 是下週一，
+#   在 cutoff+1 週六/週日跑時 DB 還沒 Mon 資料），step2 會 raise。
+#   解法：加 --entry-date YYYY-MM-DD 明確指定下個交易日，跳過 DB 驗證。
+#   範例：venv/bin/python3 strategies/step2_finalize_strategy.py \
+#           --year 2026 --month 05 --entry-date 2026-05-18
+#   技術/營收特徵仍以 <=entry_date 撈最新一筆（fallback 到 cutoff_date），內容一致。
 
 # ③ 重建 fwd_return ground truth（現在 M-1 的 exit_date 才能定義出來）
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
@@ -202,3 +208,17 @@ A: 沒差。所有指令都是 idempotent + PIT，過幾天再補跑會得到完
 ### Q4: 新增 PREV_YEAR / PREV_MONTH 的計算？
 - 目標月為 01：PREV_YEAR = YYYY-1、PREV_MONTH = 12
 - 其他月：PREV_YEAR = YYYY、PREV_MONTH = MONTH-1
+
+### Q5: step2 報 `daily_quotes 沒有 >= YYYY-MM-DD 的交易日資料` 怎麼辦？
+通常出現在 cutoff+1 當天/隔日提前跑：cutoff 是週五、entry_date 是下週一，DB 還沒匯入下週一的報價。新版（commit 866fc36）刻意 raise，避免舊版 silent fallback 把週末日期當 entry_date。兩種解法：
+
+1. **等今天 daily pipeline 跑完**（推薦，運維乾淨）：等 `./schedules/daily_update.sh YYYYMMDD` 跑完 DB 有下個交易日後重跑 step2，不帶旗標。
+2. **`--entry-date` 旗標提前跑**（要立刻產出 picks 時用）：
+   ```bash
+   venv/bin/python3 strategies/step2_finalize_strategy.py \
+     --year 2026 --month 05 --entry-date 2026-05-18
+   ```
+   step2 跳過 DB 驗證、技術/營收特徵自動 fallback 到 `<=entry_date` 的最新一筆（= cutoff_date 那筆），內容與等到報價匯入後再跑完全相同。**但要自己負責確認 `entry_date` 真的是下個交易日**（別填到週六/週日/國定假日）。
+
+### Q6: 用了 `--entry-date` 之後，backtester 還能跑這個月嗎？
+不能跑完整 rotation：backtester 的 `auto-detect` 規則要求 `daily_quotes` 必須有 entry_date 之後的列，2026/05 在 DB 補上 2026-05-18 之前會被自動跳過。如果強制 `--end_year 2026 --end_month 05`，可以結算上個月的 cohort（PnL 已實現），但本月 cohort 會全部 `entries_failed_no_quote`、無法建倉。完整 rotation 仍需等今天 daily pipeline 完成。

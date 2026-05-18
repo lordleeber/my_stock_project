@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import calendar
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -44,6 +44,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 08")
+    parser.add_argument(
+        "--entry-date",
+        type=str,
+        default=None,
+        help=(
+            "YYYY-MM-DD override：跳過 daily_quotes 下個交易日驗證，直接使用此日期。"
+            "用於 DB 尚未匯入下個交易日報價時提前產出 picks。"
+            "技術/營收特徵仍以 <=entry_date 撈最新一筆，內容與 cutoff_date 一致。"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -157,12 +167,20 @@ def main() -> None:
     df = compute_pred_upside(df, month)
 
     # 解析進場日。
-    rel_dt = release_date(year, month_int)
-    earliest = rel_dt + timedelta(days=1)
     engine = create_engine(get_db_url())
-    entry_date_str = resolve_entry_date(engine, earliest)
+    if args.entry_date:
+        try:
+            datetime.strptime(args.entry_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise SystemExit(f"--entry-date 格式錯誤，需 YYYY-MM-DD: {exc}") from exc
+        entry_date_str = args.entry_date
+        print(f"entry_date: {entry_date_str} (override via --entry-date)")
+    else:
+        rel_dt = release_date(year, month_int)
+        earliest = rel_dt + timedelta(days=1)
+        entry_date_str = resolve_entry_date(engine, earliest)
+        print(f"entry_date: {entry_date_str}")
     df["entry_date"] = entry_date_str
-    print(f"entry_date: {entry_date_str}")
 
     # 撈取 entry_date 的技術指標特徵。
     symbols = df["symbol"].tolist()

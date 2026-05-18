@@ -133,6 +133,20 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
 
 `trade_candidates.csv` filters `dataset_strategy.csv` by `pred_upside_pct > 0` and sorts by upside.
 
+### `--entry-date` Override (step2)
+
+Default behaviour: `resolve_entry_date` queries `daily_quotes` for the first trading day ≥ `cutoff_date + 1`. If the DB has no such row, step2 **raises** (commit 866fc36) — this catches the case where `cutoff` was Friday and `entry_date` is the following Monday but the Monday `daily_update.sh` has not yet run.
+
+Override:
+```bash
+venv/bin/python3 strategies/step2_finalize_strategy.py \
+  --year 2026 --month 05 --entry-date 2026-05-18
+```
+
+When supplied, step2 skips the DB check and stamps the given date into the `entry_date` column. Technical and revenue features use `WHERE date <= ref_date` so they automatically fall back to the latest available data (= the `cutoff_date` row) — feature contents are identical to running after DB catches up. **Caller is responsible** for ensuring the override is a real trading day (no weekend / holiday).
+
+See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scenario.
+
 ## Walk-Forward Selection Model
 
 - Models stored at `models_selection/<train_through_year>/<train_through_month>/`
