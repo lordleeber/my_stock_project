@@ -3,8 +3,8 @@ Description=Taiwan stock daily retry (re-run daily_update.sh if previous run fai
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/Documents/GitHubLL/my_stock_project
-ExecStart=/bin/bash %h/Documents/GitHubLL/my_stock_project/schedules/daily_retry.sh
+WorkingDirectory=%h/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/GitHubLL/my_stock_project/schedules/daily_retry.sh
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 StandardOutput=journal
 StandardError=journal

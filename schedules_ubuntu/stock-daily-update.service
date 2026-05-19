@@ -3,8 +3,8 @@ Description=Taiwan stock daily update (scraper -> processor -> audit -> importer
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/Documents/GitHubLL/my_stock_project
-ExecStart=/bin/bash %h/Documents/GitHubLL/my_stock_project/schedules/daily_update.sh
+WorkingDirectory=%h/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/GitHubLL/my_stock_project/schedules/daily_update.sh
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 StandardOutput=journal
 StandardError=journal

@@ -27,7 +27,7 @@
    sudo usermod -aG docker $USER
    newgrp docker   # 或登出再登入
    ```
-2. **專案路徑**：unit 預設 `WorkingDirectory=%h/Documents/GitHubLL/my_stock_project`。若放在別處，把 `schedules_ubuntu/*.service` 裡的兩個路徑（`WorkingDirectory` 與 `ExecStart`）一起改掉。
+2. **專案路徑**：unit 預設 `WorkingDirectory=%h/GitHubLL/my_stock_project`。若放在別處，把 `schedules_ubuntu/*.service` 裡的兩個路徑（`WorkingDirectory` 與 `ExecStart`）一起改掉。
 3. **`logs/` 與 venv**：跟 macOS 相同，由各 `.sh` 自己處理。
 
 ## 安裝

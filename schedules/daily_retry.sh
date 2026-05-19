@@ -11,8 +11,8 @@ cd "$(dirname "$0")/.."
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
 
-# 取得目標日期（昨天，macOS 語法）
-TARGET_DATE="${1:-$(date -v-1d +%Y%m%d)}"
+# 取得目標日期（昨天）
+TARGET_DATE="${1:-$(date -d 'yesterday' +%Y%m%d)}"
 LOG_FILE="$LOG_DIR/daily_retry_${TARGET_DATE}_$(date +%Y%m%d_%H%M%S).log"
 
 echo "========================================" | tee -a "$LOG_FILE"
