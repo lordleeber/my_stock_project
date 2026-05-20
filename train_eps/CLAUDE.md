@@ -36,6 +36,16 @@
 3. `step3_evaluate.py          --date 2025-10-11`
 4. `step4_predict_and_publish.py --date 2025-10-11`
 
+### `--date` 自動 fallback
+step1~4 與 `run_pipeline.py` 的 `--date` 都是 optional。省略時自動鎖到 `latest_playbook_date()`：今天當下最新的 canonical 日（≤ today 的最大值）。
+
+- 今天 2026-05-20 → 自動用 2026-05-16
+- 今天 2026-05-16 → 用 2026-05-16
+- 今天 2026-05-15 → 5 月還沒到 canonical，退回 2026-04-11
+- 今天 2026-01-05 → 跨年回到 2025-12-11
+
+實際 fire 時會印 `[auto] --date 未指定，使用最新 canonical playbook date: <date>`。腳本化排程（不靠 `--date`）跑「最新一輪」適用這個 default；明確要重跑某個歷史月仍應顯式傳 `--date`。
+
 ## One-Command Flow
 - Use `run_pipeline.py` to execute all 4 steps in order.
 - If any step fails, pipeline stops immediately and writes error details to repo root `error_train_eps.log`.

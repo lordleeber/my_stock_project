@@ -15,7 +15,11 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from shared_config import load_shared_config, parse_playbook_date  # noqa: E402
+from shared_config import (  # noqa: E402
+    latest_playbook_date,
+    load_shared_config,
+    parse_playbook_date,
+)
 
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -65,8 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--date",
         type=str,
-        required=True,
-        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+        default=None,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 16 號，其餘月份為 11 號; cutoff +1). "
+        "省略則自動取今天當下最新的 canonical 日。",
     )
     return parser.parse_args()
 
@@ -96,6 +101,9 @@ def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.date is None:
+        args.date = latest_playbook_date()
+        print(f"[auto] --date 未指定，使用最新 canonical playbook date: {args.date}")
     date_dir, dataset_path, models_dir, metrics_out, importance_out = resolve_paths(
         args
     )

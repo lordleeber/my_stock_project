@@ -64,6 +64,27 @@ def playbook_release_date(year: int, month: str | int) -> str:
     return f"{int(year):04d}-{m}-{day:02d}"
 
 
+def latest_playbook_date(today: datetime.date | None = None) -> str:
+    """回傳 today 當下最新的 canonical playbook release date（YYYY-MM-DD）。
+
+    語意：找出 `playbook_release_date(y, m) <= today` 的最大值。
+    例如 today=2026-05-20 → 回傳 '2026-05-16'；today=2026-05-15 → 回傳 '2026-04-11'（5月還沒到 canonical）。
+
+    這支用來讓 step1~4 / run_pipeline 在 --date 沒給時自動鎖到「最新可訓練日」。
+    """
+    if today is None:
+        today = datetime.date.today()
+    y, m = today.year, today.month
+    candidate = datetime.date.fromisoformat(playbook_release_date(y, f"{m:02d}"))
+    if candidate <= today:
+        return candidate.isoformat()
+    if m == 1:
+        y, m = y - 1, 12
+    else:
+        m -= 1
+    return playbook_release_date(y, f"{m:02d}")
+
+
 def parse_playbook_date(date_str: str) -> tuple[int, str]:
     """解析 --date YYYY-MM-DD 並回傳 (year, month_str)。
 

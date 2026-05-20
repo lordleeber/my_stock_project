@@ -11,7 +11,11 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from shared_config import load_shared_config, parse_playbook_date  # noqa: E402
+from shared_config import (  # noqa: E402
+    latest_playbook_date,
+    load_shared_config,
+    parse_playbook_date,
+)
 
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -36,8 +40,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--date",
         type=str,
-        required=True,
-        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+        default=None,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 16 號，其餘月份為 11 號; cutoff +1). "
+        "省略則自動取今天當下最新的 canonical 日。",
     )
     return parser.parse_args()
 
@@ -356,6 +361,9 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
+    if args.date is None:
+        args.date = latest_playbook_date()
+        print(f"[auto] --date 未指定，使用最新 canonical playbook date: {args.date}")
     dataset_path, results_dir = resolve_date_context(args.date)
     results_dir.mkdir(parents=True, exist_ok=True)
     config, _ = load_shared_config()

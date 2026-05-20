@@ -16,7 +16,11 @@ if str(_HERE) not in sys.path:
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from shared_config import parse_playbook_date, target_quarter_for_playbook
+from shared_config import (
+    latest_playbook_date,
+    parse_playbook_date,
+    target_quarter_for_playbook,
+)
 from common.db import get_db_url
 
 EXCLUDE_COLUMNS = {
@@ -39,8 +43,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--date",
         type=str,
-        required=True,
-        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+        default=None,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 16 號，其餘月份為 11 號; cutoff +1). "
+        "省略則自動取今天當下最新的 canonical 日。",
     )
     return parser.parse_args()
 
@@ -97,6 +102,9 @@ def publish_to_db(engine, df_pub: pd.DataFrame, target_quarter: str) -> int:
 
 def main() -> None:
     args = parse_args()
+    if args.date is None:
+        args.date = latest_playbook_date()
+        print(f"[auto] --date 未指定，使用最新 canonical playbook date: {args.date}")
     playbook_date = args.date
     year, month = parse_playbook_date(playbook_date)
     target_year, qnum = target_quarter_for_playbook(year, month)

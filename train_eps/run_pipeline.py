@@ -10,7 +10,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from shared_config import parse_playbook_date  # noqa: E402
+from shared_config import latest_playbook_date, parse_playbook_date  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,8 +20,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--date",
         type=str,
-        required=True,
-        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+        default=None,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 16 號，其餘月份為 11 號; cutoff +1). "
+        "省略則自動取今天當下最新的 canonical 日。",
     )
     return parser.parse_args()
 
@@ -84,6 +85,9 @@ def resolve_python_executable(repo_root: Path) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.date is None:
+        args.date = latest_playbook_date()
+        print(f"[auto] --date 未指定，使用最新 canonical playbook date: {args.date}")
     parse_playbook_date(args.date)  # validate format + canonical day
 
     repo_root = Path(__file__).resolve().parent.parent

@@ -20,6 +20,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from shared_config import (
     format_quarter,
+    latest_playbook_date,
     parse_playbook_date,
     shift_quarter,
     target_quarter_for_playbook,
@@ -171,9 +172,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--date",
         type=str,
-        required=True,
-        help="Playbook release date YYYY-MM-DD (e.g. 2026-05-15). "
-        "Must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號。",
+        default=None,
+        help="Playbook release date YYYY-MM-DD (e.g. 2026-05-16). "
+        "Must be canonical: 5/8/11 月為 16 號，其餘月份為 11 號（cutoff +1）。"
+        "省略則自動取今天當下最新的 canonical 日。",
     )
     return p.parse_args()
 
@@ -545,6 +547,9 @@ def add_month_features(df: pd.DataFrame, month: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.date is None:
+        args.date = latest_playbook_date()
+        print(f"[auto] --date 未指定，使用最新 canonical playbook date: {args.date}")
     end_year, month = parse_playbook_date(args.date)
     month = normalize_month(month)
     model_features = model_features_for_month(month)
