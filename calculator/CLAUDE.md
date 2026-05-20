@@ -54,6 +54,11 @@ Every daily valuation record uses the latest report *available at that specific 
 - **`ttm_eps_forward`**: Sum of the 3 most recently published quarters + **1 predicted quarter** from `eps_predictions`.
 - **The Swap**: As time passes, the oldest quarter is dropped and replaced by the ML prediction for the upcoming quarter.
 
+### `eps_predictions` Source of Truth
+This table is written by `train_eps/step4_predict_and_publish.py` (monthly playbook) — DELETE+INSERT scoped to one `target_quarter` per run. Historical backfill is done once via `train_eps/step5_backfill_eps_predictions.py`.
+
+If the table is missing or empty, `ttm_eps_forward` silently falls back to `ttm_eps_official` (see lines 86–89). This is intentional fail-silent behavior: forward valuation degrades gracefully to backward when predictions are unavailable.
+
 ### Forward Metrics
 - **`pe_forward`**: `close / ttm_eps_forward`.
 - **`predict_target_price`**: `ttm_eps_forward * pe_official`.

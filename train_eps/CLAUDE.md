@@ -77,13 +77,34 @@ All artifacts written to `models_eps/<year>/<month>/`:
 |---|---|
 | `year`, `symbol`, `name`, `industry` | Per-row context |
 | `y_true` | Actual target EPS for that target_year/target_quarter (NaN for live future predictions) |
+| `anchor_eps` | Per-row anchor-quarter EPS (the row's `dataset_evaluate.csv["anchor_eps"]`) |
 | `pred_lgb_delta` | Model-predicted EPS delta |
+| `predict_eps` | Absolute predicted EPS = `anchor_eps + pred_lgb_delta`. This is what `calculator/calculate_valuation.py` reads from `eps_predictions`. |
 | `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from `year` + playbook `month`) |
 | `anchor_quarter` | The quarter whose financials drove the features, e.g. `"2025Q1"` (the row's `anchor_eps`/`xbrl_*_q` came from here) |
 | `trained_at_month` | Path-level identifier, e.g. `"2026/05"` — when this prediction run happened |
+| `trained_at_date` | Day-precision training date (`YYYY/MM/DD`) parsed from `model_pkl` timestamp; used as `model_version` in the DB |
 | `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the month dir) |
 
 Looking at the csv alone tells you everything: which quarter was predicted, which quarter's data fed the features, when training happened, and which model checkpoint produced the numbers. Legacy column `fold` (which was just `"year_" + str(year)`) was removed.
+
+### DB Publish (step4 only)
+`step4_predict_and_publish.py` additionally upserts results into PostgreSQL table `eps_predictions` after writing the CSV:
+
+| Column | Source |
+|---|---|
+| `target_quarter` | from this playbook run |
+| `symbol` | row symbol |
+| `predict_eps` | `anchor_eps + pred_lgb_delta` |
+| `model_version` | `trained_at_date` (e.g. `"2026/05/16"`) |
+| `created_at` | timestamp of the DB write |
+
+Write strategy: `DELETE WHERE target_quarter = '<this run>'` followed by bulk INSERT. Different months publishing the same target_quarter (e.g. May/Jun/Jul all → Q2) overwrite each other — the latest run wins.
+
+`calculator/calculate_valuation.py` reads this table to compute forward TTM / forward PE / target price / forward ROE. If the table is empty, all forward metrics collapse to backward equivalents (fail-silent fallback inside calculate_valuation.py — by design).
+
+### Historical backfill
+`train_eps/step5_backfill_eps_predictions.py` is a one-off utility that walks every `models_eps/<year>/<month>/predictions_results.csv`, dedups on `(symbol, target_quarter)` by latest `trained_at_month`, and DROP+CREATE+INSERTs the `eps_predictions` table. For legacy CSVs missing `anchor_eps`/`predict_eps`/`trained_at_date`, it joins `quarterly_reports_xbrl.eps_q` on `anchor_quarter` to recover `anchor_eps` and derives the rest.
 
 ## ⚠️ `dataset_train.csv` vs `dataset_evaluate.csv` Naming
 

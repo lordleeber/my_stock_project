@@ -1,14 +1,23 @@
 import argparse
 import pickle
 import re
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import create_engine, text
+
+_HERE = Path(__file__).resolve().parent
+ROOT_DIR = _HERE.parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from shared_config import target_quarter_for_playbook
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
+from common.db import get_db_url
 
 EXCLUDE_COLUMNS = {
     "symbol",
@@ -20,31 +29,77 @@ EXCLUDE_COLUMNS = {
     "delta_eps",
 }
 
+PKL_TIMESTAMP_RE = re.compile(r"^(\d{14})_(\d+\.\d+)\.pkl$")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Predict EPS delta and write predictions_results.csv to models_eps/"
+        description="Predict EPS delta, write predictions_results.csv, and publish to eps_predictions DB table"
     )
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=str, required=True, help="e.g. 10")
     return parser.parse_args()
 
 
+def trained_at_date_from_pkl(pkl_name: str) -> str:
+    """從 {YYYYMMDDHHMMSS}_{mae}.pkl 抽出 'YYYY/MM/DD'。"""
+    m = PKL_TIMESTAMP_RE.match(pkl_name)
+    if not m:
+        raise ValueError(f"Cannot parse trained_at_date from pkl name: {pkl_name}")
+    ts = m.group(1)
+    return f"{ts[0:4]}/{ts[4:6]}/{ts[6:8]}"
+
+
+def ensure_eps_predictions_table(engine) -> None:
+    ddl = """
+    CREATE TABLE IF NOT EXISTS eps_predictions (
+        target_quarter TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        predict_eps DOUBLE PRECISION,
+        model_version TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (target_quarter, symbol)
+    )
+    """
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
+
+
+def publish_to_db(engine, df_pub: pd.DataFrame, target_quarter: str) -> int:
+    """把單一 target_quarter 的預測寫入 eps_predictions：
+    DELETE WHERE target_quarter=... → INSERT。
+    回傳實際寫入的列數。"""
+    ensure_eps_predictions_table(engine)
+    payload = df_pub[
+        ["target_quarter", "symbol", "predict_eps", "model_version", "created_at"]
+    ].copy()
+    payload = payload[payload["predict_eps"].notna()]
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM eps_predictions WHERE target_quarter = :tq"),
+            {"tq": target_quarter},
+        )
+        if not payload.empty:
+            payload.to_sql(
+                "eps_predictions",
+                conn,
+                if_exists="append",
+                index=False,
+                method="multi",
+                chunksize=1000,
+            )
+    return len(payload)
+
+
 def main() -> None:
     args = parse_args()
     year = int(args.year)
     month = str(args.month).zfill(2)
-    # January playbook predicts previous year's Q4 — step1 emits rows with
-    # year=target_year, so step4 must filter by target_year, not execution year.
     target_year, qnum = target_quarter_for_playbook(year, month)
+    target_quarter = f"{target_year}Q{qnum}"
 
     input_path = (
-        ROOT_DIR
-        / "train_eps"
-        / "output"
-        / f"{year:04d}"
-        / month
-        / "dataset_evaluate.csv"
+        ROOT_DIR / "train_eps" / "output" / f"{year:04d}" / month / "dataset_evaluate.csv"
     ).resolve()
     models_dir = (ROOT_DIR / "models_eps" / f"{year:04d}" / month).resolve()
     output_path = (models_dir / "predictions_results.csv").resolve()
@@ -52,19 +107,18 @@ def main() -> None:
     if not input_path.exists():
         raise FileNotFoundError(f"dataset_evaluate.csv not found: {input_path}")
 
-    # 選擇 MAE 最低的 pkl（格式：{timestamp}_{mae:.3f}.pkl）。
-    pkl_pattern = re.compile(r"^\d{14}_(\d+\.\d+)\.pkl$")
     candidates = []
     for p in models_dir.glob("*.pkl"):
-        m = pkl_pattern.match(p.name)
+        m = PKL_TIMESTAMP_RE.match(p.name)
         if m:
-            candidates.append((float(m.group(1)), p))
+            candidates.append((float(m.group(2)), p))
     if not candidates:
         raise FileNotFoundError(
             f"No timestamped model pkl found in {models_dir}\n"
-            f"Run: venv/bin/python3 train_eps/train.py --year {year} --month {month}"
+            f"Run: venv/bin/python3 train_eps/step2_train.py --year {year} --month {month}"
         )
     model_path = min(candidates, key=lambda x: x[0])[1]
+    trained_at_date = trained_at_date_from_pkl(model_path.name)
 
     with open(model_path, "rb") as f:
         model = pickle.load(f)
@@ -92,40 +146,51 @@ def main() -> None:
     else:
         feature_cols = [c for c in df.columns if c not in EXCLUDE_COLUMNS]
 
-    # 缺欄位 = 上游 schema 不一致，直接報錯，不要 silent 補 0。
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
         raise RuntimeError(
             f"dataset_evaluate.csv missing feature columns expected by model: {missing}"
         )
-    # 各欄 NaN 不填 0：LightGBM 原生處理 NaN，silent fillna(0) 會把缺值當實際 0
-    # 餵進模型，污染預測。
+    if "anchor_eps" not in df.columns:
+        raise RuntimeError(
+            f"dataset_evaluate.csv missing required column 'anchor_eps' for predict_eps derivation"
+        )
 
     pred_delta = model.predict(df[feature_cols])
 
     out = df[["year", "symbol", "name", "industry"]].copy()
     if "target_eps" in df.columns:
         out["y_true"] = df["target_eps"]
+    out["anchor_eps"] = df["anchor_eps"].to_numpy(dtype=float)
     out["pred_lgb_delta"] = pred_delta
-    # target_quarter / trained_at_month / model_pkl 是 metadata 欄位，
-    # 標示「這份 predictions 是在哪個 playbook 跑出來、預測哪個季度、用哪個 pkl」，
-    # 取代原本的 fold 欄（與 year 同義冗餘）。
-    out["target_quarter"] = out["year"].astype(int).astype(str) + f"Q{qnum}"
+    out["predict_eps"] = out["anchor_eps"] + out["pred_lgb_delta"]
+    out["target_quarter"] = target_quarter
     if "anchor_quarter" in df.columns:
         out["anchor_quarter"] = df["anchor_quarter"].values
     out["trained_at_month"] = f"{year:04d}/{month}"
+    out["trained_at_date"] = trained_at_date
     out["model_pkl"] = model_path.name
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False)
 
+    # ---- DB publish ----
+    pub = out[["symbol", "predict_eps"]].copy()
+    pub["target_quarter"] = target_quarter
+    pub["model_version"] = trained_at_date
+    pub["created_at"] = datetime.now()
+    engine = create_engine(get_db_url())
+    n_written = publish_to_db(engine, pub, target_quarter)
+
     print("predict_and_publish completed")
     print(f"- year: {year}")
     print(f"- month: {month}")
     print(f"- model: {model_path}")
+    print(f"- trained_at_date: {trained_at_date}")
     print(f"- input: {input_path}")
     print(f"- output: {output_path}")
     print(f"- rows: {len(out)}")
+    print(f"- db published to eps_predictions[{target_quarter}]: {n_written} rows")
 
 
 if __name__ == "__main__":
