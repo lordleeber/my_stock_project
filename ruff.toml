@@ -6,5 +6,4 @@
 "backtester/*.py"            = ["E402"]
 "scraper/*.py"               = ["E402"]
 "strategies/*.py"            = ["E402"]
-"strategies_benchmark/*.py"  = ["E402"]
 "train_eps/*.py"             = ["E402"]

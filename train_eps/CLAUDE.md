@@ -81,7 +81,7 @@ step1~4 與 `run_pipeline.py` 的 `--date` 都是 optional。省略時自動鎖�
 - `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook release date，off-cycle 直接報錯（例如誤傳 cutoff 公告日如 2026-05-15 會被拒絕，提示應為 2026-05-16）
 - `shift_quarter(year, qnum, delta)` / `format_quarter(year, qnum)`：跨年季度位移與字串格式化
 
-所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_release_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies / strategies_benchmark 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
+所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_release_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
 
 ## Evaluate Output Contract
 - `step3_evaluate.py` writes only:
