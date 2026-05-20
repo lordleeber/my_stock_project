@@ -1,13 +1,13 @@
 """
 分析哪些特徵與實際 1 個月遠期報酬相關。
 
-對每個月份 M：
-  - 載入 dataset_strategy.csv（所有候選股的特徵，含技術指標）
-  - 以 entry_date 開盤買入，下個月 entry_date 開盤賣出
+對每個 playbook date D：
+  - 載入 strategies/output/<D>/dataset_strategy.csv（所有候選股的特徵，含技術指標）
+  - 以 entry_date 開盤買入，下個 playbook date entry_date 開盤賣出
   - 計算實際報酬，再與各特徵做相關性分析
 
 輸出：
-  - strategies/output/feature_return_analysis.csv  （每股每月的特徵與報酬）
+  - strategies/output/feature_return_analysis.csv  （每股每 cohort 的特徵與報酬）
   - strategies/output/feature_correlation.csv       （相關性彙總）
   - 終端機：各特徵的五分位數分析
 """
@@ -27,11 +27,16 @@ if str(ROOT_DIR) not in sys.path:
 from common.db import get_db_url
 
 from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATURE_COLS
+from strategies.shared_config import (
+    MONTH_TO_TARGET_QNUM,
+    parse_playbook_date,
+    playbook_release_date,
+)
 
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
-START = (2021, 8)
-END = (2026, 4)  # 最後一個可計算下月報酬的月份（需要下月 entry_date 存在）
+START = "2021-08-16"
+END = "2026-04-11"  # 最後一個可計算下月報酬的 cohort（需要下個 playbook entry_date 存在）
 
 FEATURE_COLS = (
     [
@@ -70,22 +75,35 @@ FEATURE_COLS = (
 )
 
 
-def month_iter(start: tuple[int, int], end: tuple[int, int]):
-    y, m = start
-    while (y, m) <= end:
-        yield y, m
+def playbook_dates_in_range(start: str, end: str) -> list[str]:
+    """產生 [start, end] 區間內所有 canonical playbook release dates。"""
+    sy, sm = parse_playbook_date(start)
+    ey, em = parse_playbook_date(end)
+    out: list[str] = []
+    y, m = sy, int(sm)
+    while (y, m) <= (ey, int(em)):
+        mm = f"{m:02d}"
+        if mm in MONTH_TO_TARGET_QNUM:
+            out.append(playbook_release_date(y, mm))
         m += 1
         if m > 12:
             m = 1
             y += 1
+    return out
 
 
-def next_month(year: int, month: int) -> tuple[int, int]:
-    return (year, month + 1) if month < 12 else (year + 1, 1)
+def next_playbook_date(playbook_date: str) -> str:
+    y, m = parse_playbook_date(playbook_date)
+    nm = int(m) + 1
+    ny = y
+    if nm > 12:
+        nm = 1
+        ny += 1
+    return playbook_release_date(ny, f"{nm:02d}")
 
 
-def load_strategy(year: int, month: int) -> pd.DataFrame | None:
-    p = STRATEGIES_OUT / f"{year:04d}" / f"{month:02d}" / "dataset_strategy.csv"
+def load_strategy(playbook_date: str) -> pd.DataFrame | None:
+    p = STRATEGIES_OUT / playbook_date / "dataset_strategy.csv"
     if not p.exists():
         return None
     df = pd.read_csv(p)
@@ -145,25 +163,25 @@ def main() -> None:
     records: list[dict] = []
     engine = create_engine(get_db_url())
 
-    for year, month in month_iter(START, END):
-        month_s = f"{month:02d}"
-        ny, nm = next_month(year, month)
+    for d in playbook_dates_in_range(START, END):
+        year, month_s = parse_playbook_date(d)
+        next_d = next_playbook_date(d)
 
-        ds = load_strategy(year, month)
+        ds = load_strategy(d)
         if ds is None or ds.empty:
-            print(f"[skip] no dataset_strategy: {year}/{month_s}")
+            print(f"[skip] no dataset_strategy: {d}")
             continue
 
         if "entry_date" not in ds.columns or ds["entry_date"].isna().all():
-            print(f"[skip] entry_date missing in dataset_strategy: {year}/{month_s}")
+            print(f"[skip] entry_date missing in dataset_strategy: {d}")
             continue
 
         entry_str = str(ds["entry_date"].iloc[0])
 
-        # 出場日 = 下個月 entry_date 的前一個交易日
-        ds_next = load_strategy(ny, nm)
+        # 出場日 = 下一個 playbook date 的 entry_date 前一個交易日
+        ds_next = load_strategy(next_d)
         if ds_next is None or ds_next.empty or "entry_date" not in ds_next.columns:
-            print(f"[skip] no next-month dataset_strategy: {ny}/{nm:02d}")
+            print(f"[skip] no next-playbook dataset_strategy: {next_d}")
             continue
         exit_str = prev_trading_day(engine, str(ds_next["entry_date"].iloc[0]))
 
@@ -180,6 +198,7 @@ def main() -> None:
                 continue
             fwd_return = (exit_open - entry_open) / entry_open * 100.0
             rec = {
+                "playbook_date": d,
                 "year": year,
                 "month": month_s,
                 "symbol": sym,
@@ -196,7 +215,7 @@ def main() -> None:
             hit += 1
 
         print(
-            f"[{year}/{month_s}] entry={entry_str} exit={exit_str}  candidates={len(ds)}  matched={hit}"
+            f"[{d}] entry={entry_str} exit={exit_str}  candidates={len(ds)}  matched={hit}"
         )
 
     if not records:

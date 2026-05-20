@@ -2,21 +2,20 @@
 合併 EPS 預測、解析進場日並補充技術指標，完成當月策略資料集。
 
 讀取：
-  strategies/output/<year>/<month>/dataset_strategy.csv
+  strategies/output/<YYYY-MM-DD>/dataset_strategy.csv
   models_eps/<YYYY-MM-DD>/predictions_results.csv
 
 寫入：
-  strategies/output/<year>/<month>/dataset_strategy.csv  （原地更新，新增欄位）
-  strategies/output/<year>/<month>/trade_candidates.csv  （供 run_rolling.py 使用）
+  strategies/output/<YYYY-MM-DD>/dataset_strategy.csv  （原地更新，新增欄位）
+  strategies/output/<YYYY-MM-DD>/trade_candidates.csv  （供 run_rolling.py 使用）
 
 用法：
-  venv/bin/python3 strategies/finalize_strategy.py --year 2025 --month 10
+  venv/bin/python3 strategies/step2_finalize_strategy.py --date 2025-10-11
 """
 
 from __future__ import annotations
 
 import argparse
-import calendar
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -29,7 +28,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from common.db import get_db_url
-from train_eps.shared_config import playbook_release_date
+from strategies.shared_config import (
+    cutoff_date_from_playbook,
+    latest_playbook_date,
+    year_month_from_playbook,
+)
 
 from strategies.feature_engineering import (
     fetch_technical_features,
@@ -43,8 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Finalize strategy dataset and produce trade candidates."
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="e.g. 08")
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Playbook release date YYYY-MM-DD（省略則用 latest_playbook_date()）",
+    )
     parser.add_argument(
         "--entry-date",
         type=str,
@@ -56,12 +63,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
-
-
-def release_date(year: int, month: int) -> date:
-    day = 15 if month in {5, 8, 11} else 10
-    day = min(day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
 
 
 def resolve_entry_date(engine, earliest: date) -> str:
@@ -117,13 +118,16 @@ def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
 
 def main() -> None:
     args = parse_args()
-    year = int(args.year)
-    month = str(args.month).zfill(2)
-    month_int = int(month)
+    playbook_date = args.date or latest_playbook_date()
+    if args.date is None:
+        print(
+            f"[auto] --date 未指定，使用最新 canonical playbook date: {playbook_date}"
+        )
+    year, month = year_month_from_playbook(playbook_date)
+    cutoff_date = cutoff_date_from_playbook(playbook_date)
 
-    out_dir = (ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month).resolve()
+    out_dir = (ROOT_DIR / "strategies" / "output" / playbook_date).resolve()
     strategy_path = out_dir / "dataset_strategy.csv"
-    playbook_date = playbook_release_date(year, month)
     pred_path = (
         ROOT_DIR / "models_eps" / playbook_date / "predictions_results.csv"
     ).resolve()
@@ -178,8 +182,9 @@ def main() -> None:
         entry_date_str = args.entry_date
         print(f"entry_date: {entry_date_str} (override via --entry-date)")
     else:
-        rel_dt = release_date(year, month_int)
-        earliest = rel_dt + timedelta(days=1)
+        # cutoff_date = 公告日；下一個交易日（含當天）作為進場日候選。
+        # daily_quotes 查詢用 `>= cutoff + 1 day` 找下個實際交易日。
+        earliest = date.fromisoformat(cutoff_date) + timedelta(days=1)
         entry_date_str = resolve_entry_date(engine, earliest)
         print(f"entry_date: {entry_date_str}")
     df["entry_date"] = entry_date_str
@@ -244,7 +249,8 @@ def main() -> None:
     print(tc.head(10).to_string(index=False))
 
     print("\nfinalize_strategy done")
-    print(f"- year: {year}, month: {month}")
+    print(f"- playbook_date: {playbook_date}  (cutoff_date {cutoff_date})")
+    print(f"- year/month: {year}/{month}")
     print(f"- strategy rows: {len(df)}")
     print(f"- trade_candidates rows: {len(tc)}")
 

@@ -11,7 +11,7 @@
 ```
 train_eps/        EPS 預測模型訓練與發布
 strategies/       ML 選股特徵工程、排名模型訓練
-models_selection/ 選股模型（walk-forward，每月一版）
+models_selection/ 選股模型（walk-forward，每 playbook 一版，目錄 <YYYY-MM-DD>/）
 backtester/       滾動投資組合回測
 calculator/       DB 衍生表計算（technical_indicators / shareholding_concentration / valuation_daily 等）
 scripts/          GCP 部署與資料上傳腳本
@@ -38,11 +38,11 @@ venv/bin/python3 train_eps/run_pipeline.py              --date 2025-10-11
 ### 2. 策略特徵工程（strategies/）
 
 ```bash
-# 單月
-venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10
+# 單一 playbook — CLI 與 train_eps 一致，吃 --date YYYY-MM-DD（cutoff +1）
+venv/bin/python3 strategies/step1_prepare_data.py      --date 2025-10-11
+venv/bin/python3 strategies/step2_finalize_strategy.py --date 2025-10-11
 
-# 批次（歷史資料）
+# 批次（歷史資料；--start-date / --end-date 也是 canonical playbook date）
 venv/bin/python3 strategies/step1_batch_prepare_data.py
 venv/bin/python3 strategies/step2_batch_finalize_strategy.py
 ```
@@ -64,24 +64,24 @@ venv/bin/python3 strategies/step4_train_selection_model.py
 
 ```bash
 venv/bin/python3 backtester/run_rolling.py \
-  --start_year 2022 --start_month 7 \
-  --end_year 2025 --end_month 10 \
+  --start-date 2022-07-11 \
+  --end-date 2025-10-11 \
   --top-n 10 --position-amount 100000
 
 # 查看結果
 venv/bin/python3 backtester/summarize_range.py
 
-# 當月推薦（production）
-venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
+# 當月推薦（production，run after step4 + step5）
+venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 ```
 
 ---
 
 ## Walk-Forward 設計
 
-- 模型位置：`models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl`
-- 回測月份 M 使用 cutoff < M 的最新模型，避免 look-ahead bias
-- 例：回測 2025/03 → 使用 `models_selection/2025/02/`
+- 模型位置：`models_selection/<YYYY-MM-DD>/selection_model.pkl`，`<YYYY-MM-DD>` = train_through_playbook_date
+- 目標 playbook D 使用 train_through_playbook_date < D 的最新模型，避免 look-ahead bias
+- 例：target 2025-03-11 → 使用 `models_selection/2025-02-11/`
 
 ---
 
@@ -92,8 +92,8 @@ venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
 | 類型 | 路徑 |
 |------|------|
 | EPS 模型 | `models_eps/<YYYY-MM-DD>/`（playbook release date） |
-| 月度特徵快照 | `strategies/output/<year>/<month>/dataset_strategy.csv` |
-| 選股模型 | `models_selection/<year>/<month>/selection_model.pkl` |
+| Playbook 特徵快照 | `strategies/output/<YYYY-MM-DD>/dataset_strategy.csv` |
+| 選股模型 | `models_selection/<YYYY-MM-DD>/selection_model.pkl` |
 | 回測交易紀錄 | `backtester/output/rolling/rolling_trades.csv` |
 | 回測月摘要 | `backtester/output/rolling/rolling_monthly.csv` |
 | 回測統計 | `backtester/output/rolling/rolling_summary.json` |

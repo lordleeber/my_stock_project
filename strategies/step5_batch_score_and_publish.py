@@ -1,7 +1,7 @@
 """
-批次對所有有 dataset_strategy.csv 的月份進行評分。
+批次對所有有 dataset_strategy.csv 的 playbook date 進行評分。
 
-掃描 strategies/output/ 底下所有含 dataset_strategy.csv 的年月目錄，
+掃描 strategies/output/<YYYY-MM-DD>/dataset_strategy.csv 的目錄，
 依序執行 step5_score_and_publish。
 
 用法：
@@ -20,12 +20,13 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from strategies.step5_score_and_publish import score_and_publish
+from strategies.shared_config import parse_playbook_date  # noqa: E402
+from strategies.step5_score_and_publish import score_and_publish  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Batch-score all months.")
-    parser.add_argument("--verbose", action="store_true", help="Print per-month output")
+    parser = argparse.ArgumentParser(description="Batch-score all playbook dates.")
+    parser.add_argument("--verbose", action="store_true", help="Print per-date output")
     return parser.parse_args()
 
 
@@ -37,53 +38,45 @@ def main() -> None:
         print(f"strategies/output not found: {strategies_out}")
         sys.exit(1)
 
-    months: list[tuple[int, int]] = []
-    for y_dir in sorted(strategies_out.iterdir()):
-        if not y_dir.is_dir():
+    dates: list[str] = []
+    for d in sorted(strategies_out.iterdir()):
+        if not d.is_dir():
             continue
         try:
-            year = int(y_dir.name)
+            parse_playbook_date(d.name)
         except ValueError:
             continue
-        for m_dir in sorted(y_dir.iterdir()):
-            if not m_dir.is_dir():
-                continue
-            try:
-                month = int(m_dir.name)
-            except ValueError:
-                continue
-            if (m_dir / "dataset_strategy.csv").exists():
-                months.append((year, month))
+        if (d / "dataset_strategy.csv").exists():
+            dates.append(d.name)
 
-    if not months:
+    if not dates:
         print("No dataset_strategy.csv files found.")
         return
 
-    print(f"Found {len(months)} months to score: {months[0]} → {months[-1]}")
+    print(f"Found {len(dates)} dates to score: {dates[0]} → {dates[-1]}")
 
     ok = 0
-    failed: list[tuple[int, int, str]] = []
-    for year, month in months:
-        month_s = f"{month:02d}"
+    failed: list[tuple[str, str]] = []
+    for d in dates:
         try:
             if args.verbose:
-                score_and_publish(year, month)
+                score_and_publish(d)
             else:
                 with (
                     contextlib.redirect_stdout(io.StringIO()),
                     contextlib.redirect_stderr(io.StringIO()),
                 ):
-                    score_and_publish(year, month)
+                    score_and_publish(d)
             ok += 1
         except Exception as exc:
-            print(f"[FAIL] {year}/{month_s}: {exc}")
-            failed.append((year, month, str(exc)))
+            print(f"[FAIL] {d}: {exc}")
+            failed.append((d, str(exc)))
 
     print(f"\nDone: {ok} ok, {len(failed)} failed")
     if failed:
-        print("Failed months:")
-        for y, m, err in failed:
-            print(f"  {y}/{m:02d}: {err}")
+        print("Failed dates:")
+        for d, err in failed:
+            print(f"  {d}: {err}")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ applies walk-forward ML scoring, and simulates buy/sell decisions using real his
 ## Pipeline Overview
 
 ```
-strategies/output/<year>/<month>/dataset_strategy.csv
+strategies/output/<YYYY-MM-DD>/dataset_strategy.csv
       ↓
 run_rolling.py    walk-forward 打分 → 市場判斷 → 調整持倉 → 記錄損益
       ↓
@@ -49,8 +49,8 @@ backtester/output/rolling/
 
 ## Walk-Forward 模型選擇
 
-回測月份 M → 使用 `models_selection/` 中 cutoff < M 的最新模型。
-例如：回測 2024/07 → 用 `models_selection/2024/06/`（若存在）。
+Target playbook_date D → 使用 `models_selection/<YYYY-MM-DD>/` 中 `train_through_playbook_date < D` 的最新模型。
+例如：target 2024-07-11 → 用 `models_selection/2024-06-11/`（若存在）。
 
 若無任何 versioned 模型，fallback 到 `models_selection/latest/`。
 
@@ -70,11 +70,9 @@ backtester/output/rolling/
 | 檔案 | 說明 |
 |------|------|
 | `run_rolling.py` | 主回測程式 |
-| `score_candidates.py` | 當月手動打分工具（production 用） |
 | `summarize_range.py` | 回測結果統計摘要 |
 | `data_loader.py` | DB 行情查詢 |
 | `simulator.py` | 交易成本計算 |
-| `utils.py` | 共用工具函式 |
 
 ---
 
@@ -83,8 +81,8 @@ backtester/output/rolling/
 ### 回測
 ```bash
 venv/bin/python3 backtester/run_rolling.py \
-  --start_year 2022 --start_month 7 \
-  --end_year 2025 --end_month 10 \
+  --start-date 2022-07-11 \
+  --end-date 2025-10-11 \
   --top-n 10
 ```
 
@@ -96,16 +94,16 @@ venv/bin/python3 backtester/summarize_range.py --show-monthly
 
 ### 當月推薦（production）
 ```bash
-venv/bin/python3 backtester/score_candidates.py --year 2025 --month 10
+venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 ```
 
 ### 參數說明
 
 | 參數 | 預設 | 說明 |
 |------|------|------|
-| `--start_year/month` | 必填 | 回測起始月份 |
-| `--end_year/month` | 必填 | 回測結束月份 |
-| `--top-n` | 無限制 | 每月取前 N 名候選股 |
+| `--start-date` | 必填 | 回測起始 playbook_date（YYYY-MM-DD，canonical playbook release date） |
+| `--end-date` | auto-detect | 回測結束 playbook_date；省略則自動取最新 candidates_scored + DB 報價覆蓋的那天 |
+| `--top-n` | 無限制 | 每 playbook 取前 N 名候選股 |
 | `--position-amount` | 100,000 | 每檔固定投入金額（TWD） |
 | `--models-root` | `models_selection/` | ML 模型根目錄 |
 | `--commission-rate` | 0.001425 | 手續費率 |

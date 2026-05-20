@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import calendar
 import sys
 import time
 from pathlib import Path
@@ -16,6 +15,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from common.db import get_db_url
+from strategies.shared_config import (
+    cutoff_date_from_playbook,
+    latest_playbook_date,
+    year_month_from_playbook,
+)
 from train_eps import step1_prepare_data as tp
 
 
@@ -30,17 +34,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prepare strategy inference dataset from DB."
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="01~12")
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help=(
+            "Playbook release date YYYY-MM-DD（cutoff 公告日 +1）。5/8/11 月為 16 號，"
+            "其餘月份為 11 號。省略則自動鎖到 latest_playbook_date()。"
+        ),
+    )
     return parser.parse_args()
-
-
-def model_release_date(year: int, month: str) -> str:
-    m = int(month)
-    # 發布日慣例：5、8、11 月為 15 日，其餘月份為 10 日。
-    day = 15 if m in {5, 8, 11} else 10
-    day = min(day, calendar.monthrange(year, m)[1])
-    return f"{year:04d}-{m:02d}-{day:02d}"
 
 
 def fetch_valuation_features(
@@ -496,14 +499,17 @@ def compute_ttm_eps_by_month(df: pd.DataFrame, month: str) -> pd.Series:
 
 def main() -> None:
     args = parse_args()
-    month = tp.normalize_month(args.month)
-
-    year = int(args.year)
-    cutoff_date = model_release_date(year, month)
+    playbook_date = args.date or latest_playbook_date()
+    if args.date is None:
+        print(
+            f"[auto] --date 未指定，使用最新 canonical playbook date: {playbook_date}"
+        )
+    year, month = year_month_from_playbook(playbook_date)
+    cutoff_date = cutoff_date_from_playbook(playbook_date)
     model_features = tp.model_features_for_month(month)
 
     output_dir = (
-        Path(__file__).resolve().parent / "output" / str(year) / month
+        Path(__file__).resolve().parent / "output" / playbook_date
     ).resolve()
     strategy_output_path = output_dir / "dataset_strategy.csv"
 
@@ -673,9 +679,9 @@ def main() -> None:
     strategy_out.to_csv(strategy_output_path, index=False)
 
     print("prepare_data (strategies) completed")
-    print(f"- year: {year}")
-    print(f"- month: {month}")
+    print(f"- playbook_date: {playbook_date}")
     print(f"- cutoff_date: {cutoff_date}")
+    print(f"- year/month: {year}/{month}")
     print(f"- strategy_output: {strategy_output_path}")
     print(f"- rows_strategy: {len(strategy_out)}")
     print(f"- rows_before_pseudo_ttm_filter: {rows_before_pseudo_ttm_filter}")

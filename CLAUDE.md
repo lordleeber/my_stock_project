@@ -53,9 +53,10 @@ venv/bin/python3 train_eps/run_pipeline.py                --date 2025-10-11
 venv/bin/python3 train_eps/step3_batch_evaluate.py
 venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 
-# Strategy features + selection model (strategies/)
-venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
-venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10
+# Strategy features + selection model (strategies/) — CLI 一律 `--date YYYY-MM-DD`
+# 用 canonical playbook release date（cutoff +1：5/8/11 月 = 16 號，其他 = 11 號）
+venv/bin/python3 strategies/step1_prepare_data.py      --date 2025-10-11
+venv/bin/python3 strategies/step2_finalize_strategy.py --date 2025-10-11
 
 # Batch (historical)
 venv/bin/python3 strategies/step1_batch_prepare_data.py
@@ -67,13 +68,13 @@ venv/bin/python3 strategies/step4_batch_train_selection_model.py
 venv/bin/python3 strategies/step4_train_selection_model.py  # production (full data)
 
 # Score candidates (production picks — run after step4)
-venv/bin/python3 strategies/step5_score_and_publish.py --year 2025 --month 10
-venv/bin/python3 strategies/step5_batch_score_and_publish.py  # batch all months
+venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
+venv/bin/python3 strategies/step5_batch_score_and_publish.py  # batch all dates
 
-# Rolling backtest (--end_year / --end_month optional: auto-detect from
+# Rolling backtest (--end-date optional: auto-detect from
 # candidates_scored.csv + DB daily_quotes coverage when omitted)
 venv/bin/python3 backtester/run_rolling.py \
-  --start_year 2022 --start_month 7 \
+  --start-date 2022-07-11 \
   --top-n 10 --position-amount 100000
 venv/bin/python3 backtester/summarize_range.py
 ```
@@ -107,16 +108,16 @@ TWSE/TPEx/MOPS/TDCC
     → importer/ (PostgreSQL stock_db)
     → calculator/ (technical_indicators, shareholding_concentration, valuation_daily)
     → train_eps/ (models_eps/<YYYY-MM-DD>/)
-    → strategies/ (strategies/output/<year>/<month>/dataset_strategy.csv)
-    → models_selection/ (selection_model.pkl per month)
+    → strategies/ (strategies/output/<YYYY-MM-DD>/dataset_strategy.csv)
+    → models_selection/<YYYY-MM-DD>/ (selection_model.pkl, candidates_scored.csv)
     → backtester/ (backtester/output/rolling/)
 ```
 
 ### Walk-Forward Design
 
-- Selection models stored at `models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl`
-- Backtest month M uses the latest model with cutoff < M (no look-ahead bias)
-- EPS models stored at `models_eps/<YYYY-MM-DD>/`（即 playbook release date）
+- Selection models stored at `models_selection/<YYYY-MM-DD>/selection_model.pkl`，`<YYYY-MM-DD>` 即 train_through_playbook_date
+- Backtest target playbook_date D 使用 train_through_playbook_date < D 的最新 model（no look-ahead bias）
+- EPS models stored at `models_eps/<YYYY-MM-DD>/`（與 strategies 共用同一個 canonical playbook release date）
 
 ### Database
 

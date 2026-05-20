@@ -5,16 +5,19 @@
   # 全量比對
   venv/bin/python3 strategies/compare_versions.py --out strategies/compare_report.csv
 
-  # 限定月份 (sample 驗證用)
+  # 限定 cohort (sample 驗證用)
   venv/bin/python3 strategies/compare_versions.py \
       --months 2022/01,2024/11,2026/02 \
       --out strategies/compare_sample.csv
 
 預設路徑:
-  --old-output-root  strategies/output_old
-  --new-output-root  strategies/output
-  --old-models-root  models_selection_old
-  --new-models-root  models_selection
+  --old-output-root  strategies/output_old           （舊 YYYY/MM 結構）
+  --new-output-root  strategies/output               （新 YYYY-MM-DD 結構）
+  --old-models-root  models_selection_old            （舊 YYYY/MM 結構）
+  --new-models-root  models_selection                （新 YYYY-MM-DD 結構）
+
+新版目錄是 playbook release date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
+對 cohort 2022/01，舊 = `2022/01/`、新 = `2022-01-11/`；本 script 內部依公式換算。
 
 比對對象:
   1. dataset_strategy.csv     — rows / cols added/removed / 共有 numeric 欄位的平均絕對差
@@ -31,14 +34,21 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from strategies.shared_config import playbook_release_date  # noqa: E402
+
 MONTH_DIR_RE = re.compile(r"^\d{2}$")
 YEAR_DIR_RE = re.compile(r"^\d{4}$")
+NEW_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,18 +80,40 @@ def parse_args() -> argparse.Namespace:
 
 
 def scan_months(*roots: Path) -> list[tuple[int, str]]:
-    """掃所有 root,聯集出 (year, month_str) 月份清單,僅匹配 YYYY/MM schema。"""
+    """掃所有 root,聯集出 (year, month_str) 月份清單。
+
+    Old roots (`output_old/`, `models_selection_old/`) 結構是 `<YYYY>/<MM>/`；
+    new roots (`output/`, `models_selection/`) 結構是 `<YYYY-MM-DD>/`。兩種都掃。
+    """
     found: set[tuple[int, str]] = set()
     for root in roots:
         if not root.exists():
             continue
-        for year_dir in root.iterdir():
-            if not year_dir.is_dir() or not YEAR_DIR_RE.fullmatch(year_dir.name):
+        for entry in root.iterdir():
+            if not entry.is_dir():
                 continue
-            for month_dir in year_dir.iterdir():
-                if month_dir.is_dir() and MONTH_DIR_RE.fullmatch(month_dir.name):
-                    found.add((int(year_dir.name), month_dir.name))
+            name = entry.name
+            # 新格式：YYYY-MM-DD
+            if NEW_DIR_RE.fullmatch(name):
+                y_str, m_str, _ = name.split("-")
+                found.add((int(y_str), m_str))
+                continue
+            # 舊格式：YYYY/MM
+            if YEAR_DIR_RE.fullmatch(name):
+                for month_dir in entry.iterdir():
+                    if month_dir.is_dir() and MONTH_DIR_RE.fullmatch(month_dir.name):
+                        found.add((int(name), month_dir.name))
     return sorted(found)
+
+
+def new_dir(root: Path, year: int, month: str) -> Path:
+    """回傳該 cohort 在新格式 root 下的目錄（playbook_release_date 命名）。"""
+    return root / playbook_release_date(year, month)
+
+
+def old_dir(root: Path, year: int, month: str) -> Path:
+    """回傳該 cohort 在舊格式 root 下的目錄。"""
+    return root / str(year) / month
 
 
 def parse_months_arg(s: str | None) -> list[tuple[int, str]] | None:
@@ -336,10 +368,10 @@ def compare_month(
     old_models_root: Path,
     new_models_root: Path,
 ) -> dict:
-    old_od = old_output_root / str(year) / month
-    new_od = new_output_root / str(year) / month
-    old_md = old_models_root / str(year) / month
-    new_md = new_models_root / str(year) / month
+    old_od = old_dir(old_output_root, year, month)
+    new_od = new_dir(new_output_root, year, month)
+    old_md = old_dir(old_models_root, year, month)
+    new_md = new_dir(new_models_root, year, month)
 
     row: dict = {"year": year, "month": month}
 

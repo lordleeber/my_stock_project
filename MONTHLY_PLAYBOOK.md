@@ -4,10 +4,10 @@
 
 > 資料管線（scraper / processor / importer / calculator）由 launchd 自動排程，不在本 playbook 範圍。詳見 [`schedules/CLAUDE.md`](schedules/CLAUDE.md)。
 
-> **Date narration convention**: 所有 `M/10`、`M/15`、`cohort M`、`train_through M-1` 等月份 token，在敘述/log/註解時都要展成具體 `YYYY-MM-DD`。
-> - **`cutoff_date`** = target cohort 的 PIT 截斷日（例：cohort 2026/04 (cutoff_date 2026-04-10)）。
-> - **`train_through_date`** = selection model 訓練資料上界 cohort 的 `cutoff_date`（例：train_through=2026/04 → train_through_date 2026-04-10）。
-> - 不要寫「model 的 cutoff_date」— 用 `train_through_date`。
+> **Date narration convention**: CLI / 目錄 / 敘述都用具體 `YYYY-MM-DD`（playbook_date = cutoff +1）。
+> - **`cutoff_date`** = target cohort 的 PIT 截斷日（例：cohort 2026-04-11（cutoff 2026-04-10））。
+> - **`train_through_playbook_date`** = selection model 訓練資料上界 cohort 的 playbook_date（例：train_through=2026-04-11）。
+> - 不要寫「model 的 cutoff_date」— 用 `train_through_playbook_date`。
 > 完整規則見 [`strategies/CLAUDE.md` § Date Convention](strategies/CLAUDE.md#date-convention-read-first)（single source of truth）。
 
 ---
@@ -40,46 +40,41 @@
 ### 一條龍指令（按順序，一定要 step1+2 早於 step3）
 
 ```bash
-YEAR=2026
-MONTH=04           # 目標月（兩位數）
-PREV_MONTH=03      # 上一個月（重訓 selection model 用）
-PREV_YEAR=2026     # 若目標月是 01，PREV_YEAR=YYYY-1、PREV_MONTH=12
-
-# train_eps 的 --date 必須是 canonical playbook release date = cutoff（公告日）+1：
-# 5/8/11 月為 16 號，其餘月份為 11 號
-# 由 train_eps/shared_config.py::playbook_release_date(year, month) 唯一定義
-DATE=$(venv/bin/python3 -c "from train_eps.shared_config import playbook_release_date; print(playbook_release_date($YEAR, '$MONTH'))")
+# DATE: 本月的 canonical playbook_date = cutoff（公告日）+1（5/8/11 月 = 16 號，其餘月份 = 11 號）
+# PREV_DATE: 上一個月的 playbook_date（重訓 selection model 用）
+# 兩者都由 train_eps/shared_config.py::playbook_release_date 唯一定義。
+DATE=2026-04-11
+PREV_DATE=2026-03-11
 
 # ① EPS 模型（含 prepare → train → evaluate → predict）
 venv/bin/python3 train_eps/run_pipeline.py --date $DATE
 
-# ② strategies 本月候選（cutoff = M/10 或 M/15）
-venv/bin/python3 strategies/step1_prepare_data.py      --year $YEAR --month $MONTH
-venv/bin/python3 strategies/step2_finalize_strategy.py --year $YEAR --month $MONTH
+# ② strategies 本月候選（cutoff_date = DATE - 1 day）
+venv/bin/python3 strategies/step1_prepare_data.py      --date $DATE
+venv/bin/python3 strategies/step2_finalize_strategy.py --date $DATE
 # ↑ 若 DB 還沒匯入下個交易日報價（典型情境：cutoff 是週五、entry_date 是下週一，
 #   在 cutoff+1 週六/週日跑時 DB 還沒 Mon 資料），step2 會 raise。
 #   解法：加 --entry-date YYYY-MM-DD 明確指定下個交易日，跳過 DB 驗證。
 #   範例：venv/bin/python3 strategies/step2_finalize_strategy.py \
-#           --year 2026 --month 05 --entry-date 2026-05-18
+#           --date 2026-05-16 --entry-date 2026-05-18
 #   技術/營收特徵仍以 <=entry_date 撈最新一筆（fallback 到 cutoff_date），內容一致。
 
-# ③ 重建 fwd_return ground truth（現在 M-1 的 exit_date 才能定義出來）
+# ③ 重建 fwd_return ground truth（現在 PREV_DATE 的 exit_date 才能定義出來）
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
-# ④ 訓 train_through=M-1 的 selection model（用最新 ground truth）
-venv/bin/python3 strategies/step4_train_selection_model.py \
-  --train-through-year $PREV_YEAR --train-through-month $PREV_MONTH
+# ④ 訓 train_through=PREV_DATE 的 selection model（用最新 ground truth）
+venv/bin/python3 strategies/step4_train_selection_model.py --date $PREV_DATE
 
 # ⑤ 對本月候選打分，產出最終選股名單
-venv/bin/python3 strategies/step5_score_and_publish.py --year $YEAR --month $MONTH
+venv/bin/python3 strategies/step5_score_and_publish.py --date $DATE
 ```
 
 完成後可選：
 ```bash
-# ⑥ 延長 rolling 回測曲線到 M-1（觀察用）
+# ⑥ 延長 rolling 回測曲線到 PREV_DATE（觀察用）
 venv/bin/python3 backtester/run_rolling.py \
-  --start_year 2022 --start_month 7 \
-  --end_year $PREV_YEAR --end_month $PREV_MONTH \
+  --start-date 2022-07-11 \
+  --end-date $PREV_DATE \
   --top-n 10 --position-amount 100000
 ```
 
@@ -112,10 +107,10 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 | 階段 | 產出 |
 |---|---|
 | ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook release date） |
-| ② strategies step1+2 | `strategies/output/<YEAR>/<MONTH>/dataset_strategy.csv`、`trade_candidates.csv` |
-| ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 M-1 的 fwd_return） |
-| ④ step4 | `models_selection/<PREV_YEAR>/<PREV_MONTH>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
-| ⑤ step5 | `models_selection/<YEAR>/<MONTH>/candidates_scored.csv`（**最終選股名單**） |
+| ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`、`trade_candidates.csv` |
+| ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 PREV_DATE 的 fwd_return） |
+| ④ step4 | `models_selection/<PREV_DATE>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
+| ⑤ step5 | `models_selection/<DATE>/candidates_scored.csv`（**最終選股名單**） |
 
 選股建議：**`candidates_scored.csv` 依 `ml_rank` 取 top-10 等權買進，於 `entry_date` 開盤建倉**。
 
@@ -123,29 +118,28 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 
 ## 特殊月份對照
 
-### 04 月（4/11）
+### 04 月（DATE = YYYY-04-11）
 - 新到資料：3 月營收 + **前年年報**
 - 04 模型可用 Q4 為 anchor（含 Q4 完整 XBRL），比 03 模型多 2 個 XBRL 特徵
-- 重訓 selection model train_through = 03（train_through_date = 上一個 03/10）
+- 重訓 selection model train_through_playbook_date = (YYYY)-03-11
 
-### 05 月（5/16，因 5/15 是 Q1 季報日）
+### 05 月（DATE = YYYY-05-16，因 5/15 是 Q1 季報日）
 - 新到資料：4 月營收 + **Q1 季報**
 - 05 模型 anchor 從 Q4 切換到 **Q1**，所有後續 06、07 月模型也以 Q1 為 anchor
-- 重訓 selection model train_through = 04（train_through_date = 04/10）
+- 重訓 selection model train_through_playbook_date = (YYYY)-04-11
 
-### 08 月（8/16）
+### 08 月（DATE = YYYY-08-16）
 - 新到資料：7 月營收 + **Q2 季報**
 - 08 模型 anchor 切換到 **Q2**
-- 重訓 selection model train_through = 07（train_through_date = 07/10）
+- 重訓 selection model train_through_playbook_date = (YYYY)-07-11
 
-### 11 月（11/16）
+### 11 月（DATE = YYYY-11-16）
 - 新到資料：10 月營收 + **Q3 季報**
 - 11 模型 anchor 切換到 **Q3**
-- 重訓 selection model train_through = 10（train_through_date = 10/10）
+- 重訓 selection model train_through_playbook_date = (YYYY)-10-11
 
 ### 跨年的 01 月
-- `PREV_YEAR = YYYY-1`、`PREV_MONTH = 12`
-- 訓 train_through=(YYYY-1)/12 的 selection model（train_through_date = (YYYY-1)-12-10）
+- `DATE = YYYY-01-11`、`PREV_DATE = (YYYY-1)-12-11`
 
 ---
 
@@ -182,27 +176,27 @@ monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 
 ## Walk-forward 時序圖（以 04 月為例）
 
 ```
-4/10 (Fri)    cutoff_date — 3 月營收 + 2025 年報全數公告完成
-4/10 22:00    daily_update.sh 跑完，DB 有 4/10 收盤 + 籌碼
-4/11 (Sat)    本 playbook 標準流程：
-              ├── train_eps 04
-              ├── strategies step1+2 04
-              ├── strategies step3 (現在能算出 03 月的 fwd_return)
-              ├── strategies step4 train_through=03 (train_through_date 2026-03-10)
-              └── strategies step5 04 → 名單出爐
-4/13 (Mon)    名單按開盤價建倉 (entry_date)
-              ...持有約 25 個交易日 (依 5 月 entry 而定) ...
-5/15 (Fri)    Q1 季報日 → cutoff_date
-5/15 開盤      上一月 cohort 平倉 (5/15 開盤等於下一輪 entry 前一交易日)
-5/16 (Sat)    跑 5 月份 playbook → 訓 train_through=04 (2026-04-10) 的 selection model、出 5 月名單
+2026-04-10 (Fri)  cutoff_date — 3 月營收 + 2025 年報全數公告完成
+2026-04-10 22:00  daily_update.sh 跑完，DB 有 2026-04-10 收盤 + 籌碼
+2026-04-11 (Sat)  本 playbook 標準流程（DATE = 2026-04-11）：
+                  ├── train_eps --date 2026-04-11
+                  ├── strategies step1+2 --date 2026-04-11
+                  ├── strategies step3 (現在能算出 2026-03-11 cohort 的 fwd_return)
+                  ├── strategies step4 --date 2026-03-11 (train_through_playbook_date)
+                  └── strategies step5 --date 2026-04-11 → 名單出爐
+2026-04-13 (Mon)  名單按開盤價建倉 (entry_date)
+                  ...持有約 25 個交易日 (依 5 月 entry 而定) ...
+2026-05-15 (Fri)  Q1 季報日 → cutoff_date
+2026-05-15 開盤    上一月 cohort 平倉 (5/15 開盤 = 下一輪 entry 前一交易日)
+2026-05-16 (Sat)  跑 5 月 playbook → 訓 train_through_playbook_date=2026-04-11 的 selection model、出 5 月名單
 ```
 
 ---
 
 ## 常見問題
 
-### Q1: 為什麼 step5 顯示 `model used: 2026/02` 而不是最新？
-A: 你跳過了 step3 + step4。`models_selection/2026/03/` 可能只有 `candidates_scored.csv` 沒有 `selection_model.pkl`。step5 的 walk-forward 規則是「最新有 pkl 的 train_through < 目標月」。
+### Q1: 為什麼 step5 顯示 `model used: 2026-02-11` 而不是最新？
+A: 你跳過了 step3 + step4。`models_selection/2026-03-11/` 可能只有 `candidates_scored.csv` 沒有 `selection_model.pkl`。step5 的 walk-forward 規則是「最新有 pkl 的 `train_through_playbook_date < 目標 playbook_date`」。
 
 ### Q2: train_eps 同一個 `--date` 重跑兩次，model MAE 一樣是不是 bug？
 A: 不是。`step1_prepare_data` 用 PIT cutoff（`--date` 那天）截斷資料，固定 `seed=42`，相同輸入 → 相同模型。MAE 數字相同就代表 PIT 行為正確。
@@ -210,9 +204,11 @@ A: 不是。`step1_prepare_data` 用 PIT cutoff（`--date` 那天）截斷資料
 ### Q3: 如果某天忘了跑，事後補做有差嗎？
 A: 沒差。所有指令都是 idempotent + PIT，過幾天再補跑會得到完全相同的 EPS 模型；selection model 也會是相同模型，不受跑的時點影響。**唯一例外是 step5**：若中間有更新過 selection model，補跑出的名單可能與當天不同。
 
-### Q4: 新增 PREV_YEAR / PREV_MONTH 的計算？
-- 目標月為 01：PREV_YEAR = YYYY-1、PREV_MONTH = 12
-- 其他月：PREV_YEAR = YYYY、PREV_MONTH = MONTH-1
+### Q4: PREV_DATE 的計算？
+- PREV_DATE = 上一個 canonical playbook_date（直接查 [`MONTHLY_PLAYBOOK` 公告日曆](#公告日曆cutoff_date)）。
+- 目標 DATE 是 01-11 → PREV_DATE = (YYYY-1)-12-11
+- 目標 DATE 是 11-16 → PREV_DATE = YYYY-10-11
+- 一般月 → PREV_DATE 是上個月對應的 11 或 16 號
 
 ### Q5: step2 報 `daily_quotes 沒有 >= YYYY-MM-DD 的交易日資料` 怎麼辦？
 通常出現在 cutoff+1 當天/隔日提前跑：cutoff 是週五、entry_date 是下週一，DB 還沒匯入下週一的報價。新版（commit 866fc36）刻意 raise，避免舊版 silent fallback 把週末日期當 entry_date。兩種解法：
@@ -221,9 +217,9 @@ A: 沒差。所有指令都是 idempotent + PIT，過幾天再補跑會得到完
 2. **`--entry-date` 旗標提前跑**（要立刻產出 picks 時用）：
    ```bash
    venv/bin/python3 strategies/step2_finalize_strategy.py \
-     --year 2026 --month 05 --entry-date 2026-05-18
+     --date 2026-05-16 --entry-date 2026-05-18
    ```
    step2 跳過 DB 驗證、技術/營收特徵自動 fallback 到 `<=entry_date` 的最新一筆（= cutoff_date 那筆），內容與等到報價匯入後再跑完全相同。**但要自己負責確認 `entry_date` 真的是下個交易日**（別填到週六/週日/國定假日）。
 
 ### Q6: 用了 `--entry-date` 之後，backtester 還能跑這個月嗎？
-不能跑完整 rotation：backtester 的 `auto-detect` 規則要求 `daily_quotes` 必須有 entry_date 之後的列，2026/05 在 DB 補上 2026-05-18 之前會被自動跳過。如果強制 `--end_year 2026 --end_month 05`，可以結算上個月的 cohort（PnL 已實現），但本月 cohort 會全部 `entries_failed_no_quote`、無法建倉。完整 rotation 仍需等今天 daily pipeline 完成。
+不能跑完整 rotation：backtester 的 `auto-detect` 規則要求 `daily_quotes` 必須有 entry_date 之後的列，2026-05-16 在 DB 補上 2026-05-18 之前會被自動跳過。如果強制 `--end-date 2026-05-16`，可以結算上個月的 cohort（PnL 已實現），但本月 cohort 會全部 `entries_failed_no_quote`、無法建倉。完整 rotation 仍需等今天 daily pipeline 完成。

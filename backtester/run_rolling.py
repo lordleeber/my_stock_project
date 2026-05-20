@@ -30,8 +30,12 @@ if str(ROOT_DIR) not in sys.path:
 
 from backtester.data_loader import fetch_quotes_from_db
 from backtester.simulator import CostConfig
-from backtester.utils import month_iter, normalize_month
 from common.db import get_db_url
+from strategies.shared_config import (
+    MONTH_TO_TARGET_QNUM,
+    parse_playbook_date,
+    playbook_release_date,
+)
 
 
 @dataclass
@@ -137,16 +141,15 @@ def detect_market_regime(ref_date: str) -> str:
 
 
 def load_candidates_safe(
-    models_root: Path, year: int, month: int
+    models_root: Path, playbook_date: str
 ) -> pd.DataFrame | None:
-    """從 models_selection/<year>/<month>/ 載入預先計算的 candidates_scored.csv。"""
-    month_s = normalize_month(month)
-    scored_path = models_root / f"{year:04d}" / month_s / "candidates_scored.csv"
+    """從 models_selection/<YYYY-MM-DD>/ 載入預先計算的 candidates_scored.csv。"""
+    scored_path = models_root / playbook_date / "candidates_scored.csv"
 
     if not scored_path.exists():
         raise FileNotFoundError(
             f"candidates_scored.csv not found: {scored_path}\n"
-            f"Run: venv/bin/python3 strategies/step5_score_and_publish.py --year {year} --month {month}"
+            f"Run: venv/bin/python3 strategies/step5_score_and_publish.py --date {playbook_date}"
         )
 
     df = pd.read_csv(scored_path)
@@ -156,6 +159,21 @@ def load_candidates_safe(
     if df.empty:
         return None
     return df
+
+
+def playbook_iter(start_date: str, end_date: str):
+    """產生 [start, end] 區間內的 canonical playbook release dates。"""
+    sy, sm = parse_playbook_date(start_date)
+    ey, em = parse_playbook_date(end_date)
+    y, m = sy, int(sm)
+    while (y, m) <= (ey, int(em)):
+        mm = f"{m:02d}"
+        if mm in MONTH_TO_TARGET_QNUM:
+            yield playbook_release_date(y, mm)
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
 
 
 def fetch_open_on_date(symbols: list[str], date_str: str) -> dict[str, float]:
@@ -246,63 +264,51 @@ def _exit_position(
     }, net_pnl
 
 
-def auto_detect_end_month(models_root: Path) -> tuple[int, int]:
-    """掃 models_root 找最新可回測的月份。
+def auto_detect_end_playbook_date(models_root: Path) -> str:
+    """掃 models_root 找最新可回測的 playbook date。
 
     條件：
-      - `<Y>/<MM>/candidates_scored.csv` 存在
+      - `<YYYY-MM-DD>/candidates_scored.csv` 存在
       - CSV 中的 entry_date 在 daily_quotes 中至少有當天或之後的紀錄
         （隱含 entry_date ≤ 今天，且該日已實際進到 DB）
 
-    從最新月反向搜尋，遇到第一個符合條件的就回傳。
+    從最新 playbook 反向搜尋，遇到第一個符合條件的就回傳。
     """
     engine = create_engine(get_db_url())
 
-    def year_dirs() -> list[Path]:
-        return sorted(
-            (
-                p
-                for p in models_root.iterdir()
-                if p.is_dir() and p.name.isdigit() and len(p.name) == 4
-            ),
-            key=lambda p: p.name,
-            reverse=True,
-        )
-
-    def month_dirs(year_dir: Path) -> list[Path]:
-        return sorted(
-            (
-                p
-                for p in year_dir.iterdir()
-                if p.is_dir() and p.name.isdigit() and len(p.name) == 2
-            ),
-            key=lambda p: p.name,
-            reverse=True,
-        )
+    def playbook_dirs() -> list[Path]:
+        out: list[Path] = []
+        for p in models_root.iterdir():
+            if not p.is_dir() or p.name == "latest":
+                continue
+            try:
+                parse_playbook_date(p.name)
+            except ValueError:
+                continue
+            out.append(p)
+        return sorted(out, key=lambda p: p.name, reverse=True)
 
     with engine.connect() as conn:
-        for year_dir in year_dirs():
-            for month_dir in month_dirs(year_dir):
-                csv_path = month_dir / "candidates_scored.csv"
-                if not csv_path.exists():
-                    continue
-                # 既然檔案存在就必須能讀；壞檔案要被看見，不要靜默跳過。
-                df = pd.read_csv(csv_path, nrows=1)
-                if "entry_date" not in df.columns or df.empty:
-                    raise ValueError(
-                        f"{csv_path}: missing 'entry_date' column or empty file"
-                    )
-                entry_date = pd.to_datetime(df["entry_date"].iloc[0])
-                if pd.isna(entry_date):
-                    raise ValueError(
-                        f"{csv_path}: first row's entry_date is unparseable"
-                    )
-                has_quote = conn.execute(
-                    text("SELECT 1 FROM daily_quotes WHERE date >= :d LIMIT 1"),
-                    {"d": entry_date.strftime("%Y-%m-%d")},
-                ).scalar()
-                if has_quote:
-                    return (int(year_dir.name), int(month_dir.name))
+        for d in playbook_dirs():
+            csv_path = d / "candidates_scored.csv"
+            if not csv_path.exists():
+                continue
+            df = pd.read_csv(csv_path, nrows=1)
+            if "entry_date" not in df.columns or df.empty:
+                raise ValueError(
+                    f"{csv_path}: missing 'entry_date' column or empty file"
+                )
+            entry_date = pd.to_datetime(df["entry_date"].iloc[0])
+            if pd.isna(entry_date):
+                raise ValueError(
+                    f"{csv_path}: first row's entry_date is unparseable"
+                )
+            has_quote = conn.execute(
+                text("SELECT 1 FROM daily_quotes WHERE date >= :d LIMIT 1"),
+                {"d": entry_date.strftime("%Y-%m-%d")},
+            ).scalar()
+            if has_quote:
+                return d.name
     raise ValueError(
         f"No usable candidates_scored.csv found under {models_root} "
         "(file missing or entry_date has no daily_quotes coverage)."
@@ -313,19 +319,20 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Rolling monthly portfolio backtester."
     )
-    parser.add_argument("--start_year", type=int, required=True)
-    parser.add_argument("--start_month", type=int, required=True)
     parser.add_argument(
-        "--end_year",
-        type=int,
-        default=None,
-        help="Last backtest year (default: auto-detect latest month with candidates_scored.csv + daily_quotes coverage)",
+        "--start-date",
+        type=str,
+        required=True,
+        help="First playbook release date YYYY-MM-DD (canonical: 5/8/11 月 = 16 號，其餘月份 = 11 號)",
     )
     parser.add_argument(
-        "--end_month",
-        type=int,
+        "--end-date",
+        type=str,
         default=None,
-        help="Last backtest month (default: auto-detect, same rule as --end_year)",
+        help=(
+            "Last playbook release date YYYY-MM-DD. Default: auto-detect latest "
+            "playbook with candidates_scored.csv + daily_quotes coverage."
+        ),
     )
     parser.add_argument(
         "--position-amount",
@@ -367,29 +374,30 @@ def main() -> None:
         else (Path.cwd() / "models_selection").resolve()
     )
 
-    if args.end_year is None or args.end_month is None:
-        end_year, end_month = auto_detect_end_month(models_root)
-        print(f"[auto-detect] end = {end_year}/{normalize_month(end_month)}")
+    parse_playbook_date(args.start_date)
+    end_date = args.end_date
+    if end_date is None:
+        end_date = auto_detect_end_playbook_date(models_root)
+        print(f"[auto-detect] end = {end_date}")
     else:
-        end_year, end_month = args.end_year, args.end_month
+        parse_playbook_date(end_date)
 
     portfolio: dict[str, Position] = {}
     trade_log: list[dict] = []
     monthly_rows: list[dict] = []
 
-    for year, month in month_iter(
-        args.start_year, args.start_month, end_year, end_month
-    ):
-        month_s = normalize_month(month)
+    for playbook_date in playbook_iter(args.start_date, end_date):
+        year, month_s = parse_playbook_date(playbook_date)
+        month = int(month_s)
         try:
-            candidates_df = load_candidates_safe(models_root, year, month)
+            candidates_df = load_candidates_safe(models_root, playbook_date)
         except FileNotFoundError as exc:
             if args.verbose:
-                print(f"[skip] {year}/{month_s}: {exc}")
+                print(f"[skip] {playbook_date}: {exc}")
             continue
         if candidates_df is None:
             if args.verbose:
-                print(f"[skip] no candidates: {year}/{month_s}")
+                print(f"[skip] no candidates: {playbook_date}")
             continue
 
         # 所有候選股共用同一個 entry_date（發布日後第一個交易日）。
@@ -461,6 +469,7 @@ def main() -> None:
         portfolio_capital = sum(p.capital_used for p in portfolio.values())
         monthly_rows.append(
             {
+                "playbook_date": playbook_date,
                 "year": year,
                 "month": month_s,
                 "exit_date": exit_date_str,
@@ -479,7 +488,7 @@ def main() -> None:
         )
         if args.verbose:
             print(
-                f"[{year}/{month_s}] entry={entry_date_str} [{regime}] | "
+                f"[{playbook_date}] entry={entry_date_str} [{regime}] | "
                 f"holdings={len(portfolio)} | exits={len(exit_symbols)} entries={len(entry_symbols)} | "
                 f"realized_pnl={month_realized_pnl:+.0f}"
             )
@@ -518,8 +527,8 @@ def main() -> None:
     loss_count = int((closed["net_pnl"] < 0).sum()) if not closed.empty else 0
 
     summary = {
-        "start": f"{args.start_year}/{normalize_month(args.start_month)}",
-        "end": f"{end_year}/{normalize_month(end_month)}",
+        "start": args.start_date,
+        "end": end_date,
         "position_amount": position_amount,
         "top_n": top_n,
         "cost_config": {
