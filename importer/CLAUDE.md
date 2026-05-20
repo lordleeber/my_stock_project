@@ -221,8 +221,8 @@ After importing data, ensure critical indexes exist for optimal query performanc
 docker compose exec -T db psql -U user -d stock_db -c \
   "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname LIKE 'idx_%' ORDER BY tablename, indexname;"
 
-# Recreate missing indexes (from backend service)
-docker compose run --rm backend python create_indexes.py
+# Recreate missing indexes (host venv, hits localhost:5419)
+venv/bin/python3 tools/create_indexes.py
 ```
 
 **Expected indexes (5 total)**:
@@ -242,9 +242,6 @@ docker compose run --rm backend python create_indexes.py
 
 ### Issue: No data imported even though processed files exist
 - **Solution**: Check if data already exists in database. Importer skips existing data by default. Use `FORCE_REIMPORT=1` to override.
-
-### Issue: Import succeeds but backend API returns no data
-- **Solution**: Verify indexes exist (see Indexes section above). Missing indexes can cause query failures.
 
 ### Issue: ETF data (0050, 0056) not in database
 - **Expected behavior**: ETFs are intentionally filtered out. Importer only imports ordinary common stocks.
@@ -374,5 +371,4 @@ all_passed, all_errors = validate_all_tables(engine)
 ## Next Steps
 
 After importing, data flows to:
-- **Calculator** (`calculator/CLAUDE.md`) - Computes technical indicators
-- **Backend API** (`backend/CLAUDE.md`) - Serves data via FastAPI
+- **Calculator** (`calculator/CLAUDE.md`) - Computes technical indicators, valuation, concentration, etc.

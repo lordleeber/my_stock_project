@@ -1,11 +1,3 @@
-# API 設定
-API_BASE = "http://100.103.191.79:8000"
-
-# HTTP 請求設定
-HTTP_TIMEOUT = 30  # 秒
-HTTP_RETRIES = 3
-HTTP_BACKOFF_FACTOR = 0.5
-
 # 中英文類別對照表 (統一目錄命名)
 CATEGORY_MAP = {
     "每日收盤行情": "daily_quotes",

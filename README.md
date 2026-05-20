@@ -13,8 +13,7 @@ train_eps/        EPS 預測模型訓練與發布
 strategies/       ML 選股特徵工程、排名模型訓練
 models_selection/ 選股模型（walk-forward，每月一版）
 backtester/       滾動投資組合回測
-calculator/       DB 衍生表計算（shareholding_concentration 等）
-backend/          FastAPI 完整資料端點（本機）
+calculator/       DB 衍生表計算（technical_indicators / shareholding_concentration / valuation_daily 等）
 scripts/          GCP 部署與資料上傳腳本
 common/           共用 schema、工具模組
 ```

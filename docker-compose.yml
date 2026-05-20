@@ -161,30 +161,6 @@ services:
       db:
         condition: service_healthy
 
-  backend:
-    build: 
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: always
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - DB_USER=user
-      - DB_PASSWORD=password
-      - DB_NAME=stock_db
-      - DB_HOST=db
-      - TZ=Asia/Taipei
-    # 同樣修正 volume 掛載
-    volumes:
-      - ./backend:/app
-      - ./common:/app/common
-      - ./strategies:/app/strategies:ro
-      - ./models_selection:/app/models_selection:ro
-      - ./backtester/output:/app/backtester/output:ro
-
   db:
     image: postgres:15
     restart: always

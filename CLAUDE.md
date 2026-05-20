@@ -16,20 +16,6 @@ All Python scripts use the repo-local venv:
 venv/bin/python3 <script.py>
 ```
 
-### Backend API (Docker)
-```bash
-# Start backend (auto-reloads on code changes — no rebuild needed for main.py)
-docker compose up -d backend
-
-# Rebuild only when changing requirements.txt or Dockerfile
-docker compose up -d --build backend
-
-# Run tests
-./venv/bin/python -m pytest backend/tests -q
-# Or in container (recommended):
-docker compose run --rm backend python -m pytest tests -q
-```
-
 ### Data Pipeline (Docker)
 ```bash
 # Full daily pipeline for a specific date
@@ -103,8 +89,7 @@ venv/bin/python3 backtester/summarize_range.py
 | `train_eps/` | LightGBM EPS delta prediction pipeline |
 | `strategies/` | Feature engineering, EPS prediction integration, LGBMRanker selection model |
 | `backtester/` | Rolling walk-forward portfolio backtester |
-| `backend/` | FastAPI — full data endpoints (local) |
-| `common/` | Shared schemas (`schemas.py`), constants (`CATEGORY_MAP`), HTTP client |
+| `common/` | Shared schemas (`schemas.py`), DB helper (`db.py`), constants (`CATEGORY_MAP`) |
 | `schedules/` | Orchestration shell scripts + macOS launchd plists |
 | `scripts/` | GCS upload scripts |
 | `tools/` | One-off data maintenance utilities |
@@ -121,7 +106,6 @@ TWSE/TPEx/MOPS/TDCC
     → strategies/ (strategies/output/<year>/<month>/dataset_strategy.csv)
     → models_selection/ (selection_model.pkl per month)
     → backtester/ (backtester/output/rolling/)
-    → backend/ (FastAPI)
 ```
 
 ### Walk-Forward Design
@@ -136,8 +120,8 @@ TWSE/TPEx/MOPS/TDCC
 - All `date` columns use **TEXT** type (not DATE) for consistency
 - Symbols are 4-digit numeric strings stored as TEXT
 - Date formats: daily → `YYYY-MM-DD`, quarterly → `YYYYQX`, monthly revenue → `YYYYMXX`
-- Backend uses raw SQL via `sqlalchemy.text()` — no ORM models
-- Connection env vars: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`
+- All Python code accesses DB directly via SQLAlchemy `create_engine(get_db_url())` + raw SQL through `text()` — no ORM models
+- Host-side scripts use `common/db.py:get_db_url()` (defaults to `localhost:5419`); in-container services read `DB_HOST`/`DB_PORT` env vars (defaults to `db:5432` via docker network)
 
 ## Critical Rules
 
@@ -146,7 +130,6 @@ TWSE/TPEx/MOPS/TDCC
 ```bash
 docker compose build processor importer calculator
 ```
-`backend` uses a volume mount and auto-reloads via uvicorn `--reload` — only rebuild if `requirements.txt` or `Dockerfile` changes.
 
 ### DB Schema Changes
 Sync all schema changes to `common/schemas.py`.
@@ -158,7 +141,6 @@ Do not commit generated `.csv`, `.json`, `.pkl` artifacts unless explicitly requ
 
 Each major component has its own `CLAUDE.md` with detailed field-level specs:
 
-- `backend/CLAUDE.md` — all API endpoints, Pydantic models, raw data API date formats, DB indexes
 - `calculator/CLAUDE.md` — indicator formulas, PIT valuation logic, `valuation_daily` schema
 - `scraper/CLAUDE.md` — data sources, scheduling windows, fetch logic
 - `processor/CLAUDE.md` — v3.0 date-first architecture, QC, error handling

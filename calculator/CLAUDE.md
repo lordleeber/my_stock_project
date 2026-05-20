@@ -203,12 +203,6 @@ docker compose run --rm calculator
 - **Cause**: Indicators require historical data. MA60 needs 60 days of data.
 - **Expected behavior**: Early dates will have NULL values for longer-period indicators.
 
-### Issue: Indicators not appearing in backend API
-- **Solution**: Verify `technical_indicators` table has data:
-  ```bash
-  docker compose exec -T db psql -U user -d stock_db -c "SELECT COUNT(*) FROM technical_indicators;"
-  ```
-
 ### Issue: Calculator fails with "table does not exist"
 - **Solution**: Ensure `daily_quotes` table exists and has data. Run importer first.
 
@@ -219,22 +213,13 @@ docker compose run --rm calculator
 ### Issue: Indicators seem incorrect or inconsistent
 - **Solution**: Recalculate from scratch: `docker compose run --rm calculator`
 
-## Integration with Backend API
+## Downstream Consumers
 
-The calculator populates data used by these backend endpoints:
+| Table | Read by |
+|---|---|
+| `technical_indicators` | `strategies/step2_finalize_strategy.py` (MA / RSI / MACD / KD features); `backtester/` |
+| `shareholding_concentration` | `strategies/step1_prepare_data.py` |
+| `valuation_daily` | `strategies/step1_prepare_data.py::fetch_valuation_features` — uses `roe_official` + `pe_percentile_official` |
+| `short_interest_analysis`, `margin_pressure_analysis` | `strategies/step1_prepare_data.py` market-sentiment features |
 
-### Scanner Endpoints
-- `/scanner/volume-spike` - Uses MA60, MA5, MA10, MA20, KD, RSI, MACD
-- `/scanner/candlestick/{symbol}` - Returns MA5, MA10, MA20, MA60
-
-### Analysis Endpoints
-- `/analysis/ma` - Returns MA5, MA10, MA20, MA60, MA120, MA240
-- `/analysis/vma` - Returns VMA5, VMA10, VMA20, VMA60
-
-### ML Training Data
-- `/ml/training-data` - Returns all indicators when `include_indicators=true`
-
-## Next Steps
-
-After calculation, data is ready for:
-- **Backend API** (`backend/CLAUDE.md`) - Serves data via FastAPI
+All downstream code connects directly via `common/db.py::get_db_url()`.
