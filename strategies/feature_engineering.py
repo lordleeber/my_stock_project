@@ -376,7 +376,6 @@ def fetch_revenue_features(
             FROM monthly_revenue
             WHERE symbol IN :symbols
               AND publish_time IS NOT NULL
-              AND publish_time != ''
               AND publish_time <= :ref_compact
         )
         SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, rn
