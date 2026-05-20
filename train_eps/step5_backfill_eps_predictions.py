@@ -14,6 +14,7 @@
   venv/bin/python3 train_eps/step5_backfill_eps_predictions.py
   venv/bin/python3 train_eps/step5_backfill_eps_predictions.py --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
 
@@ -91,13 +91,15 @@ def normalize_one_csv(path: Path, anchor_lookup: pd.DataFrame) -> pd.DataFrame:
     if "predict_eps" not in df.columns or df["predict_eps"].isna().all():
         if "pred_lgb_delta" not in df.columns:
             raise RuntimeError(f"{path}: missing pred_lgb_delta")
-        df["predict_eps"] = pd.to_numeric(df["anchor_eps"], errors="coerce") + pd.to_numeric(
-            df["pred_lgb_delta"], errors="coerce"
-        )
+        df["predict_eps"] = pd.to_numeric(
+            df["anchor_eps"], errors="coerce"
+        ) + pd.to_numeric(df["pred_lgb_delta"], errors="coerce")
 
     if "trained_at_date" not in df.columns or df["trained_at_date"].isna().all():
         if "model_pkl" not in df.columns:
-            raise RuntimeError(f"{path}: missing model_pkl — cannot derive trained_at_date")
+            raise RuntimeError(
+                f"{path}: missing model_pkl — cannot derive trained_at_date"
+            )
         df["trained_at_date"] = df["model_pkl"].map(trained_at_date_from_pkl)
 
     if "playbook_date" not in df.columns or df["playbook_date"].isna().all():
@@ -113,7 +115,9 @@ def dedup_latest(combined: pd.DataFrame) -> pd.DataFrame:
     """同一 (symbol, target_quarter) 多筆時，取 latest playbook_date；tie 用 trained_at_date。"""
     combined = combined.dropna(subset=["predict_eps"]).copy()
     combined["_sort_key"] = (
-        combined["playbook_date"].fillna("") + "|" + combined["trained_at_date"].fillna("")
+        combined["playbook_date"].fillna("")
+        + "|"
+        + combined["trained_at_date"].fillna("")
     )
     combined = combined.sort_values("_sort_key").drop_duplicates(
         subset=["symbol", "target_quarter"], keep="last"

@@ -47,7 +47,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Batch train one selection model per train_through cohort."
     )
-    parser.add_argument("--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD")
+    parser.add_argument(
+        "--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD"
+    )
     parser.add_argument("--end-date", type=str, default=DEFAULT_END, help="YYYY-MM-DD")
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands without executing"
@@ -118,7 +120,9 @@ def main() -> None:
             failed += 1
 
     if not args.dry_run:
-        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(dates)}")
+        print(
+            f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(dates)}"
+        )
 
 
 if __name__ == "__main__":

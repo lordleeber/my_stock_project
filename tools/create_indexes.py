@@ -6,6 +6,7 @@
 執行方式（host venv，預設打 localhost:5419，符合 common/db.py）：
     venv/bin/python3 tools/create_indexes.py
 """
+
 from sqlalchemy import create_engine, text
 import os
 

@@ -111,7 +111,12 @@ def main() -> None:
         ),
         (
             "evaluate",
-            [py, str(repo_root / "train_eps" / "step3_evaluate.py"), "--date", args.date],
+            [
+                py,
+                str(repo_root / "train_eps" / "step3_evaluate.py"),
+                "--date",
+                args.date,
+            ],
         ),
         (
             "predict_and_publish",

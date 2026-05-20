@@ -50,11 +50,7 @@ def parse_args() -> argparse.Namespace:
 def resolve_date_context(date_str: str) -> tuple[Path, Path]:
     parse_playbook_date(date_str)  # validate format + canonical day
     dataset_path = (
-        Path.cwd()
-        / "train_eps"
-        / "output"
-        / date_str
-        / "dataset_evaluate.csv"
+        Path.cwd() / "train_eps" / "output" / date_str / "dataset_evaluate.csv"
     ).resolve()
     results_dir = (Path.cwd() / "models_eps" / date_str).resolve()
     return dataset_path, results_dir

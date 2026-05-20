@@ -29,7 +29,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Batch run step2_finalize_strategy.py for a range of playbook dates."
     )
-    parser.add_argument("--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD")
+    parser.add_argument(
+        "--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD"
+    )
     parser.add_argument("--end-date", type=str, default=DEFAULT_END, help="YYYY-MM-DD")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -63,9 +65,7 @@ def main() -> None:
                 continue
 
         # 前置檔案缺失則跳過。
-        strategy_path = (
-            ROOT_DIR / "strategies" / "output" / d / "dataset_strategy.csv"
-        )
+        strategy_path = ROOT_DIR / "strategies" / "output" / d / "dataset_strategy.csv"
         pred_path = ROOT_DIR / "models_eps" / d / "predictions_results.csv"
         if not strategy_path.exists() or not pred_path.exists():
             if args.verbose:
@@ -100,7 +100,9 @@ def main() -> None:
             failed += 1
 
     if not args.dry_run:
-        print(f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(dates)}")
+        print(
+            f"\nDone: ok={ok}  skipped={skipped}  failed={failed}  total={len(dates)}"
+        )
 
 
 if __name__ == "__main__":

@@ -36,7 +36,9 @@ from strategies.shared_config import (  # noqa: E402
 )
 
 
-def resolve_model_for_target(models_root: Path, target_playbook_date: str) -> Path | None:
+def resolve_model_for_target(
+    models_root: Path, target_playbook_date: str
+) -> Path | None:
     """回傳 train_through_playbook_date 嚴格早於 target 的最新模型目錄。
 
     `models_selection/<YYYY-MM-DD>/` 下 `<YYYY-MM-DD>` 是 canonical playbook date。
@@ -77,14 +79,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def score_and_publish(
-    target_playbook_date: str, model_dir: Path | None = None
-) -> Path:
+def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) -> Path:
     """對 target playbook date 的候選股評分，並將 candidates_scored.csv 寫入 models_selection/<DATE>/。"""
     parse_playbook_date(target_playbook_date)
 
     ds_path = (
-        ROOT_DIR / "strategies" / "output" / target_playbook_date / "dataset_strategy.csv"
+        ROOT_DIR
+        / "strategies"
+        / "output"
+        / target_playbook_date
+        / "dataset_strategy.csv"
     )
     if not ds_path.exists():
         raise FileNotFoundError(

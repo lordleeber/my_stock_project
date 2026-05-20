@@ -36,7 +36,9 @@ from strategies.shared_config import (
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = "2021-08-16"
-END = "2026-04-11"  # 最後一個可計算下月報酬的 cohort（需要下個 playbook entry_date 存在）
+END = (
+    "2026-04-11"  # 最後一個可計算下月報酬的 cohort（需要下個 playbook entry_date 存在）
+)
 
 FEATURE_COLS = (
     [

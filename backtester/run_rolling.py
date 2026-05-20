@@ -140,9 +140,7 @@ def detect_market_regime(ref_date: str) -> str:
     return "Sideways"
 
 
-def load_candidates_safe(
-    models_root: Path, playbook_date: str
-) -> pd.DataFrame | None:
+def load_candidates_safe(models_root: Path, playbook_date: str) -> pd.DataFrame | None:
     """從 models_selection/<YYYY-MM-DD>/ 載入預先計算的 candidates_scored.csv。"""
     scored_path = models_root / playbook_date / "candidates_scored.csv"
 
@@ -300,9 +298,7 @@ def auto_detect_end_playbook_date(models_root: Path) -> str:
                 )
             entry_date = pd.to_datetime(df["entry_date"].iloc[0])
             if pd.isna(entry_date):
-                raise ValueError(
-                    f"{csv_path}: first row's entry_date is unparseable"
-                )
+                raise ValueError(f"{csv_path}: first row's entry_date is unparseable")
             has_quote = conn.execute(
                 text("SELECT 1 FROM daily_quotes WHERE date >= :d LIMIT 1"),
                 {"d": entry_date.strftime("%Y-%m-%d")},

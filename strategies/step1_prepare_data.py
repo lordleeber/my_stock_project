@@ -508,9 +508,7 @@ def main() -> None:
     cutoff_date = cutoff_date_from_playbook(playbook_date)
     model_features = tp.model_features_for_month(month)
 
-    output_dir = (
-        Path(__file__).resolve().parent / "output" / playbook_date
-    ).resolve()
+    output_dir = (Path(__file__).resolve().parent / "output" / playbook_date).resolve()
     strategy_output_path = output_dir / "dataset_strategy.csv"
 
     frames: list[pd.DataFrame] = []

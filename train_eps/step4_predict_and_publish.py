@@ -165,7 +165,7 @@ def main() -> None:
         )
     if "anchor_eps" not in df.columns:
         raise RuntimeError(
-            f"dataset_evaluate.csv missing required column 'anchor_eps' for predict_eps derivation"
+            "dataset_evaluate.csv missing required column 'anchor_eps' for predict_eps derivation"
         )
 
     pred_delta = model.predict(df[feature_cols])

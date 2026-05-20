@@ -45,14 +45,20 @@ def all_playbook_dates(start: str, end: str) -> list[str]:
         if m > 12:
             m = 1
             y += 1
-    return [playbook_release_date(y, f"{m:02d}") for y, m in months if f"{m:02d}" in MONTH_TO_TARGET_QNUM]
+    return [
+        playbook_release_date(y, f"{m:02d}")
+        for y, m in months
+        if f"{m:02d}" in MONTH_TO_TARGET_QNUM
+    ]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Batch run step4_predict_and_publish.py for a range of playbook dates."
     )
-    parser.add_argument("--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD")
+    parser.add_argument(
+        "--start-date", type=str, default=DEFAULT_START, help="YYYY-MM-DD"
+    )
     parser.add_argument("--end-date", type=str, default=DEFAULT_END, help="YYYY-MM-DD")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -66,7 +72,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     dates = all_playbook_dates(args.start_date, args.end_date)
-    print(f"Batch predict_and_publish: {args.start_date} → {args.end_date}  ({len(dates)} dates)")
+    print(
+        f"Batch predict_and_publish: {args.start_date} → {args.end_date}  ({len(dates)} dates)"
+    )
 
     python = sys.executable
     script = str(ROOT_DIR / "train_eps" / "step4_predict_and_publish.py")
