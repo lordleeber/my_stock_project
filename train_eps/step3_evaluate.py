@@ -1,11 +1,17 @@
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
-from shared_config import load_shared_config
 from sklearn.metrics import mean_absolute_error
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from shared_config import load_shared_config, parse_playbook_date  # noqa: E402
 
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -25,26 +31,27 @@ FEATURE_TRANSFORM = "quantile"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Shared evaluate for train_eps/output/<year>/<month>"
+        description="Shared evaluate for train_eps/output/<YYYY-MM-DD>"
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="01~12")
+    parser.add_argument(
+        "--date",
+        type=str,
+        required=True,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+    )
     return parser.parse_args()
 
 
-def resolve_month_context(year: int, month: str) -> tuple[Path, Path, Path]:
-    month_name = str(month).zfill(2)
-    if month_name < "01" or month_name > "12":
-        raise ValueError("--month 必須是 01~12")
+def resolve_date_context(date_str: str) -> tuple[Path, Path]:
+    parse_playbook_date(date_str)  # validate format + canonical day
     dataset_path = (
         Path.cwd()
         / "train_eps"
         / "output"
-        / str(year)
-        / month_name
+        / date_str
         / "dataset_evaluate.csv"
     ).resolve()
-    results_dir = (Path.cwd() / "models_eps" / str(year) / month_name).resolve()
+    results_dir = (Path.cwd() / "models_eps" / date_str).resolve()
     return dataset_path, results_dir
 
 
@@ -349,7 +356,7 @@ def calibrate_interval_scale_nonlinear(
 
 def main() -> None:
     args = parse_args()
-    dataset_path, results_dir = resolve_month_context(args.year, args.month)
+    dataset_path, results_dir = resolve_date_context(args.date)
     results_dir.mkdir(parents=True, exist_ok=True)
     config, _ = load_shared_config()
     common_cfg = config["common"]

@@ -1,13 +1,14 @@
-"""一次性回填 eps_predictions 資料表：掃 models_eps/**/predictions_results.csv，
+"""一次性回填 eps_predictions 資料表：掃 models_eps/<YYYY-MM-DD>/predictions_results.csv，
 推導 predict_eps 後 bulk-insert 進 DB。
 
-同一 (symbol, target_quarter) 跨月出現多個預測時，取 latest trained_at_month
+同一 (symbol, target_quarter) 跨日出現多個預測時，取 latest playbook_date
 （tie 時用 trained_at_date 細分）。
 
-舊版 CSV（無 anchor_eps / predict_eps / trained_at_date）會：
+舊版 CSV（無 anchor_eps / predict_eps / playbook_date / trained_at_date）會：
   - 用 anchor_quarter join quarterly_reports_xbrl.eps_q 反推 anchor_eps
   - predict_eps = anchor_eps + pred_lgb_delta
   - trained_at_date 從 model_pkl 檔名時間戳推回
+  - playbook_date 從路徑（models_eps/<YYYY-MM-DD>/）推回
 
 用法：
   venv/bin/python3 train_eps/step5_backfill_eps_predictions.py
@@ -50,7 +51,7 @@ def trained_at_date_from_pkl(pkl_name: str) -> str | None:
     if not m:
         return None
     ts = m.group(1)
-    return f"{ts[0:4]}/{ts[4:6]}/{ts[6:8]}"
+    return f"{ts[0:4]}-{ts[4:6]}-{ts[6:8]}"
 
 
 def load_anchor_eps_lookup(engine) -> pd.DataFrame:
@@ -66,7 +67,7 @@ def gather_csvs() -> list[Path]:
     base = ROOT_DIR / "models_eps"
     if not base.exists():
         return []
-    return sorted(base.glob("*/*/predictions_results.csv"))
+    return sorted(base.glob("*/predictions_results.csv"))
 
 
 def normalize_one_csv(path: Path, anchor_lookup: pd.DataFrame) -> pd.DataFrame:
@@ -99,20 +100,20 @@ def normalize_one_csv(path: Path, anchor_lookup: pd.DataFrame) -> pd.DataFrame:
             raise RuntimeError(f"{path}: missing model_pkl — cannot derive trained_at_date")
         df["trained_at_date"] = df["model_pkl"].map(trained_at_date_from_pkl)
 
-    if "trained_at_month" not in df.columns:
-        # 從路徑推回：models_eps/<year>/<month>/predictions_results.csv
-        df["trained_at_month"] = f"{path.parent.parent.name}/{path.parent.name}"
+    if "playbook_date" not in df.columns or df["playbook_date"].isna().all():
+        # 從路徑推回：models_eps/<YYYY-MM-DD>/predictions_results.csv
+        df["playbook_date"] = path.parent.name
 
     return df[
-        ["symbol", "target_quarter", "predict_eps", "trained_at_month", "trained_at_date"]
+        ["symbol", "target_quarter", "predict_eps", "playbook_date", "trained_at_date"]
     ]
 
 
 def dedup_latest(combined: pd.DataFrame) -> pd.DataFrame:
-    """同一 (symbol, target_quarter) 多筆時，取 latest trained_at_month；tie 用 trained_at_date。"""
+    """同一 (symbol, target_quarter) 多筆時，取 latest playbook_date；tie 用 trained_at_date。"""
     combined = combined.dropna(subset=["predict_eps"]).copy()
     combined["_sort_key"] = (
-        combined["trained_at_month"].fillna("") + "|" + combined["trained_at_date"].fillna("")
+        combined["playbook_date"].fillna("") + "|" + combined["trained_at_date"].fillna("")
     )
     combined = combined.sort_values("_sort_key").drop_duplicates(
         subset=["symbol", "target_quarter"], keep="last"

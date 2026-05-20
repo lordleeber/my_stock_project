@@ -1,50 +1,55 @@
 """
-批次執行 train_eps/evaluate.py，涵蓋指定月份範圍。
+批次執行 train_eps/step3_evaluate.py，涵蓋 train_eps/output/<YYYY-MM-DD>/ 下
+所有已存在的 playbook 日期。
 
 用法：
-  venv/bin/python3 train_eps/batch_evaluate.py
-  venv/bin/python3 train_eps/batch_evaluate.py --start-year 2023 --start-month 8
-  venv/bin/python3 train_eps/batch_evaluate.py --skip-existing
-  venv/bin/python3 train_eps/batch_evaluate.py --dry-run
+  venv/bin/python3 train_eps/step3_batch_evaluate.py
+  venv/bin/python3 train_eps/step3_batch_evaluate.py --start-date 2024-05-15
+  venv/bin/python3 train_eps/step3_batch_evaluate.py --skip-existing
+  venv/bin/python3 train_eps/step3_batch_evaluate.py --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
+import subprocess
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+_HERE = Path(__file__).resolve().parent
+ROOT_DIR = _HERE.parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from shared_config import parse_playbook_date  # noqa: E402
 
 
-def available_months() -> list[tuple[int, int]]:
-    """回傳所有存在 dataset_evaluate.csv 的 (year, month) 排序列表。"""
+def available_dates() -> list[str]:
+    """回傳所有存在 dataset_evaluate.csv 的 playbook 日期（YYYY-MM-DD）排序列表。"""
     output_dir = ROOT_DIR / "train_eps" / "output"
-    months = []
-    for csv in output_dir.glob("*/*/dataset_evaluate.csv"):
+    dates: list[str] = []
+    for csv in output_dir.glob("*/dataset_evaluate.csv"):
+        d = csv.parent.name
         try:
-            year = int(csv.parent.parent.name)
-            month = int(csv.parent.name)
-            months.append((year, month))
+            parse_playbook_date(d)
         except ValueError:
+            # 不是合法的 canonical playbook date，略過
             continue
-    return sorted(months)
+        dates.append(d)
+    return sorted(dates)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Batch run evaluate.py for a range of months."
+        description="Batch run step3_evaluate.py for a range of playbook dates."
     )
-    parser.add_argument("--start-year", type=int, default=None)
-    parser.add_argument("--start-month", type=int, default=None)
-    parser.add_argument("--end-year", type=int, default=None)
-    parser.add_argument("--end-month", type=int, default=None)
+    parser.add_argument("--start-date", type=str, default=None, help="YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="YYYY-MM-DD")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip months where evaluate_by_fold.json already exists",
+        help="Skip dates where evaluate_by_fold.json already exists",
     )
     return parser.parse_args()
 
@@ -52,57 +57,54 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    all_months = available_months()
-    if not all_months:
+    all_dates = available_dates()
+    if not all_dates:
         print("No dataset_evaluate.csv found under train_eps/output/")
         return
 
-    start = (args.start_year or all_months[0][0], args.start_month or all_months[0][1])
-    end = (args.end_year or all_months[-1][0], args.end_month or all_months[-1][1])
+    start = args.start_date or all_dates[0]
+    end = args.end_date or all_dates[-1]
+    if args.start_date:
+        parse_playbook_date(args.start_date)
+    if args.end_date:
+        parse_playbook_date(args.end_date)
 
-    months = [(y, m) for y, m in all_months if start <= (y, m) <= end]
-    print(
-        f"Batch evaluate: {start[0]}/{start[1]:02d} → {end[0]}/{end[1]:02d}  ({len(months)} months)"
-    )
+    dates = [d for d in all_dates if start <= d <= end]
+    print(f"Batch evaluate: {start} → {end}  ({len(dates)} dates)")
 
     python = sys.executable
     script = str(ROOT_DIR / "train_eps" / "step3_evaluate.py")
 
     ok = skipped = failed = 0
 
-    for year, month in months:
-        month_s = f"{month:02d}"
-        label = f"{year}/{month_s}"
-
+    for d in dates:
         if args.skip_existing:
-            out_path = (
-                ROOT_DIR / "models_eps" / str(year) / month_s / "evaluate_by_fold.json"
-            )
+            out_path = ROOT_DIR / "models_eps" / d / "evaluate_by_fold.json"
             if out_path.exists():
-                print(f"[skip]  {label}  (evaluate_by_fold.json exists)")
+                print(f"[skip]  {d}  (evaluate_by_fold.json exists)")
                 skipped += 1
                 continue
 
-        cmd = [python, script, "--year", str(year), "--month", month_s]
+        cmd = [python, script, "--date", d]
 
         if args.dry_run:
-            print(f"[dry]   {label}  {' '.join(cmd)}")
+            print(f"[dry]   {d}  {' '.join(cmd)}")
             continue
 
         print(f"\n{'=' * 60}")
-        print(f"[run]   {label}")
+        print(f"[run]   {d}")
         print(f"{'=' * 60}")
         result = subprocess.run(cmd, cwd=str(ROOT_DIR))
         if result.returncode == 0:
-            print(f"[ok]    {label}")
+            print(f"[ok]    {d}")
             ok += 1
         else:
-            print(f"[FAIL]  {label}  (returncode={result.returncode})")
+            print(f"[FAIL]  {d}  (returncode={result.returncode})")
             failed += 1
 
     if not args.dry_run:
         print(f"\n{'=' * 60}")
-        print(f"Done: ok={ok}  skipped={skipped}  failed={failed}  total={len(months)}")
+        print(f"Done: ok={ok}  skipped={skipped}  failed={failed}  total={len(dates)}")
 
 
 if __name__ == "__main__":

@@ -5,28 +5,34 @@
 - Responsibility: data preparation, training, evaluation, and prediction publish.
 
 ## Layout
-- Month data folders (datasets only):
-  - `train_eps/output/<year>/<month>`
-- Month model folders (model artifacts):
-  - `models_eps/<year>/<month>`
+- Per-playbook data folders (datasets only):
+  - `train_eps/output/<YYYY-MM-DD>/`
+- Per-playbook model folders (model artifacts):
+  - `models_eps/<YYYY-MM-DD>/`
 - Shared scripts:
-  - `train.py`
-  - `evaluate.py`
-  - `predict_and_publish.py`
+  - `step1_prepare_data.py`
+  - `step2_train.py`
+  - `step3_evaluate.py`
+  - `step4_predict_and_publish.py`
   - `run_pipeline.py`
-  - `batch_evaluate.py`
-  - `batch_predict_and_publish.py`
+  - `step3_batch_evaluate.py`
+  - `step4_batch_predict_and_publish.py`
+  - `step5_backfill_eps_predictions.py`
 
-## Per-Month Data Files
-- Required for `train/evaluate`:
+> `<YYYY-MM-DD>` 必須是 canonical playbook release date：5/8/11 月為 15 號，其餘月份為 10 號。由 `shared_config.playbook_release_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
+
+## Per-Playbook Data Files
+- Required for `step2/step3`:
   - `dataset_train.csv`
   - `dataset_evaluate.csv`
 
 ## Standard Flow
-1. Run `prepare_data.py --year <year> --month <month>`
-2. Run `train.py --year <year> --month <month>`
-3. Run `evaluate.py --year <year> --month <month>`
-4. Run `predict_and_publish.py --year <year> --month <month>`
+所有 step 一律吃 `--date YYYY-MM-DD`（無 `--year` / `--month`）：
+
+1. `step1_prepare_data.py --date 2025-10-10`
+2. `step2_train.py             --date 2025-10-10`
+3. `step3_evaluate.py          --date 2025-10-10`
+4. `step4_predict_and_publish.py --date 2025-10-10`
 
 ## One-Command Flow
 - Use `run_pipeline.py` to execute all 4 steps in order.
@@ -35,42 +41,48 @@
 ## Data Source
 - `prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
 
-## Monthly Training Calendar
-- 01/10 (announce previous Dec revenue): train previous year `Q4 eps delta`.
-- 02/10 (announce Jan revenue): train current year `Q1 eps delta`.
-- 03/10 (announce Feb revenue): train current year `Q1 eps delta`.
-- 04/10 (announce Mar revenue + previous annual report): train current year `Q1 eps delta`.
-- 05/15 (announce Apr revenue + Q1 report): train current year `Q2 eps delta`.
-- 06/10 (announce May revenue): train current year `Q2 eps delta`.
-- 07/10 (announce Jun revenue): train current year `Q2 eps delta`.
-- 08/15 (announce Jul revenue + Q2 report): train current year `Q3 eps delta`.
-- 09/10 (announce Aug revenue): train current year `Q3 eps delta`.
-- 10/10 (announce Sep revenue): train current year `Q3 eps delta`.
-- 11/15 (announce Oct revenue + Q3 report): train current year `Q4 eps delta`.
-- 12/10 (announce Nov revenue): train current year `Q4 eps delta`.
+## Playbook Release Date Calendar
+每月一次 canonical 訓練日（5/8/11 月為 15 號，其餘月份為 10 號），各對應一個目標季度：
+
+| `--date` | 公告事件 | 預測目標 |
+|---|---|---|
+| `YYYY-01-10` | 前一年 12 月營收 | 前一年 `Q4 eps delta` |
+| `YYYY-02-10` | 1 月營收 | 當年 `Q1 eps delta` |
+| `YYYY-03-10` | 2 月營收 | 當年 `Q1 eps delta` |
+| `YYYY-04-10` | 3 月營收 + 前一年年報 | 當年 `Q1 eps delta` |
+| `YYYY-05-15` | 4 月營收 + Q1 報 | 當年 `Q2 eps delta` |
+| `YYYY-06-10` | 5 月營收 | 當年 `Q2 eps delta` |
+| `YYYY-07-10` | 6 月營收 | 當年 `Q2 eps delta` |
+| `YYYY-08-15` | 7 月營收 + Q2 報 | 當年 `Q3 eps delta` |
+| `YYYY-09-10` | 8 月營收 | 當年 `Q3 eps delta` |
+| `YYYY-10-10` | 9 月營收 | 當年 `Q3 eps delta` |
+| `YYYY-11-15` | 10 月營收 + Q3 報 | 當年 `Q4 eps delta` |
+| `YYYY-12-10` | 11 月營收 | 當年 `Q4 eps delta` |
 
 ### Playbook Source of Truth
 
-「月份 → 目標季度」映射的單一 source of truth 在 `train_eps/shared_config.py`：
+`train_eps/shared_config.py` 唯一定義整個 playbook：
 
 - `MONTH_TO_TARGET_QNUM`：`{"01": 4, "02": 1, ..., "12": 4}` 純資料表
 - `target_quarter_for_playbook(execution_year, month) → (target_year, qnum)`：含 January 推前一年的邏輯
+- `playbook_release_date(year, month) → "YYYY-MM-DD"`：5/8/11 月 = 15 號；其他月份 = 10 號
+- `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook release date，off-cycle 直接報錯
 - `shift_quarter(year, qnum, delta)` / `format_quarter(year, qnum)`：跨年季度位移與字串格式化
 
-`step1_prepare_data.build_quarter_context` 與 `step4_predict_and_publish` 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM`**。不要在其他檔案複製月份映射表。
+所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_release_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies / strategies_benchmark 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
 
 ## Evaluate Output Contract
-- `evaluate.py` writes only:
-  - `models_eps/<year>/<month>/evaluate_by_fold.json`
+- `step3_evaluate.py` writes only:
+  - `models_eps/<YYYY-MM-DD>/evaluate_by_fold.json`
 - It does not write predictions or model files.
 
 ## Model Artifacts
-All artifacts written to `models_eps/<year>/<month>/`:
-- `{timestamp}_{train_mae:.3f}.pkl` — model file named by training timestamp and in-sample MAE (e.g. `20260301170934_0.705.pkl`). Multiple pkl files may exist per month; `predict_and_publish.py` automatically picks the one with the lowest MAE.
+All artifacts written to `models_eps/<YYYY-MM-DD>/`:
+- `{timestamp}_{train_mae:.3f}.pkl` — model file named by training timestamp and in-sample MAE (e.g. `20260301170934_0.705.pkl`). Multiple pkl files may exist per playbook date; `step4_predict_and_publish.py` automatically picks the one with the lowest MAE.
 - `train_metrics.json`
 - `feature_importance.json`
 - `evaluate_by_fold.json` — walk-forward evaluation metrics per fold
-- `predictions_results.csv` — EPS delta predictions for the latest year (consumed by `strategies/finalize_strategy.py`)
+- `predictions_results.csv` — EPS delta predictions for the latest year (consumed by `strategies/step2_finalize_strategy.py`)
 
 ### `predictions_results.csv` columns
 | Column | Meaning |
@@ -80,13 +92,13 @@ All artifacts written to `models_eps/<year>/<month>/`:
 | `anchor_eps` | Per-row anchor-quarter EPS (the row's `dataset_evaluate.csv["anchor_eps"]`) |
 | `pred_lgb_delta` | Model-predicted EPS delta |
 | `predict_eps` | Absolute predicted EPS = `anchor_eps + pred_lgb_delta`. This is what `calculator/calculate_valuation.py` reads from `eps_predictions`. |
-| `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from `year` + playbook `month`) |
+| `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from playbook `--date` via `target_quarter_for_playbook`) |
 | `anchor_quarter` | The quarter whose financials drove the features, e.g. `"2025Q1"` (the row's `anchor_eps`/`xbrl_*_q` came from here) |
-| `trained_at_month` | Path-level identifier, e.g. `"2026/05"` — when this prediction run happened |
-| `trained_at_date` | Day-precision training date (`YYYY/MM/DD`) parsed from `model_pkl` timestamp; used as `model_version` in the DB |
-| `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the month dir) |
+| `playbook_date` | This run's `--date`, e.g. `"2026-05-15"` (canonical playbook release date) |
+| `trained_at_date` | Day-precision training date (`YYYY-MM-DD`) parsed from `model_pkl` timestamp; the day the pkl was actually saved (may differ from `playbook_date` when re-running an old playbook); used as `model_version` in the DB |
+| `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the date dir) |
 
-Looking at the csv alone tells you everything: which quarter was predicted, which quarter's data fed the features, when training happened, and which model checkpoint produced the numbers. Legacy column `fold` (which was just `"year_" + str(year)`) was removed.
+Looking at the csv alone tells you everything: which quarter was predicted, which quarter's data fed the features, when the playbook ran, when training actually happened, and which model checkpoint produced the numbers. Legacy columns `fold` (= `"year_" + str(year)`) and `trained_at_month` (= `"YYYY/MM"`) were removed.
 
 ### DB Publish (step4 only)
 `step4_predict_and_publish.py` additionally upserts results into PostgreSQL table `eps_predictions` after writing the CSV:
@@ -96,15 +108,15 @@ Looking at the csv alone tells you everything: which quarter was predicted, whic
 | `target_quarter` | from this playbook run |
 | `symbol` | row symbol |
 | `predict_eps` | `anchor_eps + pred_lgb_delta` |
-| `model_version` | `trained_at_date` (e.g. `"2026/05/16"`) |
+| `model_version` | `trained_at_date` (e.g. `"2026-05-16"`) |
 | `created_at` | timestamp of the DB write |
 
-Write strategy: `DELETE WHERE target_quarter = '<this run>'` followed by bulk INSERT. Different months publishing the same target_quarter (e.g. May/Jun/Jul all → Q2) overwrite each other — the latest run wins.
+Write strategy: `DELETE WHERE target_quarter = '<this run>'` followed by bulk INSERT. Different playbook dates publishing the same target_quarter (e.g. 2026-05-15 / 2026-06-10 / 2026-07-10 all → 2026Q2) overwrite each other — the latest run wins.
 
 `calculator/calculate_valuation.py` reads this table to compute forward TTM / forward PE / target price / forward ROE. If the table is empty, all forward metrics collapse to backward equivalents (fail-silent fallback inside calculate_valuation.py — by design).
 
 ### Historical backfill
-`train_eps/step5_backfill_eps_predictions.py` is a one-off utility that walks every `models_eps/<year>/<month>/predictions_results.csv`, dedups on `(symbol, target_quarter)` by latest `trained_at_month`, and DROP+CREATE+INSERTs the `eps_predictions` table. For legacy CSVs missing `anchor_eps`/`predict_eps`/`trained_at_date`, it joins `quarterly_reports_xbrl.eps_q` on `anchor_quarter` to recover `anchor_eps` and derives the rest.
+`train_eps/step5_backfill_eps_predictions.py` is a one-off utility that walks every `models_eps/<YYYY-MM-DD>/predictions_results.csv`, dedups on `(symbol, target_quarter)` by latest `playbook_date` (tie-broken by `trained_at_date`), and DROP+CREATE+INSERTs the `eps_predictions` table. For legacy CSVs missing `anchor_eps`/`predict_eps`/`playbook_date`/`trained_at_date`, it joins `quarterly_reports_xbrl.eps_q` on `anchor_quarter` to recover `anchor_eps` and derives the rest (`playbook_date` from the path, `trained_at_date` from the pkl timestamp).
 
 ## ⚠️ `dataset_train.csv` vs `dataset_evaluate.csv` Naming
 
@@ -131,21 +143,21 @@ Both datasets carry an `anchor_quarter` string column (e.g., `"2025Q1"` for a Ma
 This column is **metadata only** — all three downstream scripts list `anchor_quarter` in their `EXCLUDE_COLUMNS` set so LGBM never sees it as a feature. Its job is to make `anchor_eps`/`xbrl_*_q` self-explanatory without needing to know the playbook month context.
 
 ## Model Naming Convention
-- `train.py` saves the model as `{timestamp}_{train_mae:.3f}.pkl` directly to `models_eps/<year>/<month>/`.
+- `step2_train.py` saves the model as `{timestamp}_{train_mae:.3f}.pkl` directly to `models_eps/<YYYY-MM-DD>/`.
 - The metric in the filename is the **in-sample train MAE** (`train_mae_lgb_pred_eps`), lower is better.
-- `predict_and_publish.py` and `batch_predict_and_publish.py` resolve the model by scanning for `\d{14}_\d+\.\d+\.pkl` and picking the file with the lowest MAE value.
+- `step4_predict_and_publish.py` and `step4_batch_predict_and_publish.py` resolve the model by scanning for `\d{14}_\d+\.\d+\.pkl` and picking the file with the lowest MAE value.
 - Do **not** create or expect a `model.pkl` file; that naming was a bug introduced during refactoring.
 
 ## Typical Commands
 ```bash
-# Step-by-step
-venv/bin/python3 train_eps/step1_prepare_data.py --year 2025 --month 11
-venv/bin/python3 train_eps/step2_train.py --year 2025 --month 11
-venv/bin/python3 train_eps/step3_evaluate.py --year 2025 --month 11
-venv/bin/python3 train_eps/step4_predict_and_publish.py --year 2025 --month 11
+# Step-by-step (canonical playbook date: 11 月為 15 號)
+venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-11-15
+venv/bin/python3 train_eps/step2_train.py               --date 2025-11-15
+venv/bin/python3 train_eps/step3_evaluate.py            --date 2025-11-15
+venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-11-15
 
 # One command pipeline
-venv/bin/python3 train_eps/run_pipeline.py --year 2025 --month 11
+venv/bin/python3 train_eps/run_pipeline.py --date 2025-11-15
 
 # Batch historical
 venv/bin/python3 train_eps/step3_batch_evaluate.py
@@ -153,19 +165,19 @@ venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 ```
 
 ## Health Metrics
-- After running `evaluate.py`, check `models_eps/<year>/<month>/evaluate_by_fold.json`:
+- After running `step3_evaluate.py`, check `models_eps/<YYYY-MM-DD>/evaluate_by_fold.json`:
   - Confirm fold count for `lgb_delta` is >= gate `min_folds`.
   - Confirm average `mae` of `lgb_delta` is better than `baseline_anchor_eps`.
   ```python
   import pandas as pd
-  df = pd.read_json("models_eps/2025/11/evaluate_by_fold.json")
+  df = pd.read_json("models_eps/2025-11-15/evaluate_by_fold.json")
   x = df[df["model"].isin(["lgb_delta", "baseline_anchor_eps"])]
   print(x.groupby("model")["mae"].mean())
   print("folds:", x["fold"].nunique())
   ```
 
 ## Prepare Notes
-- `train_eps/prepare_data.py` outputs only `dataset_train.csv` and `dataset_evaluate.csv` into `train_eps/output/<year>/<month>/`.
+- `train_eps/step1_prepare_data.py` outputs only `dataset_train.csv` and `dataset_evaluate.csv` into `train_eps/output/<YYYY-MM-DD>/`.
 - No `dataset_meta.csv` or `dataset_live.csv` output.
 - No `daily_quotes` / `pe_ratio` fetch path.
 - Default `--start-year` is `2020` (same as global fetch range).
@@ -182,5 +194,5 @@ venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 - `APPLY_TRADING_FILTER` flag has been removed (no trading-filter switch in current prepare pipeline).
 
 ## Rules
-- Keep feature definitions consistent across `prepare_data.py`, `train.py`, `evaluate.py`.
+- Keep feature definitions consistent across `step1_prepare_data.py`, `step2_train.py`, `step3_evaluate.py`.
 - Do not commit model binaries and generated csv/json unless explicitly requested.

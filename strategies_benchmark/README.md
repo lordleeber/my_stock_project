@@ -8,7 +8,7 @@ then trains a LightGBM Ranker to select the top candidates each month.
 ## Pipeline Overview
 
 ```
-train_eps/predict_and_publish.py   EPS 預測 → models_eps/<year>/<month>/predictions_results.csv
+train_eps/step4_predict_and_publish.py   EPS 預測 → models_eps/<YYYY-MM-DD>/predictions_results.csv
                                                                ↓
 prepare_data.py          硬篩選 → dataset_strategy.csv
       ↓
@@ -44,11 +44,11 @@ TTM EPS proxy = `ly_target_eps + pre_anchor_eps + anchor_eps`
 | `dataset_strategy.csv` | prepare_data → finalize_strategy | 完整特徵快照（基本面 + 籌碼面 + 技術面） |
 | `trade_candidates.csv` | finalize_strategy | 候選股清單（含 entry_date、pred_upside_pct） |
 
-### models_eps/<year>/<month>/
+### models_eps/<YYYY-MM-DD>/
 
 | 檔案 | 產生自 | 說明 |
 |------|--------|------|
-| `predictions_results.csv` | train_eps/predict_and_publish | EPS 預測結果（含 pred_lgb_delta），由 finalize_strategy 讀取 |
+| `predictions_results.csv` | train_eps/step4_predict_and_publish | EPS 預測結果（含 pred_lgb_delta），由 finalize_strategy 讀取 |
 
 ---
 
@@ -323,7 +323,7 @@ df_combined.groupby("symbol")["pe_calculated"].rank(pct=True) * 100
 ### 單月執行
 ```bash
 # 先確保 EPS 預測已產生（train_eps pipeline 完成後自動產出）
-venv/bin/python3 train_eps/step4_predict_and_publish.py --year 2025 --month 10
+venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-10-10
 
 venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
 venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10

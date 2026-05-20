@@ -18,7 +18,12 @@ if str(_HERE) not in sys.path:
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from shared_config import format_quarter, shift_quarter, target_quarter_for_playbook
+from shared_config import (
+    format_quarter,
+    parse_playbook_date,
+    shift_quarter,
+    target_quarter_for_playbook,
+)
 from common.db import get_db_url
 
 TARGET = "target_eps"
@@ -32,7 +37,7 @@ START_YEAR = 2020
 def normalize_month(month: str) -> str:
     m = str(month).zfill(2)
     if m < "01" or m > "12":
-        raise ValueError("--month 必須是 01~12")
+        raise ValueError(f"month must be 01~12, got: {month!r}")
     return m
 
 
@@ -163,8 +168,13 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Prepare dataset from PostgreSQL (XBRL only)"
     )
-    p.add_argument("--year", type=int, required=True)
-    p.add_argument("--month", type=str, required=True, help="01~12")
+    p.add_argument(
+        "--date",
+        type=str,
+        required=True,
+        help="Playbook release date YYYY-MM-DD (e.g. 2026-05-15). "
+        "Must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號。",
+    )
     return p.parse_args()
 
 
@@ -535,15 +545,13 @@ def add_month_features(df: pd.DataFrame, month: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    month = normalize_month(args.month)
-    end_year = int(args.year)
+    end_year, month = parse_playbook_date(args.date)
+    month = normalize_month(month)
     model_features = model_features_for_month(month)
 
-    month_dir = (
-        Path(__file__).resolve().parent / "output" / str(end_year) / month
-    ).resolve()
-    output_train = month_dir / "dataset_train.csv"
-    output_evaluate = month_dir / "dataset_evaluate.csv"
+    date_dir = (Path(__file__).resolve().parent / "output" / args.date).resolve()
+    output_train = date_dir / "dataset_train.csv"
+    output_evaluate = date_dir / "dataset_evaluate.csv"
 
     # anchor_quarter 是 metadata 欄位（非 feature），各下游 step2/3/4 的
     # EXCLUDE_COLUMNS 已加入忽略，純粹標記該列 anchor_eps 對應的實際季度。

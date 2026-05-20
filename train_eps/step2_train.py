@@ -2,14 +2,20 @@ import argparse
 import json
 import pickle
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
-from shared_config import load_shared_config
 from sklearn.metrics import mean_absolute_error
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from shared_config import load_shared_config, parse_playbook_date  # noqa: E402
 
 TARGET = "target_eps"
 TARGET_DELTA = "delta_eps"
@@ -54,27 +60,28 @@ def feature_cht_name(feature: str) -> str | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train shared LightGBM model for models_eps/<year>/<month>"
+        description="Train shared LightGBM model for models_eps/<YYYY-MM-DD>"
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="01~12")
+    parser.add_argument(
+        "--date",
+        type=str,
+        required=True,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+    )
     return parser.parse_args()
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path, Path]:
-    month_str = str(args.month).zfill(2)
-    if month_str < "01" or month_str > "12":
-        raise ValueError("--month 必須是 01~12")
-    month_dir = (
-        Path.cwd() / "train_eps" / "output" / str(args.year) / month_str
-    ).resolve()
-    models_dir = (Path.cwd() / "models_eps" / str(args.year) / month_str).resolve()
+    parse_playbook_date(args.date)  # validate format + canonical day
+    date_str = args.date
+    date_dir = (Path.cwd() / "train_eps" / "output" / date_str).resolve()
+    models_dir = (Path.cwd() / "models_eps" / date_str).resolve()
 
-    dataset = month_dir / "dataset_train.csv"
+    dataset = date_dir / "dataset_train.csv"
     metrics_out = models_dir / "train_metrics.json"
     importance_out = models_dir / "feature_importance.json"
 
-    return month_dir, dataset, models_dir, metrics_out, importance_out
+    return date_dir, dataset, models_dir, metrics_out, importance_out
 
 
 def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
@@ -89,7 +96,7 @@ def winsorize_inplace(df: pd.DataFrame, cols: list[str], q: float) -> None:
 
 def main() -> None:
     args = parse_args()
-    month_dir, dataset_path, models_dir, metrics_out, importance_out = resolve_paths(
+    date_dir, dataset_path, models_dir, metrics_out, importance_out = resolve_paths(
         args
     )
     config, config_path = load_shared_config()
@@ -158,7 +165,7 @@ def main() -> None:
     y_true = df[TARGET].to_numpy(dtype=float)
 
     metrics = {
-        "month_dir": str(month_dir),
+        "date_dir": str(date_dir),
         "config_path": str(config_path),
         "n_rows": int(len(df)),
         "main_metric": "mae",
@@ -201,7 +208,7 @@ def main() -> None:
         log_path = BASE_DIR.parent / "error_train_eps.log"
         ts = datetime.now().isoformat(timespec="seconds")
         msg = (
-            f"[{ts}] SANITY FAIL | {month_dir}\n"
+            f"[{ts}] SANITY FAIL | {date_dir}\n"
             f"  train_mae_lgb_pred_eps ({lgb_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
             f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
         )
@@ -209,7 +216,7 @@ def main() -> None:
             f.write(msg)
         print(f"[WARNING] sanity check failed — 詳見 {log_path}")
 
-    print(f"train completed: {month_dir.name}")
+    print(f"train completed: {date_dir.name}")
     print(json.dumps(metrics, indent=2))
 
 

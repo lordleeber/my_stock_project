@@ -45,8 +45,12 @@ MONTH=04           # 目標月（兩位數）
 PREV_MONTH=03      # 上一個月（重訓 selection model 用）
 PREV_YEAR=2026     # 若目標月是 01，PREV_YEAR=YYYY-1、PREV_MONTH=12
 
+# train_eps 的 --date 必須是 canonical playbook release date：5/8/11 月為 15 號，其餘為 10 號
+# 由 train_eps/shared_config.py::playbook_release_date(year, month) 唯一定義
+DATE=$(venv/bin/python3 -c "from train_eps.shared_config import playbook_release_date; print(playbook_release_date($YEAR, '$MONTH'))")
+
 # ① EPS 模型（含 prepare → train → evaluate → predict）
-venv/bin/python3 train_eps/run_pipeline.py --year $YEAR --month $MONTH
+venv/bin/python3 train_eps/run_pipeline.py --date $DATE
 
 # ② strategies 本月候選（cutoff = M/10 或 M/15）
 venv/bin/python3 strategies/step1_prepare_data.py      --year $YEAR --month $MONTH
@@ -106,7 +110,7 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 
 | 階段 | 產出 |
 |---|---|
-| ① train_eps | `models_eps/<YEAR>/<MONTH>/predictions_results.csv`（每檔 EPS delta 預測） |
+| ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook release date） |
 | ② strategies step1+2 | `strategies/output/<YEAR>/<MONTH>/dataset_strategy.csv`、`trade_candidates.csv` |
 | ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 M-1 的 fwd_return） |
 | ④ step4 | `models_selection/<PREV_YEAR>/<PREV_MONTH>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
@@ -199,8 +203,8 @@ monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 
 ### Q1: 為什麼 step5 顯示 `model used: 2026/02` 而不是最新？
 A: 你跳過了 step3 + step4。`models_selection/2026/03/` 可能只有 `candidates_scored.csv` 沒有 `selection_model.pkl`。step5 的 walk-forward 規則是「最新有 pkl 的 train_through < 目標月」。
 
-### Q2: train_eps 同一個月份重跑兩次，model MAE 一樣是不是 bug？
-A: 不是。`prepare_data` 用 PIT cutoff（M/10 或 M/15）截斷資料，固定 `seed=42`，相同輸入 → 相同模型。MAE 數字相同就代表 PIT 行為正確。
+### Q2: train_eps 同一個 `--date` 重跑兩次，model MAE 一樣是不是 bug？
+A: 不是。`step1_prepare_data` 用 PIT cutoff（`--date` 那天）截斷資料，固定 `seed=42`，相同輸入 → 相同模型。MAE 數字相同就代表 PIT 行為正確。
 
 ### Q3: 如果某天忘了跑，事後補做有差嗎？
 A: 沒差。所有指令都是 idempotent + PIT，過幾天再補跑會得到完全相同的 EPS 模型；selection model 也會是相同模型，不受跑的時點影響。**唯一例外是 step5**：若中間有更新過 selection model，補跑出的名單可能與當天不同。

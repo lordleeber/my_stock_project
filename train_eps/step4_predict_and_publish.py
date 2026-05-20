@@ -16,7 +16,7 @@ if str(_HERE) not in sys.path:
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from shared_config import target_quarter_for_playbook
+from shared_config import parse_playbook_date, target_quarter_for_playbook
 from common.db import get_db_url
 
 EXCLUDE_COLUMNS = {
@@ -36,18 +36,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Predict EPS delta, write predictions_results.csv, and publish to eps_predictions DB table"
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="e.g. 10")
+    parser.add_argument(
+        "--date",
+        type=str,
+        required=True,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+    )
     return parser.parse_args()
 
 
 def trained_at_date_from_pkl(pkl_name: str) -> str:
-    """從 {YYYYMMDDHHMMSS}_{mae}.pkl 抽出 'YYYY/MM/DD'。"""
+    """從 {YYYYMMDDHHMMSS}_{mae}.pkl 抽出 'YYYY-MM-DD'（pkl 實際產生那天，與 playbook_date 區分）。"""
     m = PKL_TIMESTAMP_RE.match(pkl_name)
     if not m:
         raise ValueError(f"Cannot parse trained_at_date from pkl name: {pkl_name}")
     ts = m.group(1)
-    return f"{ts[0:4]}/{ts[4:6]}/{ts[6:8]}"
+    return f"{ts[0:4]}-{ts[4:6]}-{ts[6:8]}"
 
 
 def ensure_eps_predictions_table(engine) -> None:
@@ -93,15 +97,15 @@ def publish_to_db(engine, df_pub: pd.DataFrame, target_quarter: str) -> int:
 
 def main() -> None:
     args = parse_args()
-    year = int(args.year)
-    month = str(args.month).zfill(2)
+    playbook_date = args.date
+    year, month = parse_playbook_date(playbook_date)
     target_year, qnum = target_quarter_for_playbook(year, month)
     target_quarter = f"{target_year}Q{qnum}"
 
     input_path = (
-        ROOT_DIR / "train_eps" / "output" / f"{year:04d}" / month / "dataset_evaluate.csv"
+        ROOT_DIR / "train_eps" / "output" / playbook_date / "dataset_evaluate.csv"
     ).resolve()
-    models_dir = (ROOT_DIR / "models_eps" / f"{year:04d}" / month).resolve()
+    models_dir = (ROOT_DIR / "models_eps" / playbook_date).resolve()
     output_path = (models_dir / "predictions_results.csv").resolve()
 
     if not input_path.exists():
@@ -115,7 +119,7 @@ def main() -> None:
     if not candidates:
         raise FileNotFoundError(
             f"No timestamped model pkl found in {models_dir}\n"
-            f"Run: venv/bin/python3 train_eps/step2_train.py --year {year} --month {month}"
+            f"Run: venv/bin/python3 train_eps/step2_train.py --date {playbook_date}"
         )
     model_path = min(candidates, key=lambda x: x[0])[1]
     trained_at_date = trained_at_date_from_pkl(model_path.name)
@@ -125,7 +129,7 @@ def main() -> None:
 
     df = pd.read_csv(input_path).replace([np.inf, -np.inf], np.nan)
 
-    # 嚴格檢查：dataset 必須包含本次 playbook 要 predict 的 year（= args.year）。
+    # 嚴格檢查：dataset 必須包含本次 playbook 要 predict 的 year（從 --date 解析出來）。
     # 過去版本若資料缺 year，會 silent fallback 到 max(year)，導致 May 2026 用 2025
     # 的 row 預測 2025Q2 而非 2026Q2，整份 predictions 錯一年。
     y = pd.to_numeric(df["year"], errors="coerce")
@@ -136,7 +140,7 @@ def main() -> None:
         raise RuntimeError(
             f"dataset_evaluate.csv does not contain rows for year={target_year} "
             f"(found years: {sorted(valid_years)}). Re-run step1 prepare_data "
-            f"for {year}/{month} — most likely upstream XBRL data for anchor "
+            f"for {playbook_date} — most likely upstream XBRL data for anchor "
             f"quarter is incomplete."
         )
     df = df[y == target_year].copy()
@@ -167,7 +171,7 @@ def main() -> None:
     out["target_quarter"] = target_quarter
     if "anchor_quarter" in df.columns:
         out["anchor_quarter"] = df["anchor_quarter"].values
-    out["trained_at_month"] = f"{year:04d}/{month}"
+    out["playbook_date"] = playbook_date
     out["trained_at_date"] = trained_at_date
     out["model_pkl"] = model_path.name
 
@@ -183,8 +187,8 @@ def main() -> None:
     n_written = publish_to_db(engine, pub, target_quarter)
 
     print("predict_and_publish completed")
-    print(f"- year: {year}")
-    print(f"- month: {month}")
+    print(f"- playbook_date: {playbook_date}")
+    print(f"- target_quarter: {target_quarter}")
     print(f"- model: {model_path}")
     print(f"- trained_at_date: {trained_at_date}")
     print(f"- input: {input_path}")

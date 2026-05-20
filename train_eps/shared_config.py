@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,42 @@ def target_quarter_for_playbook(execution_year: int, month: str) -> tuple[int, i
     qnum = MONTH_TO_TARGET_QNUM[m]
     target_year = execution_year - 1 if m == "01" else execution_year
     return target_year, qnum
+
+
+def playbook_release_date(year: int, month: str | int) -> str:
+    """回傳 playbook 月份對應的 canonical 公告日（YYYY-MM-DD）。
+
+    5/8/11 月 = 季報公告月（15 號）；其他月份 = 月營收公告（10 號）。
+    與 strategies/step1_prepare_data.py::model_release_date 同公式。
+    """
+    m = str(month).zfill(2)
+    if m not in MONTH_TO_TARGET_QNUM:
+        raise ValueError(f"Unsupported month: {m}")
+    day = 15 if m in {"05", "08", "11"} else 10
+    return f"{int(year):04d}-{m}-{day:02d}"
+
+
+def parse_playbook_date(date_str: str) -> tuple[int, str]:
+    """解析 --date YYYY-MM-DD 並回傳 (year, month_str)。
+
+    嚴格驗證該日期必須是該 (year, month) 的 canonical playbook release date；
+    若使用者誤傳非正規日（例如 2026-03-15），會直接報錯並提示正確值，
+    避免 silent off-cycle 跑壞 walk-forward 對齊。
+    """
+    try:
+        dt = datetime.date.fromisoformat(date_str)
+    except ValueError as e:
+        raise ValueError(f"--date 必須是 YYYY-MM-DD 格式，收到：{date_str!r}") from e
+    year = dt.year
+    month = f"{dt.month:02d}"
+    expected = playbook_release_date(year, month)
+    if date_str != expected:
+        raise ValueError(
+            f"--date {date_str} 不是 {year}/{month} 的 canonical playbook release date。"
+            f" 預期：{expected}。"
+            f" 公式：5/8/11 月為 15 號，其餘月份為 10 號。"
+        )
+    return year, month
 
 
 def shift_quarter(year: int, qnum: int, delta: int) -> tuple[int, int]:

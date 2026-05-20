@@ -4,7 +4,7 @@ and fetching technical features.
 
 Reads:
   strategies/output/<year>/<month>/dataset_strategy.csv
-  models_eps/<year>/<month>/predictions_results.csv
+  models_eps/<YYYY-MM-DD>/predictions_results.csv
 
 Writes:
   strategies/output/<year>/<month>/dataset_strategy.csv  (updated in-place with new columns)
@@ -30,6 +30,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from common.db import get_db_url
+from train_eps.shared_config import playbook_release_date
 
 from strategies.feature_engineering import (
     fetch_technical_features,
@@ -104,8 +105,9 @@ def main() -> None:
 
     out_dir = (ROOT_DIR / "strategies" / "output" / f"{year:04d}" / month).resolve()
     strategy_path = out_dir / "dataset_strategy.csv"
+    playbook_date = playbook_release_date(year, month)
     pred_path = (
-        ROOT_DIR / "models_eps" / f"{year:04d}" / month / "predictions_results.csv"
+        ROOT_DIR / "models_eps" / playbook_date / "predictions_results.csv"
     ).resolve()
     candidates_path = out_dir / "trade_candidates.csv"
 

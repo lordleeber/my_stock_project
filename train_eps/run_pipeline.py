@@ -6,21 +6,24 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from shared_config import parse_playbook_date  # noqa: E402
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run full train_eps pipeline for one year/month"
+        description="Run full train_eps pipeline for one playbook release date"
     )
-    parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--month", type=str, required=True, help="01~12")
+    parser.add_argument(
+        "--date",
+        type=str,
+        required=True,
+        help="Playbook release date YYYY-MM-DD (must be canonical: 5/8/11 月為 15 號，其餘月份為 10 號).",
+    )
     return parser.parse_args()
-
-
-def normalize_month(month: str) -> str:
-    m = str(month).zfill(2)
-    if m < "01" or m > "12":
-        raise ValueError("--month must be in 01~12")
-    return m
 
 
 def append_error_log(
@@ -81,7 +84,7 @@ def resolve_python_executable(repo_root: Path) -> str:
 
 def main() -> None:
     args = parse_args()
-    month = normalize_month(args.month)
+    parse_playbook_date(args.date)  # validate format + canonical day
 
     repo_root = Path(__file__).resolve().parent.parent
     prepare_script = repo_root / "train_eps" / "step1_prepare_data.py"
@@ -93,51 +96,26 @@ def main() -> None:
     log_path = repo_root / "error_train_eps.log"
     py = resolve_python_executable(repo_root)
 
-    prepare_cmd = [
-        py,
-        str(prepare_script),
-        "--year",
-        str(args.year),
-        "--month",
-        month,
-    ]
-
     steps = [
         (
             "prepare_data",
-            prepare_cmd,
+            [py, str(prepare_script), "--date", args.date],
         ),
         (
             "train",
-            [
-                py,
-                str(repo_root / "train_eps" / "step2_train.py"),
-                "--year",
-                str(args.year),
-                "--month",
-                month,
-            ],
+            [py, str(repo_root / "train_eps" / "step2_train.py"), "--date", args.date],
         ),
         (
             "evaluate",
-            [
-                py,
-                str(repo_root / "train_eps" / "step3_evaluate.py"),
-                "--year",
-                str(args.year),
-                "--month",
-                month,
-            ],
+            [py, str(repo_root / "train_eps" / "step3_evaluate.py"), "--date", args.date],
         ),
         (
             "predict_and_publish",
             [
                 py,
                 str(repo_root / "train_eps" / "step4_predict_and_publish.py"),
-                "--year",
-                str(args.year),
-                "--month",
-                month,
+                "--date",
+                args.date,
             ],
         ),
     ]

@@ -39,13 +39,14 @@ docker compose run --rm calculator
 
 ### ML Pipeline (Python, no Docker)
 ```bash
-# EPS prediction model (train_eps/)
-venv/bin/python3 train_eps/step1_prepare_data.py          --year 2025 --month 10
-venv/bin/python3 train_eps/step2_train.py                 --year 2025 --month 10
-venv/bin/python3 train_eps/step3_evaluate.py              --year 2025 --month 10
-venv/bin/python3 train_eps/step4_predict_and_publish.py   --year 2025 --month 10
+# EPS prediction model (train_eps/) — --date 必須是 canonical playbook release date
+# (5/8/11 月為 15 號，其餘月份為 10 號；見 train_eps/shared_config.py::playbook_release_date)
+venv/bin/python3 train_eps/step1_prepare_data.py          --date 2025-10-10
+venv/bin/python3 train_eps/step2_train.py                 --date 2025-10-10
+venv/bin/python3 train_eps/step3_evaluate.py              --date 2025-10-10
+venv/bin/python3 train_eps/step4_predict_and_publish.py   --date 2025-10-10
 # Or one-command:
-venv/bin/python3 train_eps/run_pipeline.py                --year 2025 --month 10
+venv/bin/python3 train_eps/run_pipeline.py                --date 2025-10-10
 
 # Batch evaluate / predict (historical)
 venv/bin/python3 train_eps/step3_batch_evaluate.py
@@ -102,7 +103,7 @@ TWSE/TPEx/MOPS/TDCC
     → processor/ (standardized CSVs in data/processed/)
     → importer/ (PostgreSQL stock_db)
     → calculator/ (technical_indicators, shareholding_concentration, valuation_daily)
-    → train_eps/ (models_eps/<year>/<month>/)
+    → train_eps/ (models_eps/<YYYY-MM-DD>/)
     → strategies/ (strategies/output/<year>/<month>/dataset_strategy.csv)
     → models_selection/ (selection_model.pkl per month)
     → backtester/ (backtester/output/rolling/)
@@ -112,7 +113,7 @@ TWSE/TPEx/MOPS/TDCC
 
 - Selection models stored at `models_selection/<cutoff_year>/<cutoff_month>/selection_model.pkl`
 - Backtest month M uses the latest model with cutoff < M (no look-ahead bias)
-- EPS models stored at `models_eps/<year>/<month>/`
+- EPS models stored at `models_eps/<YYYY-MM-DD>/`（即 playbook release date）
 
 ### Database
 

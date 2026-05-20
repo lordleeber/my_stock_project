@@ -128,7 +128,7 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
 
 - Technical: MA5/10/20/60/240, RSI6/12, KD, MACD, BB position, volume ratios
 - Revenue momentum: YoY 1m / 3m avg / cum / mom / accel / positive streak
-- EPS prediction merge: `pred_lgb_delta`, `predict_target_eps`, `predict_target_price`, `pred_upside_pct` from `models_eps/<Y>/<M>/predictions_results.csv`
+- EPS prediction merge: `pred_lgb_delta`, `predict_target_eps`, `predict_target_price`, `pred_upside_pct` from `models_eps/<YYYY-MM-DD>/predictions_results.csv`，路徑透過 `train_eps.shared_config.playbook_release_date(year, month)` 由 (year, month) 推導
 - `entry_date` = the cutoff_date's next trading day
 
 `trade_candidates.csv` filters `dataset_strategy.csv` by `pred_upside_pct > 0` and sorts by upside.
