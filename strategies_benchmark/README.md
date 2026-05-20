@@ -323,7 +323,7 @@ df_combined.groupby("symbol")["pe_calculated"].rank(pct=True) * 100
 ### 單月執行
 ```bash
 # 先確保 EPS 預測已產生（train_eps pipeline 完成後自動產出）
-venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-10-10
+venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-10-11
 
 venv/bin/python3 strategies/step1_prepare_data.py      --year 2025 --month 10
 venv/bin/python3 strategies/step2_finalize_strategy.py --year 2025 --month 10

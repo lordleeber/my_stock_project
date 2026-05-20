@@ -19,7 +19,9 @@
   - `step4_batch_predict_and_publish.py`
   - `step5_backfill_eps_predictions.py`
 
-> `<YYYY-MM-DD>` 必須是 canonical playbook release date：5/8/11 月為 15 號，其餘月份為 10 號。由 `shared_config.playbook_release_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
+> `<YYYY-MM-DD>` 必須是 canonical playbook release date：**訓練實際執行日 = cutoff（公告日）+ 1 天**。5/8/11 月為 16 號，其餘月份為 11 號。由 `shared_config.playbook_release_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
+>
+> 跟 strategies 的 `cutoff_date` 概念差一天：strategies 用公告日做 PIT 資料截斷，train_eps 用公告日 +1 作為實際跑訓練那天的目錄名。
 
 ## Per-Playbook Data Files
 - Required for `step2/step3`:
@@ -27,12 +29,12 @@
   - `dataset_evaluate.csv`
 
 ## Standard Flow
-所有 step 一律吃 `--date YYYY-MM-DD`（無 `--year` / `--month`）：
+所有 step 一律吃 `--date YYYY-MM-DD`（無 `--year` / `--month`），且 `--date` 必須是 cutoff +1：
 
-1. `step1_prepare_data.py --date 2025-10-10`
-2. `step2_train.py             --date 2025-10-10`
-3. `step3_evaluate.py          --date 2025-10-10`
-4. `step4_predict_and_publish.py --date 2025-10-10`
+1. `step1_prepare_data.py --date 2025-10-11`
+2. `step2_train.py             --date 2025-10-11`
+3. `step3_evaluate.py          --date 2025-10-11`
+4. `step4_predict_and_publish.py --date 2025-10-11`
 
 ## One-Command Flow
 - Use `run_pipeline.py` to execute all 4 steps in order.
@@ -42,22 +44,22 @@
 - `prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
 
 ## Playbook Release Date Calendar
-每月一次 canonical 訓練日（5/8/11 月為 15 號，其餘月份為 10 號），各對應一個目標季度：
+每月一次 canonical 訓練執行日（= cutoff 公告日 +1）。5/8/11 月為 16 號（季報公告日 +1），其餘月份為 11 號（月營收公告日 +1）：
 
-| `--date` | 公告事件 | 預測目標 |
-|---|---|---|
-| `YYYY-01-10` | 前一年 12 月營收 | 前一年 `Q4 eps delta` |
-| `YYYY-02-10` | 1 月營收 | 當年 `Q1 eps delta` |
-| `YYYY-03-10` | 2 月營收 | 當年 `Q1 eps delta` |
-| `YYYY-04-10` | 3 月營收 + 前一年年報 | 當年 `Q1 eps delta` |
-| `YYYY-05-15` | 4 月營收 + Q1 報 | 當年 `Q2 eps delta` |
-| `YYYY-06-10` | 5 月營收 | 當年 `Q2 eps delta` |
-| `YYYY-07-10` | 6 月營收 | 當年 `Q2 eps delta` |
-| `YYYY-08-15` | 7 月營收 + Q2 報 | 當年 `Q3 eps delta` |
-| `YYYY-09-10` | 8 月營收 | 當年 `Q3 eps delta` |
-| `YYYY-10-10` | 9 月營收 | 當年 `Q3 eps delta` |
-| `YYYY-11-15` | 10 月營收 + Q3 報 | 當年 `Q4 eps delta` |
-| `YYYY-12-10` | 11 月營收 | 當年 `Q4 eps delta` |
+| `--date` (執行日) | cutoff (公告日) | 公告事件 | 預測目標 |
+|---|---|---|---|
+| `YYYY-01-11` | `YYYY-01-10` | 前一年 12 月營收 | 前一年 `Q4 eps delta` |
+| `YYYY-02-11` | `YYYY-02-10` | 1 月營收 | 當年 `Q1 eps delta` |
+| `YYYY-03-11` | `YYYY-03-10` | 2 月營收 | 當年 `Q1 eps delta` |
+| `YYYY-04-11` | `YYYY-04-10` | 3 月營收 + 前一年年報 | 當年 `Q1 eps delta` |
+| `YYYY-05-16` | `YYYY-05-15` | 4 月營收 + Q1 報 | 當年 `Q2 eps delta` |
+| `YYYY-06-11` | `YYYY-06-10` | 5 月營收 | 當年 `Q2 eps delta` |
+| `YYYY-07-11` | `YYYY-07-10` | 6 月營收 | 當年 `Q2 eps delta` |
+| `YYYY-08-16` | `YYYY-08-15` | 7 月營收 + Q2 報 | 當年 `Q3 eps delta` |
+| `YYYY-09-11` | `YYYY-09-10` | 8 月營收 | 當年 `Q3 eps delta` |
+| `YYYY-10-11` | `YYYY-10-10` | 9 月營收 | 當年 `Q3 eps delta` |
+| `YYYY-11-16` | `YYYY-11-15` | 10 月營收 + Q3 報 | 當年 `Q4 eps delta` |
+| `YYYY-12-11` | `YYYY-12-10` | 11 月營收 | 當年 `Q4 eps delta` |
 
 ### Playbook Source of Truth
 
@@ -65,8 +67,8 @@
 
 - `MONTH_TO_TARGET_QNUM`：`{"01": 4, "02": 1, ..., "12": 4}` 純資料表
 - `target_quarter_for_playbook(execution_year, month) → (target_year, qnum)`：含 January 推前一年的邏輯
-- `playbook_release_date(year, month) → "YYYY-MM-DD"`：5/8/11 月 = 15 號；其他月份 = 10 號
-- `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook release date，off-cycle 直接報錯
+- `playbook_release_date(year, month) → "YYYY-MM-DD"`：cutoff +1（5/8/11 月 = 16 號；其他月份 = 11 號）
+- `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook release date，off-cycle 直接報錯（例如誤傳 cutoff 公告日如 2026-05-15 會被拒絕，提示應為 2026-05-16）
 - `shift_quarter(year, qnum, delta)` / `format_quarter(year, qnum)`：跨年季度位移與字串格式化
 
 所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_release_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies / strategies_benchmark 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
@@ -150,14 +152,14 @@ This column is **metadata only** — all three downstream scripts list `anchor_q
 
 ## Typical Commands
 ```bash
-# Step-by-step (canonical playbook date: 11 月為 15 號)
-venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-11-15
-venv/bin/python3 train_eps/step2_train.py               --date 2025-11-15
-venv/bin/python3 train_eps/step3_evaluate.py            --date 2025-11-15
-venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-11-15
+# Step-by-step (canonical playbook date: 11 月 cutoff 是 11/15，執行日 = 11/16)
+venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-11-16
+venv/bin/python3 train_eps/step2_train.py               --date 2025-11-16
+venv/bin/python3 train_eps/step3_evaluate.py            --date 2025-11-16
+venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-11-16
 
 # One command pipeline
-venv/bin/python3 train_eps/run_pipeline.py --date 2025-11-15
+venv/bin/python3 train_eps/run_pipeline.py --date 2025-11-16
 
 # Batch historical
 venv/bin/python3 train_eps/step3_batch_evaluate.py
@@ -170,7 +172,7 @@ venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
   - Confirm average `mae` of `lgb_delta` is better than `baseline_anchor_eps`.
   ```python
   import pandas as pd
-  df = pd.read_json("models_eps/2025-11-15/evaluate_by_fold.json")
+  df = pd.read_json("models_eps/2025-11-16/evaluate_by_fold.json")
   x = df[df["model"].isin(["lgb_delta", "baseline_anchor_eps"])]
   print(x.groupby("model")["mae"].mean())
   print("folds:", x["fold"].nunique())

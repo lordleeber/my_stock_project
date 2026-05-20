@@ -26,12 +26,13 @@ common/           共用 schema、工具模組
 
 ```bash
 # 資料準備 → 訓練 → 評估 → 發布（或一鍵執行）
-# --date 必須是 canonical playbook release date：5/8/11 月為 15 號，其餘月份為 10 號
-venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-10-10
-venv/bin/python3 train_eps/step2_train.py               --date 2025-10-10
-venv/bin/python3 train_eps/step3_evaluate.py            --date 2025-10-10
-venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-10-10
-venv/bin/python3 train_eps/run_pipeline.py              --date 2025-10-10
+# --date 必須是 canonical playbook release date = cutoff（公告日）+1
+# 5/8/11 月為 16 號，其餘月份為 11 號
+venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-10-11
+venv/bin/python3 train_eps/step2_train.py               --date 2025-10-11
+venv/bin/python3 train_eps/step3_evaluate.py            --date 2025-10-11
+venv/bin/python3 train_eps/step4_predict_and_publish.py --date 2025-10-11
+venv/bin/python3 train_eps/run_pipeline.py              --date 2025-10-11
 ```
 
 ### 2. 策略特徵工程（strategies/）

@@ -45,15 +45,22 @@ def target_quarter_for_playbook(execution_year: int, month: str) -> tuple[int, i
 
 
 def playbook_release_date(year: int, month: str | int) -> str:
-    """回傳 playbook 月份對應的 canonical 公告日（YYYY-MM-DD）。
+    """回傳 playbook 月份對應的 canonical 訓練執行日（YYYY-MM-DD）。
 
-    5/8/11 月 = 季報公告月（15 號）；其他月份 = 月營收公告（10 號）。
-    與 strategies/step1_prepare_data.py::model_release_date 同公式。
+    語意：cutoff（公告日）的「**隔天**」——也就是 train_eps 實際跑訓練那天。
+    cutoff 在 strategies/step1_prepare_data.py::model_release_date 定義（5/8/11 月 = 15 號，其他 = 10 號）；
+    這裡再 +1：5/8/11 月 = 16 號，其他月份 = 11 號。
+
+    這跟 strategies 的 `cutoff_date` 概念不同：
+      - strategies cutoff_date = PIT 資料截斷日（公告日）
+      - train_eps playbook_release_date = 訓練實際執行日（公告日 +1）
+
+    要從 cutoff_date 推 playbook_release_date，記得 +1；反之 -1。
     """
     m = str(month).zfill(2)
     if m not in MONTH_TO_TARGET_QNUM:
         raise ValueError(f"Unsupported month: {m}")
-    day = 15 if m in {"05", "08", "11"} else 10
+    day = 16 if m in {"05", "08", "11"} else 11
     return f"{int(year):04d}-{m}-{day:02d}"
 
 
@@ -61,8 +68,8 @@ def parse_playbook_date(date_str: str) -> tuple[int, str]:
     """解析 --date YYYY-MM-DD 並回傳 (year, month_str)。
 
     嚴格驗證該日期必須是該 (year, month) 的 canonical playbook release date；
-    若使用者誤傳非正規日（例如 2026-03-15），會直接報錯並提示正確值，
-    避免 silent off-cycle 跑壞 walk-forward 對齊。
+    若使用者誤傳非正規日（例如 2026-05-15 — 那是 cutoff_date，不是 playbook 執行日），
+    會直接報錯並提示正確值，避免 silent off-cycle 跑壞 walk-forward 對齊。
     """
     try:
         dt = datetime.date.fromisoformat(date_str)
@@ -74,8 +81,8 @@ def parse_playbook_date(date_str: str) -> tuple[int, str]:
     if date_str != expected:
         raise ValueError(
             f"--date {date_str} 不是 {year}/{month} 的 canonical playbook release date。"
-            f" 預期：{expected}。"
-            f" 公式：5/8/11 月為 15 號，其餘月份為 10 號。"
+            f" 預期：{expected}（公告日的隔天）。"
+            f" 公式：5/8/11 月為 16 號，其餘月份為 11 號。"
         )
     return year, month
 

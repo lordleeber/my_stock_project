@@ -45,7 +45,8 @@ MONTH=04           # 目標月（兩位數）
 PREV_MONTH=03      # 上一個月（重訓 selection model 用）
 PREV_YEAR=2026     # 若目標月是 01，PREV_YEAR=YYYY-1、PREV_MONTH=12
 
-# train_eps 的 --date 必須是 canonical playbook release date：5/8/11 月為 15 號，其餘為 10 號
+# train_eps 的 --date 必須是 canonical playbook release date = cutoff（公告日）+1：
+# 5/8/11 月為 16 號，其餘月份為 11 號
 # 由 train_eps/shared_config.py::playbook_release_date(year, month) 唯一定義
 DATE=$(venv/bin/python3 -c "from train_eps.shared_config import playbook_release_date; print(playbook_release_date($YEAR, '$MONTH'))")
 

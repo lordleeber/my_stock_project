@@ -27,8 +27,8 @@ from shared_config import (  # noqa: E402
     playbook_release_date,
 )
 
-DEFAULT_START = "2021-08-10"
-DEFAULT_END = "2025-10-10"
+DEFAULT_START = "2021-08-16"
+DEFAULT_END = "2025-10-11"
 
 PKL_PATTERN = re.compile(r"^\d{14}_\d+\.\d+\.pkl$")
 
