@@ -91,7 +91,9 @@ venv/bin/python3 backtester/summarize_range.py
 | `strategies/` | Feature engineering, EPS prediction integration, LGBMRanker selection model |
 | `backtester/` | Rolling walk-forward portfolio backtester |
 | `common/` | Shared schemas (`schemas.py`), DB helper (`db.py`), constants (`CATEGORY_MAP`) |
-| `schedules/` | Orchestration shell scripts + macOS launchd plists |
+| `schedules/` | Orchestration shell scripts (cross-platform business logic) |
+| `schedules_ubuntu/` | Ubuntu systemd `.timer` + `.service` units（生產環境） |
+| `schedules_macos/` | macOS launchd `.plist` 備份（deprecated，僅作 archive） |
 | `scripts/` | GCS upload scripts |
 | `tools/` | One-off data maintenance utilities |
 

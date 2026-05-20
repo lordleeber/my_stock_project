@@ -4,9 +4,9 @@
 
 實際的執行邏輯（scraper / processor / importer / calculator / XBRL）完全沿用 `schedules/` 目錄下的同名 `.sh`，這裡只負責「**什麼時間呼叫哪支 .sh**」。
 
-## 為何不直接重用 `schedules/` 的 plist？
+## 為何不直接重用 `schedules_macos/` 的 plist？
 
-`schedules/*.plist` 是 macOS launchd 專用格式；Linux 用的是 systemd unit 檔。兩種排程系統概念類似但語法不同，所以 plist 必須轉成 `.service` + `.timer`。
+`schedules_macos/*.plist` 是 macOS launchd 專用格式；Linux 用的是 systemd unit 檔。兩種排程系統概念類似但語法不同，所以 plist 必須轉成 `.service` + `.timer`。
 
 ## 目錄內容
 
@@ -18,7 +18,7 @@
 | `stock-monthly-update.timer` | 每天 22:45（script 內判斷 1~15 才實際跑） | `schedules/monthly_update.sh` |
 | `stock-xbrl-scrape-daily.timer` | 每天 23:50（script 內判斷公告期才實際跑） | `schedules/xbrl_scrape_daily.sh` |
 
-> **差異說明**：macOS 因 launchd `StartCalendarInterval` 不支援多時間點，所以拆成 `daily-retry-1.plist` (02:00) 與 `daily-retry-2.plist` (04:00) 兩個 plist。systemd 的 `OnCalendar=` 可以多行，所以 `stock-daily-retry.timer` 一支單元同時涵蓋兩個時間。
+> **差異說明**：macOS 因 launchd `StartCalendarInterval` 不支援多時間點，所以拆成 `schedules_macos/com.poyilee.stock-daily-retry-1.plist` (02:00) 與 `-2.plist` (04:00) 兩個 plist。systemd 的 `OnCalendar=` 可以多行，所以 `stock-daily-retry.timer` 一支單元同時涵蓋兩個時間。
 
 ## 前置需求
 
@@ -85,13 +85,13 @@ systemctl --user disable --now stock-daily-update.timer
 ## Logging
 
 - **systemd journal**：每次 service 執行的 stdout/stderr 都寫到 journal，用 `journalctl --user -u <unit>` 查。
-- **script 內部 log**：`schedules/*.sh` 本身會在專案 `logs/` 裡寫 `daily_update_<date>_<ts>.log` 等檔案，這部分與 macOS 共用，完全不變。
+- **script 內部 log**：`schedules/*.sh` 本身會在專案 `logs/` 裡寫 `daily_update_<date>_<ts>.log` 等檔案，由 cross-platform shell 邏輯控制，與 OS 無關。
 
 不需要 macOS 那種 `/tmp/launchd_*_stdout.log` workaround（那是 macOS 26.4 launchd 不能寫 `~/Documents/` 的特殊問題）。
 
-## 與 macOS schedules/ 的差異速查
+## 與 macOS schedules_macos/ 的差異速查
 
-| 面向 | macOS (`schedules/`) | Ubuntu (`schedules_ubuntu/`) |
+| 面向 | macOS (`schedules_macos/`) | Ubuntu (`schedules_ubuntu/`) |
 |---|---|---|
 | 排程引擎 | launchd | systemd --user |
 | Unit 格式 | `.plist` (XML) | `.service` + `.timer` |

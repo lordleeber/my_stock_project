@@ -1,6 +1,13 @@
 # Schedules Guide
 
-這份文件描述 `schedules/` 目錄目前的自動化腳本與排程方式。
+這個目錄裝 **cross-platform** 的 shell script（業務邏輯層），不綁特定 OS。
+
+實際的時間排程（誰在什麼時候呼叫這些 .sh）由各 OS 的目錄負責：
+
+- **Ubuntu**：`schedules_ubuntu/`（systemd `.timer` + `.service`） — 生產環境
+- **macOS**：`schedules_macos/`（launchd `.plist`） — 已 deprecated，僅作 archive
+
+shell script 內容與 OS 無關，兩邊都能直接 invoke。
 
 ## Available Scripts
 
@@ -31,9 +38,9 @@
     - raw 缺 → 一般重跑（scraper 會補抓）
     - raw OK 但 DB 缺 → 設 `FORCE_REPROCESS=1` + `FORCE_REIMPORT=1` 讓 processor 重建 stale `processed/all.csv`、importer 覆寫 DB
     - log 沒成功 → 一般重跑全部
-  - 由 launchd 在 02:00 及 04:00 各觸發一次
+  - Ubuntu 端在 02:00 及 04:00 各觸發一次（`schedules_ubuntu/stock-daily-retry.timer` 有兩個 `OnCalendar`）
 
-- `schedules/xbrl_scrape_daily.sh` _（launchd 排程）_
+- `schedules/xbrl_scrape_daily.sh`
   - 流程：只跑 `scraper-quarterly python3 scraper/quarterly/fetch_xbrl.py`
   - 用途：公告期內每天累積 raw XBRL；**不入庫**
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
@@ -69,75 +76,6 @@
   - `xbrl_scrape_<YYYYQX>_<EXEC_TS>.log` / `xbrl_scrape_skip_<EXEC_TS>.log`（每日 scrape；視窗外時 skip）
   - `xbrl_process_import_<YYYYQX>_<EXEC_TS>.log`（手動 process+import）
 
-## launchd Only (macOS)
-
-目前專案採用 `launchd`，不使用 `cron`。
-
-### Plist 檔案位置
-
-`schedules/` 目錄內的 `.plist` 是 **git 備份**，實際 launchd 讀取的是安裝到 `~/Library/LaunchAgents/` 的版本。兩者是獨立的檔案，不會自動同步。
-
-| 備份（repo） | 安裝位置 |
-|---|---|
-| `schedules/com.poyilee.stock-daily-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist` |
-| `schedules/com.poyilee.stock-daily-retry-1.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-retry-1.plist` |
-| `schedules/com.poyilee.stock-daily-retry-2.plist` | `~/Library/LaunchAgents/com.poyilee.stock-daily-retry-2.plist` |
-| `schedules/com.poyilee.stock-weekly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-weekly-update.plist` |
-| `schedules/com.poyilee.stock-monthly-update.plist` | `~/Library/LaunchAgents/com.poyilee.stock-monthly-update.plist` |
-| `schedules/com.poyilee.stock-xbrl-scrape-daily.plist` | `~/Library/LaunchAgents/com.poyilee.stock-xbrl-scrape-daily.plist` |
-
-### 初次安裝 / 重裝後還原
-
-```bash
-# 將 repo 內的 plist 複製到 LaunchAgents
-cp schedules/com.poyilee.stock-daily-update.plist ~/Library/LaunchAgents/
-cp schedules/com.poyilee.stock-weekly-update.plist ~/Library/LaunchAgents/
-cp schedules/com.poyilee.stock-monthly-update.plist ~/Library/LaunchAgents/
-cp schedules/com.poyilee.stock-xbrl-scrape-daily.plist ~/Library/LaunchAgents/
-
-# 載入全部
-for label in daily-update weekly-update monthly-update xbrl-scrape-daily; do
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-${label}.plist
-done
-```
-
-### 修改 plist 後同步
-
-```bash
-# 1. 修改 schedules/ 內的 plist
-# 2. 複製到 LaunchAgents
-cp schedules/com.poyilee.stock-daily-update.plist ~/Library/LaunchAgents/
-
-# 3. 重新載入
-launchctl bootout gui/$(id -u)/com.poyilee.stock-daily-update
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist
-```
-
-### Current LaunchAgents
-
-| Label | Script | 時間 |
-|---|---|---|
-| `com.poyilee.stock-daily-update` | `schedules/daily_update.sh` | 每天 23:30 |
-| `com.poyilee.stock-daily-retry-1` | `schedules/daily_retry.sh` | 每天 02:00 |
-| `com.poyilee.stock-daily-retry-2` | `schedules/daily_retry.sh` | 每天 04:00 |
-| `com.poyilee.stock-weekly-update` | `schedules/weekly_update.sh` | 每週日 10:20 |
-| `com.poyilee.stock-monthly-update` | `schedules/monthly_update.sh` | 每天 22:45 |
-| `com.poyilee.stock-xbrl-scrape-daily` | `schedules/xbrl_scrape_daily.sh` | 每天 23:50 |
-
-### macOS 26.4 注意事項
-
-macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath` 寫入 `~/Documents/` 路徑，會導致任務 exit 78 (EX_CONFIG) 且完全不執行。
-
-所有 plist 的 stdout/stderr 已改為 `/tmp/`：
-- `/tmp/launchd_daily_stdout.log` / `stderr`
-- `/tmp/launchd_daily_retry1_stdout.log` / `stderr`
-- `/tmp/launchd_daily_retry2_stdout.log` / `stderr`
-- `/tmp/launchd_weekly_stdout.log` / `stderr`
-- `/tmp/launchd_monthly_stdout.log` / `stderr`
-- `/tmp/launchd_xbrl_scrape_daily_stdout.log` / `stderr`
-
-真正的執行 log 仍由各 script 自己寫入 `logs/` 目錄（`logs/*_update_*.log`）。
-
 ## Common Commands
 
 ```bash
@@ -158,22 +96,14 @@ macOS 26.4 (Tahoe) 起，launchd 無法將 `StandardOutPath`/`StandardErrorPath`
 ./schedules/xbrl_process_import.sh 2025Q4    # 直接指定季度
 ```
 
-```bash
-# 查看 launchd 任務狀態
-launchctl print gui/$(id -u)/com.poyilee.stock-daily-update
+## OS-Specific 排程操作
 
-# 重新載入某個 launch agent
-launchctl bootout gui/$(id -u)/com.poyilee.stock-daily-update
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.poyilee.stock-daily-update.plist
-
-# 手動立即觸發
-launchctl kickstart -p gui/$(id -u)/com.poyilee.stock-daily-update
-```
+- Ubuntu (systemd)：`schedules_ubuntu/CLAUDE.md`
+- macOS (launchd)：`schedules_macos/CLAUDE.md`（已 deprecated）
 
 ## Notes
 
-- 執行腳本前請確認 Docker Desktop 已啟動。
+- 執行腳本前請確認 Docker Desktop / Docker Engine 已啟動。
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
 - 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
 - Daily/Weekly/Monthly 寫入對應 `logs/*_update_*.log`；XBRL daily scrape 寫入 `logs/xbrl_scrape_*.log`，手動 process+import 寫入 `logs/xbrl_process_import_*.log`。
-- plist 修改後務必同步 `schedules/` 備份並 commit。
