@@ -84,35 +84,45 @@ def resolve_entry_date(engine, earliest: date) -> str:
     return str(row[0])
 
 
-def compute_pred_upside(df: pd.DataFrame, month: str) -> pd.DataFrame:
-    """合併 EPS 預測 delta → 計算 predict_target_price → pred_upside_pct。"""
+def compute_eps_growth_components(df: pd.DataFrame, month: str) -> pd.DataFrame:
+    """拆解預期 TTM EPS 成長為 base effect + ML 預測兩個獨立特徵。
+
+    舊版 `pred_upside_pct` 公式代數展開為（close 完全消掉，本質不是 price upside）：
+        pred_upside_pct = 100 × (anchor_eps − ttm_rolloff_eps) / ttm_eps     # base
+                       + 100 × pred_lgb_delta / ttm_eps                       # ml
+
+    其中 ttm_rolloff_eps 是這次 playbook 的 TTM 視窗即將踢出去的那季 EPS
+    （月份對應與 step1 compute_ttm_eps_by_month 一致；rolloff 為負 = 去年同
+    季虧損，會機械式拉高 base 項）。
+
+    舊欄位把兩項加在一起 → 排序由 magnitude 大很多的 base 主導，selection
+    model 看似倚重 ML 訊號實際上學的是 base effect。tools 中 audit 結論：
+    58 cohort Spearman(pred_upside_pct, ml_component) median ≈ 0.034，
+    base 解釋 ~85% 的排序變異。拆成兩欄位後 selection model 看到的訊號可
+    歸因（哪部分是會計、哪部分是 EPS model）。
+    """
     df = df.copy()
+
+    if month in {"05", "06", "07"}:
+        rolloff = pd.to_numeric(df.get("ly_q2_eps"), errors="coerce")
+    elif month in {"08", "09", "10"}:
+        rolloff = pd.to_numeric(df.get("ly_q3_eps"), errors="coerce")
+    elif month in {"11", "12", "01"}:
+        rolloff = pd.to_numeric(df.get("ly_q4_eps"), errors="coerce")
+    else:
+        rolloff = pd.to_numeric(df.get("ly_q1_eps"), errors="coerce")
 
     anchor = pd.to_numeric(df.get("anchor_eps"), errors="coerce")
     pred_delta = pd.to_numeric(df.get("pred_lgb_delta"), errors="coerce")
-    df["predict_target_eps"] = anchor + pred_delta
-
     ttm = pd.to_numeric(df.get("ttm_eps"), errors="coerce")
 
-    # TTM 滾動：把目前 TTM 視窗中最舊的那一季踢出、塞入 predict_target_eps。
-    # 月份對應的 rolloff 季別需與 step1 compute_ttm_eps_by_month 的 playbook 一致。
-    if month in {"05", "06", "07"}:
-        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q2_eps"), errors="coerce")
-    elif month in {"08", "09", "10"}:
-        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q3_eps"), errors="coerce")
-    elif month in {"11", "12", "01"}:
-        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q4_eps"), errors="coerce")
-    else:
-        ttm_rolloff_eps = pd.to_numeric(df.get("ly_q1_eps"), errors="coerce")
-
-    df["ttm_eps_forward"] = ttm - ttm_rolloff_eps + df["predict_target_eps"]
-    df["predict_target_price"] = (
-        pd.to_numeric(df.get("pe_current"), errors="coerce") * df["ttm_eps_forward"]
-    )
-    close = pd.to_numeric(df.get("close"), errors="coerce")
-    df["pred_upside_pct"] = (
-        (df["predict_target_price"] - close) / close * 100.0
-    ).where(close > 0)
+    df["base_eps_growth_pct"] = 100.0 * (anchor - rolloff) / ttm
+    df["ml_eps_delta_pct"] = 100.0 * pred_delta / ttm
+    # base / ml 兩特徵 Spearman ≈ −0.5（高 base 通常伴隨負 ml；ML model 對極端
+    # anchor 預測 mean reversion）。LightGBM 學「兩特徵的和」靠 tree splits
+    # 拼湊需要更多分裂、效率較差，所以額外提供加總後的 smoothed 訊號，讓
+    # selection model 自己決定 weight。
+    df["eps_growth_total_pct"] = df["base_eps_growth_pct"] + df["ml_eps_delta_pct"]
     return df
 
 
@@ -152,10 +162,9 @@ def main() -> None:
     RECOMPUTED_COLS = (
         [
             "pred_lgb_delta",
-            "predict_target_eps",
-            "ttm_eps_forward",
-            "predict_target_price",
-            "pred_upside_pct",
+            "base_eps_growth_pct",
+            "ml_eps_delta_pct",
+            "eps_growth_total_pct",
             "entry_date",
         ]
         + TECHNICAL_FEATURE_COLS
@@ -170,7 +179,7 @@ def main() -> None:
     )
 
     df = ds.merge(pred_merge, on="symbol", how="left")
-    df = compute_pred_upside(df, month)
+    df = compute_eps_growth_components(df, month)
 
     # 解析進場日。
     engine = create_engine(get_db_url())
@@ -224,28 +233,30 @@ def main() -> None:
     df.to_csv(strategy_path, index=False, encoding="utf-8-sig")
     print(f"dataset_strategy.csv updated: {strategy_path}  ({len(df)} rows)")
 
-    # 寫入 trade_candidates.csv。
+    # 寫入 trade_candidates.csv。排序語意保留為「下季 TTM EPS 預期成長 > 0」
+    # （= base + ml > 0，與舊版 pred_upside_pct > 0 數學等價），但同時暴露
+    # base / ml 兩欄方便歸因。
     tc_cols = [
         "symbol",
-        "predict_target_price",
         "close",
         "entry_date",
-        "pred_upside_pct",
+        "base_eps_growth_pct",
+        "ml_eps_delta_pct",
+        "eps_growth_total_pct",
     ]
     tc = df[[c for c in tc_cols if c in df.columns]].copy()
     valid = (
-        tc["predict_target_price"].notna()
+        tc["base_eps_growth_pct"].notna()
+        & tc["ml_eps_delta_pct"].notna()
         & tc["close"].notna()
         & tc["close"].gt(0)
-        & tc["pred_upside_pct"].gt(0)
+        & tc["eps_growth_total_pct"].gt(0)
     )
-    tc = (
-        tc[valid].sort_values("pred_upside_pct", ascending=False).reset_index(drop=True)
-    )
+    tc = tc[valid].sort_values("eps_growth_total_pct", ascending=False).reset_index(drop=True)
     tc.to_csv(candidates_path, index=False, encoding="utf-8-sig")
 
     print(f"trade_candidates.csv written: {candidates_path}  ({len(tc)} rows)")
-    print("\nTop 10 by pred_upside_pct:")
+    print("\nTop 10 by eps_growth_total_pct (= base + ml):")
     print(tc.head(10).to_string(index=False))
 
     print("\nfinalize_strategy done")

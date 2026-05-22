@@ -72,7 +72,9 @@ END = _resolve_end()
 
 FEATURE_COLS = (
     [
-        "pred_upside_pct",
+        "base_eps_growth_pct",
+        "ml_eps_delta_pct",
+        "eps_growth_total_pct",
         "pe_current",
         "ttm_eps",
         "volume_lots",
@@ -99,8 +101,6 @@ FEATURE_COLS = (
         "anchor_debt_ratio",
         "pb_ratio",
         "current_ratio",
-        "eps_acc_yoy",
-        "revenue_acc_yoy",
     ]
     + TECHNICAL_FEATURE_COLS
     + REVENUE_FEATURE_COLS

@@ -135,10 +135,16 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
 
 - Technical: MA5/10/20/60/240, RSI6/12, KD, MACD, BB position, volume ratios
 - Revenue momentum: YoY 1m / 3m avg / cum / mom / accel / positive streak
-- EPS prediction merge: `pred_lgb_delta`, `predict_target_eps`, `predict_target_price`, `pred_upside_pct` from `models_eps/<D>/predictions_results.csv`，路徑直接用 strategies CLI 的 `--date D`（與 train_eps `--date` 同一 canonical playbook date）
+- EPS prediction merge: `pred_lgb_delta` from `models_eps/<D>/predictions_results.csv`，路徑直接用 strategies CLI 的 `--date D`（與 train_eps `--date` 同一 canonical playbook date）
+- 預期 TTM EPS 成長三特徵（取代舊版單一 `pred_upside_pct`）：
+  - `base_eps_growth_pct = 100 × (anchor_eps − ttm_rolloff_eps) / ttm_eps`（純會計，含去年同季 base effect）
+  - `ml_eps_delta_pct    = 100 × pred_lgb_delta / ttm_eps`（純 train_eps model 訊號）
+  - `eps_growth_total_pct = base + ml`（= 舊版 `pred_upside_pct`，smoothed 主訊號）
+  - 其中 `ttm_rolloff_eps` 是該 playbook 月份 TTM 視窗即將踢出去的那季 EPS，月份對應與 step1 `compute_ttm_eps_by_month` 一致：02-04→`ly_q1_eps`、05-07→`ly_q2_eps`、08-10→`ly_q3_eps`、11-01→`ly_q4_eps`
+  - 為什麼留三欄？base 跟 ml 算術上 Spearman ≈ −0.5（高 base 通常伴隨負 ml — ML 對極端 anchor 預測 mean reversion），LightGBM 學「兩特徵相加」靠 tree splits 拼湊效率較差。實測 (audit) 拿掉 `total` 只留 base+ml 時 backtest 4 年 PnL 從 +3.82M 掉到 +3.24M (−15%)；補回 `total` 後 PnL 恢復 +3.82M、win_rate 微升、median return 從 5.10% 升到 5.69%，且 `ml_eps_delta_pct` 仍以獨立 feature 進入 top 7 = ML 訊號真的有額外可歸因價值。
 - `entry_date` = the cutoff_date's next trading day
 
-`trade_candidates.csv` filters `dataset_strategy.csv` by `pred_upside_pct > 0` and sorts by upside.
+`trade_candidates.csv` filters `dataset_strategy.csv` by `eps_growth_total_pct > 0`（與舊版 `pred_upside_pct > 0` 數學等價）和 sorts by `eps_growth_total_pct` desc；同時暴露 `base_eps_growth_pct` / `ml_eps_delta_pct` 兩欄方便歸因 picks 是 base-driven 還是 ML-driven。
 
 ### `--entry-date` Override (step2)
 

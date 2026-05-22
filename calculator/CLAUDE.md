@@ -59,7 +59,7 @@ Every daily valuation record uses the latest report *available at that specific 
 - **`roe_official`**: `ttm_eps_official / nav_per_share * 100`.
 
 > Forward / 預測相關欄位（`ttm_eps_forward`、`pe_forward`、`predict_target_price`、`upside_pct`、`roe_forward`、`pe_percentile_forward`）已從 `valuation_daily` 移除。
-> ML pipeline 的 forward 計算在 `strategies/step2_finalize_strategy.py` 用 `predictions_results.csv` 自己算（`predict_target_price` / `pred_upside_pct`），不經 DB。
+> ML pipeline 的 EPS 成長拆解（`base_eps_growth_pct` / `ml_eps_delta_pct`）在 `strategies/step2_finalize_strategy.py` 用 `predictions_results.csv` 自己算，不經 DB。
 
 ---
 

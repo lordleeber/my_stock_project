@@ -21,7 +21,8 @@
 
 比對對象:
   1. dataset_strategy.csv     — rows / cols added/removed / 共有 numeric 欄位的平均絕對差
-  2. trade_candidates.csv     — 候選股集合 Jaccard、共有 symbol 的 pred_upside_pct Spearman
+  2. trade_candidates.csv     — 候選股集合 Jaccard、共有 symbol 的
+                                base_eps_growth_pct / ml_eps_delta_pct Spearman
   3. selection_model latest.json (train_through) — train/eval IC、feature count
   4. candidates_scored.csv    — top-N overlap、ml_rank Spearman、scored_by_train_through 是否一致
 
@@ -251,15 +252,19 @@ def compute_trade_candidates_metrics(
     new_sym = set(new_tc["symbol"].astype(str).str.strip())
     out["tc_symbol_jaccard"] = jaccard(old_sym, new_sym)
 
-    if "pred_upside_pct" in old_tc.columns and "pred_upside_pct" in new_tc.columns:
-        old_x = old_tc[["symbol", "pred_upside_pct"]].copy()
-        new_x = new_tc[["symbol", "pred_upside_pct"]].copy()
-        old_x["symbol"] = old_x["symbol"].astype(str).str.strip()
-        new_x["symbol"] = new_x["symbol"].astype(str).str.strip()
-        merged = old_x.merge(new_x, on="symbol", how="inner", suffixes=("_old", "_new"))
-        out["tc_upside_rank_corr"] = spearman_safe(
-            merged["pred_upside_pct_old"], merged["pred_upside_pct_new"]
-        )
+    for col, out_key in [
+        ("base_eps_growth_pct", "tc_base_growth_rank_corr"),
+        ("ml_eps_delta_pct", "tc_ml_delta_rank_corr"),
+    ]:
+        if col in old_tc.columns and col in new_tc.columns:
+            old_x = old_tc[["symbol", col]].copy()
+            new_x = new_tc[["symbol", col]].copy()
+            old_x["symbol"] = old_x["symbol"].astype(str).str.strip()
+            new_x["symbol"] = new_x["symbol"].astype(str).str.strip()
+            merged = old_x.merge(
+                new_x, on="symbol", how="inner", suffixes=("_old", "_new")
+            )
+            out[out_key] = spearman_safe(merged[f"{col}_old"], merged[f"{col}_new"])
     return out
 
 
