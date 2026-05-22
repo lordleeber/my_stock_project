@@ -139,10 +139,20 @@ def build_rank_labels(df: pd.DataFrame, n_bins: int = 5) -> pd.Series:
     labels = list(range(n_bins))
 
     def _bin(g: pd.Series) -> pd.Series:
+        # 不再 silent fallback 到 binary median split — 訓練目標降階會讓 lambdarank
+        # NDCG signal 在某些月份悄悄塌掉。qcut 失敗代表上游資料品質問題（該月
+        # fwd_return 過於集中、unique 值不足以切 n_bins 個 quantile），請查
+        # feature_return_analysis.csv 那個月份的分布是否異常。
         try:
             return pd.qcut(g, n_bins, labels=labels, duplicates="drop").astype(int)
-        except Exception:
-            return (g >= g.median()).astype(int)
+        except Exception as exc:
+            ym = g.name if isinstance(g.name, tuple) else (g.name, "?")
+            raise RuntimeError(
+                f"qcut failed for cohort year={ym[0]} month={ym[1]} "
+                f"(n_rows={len(g)}, n_unique={g.nunique()}, n_bins={n_bins}): {exc}. "
+                f"檢查 feature_return_analysis.csv 該月份 fwd_return_pct 分布；"
+                f"若該月 cohort 樣本太少或報酬過於集中，請考慮排除或調整 --n-bins。"
+            ) from exc
 
     return df.groupby(["year", "month"], group_keys=False)[LABEL_COL].apply(_bin)
 
