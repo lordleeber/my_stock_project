@@ -19,10 +19,25 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from strategies.shared_config import latest_playbook_date  # noqa: E402
 from strategies.step1_batch_prepare_data import all_playbook_dates  # noqa: E402
 
 DEFAULT_START = "2021-08-16"
-DEFAULT_END = "2025-10-11"
+
+
+def _resolve_default_end() -> str:
+    """END 預設 = 今天當下最新的 canonical playbook day（latest_playbook_date()）。
+
+    step2 對每個 date 必須有 dataset_strategy.csv（step1）+ predictions_results.csv（train_eps）；
+    缺檔會直接 raise 而非 skip — 寧可早 fail 也不要靜默漏訓。
+
+    例：今天 2026-05-22 → 2026-05-16（5/15 公告日 +1，已過）。
+        若 2026-05-16 的 EPS predictions 還沒跑，這支會立刻報錯指出缺哪個檔。
+    """
+    return latest_playbook_date()
+
+
+DEFAULT_END = _resolve_default_end()
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,16 +79,19 @@ def main() -> None:
                 skipped += 1
                 continue
 
-        # 前置檔案缺失則跳過。
+        # 前置檔案必須齊全；缺就早 fail。
         strategy_path = ROOT_DIR / "strategies" / "output" / d / "dataset_strategy.csv"
         pred_path = ROOT_DIR / "models_eps" / d / "predictions_results.csv"
-        if not strategy_path.exists() or not pred_path.exists():
-            if args.verbose:
-                print(
-                    f"[skip]  {d}  (missing dataset_strategy.csv or predictions_results.csv)"
-                )
-            skipped += 1
-            continue
+        missing: list[str] = []
+        if not strategy_path.exists():
+            missing.append(str(strategy_path))
+        if not pred_path.exists():
+            missing.append(str(pred_path))
+        if missing:
+            raise SystemExit(
+                f"[FAIL] {d}: missing required input file(s):\n  "
+                + "\n  ".join(missing)
+            )
 
         cmd = [python, script, "--date", d]
 

@@ -2,12 +2,10 @@ import argparse
 import pickle
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine, text
 
 _HERE = Path(__file__).resolve().parent
 ROOT_DIR = _HERE.parent
@@ -21,7 +19,6 @@ from shared_config import (
     parse_playbook_date,
     target_quarter_for_playbook,
 )
-from common.db import get_db_url
 
 EXCLUDE_COLUMNS = {
     "symbol",
@@ -38,7 +35,7 @@ PKL_TIMESTAMP_RE = re.compile(r"^(\d{14})_(\d+\.\d+)\.pkl$")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Predict EPS delta, write predictions_results.csv, and publish to eps_predictions DB table"
+        description="Predict EPS delta and write predictions_results.csv"
     )
     parser.add_argument(
         "--date",
@@ -57,47 +54,6 @@ def trained_at_date_from_pkl(pkl_name: str) -> str:
         raise ValueError(f"Cannot parse trained_at_date from pkl name: {pkl_name}")
     ts = m.group(1)
     return f"{ts[0:4]}-{ts[4:6]}-{ts[6:8]}"
-
-
-def ensure_eps_predictions_table(engine) -> None:
-    ddl = """
-    CREATE TABLE IF NOT EXISTS eps_predictions (
-        target_quarter TEXT NOT NULL,
-        symbol TEXT NOT NULL,
-        predict_eps DOUBLE PRECISION,
-        model_version TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (target_quarter, symbol)
-    )
-    """
-    with engine.begin() as conn:
-        conn.execute(text(ddl))
-
-
-def publish_to_db(engine, df_pub: pd.DataFrame, target_quarter: str) -> int:
-    """把單一 target_quarter 的預測寫入 eps_predictions：
-    DELETE WHERE target_quarter=... → INSERT。
-    回傳實際寫入的列數。"""
-    ensure_eps_predictions_table(engine)
-    payload = df_pub[
-        ["target_quarter", "symbol", "predict_eps", "model_version", "created_at"]
-    ].copy()
-    payload = payload[payload["predict_eps"].notna()]
-    with engine.begin() as conn:
-        conn.execute(
-            text("DELETE FROM eps_predictions WHERE target_quarter = :tq"),
-            {"tq": target_quarter},
-        )
-        if not payload.empty:
-            payload.to_sql(
-                "eps_predictions",
-                conn,
-                if_exists="append",
-                index=False,
-                method="multi",
-                chunksize=1000,
-            )
-    return len(payload)
 
 
 def main() -> None:
@@ -186,14 +142,6 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False)
 
-    # ---- DB publish ----
-    pub = out[["symbol", "predict_eps"]].copy()
-    pub["target_quarter"] = target_quarter
-    pub["model_version"] = trained_at_date
-    pub["created_at"] = datetime.now()
-    engine = create_engine(get_db_url())
-    n_written = publish_to_db(engine, pub, target_quarter)
-
     print("predict_and_publish completed")
     print(f"- playbook_date: {playbook_date}")
     print(f"- target_quarter: {target_quarter}")
@@ -202,7 +150,6 @@ def main() -> None:
     print(f"- input: {input_path}")
     print(f"- output: {output_path}")
     print(f"- rows: {len(out)}")
-    print(f"- db published to eps_predictions[{target_quarter}]: {n_written} rows")
 
 
 if __name__ == "__main__":

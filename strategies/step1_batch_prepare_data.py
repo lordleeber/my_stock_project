@@ -21,12 +21,27 @@ if str(ROOT_DIR) not in sys.path:
 
 from strategies.shared_config import (  # noqa: E402
     MONTH_TO_TARGET_QNUM,
+    latest_playbook_date,
     parse_playbook_date,
     playbook_run_date,
 )
 
 DEFAULT_START = "2021-08-16"
-DEFAULT_END = "2025-10-11"
+
+
+def _resolve_default_end() -> str:
+    """END 預設 = 今天當下最新的 canonical playbook day（latest_playbook_date()）。
+
+    step1 從 DB 抽當日特徵；最新可產出 dataset 的日期就是 ≤ today 的 canonical playbook day。
+
+    例：今天 2026-05-22 → 2026-05-16（5/15 公告日 +1，已過）。
+        今天 2026-05-15 → 2026-04-11（5 月的 canonical 是 16 號還沒到，退回上個月）。
+        今天 2026-06-12 → 2026-06-11（6/10 公告日 +1，已過）。
+    """
+    return latest_playbook_date()
+
+
+DEFAULT_END = _resolve_default_end()
 
 
 def all_playbook_dates(start: str, end: str) -> list[str]:

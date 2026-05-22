@@ -9,7 +9,7 @@ The calculator component refines raw market and financial data into actionable i
 1.  **Technical Indicators (`calculate_daily.py`)**: Computes MA, RSI, MACD, etc., for price trend analysis.
 2.  **Institutional Holding Derivatives (`calculate_trust_holding.py`, `calculate_dealer_holding.py`)**: Computes cumulative trust/dealer held shares and held ratio.
 3.  **Shareholding Concentration (`calculate_shareholding_concentration.py`)**: Derives large/small holder concentration metrics from TDCC shareholding buckets.
-4.  **Forward Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, Forward PE, Target Prices, and ROE for valuation analysis.
+4.  **Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, PE, PE percentile, and ROE (backward / published-quarter only).
 
 Error handling is fail-fast:
 - Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
@@ -40,30 +40,26 @@ Computes technical signals from `daily_quotes` and stores results in `technical_
 
 ---
 
-## Forward Valuation (`calculate_valuation.py`)
+## Valuation (`calculate_valuation.py`)
 
-This is the "Brain" of the valuation system. it integrates Price, Financial Reports, and ML Predictions using **Point-in-Time (PIT)** logic.
+Integrates Price, Financial Reports, and historical EPS into a daily snapshot under **Point-in-Time (PIT)** logic.
 
 ### Core Logic: Point-in-Time (PIT) Alignment
 To avoid look-ahead bias, the calculator anchors financial data to their **official publication deadlines**:
 - Q1: May 15 | Q2: Aug 14 | Q3: Nov 14 | Q4: Mar 31.
 Every daily valuation record uses the latest report *available at that specific date*.
 
-### Dual TTM EPS Calculation
+### TTM EPS
 - **`ttm_eps_official`**: Sum of the 4 most recently published single-quarter EPS (`eps_q`).
-- **`ttm_eps_forward`**: Sum of the 3 most recently published quarters + **1 predicted quarter** from `eps_predictions`.
-- **The Swap**: As time passes, the oldest quarter is dropped and replaced by the ML prediction for the upcoming quarter.
 
-### `eps_predictions` Source of Truth
-This table is written by `train_eps/step4_predict_and_publish.py` (monthly playbook) — DELETE+INSERT scoped to one `target_quarter` per run. Historical backfill is done once via `train_eps/step5_backfill_eps_predictions.py`.
+### Output Metrics
+- **`pe_calculated`**: `close / ttm_eps_official`.
+- **`pe_official`**: 官方 PE（從 `pe_ratio` 直接合併）。
+- **`pe_percentile_official`**: 全歷史 PE 排名（每檔股票 rank-percentile）。
+- **`roe_official`**: `ttm_eps_official / nav_per_share * 100`.
 
-If the table is missing or empty, `ttm_eps_forward` silently falls back to `ttm_eps_official` (see lines 86–89). This is intentional fail-silent behavior: forward valuation degrades gracefully to backward when predictions are unavailable.
-
-### Forward Metrics
-- **`pe_forward`**: `close / ttm_eps_forward`.
-- **`predict_target_price`**: `ttm_eps_forward * pe_official`.
-- **`upside_pct`**: Potential return based on the valuation surprise.
-- **`pe_percentile_forward`**: Historical rank of the current price against the *predicted* future earnings.
+> Forward / 預測相關欄位（`ttm_eps_forward`、`pe_forward`、`predict_target_price`、`upside_pct`、`roe_forward`、`pe_percentile_forward`）已從 `valuation_daily` 移除。
+> ML pipeline 的 forward 計算在 `strategies/step2_finalize_strategy.py` 用 `predictions_results.csv` 自己算（`predict_target_price` / `pred_upside_pct`），不經 DB。
 
 ---
 
@@ -116,15 +112,9 @@ CREATE TABLE valuation_daily (
     symbol TEXT NOT NULL,
     close DOUBLE PRECISION,
     ttm_eps_official DOUBLE PRECISION,
-    ttm_eps_forward DOUBLE PRECISION,
     pe_official DOUBLE PRECISION,
-    pe_forward DOUBLE PRECISION,
     pe_percentile_official DOUBLE PRECISION,
-    pe_percentile_forward DOUBLE PRECISION,
-    predict_target_price DOUBLE PRECISION,
-    upside_pct DOUBLE PRECISION,
     roe_official DOUBLE PRECISION,
-    roe_forward DOUBLE PRECISION,
     PRIMARY KEY (date, symbol)
 );
 ```

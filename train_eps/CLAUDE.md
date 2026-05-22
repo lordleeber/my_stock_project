@@ -17,7 +17,6 @@
   - `run_pipeline.py`
   - `step3_batch_evaluate.py`
   - `step4_batch_predict_and_publish.py`
-  - `step5_backfill_eps_predictions.py`
 
 > `<YYYY-MM-DD>` 必須是 canonical playbook run date：**訓練實際執行日 = cutoff（公告日）+ 1 天**。5/8/11 月為 16 號，其餘月份為 11 號。由 `shared_config.playbook_run_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
 >
@@ -103,32 +102,14 @@ All artifacts written to `models_eps/<YYYY-MM-DD>/`:
 | `y_true` | Actual target EPS for that target_year/target_quarter (NaN for live future predictions) |
 | `anchor_eps` | Per-row anchor-quarter EPS (the row's `dataset_evaluate.csv["anchor_eps"]`) |
 | `pred_lgb_delta` | Model-predicted EPS delta |
-| `predict_eps` | Absolute predicted EPS = `anchor_eps + pred_lgb_delta`. This is what `calculator/calculate_valuation.py` reads from `eps_predictions`. |
+| `predict_eps` | Absolute predicted EPS = `anchor_eps + pred_lgb_delta`. Consumed by `strategies/step2_finalize_strategy.py` via this CSV. |
 | `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from playbook `--date` via `target_quarter_for_playbook`) |
 | `anchor_quarter` | The quarter whose financials drove the features, e.g. `"2025Q1"` (the row's `anchor_eps`/`xbrl_*_q` came from here) |
 | `playbook_date` | This run's `--date`, e.g. `"2026-05-15"` (canonical playbook run date) |
-| `trained_at_date` | Day-precision training date (`YYYY-MM-DD`) parsed from `model_pkl` timestamp; the day the pkl was actually saved (may differ from `playbook_date` when re-running an old playbook); used as `model_version` in the DB |
+| `trained_at_date` | Day-precision training date (`YYYY-MM-DD`) parsed from `model_pkl` timestamp; the day the pkl was actually saved (may differ from `playbook_date` when re-running an old playbook) |
 | `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the date dir) |
 
 Looking at the csv alone tells you everything: which quarter was predicted, which quarter's data fed the features, when the playbook ran, when training actually happened, and which model checkpoint produced the numbers. Legacy columns `fold` (= `"year_" + str(year)`) and `trained_at_month` (= `"YYYY/MM"`) were removed.
-
-### DB Publish (step4 only)
-`step4_predict_and_publish.py` additionally upserts results into PostgreSQL table `eps_predictions` after writing the CSV:
-
-| Column | Source |
-|---|---|
-| `target_quarter` | from this playbook run |
-| `symbol` | row symbol |
-| `predict_eps` | `anchor_eps + pred_lgb_delta` |
-| `model_version` | `trained_at_date` (e.g. `"2026-05-16"`) |
-| `created_at` | timestamp of the DB write |
-
-Write strategy: `DELETE WHERE target_quarter = '<this run>'` followed by bulk INSERT. Different playbook dates publishing the same target_quarter (e.g. 2026-05-15 / 2026-06-10 / 2026-07-10 all → 2026Q2) overwrite each other — the latest run wins.
-
-`calculator/calculate_valuation.py` reads this table to compute forward TTM / forward PE / target price / forward ROE. If the table is empty, all forward metrics collapse to backward equivalents (fail-silent fallback inside calculate_valuation.py — by design).
-
-### Historical backfill
-`train_eps/step5_backfill_eps_predictions.py` is a one-off utility that walks every `models_eps/<YYYY-MM-DD>/predictions_results.csv`, dedups on `(symbol, target_quarter)` by latest `playbook_date` (tie-broken by `trained_at_date`), and DROP+CREATE+INSERTs the `eps_predictions` table. For legacy CSVs missing `anchor_eps`/`predict_eps`/`playbook_date`/`trained_at_date`, it joins `quarterly_reports_xbrl.eps_q` on `anchor_quarter` to recover `anchor_eps` and derives the rest (`playbook_date` from the path, `trained_at_date` from the pkl timestamp).
 
 ## ⚠️ `dataset_train.csv` vs `dataset_evaluate.csv` Naming
 

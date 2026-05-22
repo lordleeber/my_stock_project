@@ -23,12 +23,13 @@ Walk-forward 語意：
 
 預設範圍：
   START = 2022-06-11  — 最早 train_through（約有 10 個月訓練資料）
-  END   = 2026-04-11  — 最後一個 fwd_return 已可算的 cohort（analyze_feature_returns 涵蓋到 2026/04）
+  END   = auto-detect  — feature_return_analysis.csv 裡最新的 playbook_date（= step3 的 END）
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -40,7 +41,30 @@ if str(ROOT_DIR) not in sys.path:
 from strategies.step1_batch_prepare_data import all_playbook_dates  # noqa: E402
 
 DEFAULT_START = "2022-06-11"
-DEFAULT_END = "2026-04-11"
+
+
+def _resolve_default_end() -> str:
+    """END 預設 = feature_return_analysis.csv 裡 max(playbook_date)。
+
+    step4 訓練資料來自 feature_return_analysis.csv（step3 產出），所以最新可訓練的
+    train_through 就是該檔的 max(playbook_date) — 與 step3 的 END 同步。
+
+    例：今天 2026-05-22，step3 跑完後 feature_return_analysis.csv 涵蓋到 2026-04-11，
+        所以 END = 2026-04-11。
+        等 2026-06-11 cohort 跑完 step1+2 並重跑 step3，END 會自動推進到 2026-05-16。
+    """
+    fra = ROOT_DIR / "strategies" / "output" / "feature_return_analysis.csv"
+    if not fra.exists():
+        raise SystemExit(
+            f"feature_return_analysis.csv not found: {fra}\n"
+            f"Run: venv/bin/python3 strategies/step3_analyze_feature_returns.py"
+        )
+    with fra.open(encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        return max(row["playbook_date"] for row in reader)
+
+
+DEFAULT_END = _resolve_default_end()
 
 
 def parse_args() -> argparse.Namespace:

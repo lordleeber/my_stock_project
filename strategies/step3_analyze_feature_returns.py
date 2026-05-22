@@ -36,9 +36,39 @@ from strategies.shared_config import (
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
 
 START = "2021-08-16"
-END = (
-    "2026-04-11"  # 最後一個可計算下月報酬的 cohort（需要下個 playbook entry_date 存在）
-)
+
+
+def _resolve_end() -> str:
+    """掃 strategies/output/ 自動算 END = 最後一個可算下月遠期報酬的 cohort。
+
+    遠期報酬需要「下個 cohort 的 entry_date」，所以 END = 倒數第二個 dataset_strategy.csv 存在的 cohort。
+
+    例：今天 2026-05-22，strategies/output/ 最新兩個 cohort 是 2026-04-11 和 2026-05-16。
+        2026-05-16 的下個是 2026-06-11（尚未產出，月營收 6/10 才公告），剔除；
+        2026-04-11 的下個是 2026-05-16（已存在），留下 → END = 2026-04-11。
+        等 6/11 跑完 2026-06-11 的 step1+2，重跑 step3 會自動推進到 END = 2026-05-16。
+    """
+    if not STRATEGIES_OUT.exists():
+        raise SystemExit(f"strategies/output not found: {STRATEGIES_OUT}")
+    cohorts: list[str] = []
+    for d in STRATEGIES_OUT.iterdir():
+        if not (d.is_dir() and (d / "dataset_strategy.csv").exists()):
+            continue
+        try:
+            parse_playbook_date(d.name)
+        except ValueError:
+            continue
+        cohorts.append(d.name)
+    if len(cohorts) < 2:
+        raise SystemExit(
+            "Need ≥2 cohorts with dataset_strategy.csv to compute fwd_return; "
+            f"found {len(cohorts)} in {STRATEGIES_OUT}"
+        )
+    cohorts.sort()
+    return cohorts[-2]
+
+
+END = _resolve_end()
 
 FEATURE_COLS = (
     [
@@ -169,22 +199,31 @@ def main() -> None:
         year, month_s = parse_playbook_date(d)
         next_d = next_playbook_date(d)
 
+        # END 已 auto-detect 到倒數第二個 cohort（_resolve_end），所以區間內每個 cohort
+        # 與其下一個 cohort 的 dataset_strategy.csv 都應存在；中間缺檔代表 step1+2 沒跑齊，
+        # 直接 raise 不要 silent skip 製造資料漏洞。
         ds = load_strategy(d)
         if ds is None or ds.empty:
-            print(f"[skip] no dataset_strategy: {d}")
-            continue
+            raise SystemExit(
+                f"[FAIL] {d}: dataset_strategy.csv missing or empty — "
+                f"run strategies/step1_prepare_data.py --date {d}"
+            )
 
         if "entry_date" not in ds.columns or ds["entry_date"].isna().all():
-            print(f"[skip] entry_date missing in dataset_strategy: {d}")
-            continue
+            raise SystemExit(
+                f"[FAIL] {d}: entry_date missing in dataset_strategy.csv — "
+                f"step1 output is corrupt, re-run for this date"
+            )
 
         entry_str = str(ds["entry_date"].iloc[0])
 
         # 出場日 = 下一個 playbook date 的 entry_date 前一個交易日
         ds_next = load_strategy(next_d)
         if ds_next is None or ds_next.empty or "entry_date" not in ds_next.columns:
-            print(f"[skip] no next-playbook dataset_strategy: {next_d}")
-            continue
+            raise SystemExit(
+                f"[FAIL] {d}: next-cohort dataset_strategy.csv missing at {next_d} — "
+                f"run strategies/step1_prepare_data.py --date {next_d}"
+            )
         exit_str = prev_trading_day(engine, str(ds_next["entry_date"].iloc[0]))
 
         symbols = ds["symbol"].tolist()

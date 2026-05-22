@@ -89,18 +89,20 @@ def main() -> None:
                 skipped += 1
                 continue
 
+        # 前置檔案必須齊全；缺就早 fail（避免 silent skip 讓下游 valuation 退化）。
         input_path = ROOT_DIR / "train_eps" / "output" / d / "dataset_evaluate.csv"
-        if not input_path.exists():
-            print(f"[skip]  {d}  (missing train_eps/output/{d}/dataset_evaluate.csv)")
-            skipped += 1
-            continue
-
         models_dir = ROOT_DIR / "models_eps" / d
         has_model = any(PKL_PATTERN.match(p.name) for p in models_dir.glob("*.pkl"))
+        missing: list[str] = []
+        if not input_path.exists():
+            missing.append(str(input_path))
         if not has_model:
-            print(f"[skip]  {d}  (no timestamped model pkl in models_eps/{d}/)")
-            skipped += 1
-            continue
+            missing.append(f"timestamped model pkl in {models_dir}/")
+        if missing:
+            raise SystemExit(
+                f"[FAIL] {d}: missing required input(s):\n  "
+                + "\n  ".join(missing)
+            )
 
         cmd = [python, script, "--date", d]
 
