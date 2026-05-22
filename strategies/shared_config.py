@@ -1,11 +1,11 @@
 """Strategies 模組共用的 date helper。
 
 統一向 train_eps.shared_config 看齊 — CLI 一律收 `--date YYYY-MM-DD`，
-語意是 **playbook release date**（cutoff +1 = 公告日的隔天）：
+語意是 **playbook run date**（cutoff +1 = 公告日的隔天）：
 5/8/11 月為 16 號，其餘月份為 11 號。
 
 兩個 date 概念差一天：
-  - playbook release date = 訓練/評分實際執行那天（CLI 顯式日期、目錄名）
+  - playbook run date = 訓練/評分實際執行那天（CLI 顯式日期、目錄名）
   - cutoff_date           = PIT 截斷日（公告日，SQL 用）
 
 要從 CLI date 推 cutoff_date，呼叫 `cutoff_date_from_playbook`，
@@ -28,7 +28,7 @@ from train_eps.shared_config import (  # noqa: E402, F401  — re-export
     MONTH_TO_TARGET_QNUM,
     latest_playbook_date,
     parse_playbook_date,
-    playbook_release_date,
+    playbook_run_date,
 )
 
 

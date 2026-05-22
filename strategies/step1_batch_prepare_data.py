@@ -22,7 +22,7 @@ if str(ROOT_DIR) not in sys.path:
 from strategies.shared_config import (  # noqa: E402
     MONTH_TO_TARGET_QNUM,
     parse_playbook_date,
-    playbook_release_date,
+    playbook_run_date,
 )
 
 DEFAULT_START = "2021-08-16"
@@ -30,7 +30,7 @@ DEFAULT_END = "2025-10-11"
 
 
 def all_playbook_dates(start: str, end: str) -> list[str]:
-    """產生 [start, end] 區間內所有 canonical playbook release dates。"""
+    """產生 [start, end] 區間內所有 canonical playbook run dates。"""
     start_y, start_m = parse_playbook_date(start)
     end_y, end_m = parse_playbook_date(end)
     out: list[str] = []
@@ -38,7 +38,7 @@ def all_playbook_dates(start: str, end: str) -> list[str]:
     while (y, m) <= (end_y, int(end_m)):
         mm = f"{m:02d}"
         if mm in MONTH_TO_TARGET_QNUM:
-            out.append(playbook_release_date(y, mm))
+            out.append(playbook_run_date(y, mm))
         m += 1
         if m > 12:
             m = 1

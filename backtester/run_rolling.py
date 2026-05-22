@@ -34,7 +34,7 @@ from common.db import get_db_url
 from strategies.shared_config import (
     MONTH_TO_TARGET_QNUM,
     parse_playbook_date,
-    playbook_release_date,
+    playbook_run_date,
 )
 
 
@@ -160,14 +160,14 @@ def load_candidates_safe(models_root: Path, playbook_date: str) -> pd.DataFrame 
 
 
 def playbook_iter(start_date: str, end_date: str):
-    """產生 [start, end] 區間內的 canonical playbook release dates。"""
+    """產生 [start, end] 區間內的 canonical playbook run dates。"""
     sy, sm = parse_playbook_date(start_date)
     ey, em = parse_playbook_date(end_date)
     y, m = sy, int(sm)
     while (y, m) <= (ey, int(em)):
         mm = f"{m:02d}"
         if mm in MONTH_TO_TARGET_QNUM:
-            yield playbook_release_date(y, mm)
+            yield playbook_run_date(y, mm)
         m += 1
         if m > 12:
             m = 1
@@ -319,14 +319,14 @@ def parse_args() -> argparse.Namespace:
         "--start-date",
         type=str,
         required=True,
-        help="First playbook release date YYYY-MM-DD (canonical: 5/8/11 月 = 16 號，其餘月份 = 11 號)",
+        help="First playbook run date YYYY-MM-DD (canonical: 5/8/11 月 = 16 號，其餘月份 = 11 號)",
     )
     parser.add_argument(
         "--end-date",
         type=str,
         default=None,
         help=(
-            "Last playbook release date YYYY-MM-DD. Default: auto-detect latest "
+            "Last playbook run date YYYY-MM-DD. Default: auto-detect latest "
             "playbook with candidates_scored.csv + daily_quotes coverage."
         ),
     )

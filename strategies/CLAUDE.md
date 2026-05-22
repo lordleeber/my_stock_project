@@ -40,7 +40,7 @@ day = 16 if month in {5, 8, 11} else 11
 # cutoff_date = playbook_date - 1 calendar day
 ```
 
-跟 train_eps 共用同一個 `playbook_release_date` / `parse_playbook_date`。CLI date 解析失敗或非 canonical（例如誤傳 2026-04-10 = 公告日）會直接 raise。
+跟 train_eps 共用同一個 `playbook_run_date` / `parse_playbook_date`。CLI date 解析失敗或非 canonical（例如誤傳 2026-04-10 = 公告日）會直接 raise。
 
 `daily_quotes` 查詢用 `date <= cutoff_date` 取最新一筆，所以 cutoff_date 撞到假日時 **實際** PIT snapshot 會落在前一個交易日（記在 `dataset_strategy.csv.quote_date`）。例如：
 
@@ -58,7 +58,7 @@ Every cohort owns five flow-through dates:
 
 | Date | Defined by | Stored where | Meaning |
 |---|---|---|---|
-| `playbook_date` | `playbook_release_date(year, month)` (cutoff +1) | directory name `<YYYY-MM-DD>/`; CLI `--date` | cohort 識別與目錄/路徑命名 |
+| `playbook_date` | `playbook_run_date(year, month)` (cutoff +1) | directory name `<YYYY-MM-DD>/`; CLI `--date` | cohort 識別與目錄/路徑命名 |
 | `cutoff_date` | `cutoff_date_from_playbook(playbook_date)` (playbook −1) | implicit; equal to `quote_date` on trading days | feature PIT snapshot |
 | `quote_date` | `daily_quotes` MAX(date ≤ cutoff_date) | `dataset_strategy.csv.quote_date` | actual feature snapshot day |
 | `entry_date` | next trading day after `cutoff_date` | `dataset_strategy.csv.entry_date` | open price used to enter |

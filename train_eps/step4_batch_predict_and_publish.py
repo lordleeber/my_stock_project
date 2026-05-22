@@ -24,7 +24,7 @@ if str(_HERE) not in sys.path:
 from shared_config import (  # noqa: E402
     MONTH_TO_TARGET_QNUM,
     parse_playbook_date,
-    playbook_release_date,
+    playbook_run_date,
 )
 
 DEFAULT_START = "2021-08-16"
@@ -46,7 +46,7 @@ def all_playbook_dates(start: str, end: str) -> list[str]:
             m = 1
             y += 1
     return [
-        playbook_release_date(y, f"{m:02d}")
+        playbook_run_date(y, f"{m:02d}")
         for y, m in months
         if f"{m:02d}" in MONTH_TO_TARGET_QNUM
     ]

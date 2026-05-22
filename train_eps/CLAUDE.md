@@ -19,7 +19,7 @@
   - `step4_batch_predict_and_publish.py`
   - `step5_backfill_eps_predictions.py`
 
-> `<YYYY-MM-DD>` 必須是 canonical playbook release date：**訓練實際執行日 = cutoff（公告日）+ 1 天**。5/8/11 月為 16 號，其餘月份為 11 號。由 `shared_config.playbook_release_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
+> `<YYYY-MM-DD>` 必須是 canonical playbook run date：**訓練實際執行日 = cutoff（公告日）+ 1 天**。5/8/11 月為 16 號，其餘月份為 11 號。由 `shared_config.playbook_run_date(year, month)` 唯一決定；off-cycle 日期會被 `parse_playbook_date` 直接拒絕。
 >
 > 跟 strategies 的 `cutoff_date` 概念差一天：strategies 用公告日做 PIT 資料截斷，train_eps 用公告日 +1 作為實際跑訓練那天的目錄名。
 
@@ -53,7 +53,7 @@ step1~4 與 `run_pipeline.py` 的 `--date` 都是 optional。省略時自動鎖�
 ## Data Source
 - `prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
 
-## Playbook Release Date Calendar
+## Playbook Run Date Calendar
 每月一次 canonical 訓練執行日（= cutoff 公告日 +1）。5/8/11 月為 16 號（季報公告日 +1），其餘月份為 11 號（月營收公告日 +1）：
 
 | `--date` (執行日) | cutoff (公告日) | 公告事件 | 預測目標 |
@@ -77,11 +77,11 @@ step1~4 與 `run_pipeline.py` 的 `--date` 都是 optional。省略時自動鎖�
 
 - `MONTH_TO_TARGET_QNUM`：`{"01": 4, "02": 1, ..., "12": 4}` 純資料表
 - `target_quarter_for_playbook(execution_year, month) → (target_year, qnum)`：含 January 推前一年的邏輯
-- `playbook_release_date(year, month) → "YYYY-MM-DD"`：cutoff +1（5/8/11 月 = 16 號；其他月份 = 11 號）
-- `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook release date，off-cycle 直接報錯（例如誤傳 cutoff 公告日如 2026-05-15 會被拒絕，提示應為 2026-05-16）
+- `playbook_run_date(year, month) → "YYYY-MM-DD"`：cutoff +1（5/8/11 月 = 16 號；其他月份 = 11 號）
+- `parse_playbook_date("YYYY-MM-DD") → (year, month_str)`：嚴格驗證該日是 canonical playbook run date，off-cycle 直接報錯（例如誤傳 cutoff 公告日如 2026-05-15 會被拒絕，提示應為 2026-05-16）
 - `shift_quarter(year, qnum, delta)` / `format_quarter(year, qnum)`：跨年季度位移與字串格式化
 
-所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_release_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
+所有 step1~4 / batch / run_pipeline 都從這裡 import，**改 playbook 只需動 `MONTH_TO_TARGET_QNUM` 與 `playbook_run_date` 的 day 公式**。不要在其他檔案複製月份映射表或日期公式。strategies 構建 `models_eps/<YYYY-MM-DD>/` 路徑時也 import 同一支 helper。
 
 ## Evaluate Output Contract
 - `step3_evaluate.py` writes only:
@@ -106,7 +106,7 @@ All artifacts written to `models_eps/<YYYY-MM-DD>/`:
 | `predict_eps` | Absolute predicted EPS = `anchor_eps + pred_lgb_delta`. This is what `calculator/calculate_valuation.py` reads from `eps_predictions`. |
 | `target_quarter` | The quarter being predicted, e.g. `"2025Q2"` (computed from playbook `--date` via `target_quarter_for_playbook`) |
 | `anchor_quarter` | The quarter whose financials drove the features, e.g. `"2025Q1"` (the row's `anchor_eps`/`xbrl_*_q` came from here) |
-| `playbook_date` | This run's `--date`, e.g. `"2026-05-15"` (canonical playbook release date) |
+| `playbook_date` | This run's `--date`, e.g. `"2026-05-15"` (canonical playbook run date) |
 | `trained_at_date` | Day-precision training date (`YYYY-MM-DD`) parsed from `model_pkl` timestamp; the day the pkl was actually saved (may differ from `playbook_date` when re-running an old playbook); used as `model_version` in the DB |
 | `model_pkl` | Exact pkl filename used, e.g. `"20260516080152_0.448.pkl"` (the lowest-MAE pkl in the date dir) |
 

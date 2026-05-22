@@ -44,7 +44,7 @@ def target_quarter_for_playbook(execution_year: int, month: str) -> tuple[int, i
     return target_year, qnum
 
 
-def playbook_release_date(year: int, month: str | int) -> str:
+def playbook_run_date(year: int, month: str | int) -> str:
     """回傳 playbook 月份對應的 canonical 訓練執行日（YYYY-MM-DD）。
 
     語意：cutoff（公告日）的「**隔天**」——也就是 train_eps 實際跑訓練那天。
@@ -53,9 +53,9 @@ def playbook_release_date(year: int, month: str | int) -> str:
 
     這跟 strategies 的 `cutoff_date` 概念不同：
       - strategies cutoff_date = PIT 資料截斷日（公告日）
-      - train_eps playbook_release_date = 訓練實際執行日（公告日 +1）
+      - train_eps playbook_run_date = 訓練實際執行日（公告日 +1）
 
-    要從 cutoff_date 推 playbook_release_date，記得 +1；反之 -1。
+    要從 cutoff_date 推 playbook_run_date，記得 +1；反之 -1。
     """
     m = str(month).zfill(2)
     if m not in MONTH_TO_TARGET_QNUM:
@@ -65,9 +65,9 @@ def playbook_release_date(year: int, month: str | int) -> str:
 
 
 def latest_playbook_date(today: datetime.date | None = None) -> str:
-    """回傳 today 當下最新的 canonical playbook release date（YYYY-MM-DD）。
+    """回傳 today 當下最新的 canonical playbook run date（YYYY-MM-DD）。
 
-    語意：找出 `playbook_release_date(y, m) <= today` 的最大值。
+    語意：找出 `playbook_run_date(y, m) <= today` 的最大值。
     例如 today=2026-05-20 → 回傳 '2026-05-16'；today=2026-05-15 → 回傳 '2026-04-11'（5月還沒到 canonical）。
 
     這支用來讓 step1~4 / run_pipeline 在 --date 沒給時自動鎖到「最新可訓練日」。
@@ -75,20 +75,20 @@ def latest_playbook_date(today: datetime.date | None = None) -> str:
     if today is None:
         today = datetime.date.today()
     y, m = today.year, today.month
-    candidate = datetime.date.fromisoformat(playbook_release_date(y, f"{m:02d}"))
+    candidate = datetime.date.fromisoformat(playbook_run_date(y, f"{m:02d}"))
     if candidate <= today:
         return candidate.isoformat()
     if m == 1:
         y, m = y - 1, 12
     else:
         m -= 1
-    return playbook_release_date(y, f"{m:02d}")
+    return playbook_run_date(y, f"{m:02d}")
 
 
 def parse_playbook_date(date_str: str) -> tuple[int, str]:
     """解析 --date YYYY-MM-DD 並回傳 (year, month_str)。
 
-    嚴格驗證該日期必須是該 (year, month) 的 canonical playbook release date；
+    嚴格驗證該日期必須是該 (year, month) 的 canonical playbook run date；
     若使用者誤傳非正規日（例如 2026-05-15 — 那是 cutoff_date，不是 playbook 執行日），
     會直接報錯並提示正確值，避免 silent off-cycle 跑壞 walk-forward 對齊。
     """
@@ -98,10 +98,10 @@ def parse_playbook_date(date_str: str) -> tuple[int, str]:
         raise ValueError(f"--date 必須是 YYYY-MM-DD 格式，收到：{date_str!r}") from e
     year = dt.year
     month = f"{dt.month:02d}"
-    expected = playbook_release_date(year, month)
+    expected = playbook_run_date(year, month)
     if date_str != expected:
         raise ValueError(
-            f"--date {date_str} 不是 {year}/{month} 的 canonical playbook release date。"
+            f"--date {date_str} 不是 {year}/{month} 的 canonical playbook run date。"
             f" 預期：{expected}（公告日的隔天）。"
             f" 公式：5/8/11 月為 16 號，其餘月份為 11 號。"
         )

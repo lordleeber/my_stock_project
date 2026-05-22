@@ -9,10 +9,10 @@
 輸出：  models_selection/<YYYY-MM-DD>/selection_model.pkl
                                        feature_importance.csv
                                        latest.json
-        其中 <YYYY-MM-DD> = train_through cohort 的 **playbook release date**（cutoff +1）
+        其中 <YYYY-MM-DD> = train_through cohort 的 **playbook run date**（cutoff +1）
 
 Walk-forward 設計（術語見 strategies/CLAUDE.md § Date Convention）：
-  - train_through_playbook_date = 訓練資料 cohort 上界的 playbook release date（YYYY-MM-DD，
+  - train_through_playbook_date = 訓練資料 cohort 上界的 playbook run date（YYYY-MM-DD，
     = 該 cohort 的 cutoff_date + 1 calendar day；目錄名與 CLI `--date` 都用這個值）
   - train_through_cutoff_date   = 該 cohort 的 cutoff_date（公告日，PIT 截斷用）
   - 訓練資料：(year, month) <= train_through 的 cohort
@@ -107,7 +107,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Walk-forward 訓練上界 cohort 的 playbook release date YYYY-MM-DD"
+            "Walk-forward 訓練上界 cohort 的 playbook run date YYYY-MM-DD"
             "（cutoff 公告日 +1；5/8/11 月 = 16 號，其餘月份 = 11 號）。"
             "不指定則用所有可用資料訓練（生產模式，train_through='all'）。"
         ),

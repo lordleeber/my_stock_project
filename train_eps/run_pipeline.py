@@ -15,7 +15,7 @@ from shared_config import latest_playbook_date, parse_playbook_date  # noqa: E40
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run full train_eps pipeline for one playbook release date"
+        description="Run full train_eps pipeline for one playbook run date"
     )
     parser.add_argument(
         "--date",

@@ -16,7 +16,7 @@
   --old-models-root  models_selection_old            （舊 YYYY/MM 結構）
   --new-models-root  models_selection                （新 YYYY-MM-DD 結構）
 
-新版目錄是 playbook release date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
+新版目錄是 playbook run date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
 對 cohort 2022/01，舊 = `2022/01/`、新 = `2022-01-11/`；本 script 內部依公式換算。
 
 比對對象:
@@ -44,7 +44,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from strategies.shared_config import playbook_release_date  # noqa: E402
+from strategies.shared_config import playbook_run_date  # noqa: E402
 
 MONTH_DIR_RE = re.compile(r"^\d{2}$")
 YEAR_DIR_RE = re.compile(r"^\d{4}$")
@@ -107,8 +107,8 @@ def scan_months(*roots: Path) -> list[tuple[int, str]]:
 
 
 def new_dir(root: Path, year: int, month: str) -> Path:
-    """回傳該 cohort 在新格式 root 下的目錄（playbook_release_date 命名）。"""
-    return root / playbook_release_date(year, month)
+    """回傳該 cohort 在新格式 root 下的目錄（playbook_run_date 命名）。"""
+    return root / playbook_run_date(year, month)
 
 
 def old_dir(root: Path, year: int, month: str) -> Path:

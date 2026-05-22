@@ -39,9 +39,9 @@ docker compose run --rm calculator
 
 ### ML Pipeline (Python, no Docker)
 ```bash
-# EPS prediction model (train_eps/) — --date 必須是 canonical playbook release date
+# EPS prediction model (train_eps/) — --date 必須是 canonical playbook run date
 # = cutoff（公告日）+1 天（5/8/11 月為 16 號，其餘月份為 11 號；
-# 見 train_eps/shared_config.py::playbook_release_date）
+# 見 train_eps/shared_config.py::playbook_run_date）
 venv/bin/python3 train_eps/step1_prepare_data.py          --date 2025-10-11
 venv/bin/python3 train_eps/step2_train.py                 --date 2025-10-11
 venv/bin/python3 train_eps/step3_evaluate.py              --date 2025-10-11
@@ -54,7 +54,7 @@ venv/bin/python3 train_eps/step3_batch_evaluate.py
 venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 
 # Strategy features + selection model (strategies/) — CLI 一律 `--date YYYY-MM-DD`
-# 用 canonical playbook release date（cutoff +1：5/8/11 月 = 16 號，其他 = 11 號）
+# 用 canonical playbook run date（cutoff +1：5/8/11 月 = 16 號，其他 = 11 號）
 venv/bin/python3 strategies/step1_prepare_data.py      --date 2025-10-11
 venv/bin/python3 strategies/step2_finalize_strategy.py --date 2025-10-11
 
@@ -117,7 +117,7 @@ TWSE/TPEx/MOPS/TDCC
 
 - Selection models stored at `models_selection/<YYYY-MM-DD>/selection_model.pkl`，`<YYYY-MM-DD>` 即 train_through_playbook_date
 - Backtest target playbook_date D 使用 train_through_playbook_date < D 的最新 model（no look-ahead bias）
-- EPS models stored at `models_eps/<YYYY-MM-DD>/`（與 strategies 共用同一個 canonical playbook release date）
+- EPS models stored at `models_eps/<YYYY-MM-DD>/`（與 strategies 共用同一個 canonical playbook run date）
 
 ### Database
 

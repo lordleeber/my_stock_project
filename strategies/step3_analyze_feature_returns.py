@@ -30,7 +30,7 @@ from strategies.feature_engineering import TECHNICAL_FEATURE_COLS, REVENUE_FEATU
 from strategies.shared_config import (
     MONTH_TO_TARGET_QNUM,
     parse_playbook_date,
-    playbook_release_date,
+    playbook_run_date,
 )
 
 STRATEGIES_OUT = (ROOT_DIR / "strategies" / "output").resolve()
@@ -78,7 +78,7 @@ FEATURE_COLS = (
 
 
 def playbook_dates_in_range(start: str, end: str) -> list[str]:
-    """產生 [start, end] 區間內所有 canonical playbook release dates。"""
+    """產生 [start, end] 區間內所有 canonical playbook run dates。"""
     sy, sm = parse_playbook_date(start)
     ey, em = parse_playbook_date(end)
     out: list[str] = []
@@ -86,7 +86,7 @@ def playbook_dates_in_range(start: str, end: str) -> list[str]:
     while (y, m) <= (ey, int(em)):
         mm = f"{m:02d}"
         if mm in MONTH_TO_TARGET_QNUM:
-            out.append(playbook_release_date(y, mm))
+            out.append(playbook_run_date(y, mm))
         m += 1
         if m > 12:
             m = 1
@@ -101,7 +101,7 @@ def next_playbook_date(playbook_date: str) -> str:
     if nm > 12:
         nm = 1
         ny += 1
-    return playbook_release_date(ny, f"{nm:02d}")
+    return playbook_run_date(ny, f"{nm:02d}")
 
 
 def load_strategy(playbook_date: str) -> pd.DataFrame | None:

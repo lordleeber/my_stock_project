@@ -101,7 +101,7 @@ venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 
 | 參數 | 預設 | 說明 |
 |------|------|------|
-| `--start-date` | 必填 | 回測起始 playbook_date（YYYY-MM-DD，canonical playbook release date） |
+| `--start-date` | 必填 | 回測起始 playbook_date（YYYY-MM-DD，canonical playbook run date） |
 | `--end-date` | auto-detect | 回測結束 playbook_date；省略則自動取最新 candidates_scored + DB 報價覆蓋的那天 |
 | `--top-n` | 無限制 | 每 playbook 取前 N 名候選股 |
 | `--position-amount` | 100,000 | 每檔固定投入金額（TWD） |

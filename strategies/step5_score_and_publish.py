@@ -9,7 +9,7 @@
 術語見 strategies/CLAUDE.md § Date Convention：
   target playbook_date         = CLI `--date`（YYYY-MM-DD，cutoff +1）
   target cutoff_date           = target 的 PIT 截斷日（=dataset_strategy.csv.quote_date 假日修正前）
-  train_through_playbook_date  = 模型訓練資料 cohort 上界的 playbook release date
+  train_through_playbook_date  = 模型訓練資料 cohort 上界的 playbook run date
 
 用法：
   venv/bin/python3 strategies/step5_score_and_publish.py --date 2024-07-11
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         "--date",
         type=str,
         default=None,
-        help="Target playbook release date YYYY-MM-DD（省略則用 latest_playbook_date()）",
+        help="Target playbook run date YYYY-MM-DD（省略則用 latest_playbook_date()）",
     )
     parser.add_argument(
         "--model-dir",

@@ -26,7 +26,7 @@ common/           共用 schema、工具模組
 
 ```bash
 # 資料準備 → 訓練 → 評估 → 發布（或一鍵執行）
-# --date 必須是 canonical playbook release date = cutoff（公告日）+1
+# --date 必須是 canonical playbook run date = cutoff（公告日）+1
 # 5/8/11 月為 16 號，其餘月份為 11 號
 venv/bin/python3 train_eps/step1_prepare_data.py        --date 2025-10-11
 venv/bin/python3 train_eps/step2_train.py               --date 2025-10-11
@@ -91,7 +91,7 @@ venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 
 | 類型 | 路徑 |
 |------|------|
-| EPS 模型 | `models_eps/<YYYY-MM-DD>/`（playbook release date） |
+| EPS 模型 | `models_eps/<YYYY-MM-DD>/`（playbook run date） |
 | Playbook 特徵快照 | `strategies/output/<YYYY-MM-DD>/dataset_strategy.csv` |
 | 選股模型 | `models_selection/<YYYY-MM-DD>/selection_model.pkl` |
 | 回測交易紀錄 | `backtester/output/rolling/rolling_trades.csv` |

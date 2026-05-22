@@ -24,7 +24,7 @@ venv/bin/python3 backtester/run_rolling.py \
 venv/bin/python3 backtester/summarize_range.py
 ```
 
-`--start-date` / `--end-date` 都是 canonical playbook release date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
+`--start-date` / `--end-date` 都是 canonical playbook run date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
 
 ## End-date auto-detection
 

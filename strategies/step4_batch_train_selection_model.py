@@ -2,10 +2,10 @@
 依 walk-forward 方式，為每個 train_through cohort 各訓練一個選股模型。
 
 對每個 train_through cohort T，使用 feature_return_analysis.csv 中 (year, month) <= T 的資料訓練，
-並儲存至 models_selection/<YYYY-MM-DD>/。<YYYY-MM-DD> = T 的 playbook release date。
+並儲存至 models_selection/<YYYY-MM-DD>/。<YYYY-MM-DD> = T 的 playbook run date。
 
 術語見 strategies/CLAUDE.md § Date Convention：
-  train_through_playbook_date = 訓練資料 cohort 上界的 playbook release date（YYYY-MM-DD）
+  train_through_playbook_date = 訓練資料 cohort 上界的 playbook run date（YYYY-MM-DD）
   train_through_cutoff_date   = 該 cohort 的 cutoff_date（公告日，PIT 用）
 
 ⚠ 不要叫成 model 的 cutoff_date — cutoff 是 target 的屬性，跟 train_through 差一個 cycle。

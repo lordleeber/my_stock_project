@@ -42,7 +42,7 @@
 ```bash
 # DATE: 本月的 canonical playbook_date = cutoff（公告日）+1（5/8/11 月 = 16 號，其餘月份 = 11 號）
 # PREV_DATE: 上一個月的 playbook_date（重訓 selection model 用）
-# 兩者都由 train_eps/shared_config.py::playbook_release_date 唯一定義。
+# 兩者都由 train_eps/shared_config.py::playbook_run_date 唯一定義。
 DATE=2026-04-11
 PREV_DATE=2026-03-11
 
@@ -106,7 +106,7 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 
 | 階段 | 產出 |
 |---|---|
-| ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook release date） |
+| ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook run date） |
 | ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`、`trade_candidates.csv` |
 | ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 PREV_DATE 的 fwd_return） |
 | ④ step4 | `models_selection/<PREV_DATE>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
