@@ -17,6 +17,7 @@
 | `stock-weekly-update.timer` | 週日 10:20 | `schedules/weekly_update.sh` |
 | `stock-monthly-update.timer` | 每天 22:45（script 內判斷 1~15 才實際跑） | `schedules/monthly_update.sh` |
 | `stock-xbrl-scrape-daily.timer` | 每天 23:50（script 內判斷公告期才實際跑） | `schedules/xbrl_scrape_daily.sh` |
+| `stock-playbook-run.timer` | 每月 11 號與 16 號 04:00（script self-gate 到 canonical playbook 那天） | `schedules/playbook_run.sh` |
 
 > 過往用 02:00 + 04:00 兩個觸發點；2026-05 簡化成單一 03:00，因為觀察上兩次 retry 結果幾乎總是一致（同時 skip 或同時 fail，沒看到「02:00 fail / 04:00 success」案例），多排一次只是重複跑 + 多一次通知噪音。
 
@@ -39,7 +40,7 @@ cp schedules_ubuntu/*.service schedules_ubuntu/*.timer ~/.config/systemd/user/
 
 # 2. 讓 systemd reload + enable 所有 timer
 systemctl --user daemon-reload
-for t in stock-daily-update stock-daily-retry stock-weekly-update stock-monthly-update stock-xbrl-scrape-daily; do
+for t in stock-daily-update stock-daily-retry stock-weekly-update stock-monthly-update stock-xbrl-scrape-daily stock-playbook-run; do
   systemctl --user enable --now ${t}.timer
 done
 

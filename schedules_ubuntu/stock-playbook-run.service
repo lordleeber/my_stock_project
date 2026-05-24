@@ -1,0 +1,11 @@
+[Unit]
+Description=Taiwan stock monthly playbook (train_eps + strategies + backtester)
+OnFailure=stock-notify@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/GitHubLL/my_stock_project
+ExecStart=/bin/bash %h/GitHubLL/my_stock_project/schedules/playbook_run.sh
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+StandardOutput=journal
+StandardError=journal

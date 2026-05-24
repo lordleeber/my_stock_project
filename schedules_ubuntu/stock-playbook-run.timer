@@ -1,0 +1,14 @@
+[Unit]
+Description=Run monthly playbook on canonical playbook dates (11th, plus 16th for 5/8/11月)
+
+[Timer]
+# Fires on 11th and 16th of every month at 04:00. playbook_run.sh self-gates
+# against train_eps.shared_config.playbook_run_date so only the canonical day
+# for the current month actually runs the pipeline; the other day exits 0.
+OnCalendar=*-*-11 04:00:00
+OnCalendar=*-*-16 04:00:00
+Persistent=false
+Unit=stock-playbook-run.service
+
+[Install]
+WantedBy=timers.target
