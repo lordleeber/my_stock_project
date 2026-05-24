@@ -1,0 +1,7 @@
+[Unit]
+Description=Push ntfy.sh notification when %i fails
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/systemd/user/stock-notify.env
+ExecStart=/bin/bash %h/GitHubLL/my_stock_project/schedules_ubuntu/notify_failure.sh %i

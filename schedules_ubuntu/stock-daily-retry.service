@@ -1,5 +1,6 @@
 [Unit]
 Description=Taiwan stock daily retry (re-run daily_update.sh if previous run failed)
+OnFailure=stock-notify@%n.service
 
 [Service]
 Type=oneshot

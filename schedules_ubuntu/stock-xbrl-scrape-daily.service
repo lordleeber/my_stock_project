@@ -1,5 +1,6 @@
 [Unit]
 Description=Taiwan stock XBRL daily scrape (accumulate raw quarterly reports)
+OnFailure=stock-notify@%n.service
 
 [Service]
 Type=oneshot

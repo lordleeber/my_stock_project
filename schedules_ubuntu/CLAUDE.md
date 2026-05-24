@@ -89,6 +89,67 @@ systemctl --user disable --now stock-daily-update.timer
 
 不需要 macOS 那種 `/tmp/launchd_*_stdout.log` workaround（那是 macOS 26.4 launchd 不能寫 `~/Documents/` 的特殊問題）。
 
+## Failure Notification（ntfy.sh 手機推播）
+
+每個 timer-driven service 都掛了 `OnFailure=stock-notify@%n.service`。任何 service 跑出 non-zero exit code，systemd 會自動觸發 `stock-notify@<failed-unit>.service`，由 `notify_failure.sh` 抓該 unit 最近 10 行 journal 後 POST 到 ntfy.sh 推到手機。
+
+### 元件
+
+| 檔案 | 位置 | 角色 |
+|---|---|---|
+| `notify_failure.sh` | `schedules_ubuntu/`（in repo） | curl POST 腳本，吃 `$NTFY_TOPIC` env var |
+| `stock-notify@.service` | `schedules_ubuntu/` + `~/.config/systemd/user/` | template service，`%i` = 失敗的 unit 名 |
+| `stock-notify.env.example` | `schedules_ubuntu/`（in repo） | env 檔範本（**不含真實 topic**） |
+| `stock-notify.env` | `~/.config/systemd/user/`（**不入 git**，權限 600） | 含真實 `NTFY_TOPIC` |
+| `OnFailure=stock-notify@%n.service` | 5 個 timer service 的 `[Unit]` 區塊 | 觸發 hook |
+
+### 安裝
+
+```bash
+# 1. 從範本建 env 檔，把 NTFY_TOPIC 改成 hard-to-guess 字串
+cp schedules_ubuntu/stock-notify.env.example ~/.config/systemd/user/stock-notify.env
+vim ~/.config/systemd/user/stock-notify.env   # 把 CHANGE-ME-TO-RANDOM 改成隨機字串
+chmod 600 ~/.config/systemd/user/stock-notify.env
+
+# 2. 部署 template service（連同其他 unit 一起 cp 過去）
+cp schedules_ubuntu/stock-notify@.service ~/.config/systemd/user/
+
+# 3. reload（service 改動後）
+systemctl --user daemon-reload
+```
+
+### 訂閱推播（手機）
+
+1. 裝 [ntfy.sh App](https://ntfy.sh/app)（iOS / Android）
+2. 開 app → "+" → "Subscribe to topic" → 輸入 `stock-notify.env` 裡的 `NTFY_TOPIC`，server 留預設 `ntfy.sh`
+3. 失敗推播會即時到通知中心
+
+### 測試
+
+```bash
+# 1. 不依賴真的失敗：直接觸發 template service
+systemctl --user start stock-notify@stock-daily-update.service
+# → 會 POST 一則含 stock-daily-update.service journal 最後 10 行的推播
+
+# 2. 完整 OnFailure 流程：手動失敗
+systemctl --user start stock-fake-test.service  # 不存在的 unit → 觸發失敗
+# 或讓現有 service exit 1，例如改 ExecStart 為 /bin/false 暫時測試
+```
+
+### 改 topic
+
+```bash
+vim ~/.config/systemd/user/stock-notify.env
+# EnvironmentFile 每次啟動都讀，不需要 daemon-reload
+```
+
+### 注意事項
+
+- **Public ntfy.sh 的 topic 名等同密碼** — 任何人猜到都能讀寫。挑 hard-to-guess（建議 ≥ 12 隨機字元）。需要隱私升級的話走 Telegram bot / self-host ntfy。
+- **無網路時通知會 fail** — `notify_failure.sh` 本身不再有 `OnFailure=`，所以 fail 就只是吞掉，不會無限遞迴。
+- **計算用 `journalctl --user -u <unit> -n 12`**，所以 unit 沒跑過的話會收到 "No entries" — 測試假 unit 名時是正常現象。
+- **不通知「資料舊但沒 crash」這類 silent failure**。若要抓「process exit 0 但 DB 沒進資料」的情境，需另寫 freshness-check cron（未做）。
+
 ## 與 macOS schedules_macos/ 的差異速查
 
 | 面向 | macOS (`schedules_macos/`) | Ubuntu (`schedules_ubuntu/`) |

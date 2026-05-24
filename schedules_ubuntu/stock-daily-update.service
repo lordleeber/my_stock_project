@@ -1,5 +1,6 @@
 [Unit]
 Description=Taiwan stock daily update (scraper -> processor -> audit -> importer -> calculator)
+OnFailure=stock-notify@%n.service
 
 [Service]
 Type=oneshot

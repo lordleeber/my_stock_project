@@ -1,5 +1,6 @@
 [Unit]
 Description=Taiwan stock weekly update (TDCC shareholding)
+OnFailure=stock-notify@%n.service
 
 [Service]
 Type=oneshot
