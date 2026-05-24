@@ -82,8 +82,8 @@ All CLI args use `--date YYYY-MM-DD`（playbook_date，cutoff +1）；省略則�
 
 | Step | Script | Output |
 |---|---|---|
-| 1 | `step1_prepare_data.py --date D` | `output/<D>/dataset_strategy.csv` (40 cols, after ttm/volume filter) |
-| 2 | `step2_finalize_strategy.py --date D` | enrich `dataset_strategy.csv` with technical/revenue/EPS-prediction features (76 cols); write `trade_candidates.csv` |
+| 1 | `step1_prepare_data.py --date D` | `output/<D>/dataset_strategy.csv` (~38 cols, after ttm/volume filter) |
+| 2 | `step2_finalize_strategy.py --date D` | enrich `dataset_strategy.csv` with technical/revenue/EPS-prediction features (~74 cols); write `trade_candidates.csv` |
 | 3 | `step3_analyze_feature_returns.py` | `feature_return_analysis.csv` (fwd_return ground truth)，掃描所有 `output/<D>/` |
 | 4 | `step4_train_selection_model.py --date D` | `models_selection/<D>/selection_model.pkl` + feature_importance + latest.json（`D` = train_through_playbook_date） |
 | 5 | `step5_score_and_publish.py --date D` | `models_selection/<D>/candidates_scored.csv` (final picks by `ml_rank`，`D` = target_playbook_date) |
