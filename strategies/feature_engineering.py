@@ -343,7 +343,6 @@ REVENUE_FEATURE_COLS = [
     "revenue_cum_yoy",  # cumulative YoY % (year-to-date)
     "revenue_yoy_3m_avg",  # 3-month average YoY %
     "revenue_yoy_accel",  # YoY acceleration: latest YoY - 3-month-ago YoY
-    "revenue_positive_streak",  # consecutive months of positive YoY (from latest backward)
 ]
 
 
@@ -439,14 +438,6 @@ def fetch_revenue_features(
             else np.nan
         )
 
-        # 正 YoY 連續月數：從最新月份往前連續計算
-        streak = 0
-        for _, row in grp.sort_values("rn").iterrows():
-            v = row["yoy_pct"]
-            if pd.isna(v) or v <= 0:
-                break
-            streak += 1
-
         records.append(
             {
                 "symbol": sym,
@@ -455,7 +446,6 @@ def fetch_revenue_features(
                 "revenue_cum_yoy": cum_yoy,
                 "revenue_yoy_3m_avg": yoy_3m_avg,
                 "revenue_yoy_accel": yoy_accel,
-                "revenue_positive_streak": float(streak),
             }
         )
 

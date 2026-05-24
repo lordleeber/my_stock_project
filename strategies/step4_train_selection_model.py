@@ -71,7 +71,6 @@ FEATURE_COLS = (
         "trust_held_ratio",
         "large_holder_ratio",
         "large_holder_ratio_wow",
-        "large_holder_two_week_up",
         "mid_holder_ratio",
         "mid_holder_ratio_wow",
         "small_holder_ratio",
