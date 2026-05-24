@@ -13,12 +13,12 @@
 | Unit | 觸發時間 | 呼叫的 script |
 |---|---|---|
 | `stock-daily-update.timer` | 每天 23:30 | `schedules/daily_update.sh` |
-| `stock-daily-retry.timer` | 每天 02:00 與 04:00 | `schedules/daily_retry.sh` |
+| `stock-daily-retry.timer` | 每天 03:00 | `schedules/daily_retry.sh` |
 | `stock-weekly-update.timer` | 週日 10:20 | `schedules/weekly_update.sh` |
 | `stock-monthly-update.timer` | 每天 22:45（script 內判斷 1~15 才實際跑） | `schedules/monthly_update.sh` |
 | `stock-xbrl-scrape-daily.timer` | 每天 23:50（script 內判斷公告期才實際跑） | `schedules/xbrl_scrape_daily.sh` |
 
-> **差異說明**：macOS 因 launchd `StartCalendarInterval` 不支援多時間點，所以拆成 `schedules_macos/com.poyilee.stock-daily-retry-1.plist` (02:00) 與 `-2.plist` (04:00) 兩個 plist。systemd 的 `OnCalendar=` 可以多行，所以 `stock-daily-retry.timer` 一支單元同時涵蓋兩個時間。
+> 過往用 02:00 + 04:00 兩個觸發點；2026-05 簡化成單一 03:00，因為觀察上兩次 retry 結果幾乎總是一致（同時 skip 或同時 fail，沒看到「02:00 fail / 04:00 success」案例），多排一次只是重複跑 + 多一次通知噪音。
 
 ## 前置需求
 

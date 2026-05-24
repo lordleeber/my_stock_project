@@ -1,9 +1,8 @@
 [Unit]
-Description=Run stock-daily-retry.service at 02:00 and 04:00 daily
+Description=Run stock-daily-retry.service at 03:00 daily
 
 [Timer]
-OnCalendar=*-*-* 02:00:00
-OnCalendar=*-*-* 04:00:00
+OnCalendar=*-*-* 03:00:00
 Persistent=false
 Unit=stock-daily-retry.service
 
