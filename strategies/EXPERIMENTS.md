@@ -23,16 +23,18 @@ $100K per position）。
 
 | Phase / Branch | 4Y PnL | Win% | Trade mean | Trade median | Sharpe trade | Sharpe mo ann | Monthly std | Worst month | Best month |
 |---|---|---|---|---|---|---|---|---|---|
-| P0.5 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.97% | -24.63% | 34.53% |
-| **P1 (ebb3d15, main)** | **3.96M** | **66.96%** | 8.62% | 5.69% | 0.461 | 2.91 | 10.04% | -21.60% | 34.78% |
+| P0 (f0bafe5, `p0-baseline`) | 3.80M | 64.78% | 8.28% | 5.74% | 0.436 | 2.94 | 9.52% | -21.89% | 39.49% |
+| P0.5 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.95% | -24.60% | 34.50% |
+| **P1 (ebb3d15, main)** | **3.96M** | **66.96%** | 8.62% | 5.69% | 0.461 | 2.91 | 10.03% | -21.56% | 34.72% |
 | p3-vol-features | 4.09M | 66.52% | 8.90% | 5.43% | 0.403 | 2.77 | 11.32% | -19.36% | 36.41% |
 | p5-industry-rank | 4.09M | 65.00% | 8.91% | 5.97% | 0.451 | 2.72 | 11.12% | -22.39% | 34.30% |
 | p-label-sharpe | 2.48M | 60.43% | 5.40% | 1.83% | 0.292 | 2.13 | 8.59% | -9.87% | 43.90% |
 | **p-label-mixed α=0.7** | 3.57M | 63.48% | 7.77% | 5.11% | 0.413 | **3.02** | 8.72% | -19.84% | 29.09% |
 | p-label-mdd λ=0.5 | 3.40M | 64.78% | 7.41% | 4.41% | 0.419 | 2.75 | 9.14% | -18.89% | 33.51% |
 
-P3 / P5 monthly std + best month 沒當下記錄到三位精度，這裡是從備份檔
-（`logs/p*_baseline/rolling_*.csv`）即時重算的近似值。
+P3 / P5 monthly std + best month 沒當下記錄到三位精度，是當時從 phase 自己的
+rolling_*.csv 即時重算的近似值。P0 / P0.5 / P1 三列由 `logs/p0_snapshot/` /
+`logs/p0_5_snapshot/` / `logs/p1_snapshot/` 同一套 script 重算，數值一致可比。
 
 ## Decision Rule
 
@@ -41,6 +43,17 @@ P3 / P5 monthly std + best month 沒當下記錄到三位精度，這裡是從�
 兩個改善」太寬，實務不夠嚴。
 
 ## Findings
+
+**Pre-P1 retrospective (P0 → P0.5 → P1)** — 2026-05-25 補做：
+
+P0 (f0bafe5) 在 4Y backtest 是 **3.80M PnL / monthly Sharpe 2.94**；P0.5 (d15675d)
+拆 `pred_upside_pct` 成 base/ml/total 三欄後 PnL 持平 (3.82M) 但 **monthly Sharpe
+退到 2.57 (-0.37)**、monthly std +1.43 個百分點、worst month 從 -21.9% 惡化到
+-24.6%。P0.5 commit 訊息只看 PnL/win%/median 比較，沒看 Sharpe，所以當時沒抓到
+這個退步。P1 (ebb3d15) drop `large_holder_two_week_up` + `revenue_positive_streak`
+才把 Sharpe 拉回 2.91 並進一步把 PnL 推到 3.96M。**真正的 alpha 來自 P1 而非
+P0.5**；P0.5 拆欄獨立來看在 Sharpe 上是負貢獻，只是 PnL 持平掩蓋了問題。三欄結構
+是否值得留，可在 mixed-label / 後續實驗時再評估（目前 main 仍保留）。
 
 **P3 / P5 同 pattern（加 feature 在 P1 之上）**：
 
@@ -74,13 +87,14 @@ ensemble 是合理的下一步（未做）。
 ## How to Resume
 
 ```bash
-# 看實驗 baseline 狀態
-ls logs/p1_baseline/           # P0.5 (d15675d) backtest 完整 snapshot — P1 量測對照組
-ls logs/p_label_baseline/      # P1 (= ebb3d15) snapshot at label experiment start
-ls logs/p3_baseline/           # 同上，每個 phase 各備份一份
+# 三條 main timeline 的 backtest snapshot（同 2022-07-11 → 2026-05-16, top-10, $100K）
+ls logs/p0_snapshot/           # P0   (f0bafe5, branch p0-baseline)
+ls logs/p0_5_snapshot/         # P0.5 (d15675d, main 歷史中)
+ls logs/p1_snapshot/           # P1   (ebb3d15, main HEAD 之前)
 ls logs/tune_a60/ tune_a70/ ... # alpha sweep 各 alpha 結果
 
 # 重拾某個 phase
+git checkout p0-baseline                # P0 (f0bafe5) feature engineering 之前
 git checkout p-label-mixed              # α=0.7 winner
 git checkout p-label-mixed-tuning       # 6-alpha sweep code
 git checkout p3-vol-features            # vol_20d/60d
