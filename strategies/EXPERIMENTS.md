@@ -8,7 +8,8 @@
 
 | Commit | Branch | 內容 |
 |---|---|---|
-| d15675d | main | pre-P1 baseline (split pred_upside_pct into base/ml/total triple) |
+| f0bafe5 | main (→ `p0-baseline`) | **P0**: true feature baseline，舊 `pred_upside_pct` 單欄寫法尚未拆 |
+| d15675d | main | **P0.5**: split `pred_upside_pct` into base/ml/total triple（feature engineering 起點） |
 | ebb3d15 | main | **P1: drop low-gain features** large_holder_two_week_up + revenue_positive_streak |
 | 1d45f76 | main | docs: refresh column counts after P1 |
 
@@ -22,7 +23,7 @@ $100K per position）。
 
 | Phase / Branch | 4Y PnL | Win% | Trade mean | Trade median | Sharpe trade | Sharpe mo ann | Monthly std | Worst month | Best month |
 |---|---|---|---|---|---|---|---|---|---|
-| Pre-P1 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.97% | -24.63% | 34.53% |
+| P0.5 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.97% | -24.63% | 34.53% |
 | **P1 (ebb3d15, main)** | **3.96M** | **66.96%** | 8.62% | 5.69% | 0.461 | 2.91 | 10.04% | -21.60% | 34.78% |
 | p3-vol-features | 4.09M | 66.52% | 8.90% | 5.43% | 0.403 | 2.77 | 11.32% | -19.36% | 36.41% |
 | p5-industry-rank | 4.09M | 65.00% | 8.91% | 5.97% | 0.451 | 2.72 | 11.12% | -22.39% | 34.30% |
@@ -74,7 +75,7 @@ ensemble 是合理的下一步（未做）。
 
 ```bash
 # 看實驗 baseline 狀態
-ls logs/p1_baseline/           # pre-P1 (d15675d) backtest 完整 snapshot
+ls logs/p1_baseline/           # P0.5 (d15675d) backtest 完整 snapshot — P1 量測對照組
 ls logs/p_label_baseline/      # P1 (= ebb3d15) snapshot at label experiment start
 ls logs/p3_baseline/           # 同上，每個 phase 各備份一份
 ls logs/tune_a60/ tune_a70/ ... # alpha sweep 各 alpha 結果
