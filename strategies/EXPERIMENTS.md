@@ -63,6 +63,62 @@ Sharpe = 2.94**，與 P0 同水準；換句話說 P1 結構性 Sharpe ≈ P0、P
 > 受 daily_quotes / monthly_revenue 變動影響可能微幅 drift）。舊版 P1 row 的
 > 3.96M / Sharpe 2.91 是更早跑的 snapshot，已被覆蓋成 fresh rerun。
 
+## ⚠️ Backtest 不嚴格 reproducible — 已知 PIT leak
+
+2026-05-25 rerun vs 1-2 日前的 P1 snapshot 比對 47 個月份：
+
+| Δ 月報酬 | 月份數 |
+|---|---|
+| < 0.01pp（一致） | 2 |
+| 0.01 ~ 1pp | 15 |
+| 1 ~ 5pp | 22 |
+| **≥ 5pp** | **7** |
+
+最大 drift 是 2026-04 cohort 從 +34.7% 縮到 +23.8% (-10.9pp)、2023-08 cohort 從 +8.4%
+變 +0.9% (-7.4pp)。**同一份 code，純粹因為 DB 內容變動。**
+
+### Root cause (audit 2026-05-25)
+
+**Step1 fact-table 查詢沒做 publish_time 過濾**：
+
+| 表 | step1 line | 過濾條件 | publish_time 欄位 | PIT-safe? |
+|---|---|---|---|---|
+| `monthly_revenue` | 348-349 | `date IN (mr_dates)` | ✅ 表有此欄 | **N** |
+| `quarterly_reports_xbrl` | 333/344/352-364 | `date = '{Qx}' AND period_type=...` | ✅ 表有此欄 | **N** |
+| `balance_sheet_xbrl` | 449 | `date = '{anchor_q}'` | ✅ 表有此欄 | **N** |
+| `cash_flow_xbrl` | 459 | `date IN (anchor_q, pre_anchor_q)` | ✅ 表有此欄 | **N** |
+| `daily_quotes` | 385 | `date <= cutoff_date` | n/a | Y |
+
+→ 上市公司的月營收 / 季報 / XBRL 補登或延後公布時，會回頭進入更早的歷史 cohort 特徵中。
+
+**Calculator 衍生表全部「DROP + recreate」**（每次跑覆寫全部歷史）：
+
+`valuation_daily` / `dealer_holding` / `trust_holding` / `shareholding_concentration` /
+`short_interest_analysis` / `margin_pressure_analysis` — 例如 `pe_percentile_official`
+是 `groupby(symbol).rank(pct=True)`，分母包含跑當下全部歷史 PE，每多累積一年資料、
+歷史 percentile 都會被重新分配。
+
+**反例**：`strategies/feature_engineering.py:377-378` 跟 `step2_finalize_strategy.py:218`
+已用 `WHERE publish_time <= ref_compact` 做 PIT 過濾——所以 step2 的月營收 momentum
+是 PIT-safe，**只有 step1 跟 calculator 不是**。
+
+### 影響範圍
+
+- **不影響「current month picks」的正確性**：step5 score 用今天 cutoff，今天的 DB 就是 PIT。
+- **影響「historical backtest 重現性」**：任意兩次 rerun（隔超過幾天）會得出不同 4Y PnL / Sharpe，
+  跨 phase 比較必須**同一 DB state**才有意義（這也是為什麼上面 result matrix 加註 snapshot 時間）。
+- **影響「歷史 cohort 的 picks 報告」**：例如 2024-02-11 cohort 今天看到的 picks，跟當時實際
+  生產跑出來的 picks 不一定一致。
+
+### Fix scope
+
+- 一行修：step1 SQL 加 `AND publish_time <= '{cutoff_date}'` 到 monthly_revenue 跟四個
+  XBRL fact table 查詢（≈40% drift 來源）。
+- 結構修：把 calculator 衍生表改成「per-cohort frozen snapshot」（`valuation_daily_<DATE>` 等），
+  或改成 incremental-only 不覆寫歷史。工程量大。
+- 短期務實：把這段 caveat 留著，比較 phase 時用同一晚跑出來的 snapshot；不要拿不同日期的
+  rolling_summary 互比 absolute 數字。
+
 **P3 / P5 同 pattern（加 feature 在 P1 之上）**：
 
 加 vol features (P3) 或 industry rank (P5) 都讓 PnL +3%，但 monthly Sharpe
