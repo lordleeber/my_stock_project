@@ -25,7 +25,7 @@ $100K per position）。
 |---|---|---|---|---|---|---|---|---|---|
 | P0 (f0bafe5, `p0-baseline`) | 3.80M | 64.78% | 8.28% | 5.74% | 0.436 | 2.94 | 9.52% | -21.89% | 39.49% |
 | P0.5 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.95% | -24.60% | 34.50% |
-| **P1 (ebb3d15, main)** | **3.96M** | **66.96%** | 8.62% | 5.69% | 0.461 | 2.91 | 10.03% | -21.56% | 34.72% |
+| **P1 (ebb3d15, main)** | **4.12M** | **65.87%** | 8.97% | 5.69% | 0.406 | 2.69 | 11.29% | -21.57% | 53.85% |
 | p3-vol-features | 4.09M | 66.52% | 8.90% | 5.43% | 0.403 | 2.77 | 11.32% | -19.36% | 36.41% |
 | p5-industry-rank | 4.09M | 65.00% | 8.91% | 5.97% | 0.451 | 2.72 | 11.12% | -22.39% | 34.30% |
 | p-label-sharpe | 2.48M | 60.43% | 5.40% | 1.83% | 0.292 | 2.13 | 8.59% | -9.87% | 43.90% |
@@ -51,9 +51,17 @@ P0 (f0bafe5) 在 4Y backtest 是 **3.80M PnL / monthly Sharpe 2.94**；P0.5 (d15
 退到 2.57 (-0.37)**、monthly std +1.43 個百分點、worst month 從 -21.9% 惡化到
 -24.6%。P0.5 commit 訊息只看 PnL/win%/median 比較，沒看 Sharpe，所以當時沒抓到
 這個退步。P1 (ebb3d15) drop `large_holder_two_week_up` + `revenue_positive_streak`
-才把 Sharpe 拉回 2.91 並進一步把 PnL 推到 3.96M。**真正的 alpha 來自 P1 而非
-P0.5**；P0.5 拆欄獨立來看在 Sharpe 上是負貢獻，只是 PnL 持平掩蓋了問題。三欄結構
-是否值得留，可在 mixed-label / 後續實驗時再評估（目前 main 仍保留）。
+後 PnL 推到 **4.12M** (best of three)，但 monthly Sharpe 算成 **2.69**——主因是
+2026-05-16 cohort exit 出現 +53.85% 的 outlier 月（單月 PnL +538K，2026-04 cohort
+的某些 picks 5/15 大漲），把 std 撐到 11.29%。**剔除 2026-05-16 outlier 後 P1
+Sharpe = 2.94**，與 P0 同水準；換句話說 P1 結構性 Sharpe ≈ P0、PnL 更高、偶有
+極端正報酬月。三欄結構是否值得留可在 mixed-label / 後續實驗時再評估（目前 main
+仍保留）。
+
+> 註：P0 snapshot 跑於 2026-05-25 22:11、P1 fresh 跑於同日 22:42（同 DB state，
+> 可直接比）；P0.5 snapshot 保留 2026-05-24 08:30 原版未重跑（DB 差一日，picks
+> 受 daily_quotes / monthly_revenue 變動影響可能微幅 drift）。舊版 P1 row 的
+> 3.96M / Sharpe 2.91 是更早跑的 snapshot，已被覆蓋成 fresh rerun。
 
 **P3 / P5 同 pattern（加 feature 在 P1 之上）**：
 
