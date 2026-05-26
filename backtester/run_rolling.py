@@ -410,8 +410,15 @@ def main() -> None:
         regime = detect_market_regime(entry_date_str)
 
         # 完整月度輪倉：全部出場，再全部進場新候選股。
+        # Feb/Mar 例外：cutoff (02-10/03-10) 早於前一年 Q4 公告日 (03-31)，
+        # build_quarter_context 仍把 anchor_q 指向 Q4，導致 step1 特徵實際是
+        # leak future data。所以 backtester 對這兩個月不 entry 新 cohort
+        # （仍 exit 前一輪部位），實質上 portfolio 在 Feb/Mar 為空倉。
         exit_symbols = sorted(portfolio.keys())
-        entry_symbols = sorted(candidates_df["symbol"].tolist())
+        skip_entry = month in (2, 3)
+        entry_symbols = (
+            [] if skip_entry else sorted(candidates_df["symbol"].tolist())
+        )
 
         # 記錄被結算 cohort 的識別資訊（同一輪的部位都來自同一個 cohort）。
         # 首輪 portfolio 為空時三個欄位留空，realized_net_pnl 必為 0。

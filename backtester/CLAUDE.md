@@ -41,6 +41,33 @@ playbook whose rotation date hasn't yet been quoted in the DB (e.g.
 otherwise produce `entries_failed_no_quote=10` and pollute the run.
 The resolved end is printed to stdout at start (`[auto-detect] end = YYYY-MM-DD`).
 
+## Skipped Months (Feb / Mar)
+
+Backtester does **not** open new positions for playbook_date months `02` and `03`.
+
+Reason: `strategies/step1_prepare_data.py` derives `anchor_q` via
+`build_quarter_context`, which for Feb/Mar cohorts maps to the previous
+year's Q4. But Q4's official publish deadline is Mar 31 of the following
+year — strictly **after** the Feb (02-10) and Mar (03-10) cutoff dates.
+So all Feb/Mar candidate features are computed against data that wasn't
+yet published as of the cohort's cutoff (PIT leak). Until
+`build_quarter_context` is rewritten to use a publish-aware anchor, the
+honest move is to refuse to backtest these cohorts.
+
+Behaviour during a skipped iteration:
+- **exit** runs normally: previous cohort is sold at `exit_date` (= the
+  trading day before the skipped playbook's `entry_date`); its
+  `realized_net_pnl` is recorded on the skipped row.
+- **entry** is suppressed: `entries=0`, `entries_failed_no_quote=0`,
+  `holdings_count` drops to 0 after exit.
+- Next non-skip iteration (typically April) starts with an empty portfolio
+  and opens its full cohort.
+
+Result: yearly cohort count drops from 12 → 10 (Jan and Apr still run;
+Feb and Mar appear in `rolling_monthly.csv` but with `entries=0` and zero
+`portfolio_capital_deployed`). step1/step2/step5 still generate Feb/Mar
+artifacts — they're computed but never consumed by `run_rolling.py`.
+
 ## Output Files (`backtester/output/rolling/`)
 
 | File | Granularity |
