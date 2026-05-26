@@ -529,6 +529,48 @@ def main() -> None:
     win_count = int((closed["net_pnl"] > 0).sum()) if not closed.empty else 0
     loss_count = int((closed["net_pnl"] < 0).sum()) if not closed.empty else 0
 
+    # 月度 Sharpe — 38-basis 公約：只算「真正有 cohort exit」的 row。
+    # rolling_monthly.csv 因為 Feb/Mar skip 會有 0-PnL 假月 (first iter / Mar
+    # no-op / Apr restart 都沒 exit)，把它們拉進 mean/std 會 silent 拉低 Sharpe。
+    # cohort_year.notna() 剛好抓到「該 row 有實際結算」這層。Denominator
+    # 用 top_n × position_amount 而非 portfolio_capital_deployed (Feb row 已 0)。
+    real_cohort_df = monthly_df[monthly_df["cohort_year"].notna()].copy()
+    monthly_stats: dict = {
+        "cohort_count": int(len(real_cohort_df)),
+        "monthly_sharpe": None,
+        "monthly_sharpe_annualized": None,
+        "annualization_factor": None,
+        "mean_monthly_return_pct": None,
+        "std_monthly_return_pct": None,
+        "win_months": None,
+        "worst_month_return_pct": None,
+        "best_month_return_pct": None,
+    }
+    if len(real_cohort_df) > 1 and top_n and position_amount:
+        position_size = top_n * position_amount
+        cohort_returns = real_cohort_df["realized_net_pnl"] / position_size
+        mean_ret = float(cohort_returns.mean())
+        std_ret = float(cohort_returns.std())
+        monthly_stats["mean_monthly_return_pct"] = round(mean_ret * 100, 4)
+        monthly_stats["std_monthly_return_pct"] = round(std_ret * 100, 4)
+        monthly_stats["worst_month_return_pct"] = round(float(cohort_returns.min()) * 100, 4)
+        monthly_stats["best_month_return_pct"] = round(float(cohort_returns.max()) * 100, 4)
+        monthly_stats["win_months"] = int((cohort_returns > 0).sum())
+        if std_ret > 0:
+            sharpe_mo = mean_ret / std_ret
+            monthly_stats["monthly_sharpe"] = round(sharpe_mo, 4)
+            # 年化倍數 = 實際每年 cohort 數開根。Feb/Mar skip 後典型是 10/年
+            # （√10 ≈ 3.162），但若 start/end 不剛好跨整年會略偏，動態算。
+            years_span = (
+                pd.to_datetime(end_date) - pd.to_datetime(args.start_date)
+            ).days / 365.25
+            cohorts_per_year = (
+                len(real_cohort_df) / years_span if years_span > 0 else 12.0
+            )
+            ann_factor = cohorts_per_year**0.5
+            monthly_stats["annualization_factor"] = round(ann_factor, 4)
+            monthly_stats["monthly_sharpe_annualized"] = round(sharpe_mo * ann_factor, 4)
+
     summary = {
         "start": args.start_date,
         "end": end_date,
@@ -544,6 +586,7 @@ def main() -> None:
         "win_rate": round(win_count / len(closed), 4) if len(closed) > 0 else None,
         "total_net_pnl": round(float(total_net_pnl), 2),
         "still_open_count": int((trades_df["exit_reason"] == "still_open").sum()),
+        "monthly_stats_38_basis": monthly_stats,
     }
     (out_dir / "rolling_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"

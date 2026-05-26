@@ -68,6 +68,39 @@ Feb and Mar appear in `rolling_monthly.csv` but with `entries=0` and zero
 `portfolio_capital_deployed`). step1/step2/step5 still generate Feb/Mar
 artifacts — they're computed but never consumed by `run_rolling.py`.
 
+## ⚠️ Monthly Sharpe — Always Use the 38-Basis
+
+Because Feb/Mar skip adds **no-PnL artifact rows** to `rolling_monthly.csv`,
+any monthly Sharpe / win-rate computed against the raw 47 rows silently
+deflates. The canonical convention is to filter on `cohort_year.notna()`
+(only rows where an actual cohort was settled), and use
+`top_n × position_amount` as the return denominator (not
+`portfolio_capital_deployed`, which is 0 on Feb rows that just exited).
+
+The 9 artifact rows per 4-year run that must be excluded:
+
+| Row type | Why excluded |
+|---|---|
+| First iteration (e.g., 2022-07-11) | No prior cohort to exit, `realized_net_pnl=0` |
+| Mar rows (4) | No exit (already empty from Feb skip) + no entry → `0/0` |
+| Apr rows (4) | Re-entry only, no exit (portfolio was empty) → entry-only |
+
+`run_rolling.py` writes the 38-basis numbers into
+`rolling_summary.json["monthly_stats_38_basis"]` (single source of truth).
+`summarize_range.py` reads them back. Don't recompute from
+`rolling_monthly.csv` ad-hoc — you'll trip over the artifact rows.
+
+Annualization factor = √(actual_cohorts / years_span), typically √10 ≈ 3.16
+post-skip (vs the textbook √12 from pre-skip days). It's stored explicitly
+in `monthly_stats_38_basis["annualization_factor"]` to keep prior-period
+comparisons honest.
+
+When comparing against pre-Feb/Mar-skip baselines (e.g. calc-per-cohort PR's
+"Sharpe 0.660 / ann 2.29" used the old 47-basis), the apples-to-apples
+metric is **per-cohort Sharpe ann ×√10**, not 47-basis ann ×√12. A 5-cohort
+drop in the denominator (47→38) on the same strategy gives a ~10% lower
+"ann ×√12" number for purely arithmetic reasons.
+
 ## Output Files (`backtester/output/rolling/`)
 
 | File | Granularity |
