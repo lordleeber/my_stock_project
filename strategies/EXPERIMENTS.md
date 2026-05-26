@@ -8,7 +8,8 @@
 
 | Commit | Branch | 內容 |
 |---|---|---|
-| d15675d | main | pre-P1 baseline (split pred_upside_pct into base/ml/total triple) |
+| f0bafe5 | main (→ `p0-baseline`) | **P0**: true feature baseline，舊 `pred_upside_pct` 單欄寫法尚未拆 |
+| d15675d | main | **P0.5**: split `pred_upside_pct` into base/ml/total triple（feature engineering 起點） |
 | ebb3d15 | main | **P1: drop low-gain features** large_holder_two_week_up + revenue_positive_streak |
 | 1d45f76 | main | docs: refresh column counts after P1 |
 
@@ -22,16 +23,18 @@ $100K per position）。
 
 | Phase / Branch | 4Y PnL | Win% | Trade mean | Trade median | Sharpe trade | Sharpe mo ann | Monthly std | Worst month | Best month |
 |---|---|---|---|---|---|---|---|---|---|
-| Pre-P1 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.97% | -24.63% | 34.53% |
-| **P1 (ebb3d15, main)** | **3.96M** | **66.96%** | 8.62% | 5.69% | 0.461 | 2.91 | 10.04% | -21.60% | 34.78% |
+| P0 (f0bafe5, `p0-baseline`) | 3.80M | 64.78% | 8.28% | 5.74% | 0.436 | 2.94 | 9.52% | -21.89% | 39.49% |
+| P0.5 (d15675d) | 3.82M | 65.65% | 8.32% | 5.69% | 0.443 | 2.57 | 10.95% | -24.60% | 34.50% |
+| **P1 (ebb3d15, main)** | **4.12M** | **65.87%** | 8.97% | 5.69% | 0.406 | 2.69 | 11.29% | -21.57% | 53.85% |
 | p3-vol-features | 4.09M | 66.52% | 8.90% | 5.43% | 0.403 | 2.77 | 11.32% | -19.36% | 36.41% |
 | p5-industry-rank | 4.09M | 65.00% | 8.91% | 5.97% | 0.451 | 2.72 | 11.12% | -22.39% | 34.30% |
 | p-label-sharpe | 2.48M | 60.43% | 5.40% | 1.83% | 0.292 | 2.13 | 8.59% | -9.87% | 43.90% |
 | **p-label-mixed α=0.7** | 3.57M | 63.48% | 7.77% | 5.11% | 0.413 | **3.02** | 8.72% | -19.84% | 29.09% |
 | p-label-mdd λ=0.5 | 3.40M | 64.78% | 7.41% | 4.41% | 0.419 | 2.75 | 9.14% | -18.89% | 33.51% |
 
-P3 / P5 monthly std + best month 沒當下記錄到三位精度，這裡是從備份檔
-（`logs/p*_baseline/rolling_*.csv`）即時重算的近似值。
+P3 / P5 monthly std + best month 沒當下記錄到三位精度，是當時從 phase 自己的
+rolling_*.csv 即時重算的近似值。P0 / P0.5 / P1 三列由 `logs/p0_snapshot/` /
+`logs/p0_5_snapshot/` / `logs/p1_snapshot/` 同一套 script 重算，數值一致可比。
 
 ## Decision Rule
 
@@ -40,6 +43,90 @@ P3 / P5 monthly std + best month 沒當下記錄到三位精度，這裡是從�
 兩個改善」太寬，實務不夠嚴。
 
 ## Findings
+
+**Pre-P1 retrospective (P0 → P0.5 → P1)** — 2026-05-25 補做：
+
+P0 (f0bafe5) 在 4Y backtest 是 **3.80M PnL / monthly Sharpe 2.94**；P0.5 (d15675d)
+拆 `pred_upside_pct` 成 base/ml/total 三欄後 PnL 持平 (3.82M) 但 **monthly Sharpe
+退到 2.57 (-0.37)**、monthly std +1.43 個百分點、worst month 從 -21.9% 惡化到
+-24.6%。P0.5 commit 訊息只看 PnL/win%/median 比較，沒看 Sharpe，所以當時沒抓到
+這個退步。P1 (ebb3d15) drop `large_holder_two_week_up` + `revenue_positive_streak`
+後 PnL 推到 **4.12M** (best of three)，但 monthly Sharpe 算成 **2.69**——主因是
+2026-05-16 cohort exit 出現 +53.85% 的 outlier 月（單月 PnL +538K，2026-04 cohort
+的某些 picks 5/15 大漲），把 std 撐到 11.29%。**剔除 2026-05-16 outlier 後 P1
+Sharpe = 2.94**，與 P0 同水準；換句話說 P1 結構性 Sharpe ≈ P0、PnL 更高、偶有
+極端正報酬月。三欄結構是否值得留可在 mixed-label / 後續實驗時再評估（目前 main
+仍保留）。
+
+> 註：P0 snapshot 跑於 2026-05-25 22:11、P1 fresh 跑於同日 22:42（同 DB state，
+> 可直接比）；P0.5 snapshot 保留 2026-05-24 08:30 原版未重跑（DB 差一日，picks
+> 受 daily_quotes / monthly_revenue 變動影響可能微幅 drift）。舊版 P1 row 的
+> 3.96M / Sharpe 2.91 是更早跑的 snapshot，已被覆蓋成 fresh rerun。
+
+## ⚠️ Backtest 不嚴格 reproducible — 已知 PIT leak
+
+2026-05-25 rerun vs 1-2 日前的 P1 snapshot 比對 47 個月份：
+
+| Δ 月報酬 | 月份數 |
+|---|---|
+| < 0.01pp（一致） | 2 |
+| 0.01 ~ 1pp | 15 |
+| 1 ~ 5pp | 22 |
+| **≥ 5pp** | **7** |
+
+最大 drift 是 2026-04 cohort 從 +34.7% 縮到 +23.8% (-10.9pp)、2023-08 cohort 從 +8.4%
+變 +0.9% (-7.4pp)。**同一份 code，純粹因為 DB 內容變動。**
+
+### Root cause (audit 2026-05-25)
+
+**Step1 fact-table 查詢沒做 publish_time 過濾**：
+
+| 表 | step1 line | 過濾條件 | publish_time 欄位 | PIT-safe? |
+|---|---|---|---|---|
+| `monthly_revenue` | 348-349 | `date IN (mr_dates)` | ✅ 表有此欄 | **N** |
+| `quarterly_reports_xbrl` | 333/344/352-364 | `date = '{Qx}' AND period_type=...` | ✅ 表有此欄 | **N** |
+| `balance_sheet_xbrl` | 449 | `date = '{anchor_q}'` | ✅ 表有此欄 | **N** |
+| `cash_flow_xbrl` | 459 | `date IN (anchor_q, pre_anchor_q)` | ✅ 表有此欄 | **N** |
+| `daily_quotes` | 385 | `date <= cutoff_date` | n/a | Y |
+
+→ 上市公司的月營收 / 季報 / XBRL 補登或延後公布時，會回頭進入更早的歷史 cohort 特徵中。
+
+**~~Calculator 衍生表全部「DROP + recreate」~~** ✅ Fixed on `calc-per-cohort` branch
+(commit pending). All seven calculators now run incremental-only:
+
+- `calculate_valuation.py` / `calculate_dealer_holding.py` / `calculate_trust_holding.py`
+  / `calculate_shareholding_concentration.py` / `calculate_short_interest_analysis.py`
+  / `calculate_margin_pressure_analysis.py` / `calculate_daily.py` each detect
+  `MAX(date)` on their output table and only insert rows with `date > last_processed`.
+- `pe_percentile_official` semantics changed: full-history rank → **PIT expanding
+  rank** (per row, against same-symbol PE values with `date <= row.date`). A one-time
+  `calculator/backfill_pit_percentile.py` migration rewrote all 1.47M historical rows.
+- `--force-full` flag preserved as the escape hatch (used after schema/bug changes).
+
+**Reproducibility check**: re-running every calculator on an unchanged DB produced
+zero new rows / zero updates (idempotent no-op). The remaining backtest drift comes
+from the raw-table PIT leak below — calculator's own contribution is sealed.
+
+**反例**：`strategies/feature_engineering.py:377-378` 跟 `step2_finalize_strategy.py:218`
+已用 `WHERE publish_time <= ref_compact` 做 PIT 過濾——所以 step2 的月營收 momentum
+是 PIT-safe，**只有 step1 還未做 publish_time 過濾**。
+
+### 影響範圍
+
+- **不影響「current month picks」的正確性**：step5 score 用今天 cutoff，今天的 DB 就是 PIT。
+- **影響「historical backtest 重現性」**：任意兩次 rerun（隔超過幾天）會得出不同 4Y PnL / Sharpe，
+  跨 phase 比較必須**同一 DB state**才有意義（這也是為什麼上面 result matrix 加註 snapshot 時間）。
+- **影響「歷史 cohort 的 picks 報告」**：例如 2024-02-11 cohort 今天看到的 picks，跟當時實際
+  生產跑出來的 picks 不一定一致。
+
+### Fix scope
+
+- ~~結構修：把 calculator 衍生表改成 incremental-only 不覆寫歷史。~~ ✅ Done on
+  `calc-per-cohort` (see calculator section above).
+- **Next**: 一行修 — step1 SQL 加 `AND publish_time <= '{cutoff_date}'` 到 monthly_revenue
+  跟四個 XBRL fact table 查詢（≈60% drift 主因，per 2026-05-25 audit）。Separate branch.
+- 短期務實：calculator 端已凍，但 raw 表延遲 publish 還在 leak — 跨日 rerun 仍會 drift。
+  比較 phase 時用同一晚跑出來的 snapshot；不要拿不同日期的 rolling_summary 互比 absolute 數字。
 
 **P3 / P5 同 pattern（加 feature 在 P1 之上）**：
 
@@ -73,13 +160,14 @@ ensemble 是合理的下一步（未做）。
 ## How to Resume
 
 ```bash
-# 看實驗 baseline 狀態
-ls logs/p1_baseline/           # pre-P1 (d15675d) backtest 完整 snapshot
-ls logs/p_label_baseline/      # P1 (= ebb3d15) snapshot at label experiment start
-ls logs/p3_baseline/           # 同上，每個 phase 各備份一份
+# 三條 main timeline 的 backtest snapshot（同 2022-07-11 → 2026-05-16, top-10, $100K）
+ls logs/p0_snapshot/           # P0   (f0bafe5, branch p0-baseline)
+ls logs/p0_5_snapshot/         # P0.5 (d15675d, main 歷史中)
+ls logs/p1_snapshot/           # P1   (ebb3d15, main HEAD 之前)
 ls logs/tune_a60/ tune_a70/ ... # alpha sweep 各 alpha 結果
 
 # 重拾某個 phase
+git checkout p0-baseline                # P0 (f0bafe5) feature engineering 之前
 git checkout p-label-mixed              # α=0.7 winner
 git checkout p-label-mixed-tuning       # 6-alpha sweep code
 git checkout p3-vol-features            # vol_20d/60d
