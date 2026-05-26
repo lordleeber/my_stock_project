@@ -91,16 +91,25 @@ Sharpe = 2.94**，與 P0 同水準；換句話說 P1 結構性 Sharpe ≈ P0、P
 
 → 上市公司的月營收 / 季報 / XBRL 補登或延後公布時，會回頭進入更早的歷史 cohort 特徵中。
 
-**Calculator 衍生表全部「DROP + recreate」**（每次跑覆寫全部歷史）：
+**~~Calculator 衍生表全部「DROP + recreate」~~** ✅ Fixed on `calc-per-cohort` branch
+(commit pending). All seven calculators now run incremental-only:
 
-`valuation_daily` / `dealer_holding` / `trust_holding` / `shareholding_concentration` /
-`short_interest_analysis` / `margin_pressure_analysis` — 例如 `pe_percentile_official`
-是 `groupby(symbol).rank(pct=True)`，分母包含跑當下全部歷史 PE，每多累積一年資料、
-歷史 percentile 都會被重新分配。
+- `calculate_valuation.py` / `calculate_dealer_holding.py` / `calculate_trust_holding.py`
+  / `calculate_shareholding_concentration.py` / `calculate_short_interest_analysis.py`
+  / `calculate_margin_pressure_analysis.py` / `calculate_daily.py` each detect
+  `MAX(date)` on their output table and only insert rows with `date > last_processed`.
+- `pe_percentile_official` semantics changed: full-history rank → **PIT expanding
+  rank** (per row, against same-symbol PE values with `date <= row.date`). A one-time
+  `calculator/backfill_pit_percentile.py` migration rewrote all 1.47M historical rows.
+- `--force-full` flag preserved as the escape hatch (used after schema/bug changes).
+
+**Reproducibility check**: re-running every calculator on an unchanged DB produced
+zero new rows / zero updates (idempotent no-op). The remaining backtest drift comes
+from the raw-table PIT leak below — calculator's own contribution is sealed.
 
 **反例**：`strategies/feature_engineering.py:377-378` 跟 `step2_finalize_strategy.py:218`
 已用 `WHERE publish_time <= ref_compact` 做 PIT 過濾——所以 step2 的月營收 momentum
-是 PIT-safe，**只有 step1 跟 calculator 不是**。
+是 PIT-safe，**只有 step1 還未做 publish_time 過濾**。
 
 ### 影響範圍
 
@@ -112,12 +121,12 @@ Sharpe = 2.94**，與 P0 同水準；換句話說 P1 結構性 Sharpe ≈ P0、P
 
 ### Fix scope
 
-- 一行修：step1 SQL 加 `AND publish_time <= '{cutoff_date}'` 到 monthly_revenue 跟四個
-  XBRL fact table 查詢（≈40% drift 來源）。
-- 結構修：把 calculator 衍生表改成「per-cohort frozen snapshot」（`valuation_daily_<DATE>` 等），
-  或改成 incremental-only 不覆寫歷史。工程量大。
-- 短期務實：把這段 caveat 留著，比較 phase 時用同一晚跑出來的 snapshot；不要拿不同日期的
-  rolling_summary 互比 absolute 數字。
+- ~~結構修：把 calculator 衍生表改成 incremental-only 不覆寫歷史。~~ ✅ Done on
+  `calc-per-cohort` (see calculator section above).
+- **Next**: 一行修 — step1 SQL 加 `AND publish_time <= '{cutoff_date}'` 到 monthly_revenue
+  跟四個 XBRL fact table 查詢（≈60% drift 主因，per 2026-05-25 audit）。Separate branch.
+- 短期務實：calculator 端已凍，但 raw 表延遲 publish 還在 leak — 跨日 rerun 仍會 drift。
+  比較 phase 時用同一晚跑出來的 snapshot；不要拿不同日期的 rolling_summary 互比 absolute 數字。
 
 **P3 / P5 同 pattern（加 feature 在 P1 之上）**：
 
