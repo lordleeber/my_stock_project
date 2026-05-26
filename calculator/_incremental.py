@@ -2,6 +2,22 @@
 
 PIT-safe rule: never DROP+replace existing rows. Each calculator detects
 MAX(date) on its output table and only computes rows with date > last_processed.
+
+**Upstream assumption (intentionally unenforced)**: every consumer of these
+helpers reads raw rows with `WHERE <raw_date> > :last`, so rows backfilled
+*at or before* `last_processed` will NOT be picked up by incremental runs.
+This is acceptable for the calculator vector because:
+  - daily_quotes / institutional_investors / margin_* / shareholding are
+    delete-before-insert at the importer layer and do not gain rows at
+    historical dates after the fact;
+  - fact tables that DO late-publish (monthly_revenue, *_xbrl) are not read
+    by the calculators in this directory — they live in step1.
+
+If the upstream contract ever breaks (e.g. a backfill writes a row at an
+already-processed date), use `--force-full` to rebuild the affected table.
+The companion raw-table PIT leak (step1 fact-table queries missing
+`publish_time <= cutoff` filter) is tracked separately in
+strategies/EXPERIMENTS.md and is out of scope for this module.
 """
 
 import argparse

@@ -136,6 +136,36 @@ to force a specific window — used by the retry flow (`schedules/daily_retry.sh
 re-running stale dates. The other six calculators ignore env vars and always pick up
 from `MAX(date)` unless `--force-full` is passed.
 
+#### Migration Sequence (first cherry-pick / fresh DB)
+
+Cherry-picking the calc-per-cohort changes onto an existing DB (or onto a fresh
+clone) requires this one-time sequence — `CREATE TABLE IF NOT EXISTS` will
+no-op on pre-existing tables, so a DB with old-schema tables (e.g. without
+`PRIMARY KEY (date, symbol)` or missing streak columns) needs a rebuild:
+
+```bash
+# 1. Rebuild image (source not mounted)
+docker compose build calculator
+
+# 2. Rebuild all six DROP-replaced tables under the new schema
+docker compose run --rm calculator python calculate_daily.py                       --force-full
+docker compose run --rm calculator python calculate_dealer_holding.py              --force-full
+docker compose run --rm calculator python calculate_trust_holding.py               --force-full
+docker compose run --rm calculator python calculate_shareholding_concentration.py  --force-full
+docker compose run --rm calculator python calculate_short_interest_analysis.py     --force-full
+docker compose run --rm calculator python calculate_margin_pressure_analysis.py    --force-full
+
+# 3. valuation_daily — either rebuild from scratch:
+docker compose run --rm calculator python calculate_valuation.py --force-full
+#    or, if close/TTM are trusted and only percentile semantics need realigning:
+docker compose run --rm calculator python backfill_pit_percentile.py --dry-run
+docker compose run --rm calculator python backfill_pit_percentile.py
+```
+
+After step 3 all subsequent runs are incremental no-ops until new raw data
+arrives. Skip step 2/3 only if you know the DB was already rebuilt under the
+new schema (e.g. you previously merged this branch).
+
 ---
 
 ## Database Table Schemas

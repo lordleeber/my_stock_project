@@ -87,6 +87,20 @@ def run(dry_run=False):
     # caused by upstream pe_ratio carrying two pe_official values for the same
     # day (pre/post announcement). All duplicates share the same pe_calculated
     # → same new percentile → safe to dedupe before writing the temp table.
+    # Verify the invariant before dedupe — if upstream behavior ever changes
+    # so duplicates carry different PEs, dedupe would silently drop the
+    # divergent percentile.
+    dup_check = (
+        df.groupby(["symbol", "date"])["pe_percentile_official_new"].nunique()
+    )
+    inconsistent = dup_check[dup_check > 1]
+    if len(inconsistent) > 0:
+        sample = inconsistent.head(5)
+        raise AssertionError(
+            f"Found {len(inconsistent)} (symbol, date) groups with divergent "
+            f"pe_percentile_official_new — dedupe assumption violated. "
+            f"Sample:\n{sample}"
+        )
     write_df = (
         df[["symbol", "date", "pe_percentile_official_new"]]
         .drop_duplicates(subset=["symbol", "date"])
