@@ -24,8 +24,12 @@ OUT_CSV = OUT_DIR / "ml_score_distribution.csv"
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--top-n", type=int, default=10,
-                   help="Also report mean ml_score of top-N picks per cohort")
+    p.add_argument(
+        "--top-n",
+        type=int,
+        default=10,
+        help="Also report mean ml_score of top-N picks per cohort",
+    )
     args = p.parse_args()
 
     rows = []
@@ -40,22 +44,26 @@ def main() -> int:
             continue
         s = df["ml_score"].astype(float)
         top_n_mean = float(
-            df.sort_values("ml_score", ascending=False).head(args.top_n)["ml_score"].mean()
+            df.sort_values("ml_score", ascending=False)
+            .head(args.top_n)["ml_score"]
+            .mean()
         )
-        rows.append({
-            "playbook_date": d.name,
-            "n_candidates": int(len(s)),
-            "min": float(s.min()),
-            "p10": float(s.quantile(0.10)),
-            "p25": float(s.quantile(0.25)),
-            "median": float(s.median()),
-            "p75": float(s.quantile(0.75)),
-            "p90": float(s.quantile(0.90)),
-            "max": float(s.max()),
-            "mean": float(s.mean()),
-            "std": float(s.std(ddof=1)),
-            f"top{args.top_n}_mean": top_n_mean,
-        })
+        rows.append(
+            {
+                "playbook_date": d.name,
+                "n_candidates": int(len(s)),
+                "min": float(s.min()),
+                "p10": float(s.quantile(0.10)),
+                "p25": float(s.quantile(0.25)),
+                "median": float(s.median()),
+                "p75": float(s.quantile(0.75)),
+                "p90": float(s.quantile(0.90)),
+                "max": float(s.max()),
+                "mean": float(s.mean()),
+                "std": float(s.std(ddof=1)),
+                f"top{args.top_n}_mean": top_n_mean,
+            }
+        )
 
     df = pd.DataFrame(rows).sort_values("playbook_date").reset_index(drop=True)
     if df.empty:
@@ -83,13 +91,15 @@ def main() -> int:
         recent = df.tail(third)
         drift_rows = []
         for col in ["median", "p90", "max", f"top{args.top_n}_mean"]:
-            drift_rows.append({
-                "metric": col,
-                "early_mean": f"{early[col].mean():.4f}",
-                "recent_mean": f"{recent[col].mean():.4f}",
-                "delta": f"{recent[col].mean() - early[col].mean():+.4f}",
-                "delta_in_std": f"{(recent[col].mean() - early[col].mean()) / df[col].std(ddof=1):+.2f}σ",
-            })
+            drift_rows.append(
+                {
+                    "metric": col,
+                    "early_mean": f"{early[col].mean():.4f}",
+                    "recent_mean": f"{recent[col].mean():.4f}",
+                    "delta": f"{recent[col].mean() - early[col].mean():+.4f}",
+                    "delta_in_std": f"{(recent[col].mean() - early[col].mean()) / df[col].std(ddof=1):+.2f}σ",
+                }
+            )
         print(pd.DataFrame(drift_rows).to_string(index=False))
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

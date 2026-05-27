@@ -40,9 +40,12 @@ def run_one(
     cmd = [
         str(PY),
         str(ROOT / "backtester" / "run_rolling.py"),
-        "--start-date", start_date,
-        "--top-n", str(top_n),
-        "--position-amount", str(position_amount),
+        "--start-date",
+        start_date,
+        "--top-n",
+        str(top_n),
+        "--position-amount",
+        str(position_amount),
     ]
     if end_date:
         cmd += ["--end-date", end_date]
@@ -67,7 +70,11 @@ def compute_metrics(dest: Path, position_amount: float) -> dict:
 
     mean_ret = ret_pct.mean()
     std_ret = ret_pct.std(ddof=1)
-    sharpe = (mean_ret / std_ret) * math.sqrt(12) if std_ret and std_ret > 0 else float("nan")
+    sharpe = (
+        (mean_ret / std_ret) * math.sqrt(12)
+        if std_ret and std_ret > 0
+        else float("nan")
+    )
 
     cum = pnl.cumsum()
     peak = cum.cummax()
@@ -83,7 +90,9 @@ def compute_metrics(dest: Path, position_amount: float) -> dict:
         "std_monthly_return_pct": float(std_ret),
         "sharpe_annual": float(sharpe),
         "positive_months_pct": float((pnl > 0).mean()),
-        "worst_month_return_pct": float(ret_pct.min()) if len(ret_pct) else float("nan"),
+        "worst_month_return_pct": float(ret_pct.min())
+        if len(ret_pct)
+        else float("nan"),
         "max_drawdown_pnl": max_dd,
         "still_open": int(summary["still_open_count"]),
     }
@@ -93,7 +102,11 @@ def format_table(df: pd.DataFrame) -> str:
     fmt = df.copy()
     for c in ["win_rate", "positive_months_pct"]:
         fmt[c] = fmt[c].map(lambda x: f"{x:.2%}")
-    for c in ["mean_monthly_return_pct", "std_monthly_return_pct", "worst_month_return_pct"]:
+    for c in [
+        "mean_monthly_return_pct",
+        "std_monthly_return_pct",
+        "worst_month_return_pct",
+    ]:
         fmt[c] = fmt[c].map(lambda x: f"{x:+.3f}%")
     for c in ["total_pnl", "max_drawdown_pnl"]:
         fmt[c] = fmt[c].map(lambda x: f"{x:,.0f}")
@@ -104,12 +117,19 @@ def format_table(df: pd.DataFrame) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--start-date", default="2022-07-11")
-    p.add_argument("--end-date", default=None,
-                   help="Optional; if omitted run_rolling.py auto-detects.")
+    p.add_argument(
+        "--end-date",
+        default=None,
+        help="Optional; if omitted run_rolling.py auto-detects.",
+    )
     p.add_argument("--position-amount", type=float, default=100_000.0)
-    p.add_argument("--top-n", type=int, nargs="+",
-                   default=[5, 10, 15, 20, 25, 30],
-                   help="List of top_n values to sweep")
+    p.add_argument(
+        "--top-n",
+        type=int,
+        nargs="+",
+        default=[5, 10, 15, 20, 25, 30],
+        help="List of top_n values to sweep",
+    )
     args = p.parse_args()
 
     SWEEP_DIR.mkdir(parents=True, exist_ok=True)
@@ -126,12 +146,16 @@ def main() -> int:
 
     best_sharpe = df.loc[df["sharpe_annual"].idxmax()]
     best_pnl = df.loc[df["total_pnl"].idxmax()]
-    print(f"\nbest Sharpe : top_n={int(best_sharpe['top_n'])}  "
-          f"sharpe={best_sharpe['sharpe_annual']:.3f}  "
-          f"total_pnl={best_sharpe['total_pnl']:,.0f}")
-    print(f"best PnL    : top_n={int(best_pnl['top_n'])}  "
-          f"sharpe={best_pnl['sharpe_annual']:.3f}  "
-          f"total_pnl={best_pnl['total_pnl']:,.0f}")
+    print(
+        f"\nbest Sharpe : top_n={int(best_sharpe['top_n'])}  "
+        f"sharpe={best_sharpe['sharpe_annual']:.3f}  "
+        f"total_pnl={best_sharpe['total_pnl']:,.0f}"
+    )
+    print(
+        f"best PnL    : top_n={int(best_pnl['top_n'])}  "
+        f"sharpe={best_pnl['sharpe_annual']:.3f}  "
+        f"total_pnl={best_pnl['total_pnl']:,.0f}"
+    )
 
     out_csv = SWEEP_DIR / "sweep_summary.csv"
     df.to_csv(out_csv, index=False)

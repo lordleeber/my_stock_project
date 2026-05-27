@@ -252,7 +252,11 @@ def main() -> None:
         & tc["close"].gt(0)
         & tc["eps_growth_total_pct"].gt(0)
     )
-    tc = tc[valid].sort_values("eps_growth_total_pct", ascending=False).reset_index(drop=True)
+    tc = (
+        tc[valid]
+        .sort_values("eps_growth_total_pct", ascending=False)
+        .reset_index(drop=True)
+    )
     tc.to_csv(candidates_path, index=False, encoding="utf-8-sig")
 
     print(f"trade_candidates.csv written: {candidates_path}  ({len(tc)} rows)")

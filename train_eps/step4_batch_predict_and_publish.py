@@ -100,8 +100,7 @@ def main() -> None:
             missing.append(f"timestamped model pkl in {models_dir}/")
         if missing:
             raise SystemExit(
-                f"[FAIL] {d}: missing required input(s):\n  "
-                + "\n  ".join(missing)
+                f"[FAIL] {d}: missing required input(s):\n  " + "\n  ".join(missing)
             )
 
         cmd = [python, script, "--date", d]

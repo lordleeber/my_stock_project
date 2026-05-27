@@ -416,9 +416,7 @@ def main() -> None:
         # （仍 exit 前一輪部位），實質上 portfolio 在 Feb/Mar 為空倉。
         exit_symbols = sorted(portfolio.keys())
         skip_entry = month in (2, 3)
-        entry_symbols = (
-            [] if skip_entry else sorted(candidates_df["symbol"].tolist())
-        )
+        entry_symbols = [] if skip_entry else sorted(candidates_df["symbol"].tolist())
 
         # 記錄被結算 cohort 的識別資訊（同一輪的部位都來自同一個 cohort）。
         # 首輪 portfolio 為空時三個欄位留空，realized_net_pnl 必為 0。
@@ -553,8 +551,12 @@ def main() -> None:
         std_ret = float(cohort_returns.std())
         monthly_stats["mean_monthly_return_pct"] = round(mean_ret * 100, 4)
         monthly_stats["std_monthly_return_pct"] = round(std_ret * 100, 4)
-        monthly_stats["worst_month_return_pct"] = round(float(cohort_returns.min()) * 100, 4)
-        monthly_stats["best_month_return_pct"] = round(float(cohort_returns.max()) * 100, 4)
+        monthly_stats["worst_month_return_pct"] = round(
+            float(cohort_returns.min()) * 100, 4
+        )
+        monthly_stats["best_month_return_pct"] = round(
+            float(cohort_returns.max()) * 100, 4
+        )
         monthly_stats["win_months"] = int((cohort_returns > 0).sum())
         if std_ret > 0:
             sharpe_mo = mean_ret / std_ret
@@ -569,7 +571,9 @@ def main() -> None:
             )
             ann_factor = cohorts_per_year**0.5
             monthly_stats["annualization_factor"] = round(ann_factor, 4)
-            monthly_stats["monthly_sharpe_annualized"] = round(sharpe_mo * ann_factor, 4)
+            monthly_stats["monthly_sharpe_annualized"] = round(
+                sharpe_mo * ann_factor, 4
+            )
 
     summary = {
         "start": args.start_date,

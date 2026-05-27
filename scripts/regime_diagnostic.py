@@ -24,6 +24,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 import sys
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from common.db import get_db_url  # noqa: E402
@@ -74,9 +75,15 @@ def features_at(twii: pd.DataFrame, date: str) -> dict:
         "twii_ma60": ma60,
         "ma20_vs_ma60_pct": (ma20 / ma60 - 1) * 100 if ma60 else np.nan,
         "close_vs_ma20_pct": (close / ma20 - 1) * 100 if ma20 else np.nan,
-        "ret_20d_pct": float(row["ret_20d"]) * 100 if pd.notna(row["ret_20d"]) else np.nan,
-        "ret_60d_pct": float(row["ret_60d"]) * 100 if pd.notna(row["ret_60d"]) else np.nan,
-        "vol_20d_ann_pct": float(row["vol_20d_ann"]) * 100 if pd.notna(row["vol_20d_ann"]) else np.nan,
+        "ret_20d_pct": float(row["ret_20d"]) * 100
+        if pd.notna(row["ret_20d"])
+        else np.nan,
+        "ret_60d_pct": float(row["ret_60d"]) * 100
+        if pd.notna(row["ret_60d"])
+        else np.nan,
+        "vol_20d_ann_pct": float(row["vol_20d_ann"]) * 100
+        if pd.notna(row["vol_20d_ann"])
+        else np.nan,
     }
 
 
@@ -84,7 +91,14 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--monthly-csv",
-        default=str(ROOT / "backtester" / "output" / "sweep_top_n" / "top_10" / "rolling_monthly.csv"),
+        default=str(
+            ROOT
+            / "backtester"
+            / "output"
+            / "sweep_top_n"
+            / "top_10"
+            / "rolling_monthly.csv"
+        ),
         help="rolling_monthly.csv to source per-cohort realized PnL from",
     )
     p.add_argument(
@@ -92,13 +106,19 @@ def main() -> int:
         default=str(ROOT / "scripts" / "output" / "ml_score_distribution.csv"),
         help="per-cohort ml_score distribution (from ml_score_distribution.py)",
     )
-    p.add_argument("--top-n", type=int, default=10,
-                   help="top_n used in the backtest (for cohort capital baseline)")
+    p.add_argument(
+        "--top-n",
+        type=int,
+        default=10,
+        help="top_n used in the backtest (for cohort capital baseline)",
+    )
     p.add_argument("--position-amount", type=float, default=100_000.0)
     args = p.parse_args()
 
     monthly = pd.read_csv(args.monthly_csv)
-    cohort_rows = monthly.dropna(subset=["realized_net_pnl", "cohort_entry_date"]).copy()
+    cohort_rows = monthly.dropna(
+        subset=["realized_net_pnl", "cohort_entry_date"]
+    ).copy()
     cohort_rows["cohort_entry_date"] = cohort_rows["cohort_entry_date"].astype(str)
 
     score_df = pd.read_csv(args.score_csv)
@@ -137,7 +157,9 @@ def main() -> int:
 
     print(f"=== diagnostic: {len(df)} settled cohorts ===")
     print(f"period: {df['cohort_entry_date'].min()} → {df['cohort_entry_date'].max()}")
-    print(f"realized_ret_pct: mean={df['realized_ret_pct'].mean():+.3f}%  std={df['realized_ret_pct'].std():+.3f}%")
+    print(
+        f"realized_ret_pct: mean={df['realized_ret_pct'].mean():+.3f}%  std={df['realized_ret_pct'].std():+.3f}%"
+    )
 
     signals = [
         "ma20_vs_ma60_pct",
@@ -160,26 +182,40 @@ def main() -> int:
             continue
         pearson = sub.corr().iloc[0, 1]
         spearman = sub.corr(method="spearman").iloc[0, 1]
-        corr_rows.append({"signal": s, "n": len(sub), "pearson": pearson, "spearman": spearman})
+        corr_rows.append(
+            {"signal": s, "n": len(sub), "pearson": pearson, "spearman": spearman}
+        )
     corr_df = pd.DataFrame(corr_rows)
-    print(corr_df.to_string(index=False,
-        formatters={"pearson": "{:+.3f}".format, "spearman": "{:+.3f}".format}))
+    print(
+        corr_df.to_string(
+            index=False,
+            formatters={"pearson": "{:+.3f}".format, "spearman": "{:+.3f}".format},
+        )
+    )
 
-    print("\n=== quintile means (Q1 = lowest signal, Q5 = highest) — realized_ret_pct mean ===")
+    print(
+        "\n=== quintile means (Q1 = lowest signal, Q5 = highest) — realized_ret_pct mean ==="
+    )
     q_rows = []
     for s in signals:
         sub = df[[s, "realized_ret_pct"]].dropna()
         if len(sub) < 10:
             continue
         try:
-            sub["q"] = pd.qcut(sub[s], 5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"], duplicates="drop")
+            sub["q"] = pd.qcut(
+                sub[s], 5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"], duplicates="drop"
+            )
         except ValueError:
             continue
         means = sub.groupby("q", observed=True)["realized_ret_pct"].mean()
         row = {"signal": s, "n": len(sub)}
         for q in ["Q1", "Q2", "Q3", "Q4", "Q5"]:
             row[q] = means.get(q, np.nan)
-        row["Q5-Q1"] = (row["Q5"] - row["Q1"]) if pd.notna(row["Q1"]) and pd.notna(row["Q5"]) else np.nan
+        row["Q5-Q1"] = (
+            (row["Q5"] - row["Q1"])
+            if pd.notna(row["Q1"]) and pd.notna(row["Q5"])
+            else np.nan
+        )
         q_rows.append(row)
     q_df = pd.DataFrame(q_rows)
     fmt = q_df.copy()
@@ -189,7 +225,9 @@ def main() -> int:
     print(fmt.to_string(index=False))
 
     print("\n=== regime label means ===")
-    label_means = df.groupby("regime_label")["realized_ret_pct"].agg(["count", "mean", "std", "min", "max"])
+    label_means = df.groupby("regime_label")["realized_ret_pct"].agg(
+        ["count", "mean", "std", "min", "max"]
+    )
     print(label_means.to_string(float_format=lambda x: f"{x:+.3f}"))
 
     print(f"\nwrote {OUT_CSV}")

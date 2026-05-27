@@ -88,13 +88,16 @@ def cohort_returns(
         action = gate_fail.get(ym, "pass")
         sub = trades[trades["ym"] == ym]
         if action == "skip":
-            rows.append({
-                "ym": ym, "action": "skip",
-                "n_positions": 0,
-                "capital": 0.0,
-                "net_pnl": 0.0,
-                "return_pct": 0.0,
-            })
+            rows.append(
+                {
+                    "ym": ym,
+                    "action": "skip",
+                    "n_positions": 0,
+                    "capital": 0.0,
+                    "net_pnl": 0.0,
+                    "return_pct": 0.0,
+                }
+            )
             continue
         if action == "reduce":
             sub = sub[sub["ml_rank"] <= 5]
@@ -102,13 +105,16 @@ def cohort_returns(
         capital = n * position_amount
         net = float(sub["net_pnl"].sum()) if n > 0 else 0.0
         ret = (net / capital * 100) if capital > 0 else 0.0
-        rows.append({
-            "ym": ym, "action": action,
-            "n_positions": n,
-            "capital": capital,
-            "net_pnl": net,
-            "return_pct": ret,
-        })
+        rows.append(
+            {
+                "ym": ym,
+                "action": action,
+                "n_positions": n,
+                "capital": capital,
+                "net_pnl": net,
+                "return_pct": ret,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -149,11 +155,15 @@ def main() -> int:
     )
     p.add_argument(
         "--percentile-thresholds",
-        type=float, nargs="+", default=[0.10, 0.20, 0.30],
+        type=float,
+        nargs="+",
+        default=[0.10, 0.20, 0.30],
         help="Gate fails when wf percentile rank of score_p90 < threshold",
     )
     p.add_argument(
-        "--warmup-cohorts", type=int, default=6,
+        "--warmup-cohorts",
+        type=int,
+        default=6,
         help="No gating applied until at least this many prior cohorts exist",
     )
     args = p.parse_args()
@@ -161,7 +171,11 @@ def main() -> int:
     ranks = load_ranks()
     trades = annotate_trades(Path(args.trades_csv), ranks)
 
-    score_dist = pd.read_csv(args.score_dist_csv).sort_values("playbook_date").reset_index(drop=True)
+    score_dist = (
+        pd.read_csv(args.score_dist_csv)
+        .sort_values("playbook_date")
+        .reset_index(drop=True)
+    )
     score_dist["ym"] = score_dist["playbook_date"].str[:7]
     score_dist["p90_wf_pct"] = walk_forward_percentile_rank(score_dist["p90"])
 
@@ -171,17 +185,22 @@ def main() -> int:
     cohort_order = score_dist["ym"].tolist()
 
     print(f"=== walk-forward gate (n={len(cohort_order)} cohorts) ===")
-    print(f"score_p90 range: {score_dist['p90'].min():.3f} → {score_dist['p90'].max():.3f}")
+    print(
+        f"score_p90 range: {score_dist['p90'].min():.3f} → {score_dist['p90'].max():.3f}"
+    )
 
     scenarios = []
 
     # Baseline: no gate, top_10
-    baseline = cohort_returns(trades, cohort_order, gate_fail={}, position_amount=POSITION_AMOUNT)
+    baseline = cohort_returns(
+        trades, cohort_order, gate_fail={}, position_amount=POSITION_AMOUNT
+    )
     scenarios.append(summarize(baseline, "baseline_top10"))
 
     # Sanity: reduce ALL cohorts to top 5 (should match top_n=5 run)
     all_reduce = cohort_returns(
-        trades, cohort_order,
+        trades,
+        cohort_order,
         gate_fail={ym: "reduce" for ym in cohort_order},
         position_amount=POSITION_AMOUNT,
     )
@@ -199,8 +218,10 @@ def main() -> int:
                     continue
                 if pd.notna(wf) and wf < thr:
                     gate[ym] = action
-            df = cohort_returns(trades, cohort_order, gate_fail=gate, position_amount=POSITION_AMOUNT)
-            scenarios.append(summarize(df, f"{action}_p90<{int(thr*100)}p"))
+            df = cohort_returns(
+                trades, cohort_order, gate_fail=gate, position_amount=POSITION_AMOUNT
+            )
+            scenarios.append(summarize(df, f"{action}_p90<{int(thr * 100)}p"))
 
     out = pd.DataFrame(scenarios)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,7 +248,11 @@ def main() -> int:
         # join with baseline cohort returns to show what was avoided
         base_lookup = baseline.set_index("ym")["return_pct"].to_dict()
         trig["baseline_ret_pct"] = trig["ym"].map(base_lookup)
-        print(trig[["playbook_date", "p90", "p90_wf_pct", "baseline_ret_pct"]].to_string(index=False))
+        print(
+            trig[["playbook_date", "p90", "p90_wf_pct", "baseline_ret_pct"]].to_string(
+                index=False
+            )
+        )
     else:
         print("(none)")
 

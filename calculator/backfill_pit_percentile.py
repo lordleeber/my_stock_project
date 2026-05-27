@@ -68,12 +68,19 @@ def run(dry_run=False):
     drift = (df["pe_percentile_official_new"] - df["pe_percentile_official"]).abs()
     print(f"  per-row |Δ| mean={drift.mean():.4f}, max={drift.max():.4f}")
 
-    sample_symbols = df["symbol"].drop_duplicates().sample(
-        min(3, df["symbol"].nunique()), random_state=42
+    sample_symbols = (
+        df["symbol"]
+        .drop_duplicates()
+        .sample(min(3, df["symbol"].nunique()), random_state=42)
     )
     for sym in sample_symbols:
         sub = df[df["symbol"] == sym].head(5)[
-            ["date", "pe_calculated", "pe_percentile_official", "pe_percentile_official_new"]
+            [
+                "date",
+                "pe_calculated",
+                "pe_percentile_official",
+                "pe_percentile_official_new",
+            ]
         ]
         print(f"\n  sample {sym} (earliest 5 rows):")
         print(sub.to_string(index=False))
@@ -90,9 +97,7 @@ def run(dry_run=False):
     # Verify the invariant before dedupe — if upstream behavior ever changes
     # so duplicates carry different PEs, dedupe would silently drop the
     # divergent percentile.
-    dup_check = (
-        df.groupby(["symbol", "date"])["pe_percentile_official_new"].nunique()
-    )
+    dup_check = df.groupby(["symbol", "date"])["pe_percentile_official_new"].nunique()
     inconsistent = dup_check[dup_check > 1]
     if len(inconsistent) > 0:
         sample = inconsistent.head(5)
@@ -109,8 +114,9 @@ def run(dry_run=False):
 
     with engine.begin() as conn:
         conn.execute(text(f"DROP TABLE IF EXISTS {TEMP_TABLE}"))
-        conn.execute(text(
-            f"""
+        conn.execute(
+            text(
+                f"""
             CREATE TABLE {TEMP_TABLE} (
                 symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -118,29 +124,36 @@ def run(dry_run=False):
                 PRIMARY KEY (symbol, date)
             )
             """
-        ))
+            )
+        )
 
-    write_df.to_sql(TEMP_TABLE, engine, if_exists="append", index=False, chunksize=10000)
+    write_df.to_sql(
+        TEMP_TABLE, engine, if_exists="append", index=False, chunksize=10000
+    )
 
     print(f"Running bulk UPDATE against {TABLE}...")
     with engine.begin() as conn:
-        result = conn.execute(text(
-            f"""
+        result = conn.execute(
+            text(
+                f"""
             UPDATE {TABLE} v
             SET pe_percentile_official = t.new_pct
             FROM {TEMP_TABLE} t
             WHERE v.symbol = t.symbol AND v.date = t.date
             """
-        ))
+            )
+        )
         updated = result.rowcount
         conn.execute(text(f"DROP TABLE {TEMP_TABLE}"))
 
     print(f"Updated {updated} rows in {TABLE}.")
 
     with engine.connect() as conn:
-        post_avg = conn.execute(text(
-            f"SELECT AVG(pe_percentile_official) FROM {TABLE} WHERE ttm_eps_official > 0"
-        )).scalar()
+        post_avg = conn.execute(
+            text(
+                f"SELECT AVG(pe_percentile_official) FROM {TABLE} WHERE ttm_eps_official > 0"
+            )
+        ).scalar()
     print(f"Post-backfill avg(pe_percentile_official) = {post_avg:.4f}")
     print("Backfill complete.")
 
