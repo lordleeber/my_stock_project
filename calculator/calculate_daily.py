@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import text
 
 sys.path.append(os.path.dirname(__file__))
-from _incremental import get_engine, get_last_processed_date, table_exists
+from _incremental import get_engine, get_last_processed_date
 
 
 ERROR_LOG = "/error_calculator.log"
