@@ -95,11 +95,11 @@ post-skip (vs the textbook √12 from pre-skip days). It's stored explicitly
 in `monthly_stats_38_basis["annualization_factor"]` to keep prior-period
 comparisons honest.
 
-When comparing against pre-Feb/Mar-skip baselines (e.g. calc-per-cohort PR's
-"Sharpe 0.660 / ann 2.29" used the old 47-basis), the apples-to-apples
-metric is **per-cohort Sharpe ann ×√10**, not 47-basis ann ×√12. A 5-cohort
-drop in the denominator (47→38) on the same strategy gives a ~10% lower
-"ann ×√12" number for purely arithmetic reasons.
+When comparing against pre-Feb/Mar-skip baselines (which used the old
+47-basis ann ×√12), the apples-to-apples metric is **per-cohort Sharpe
+ann ×√10**, not 47-basis ann ×√12. A 5-cohort drop in the denominator
+(47→38) on the same strategy gives a ~10% lower "ann ×√12" number for
+purely arithmetic reasons.
 
 ## Output Files (`backtester/output/rolling/`)
 

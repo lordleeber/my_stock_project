@@ -64,8 +64,7 @@ Every daily valuation record uses the latest report *available at that specific 
 
 > **Migration**: `calculator/backfill_pit_percentile.py` is the one-time migration that
 > rewrites all historical `pe_percentile_official` rows under the expanding-rank
-> semantics. Was run on calc-per-cohort branch as part of Phase 2. Subsequent
-> incremental calculator runs maintain the same semantics.
+> semantics. Subsequent incremental calculator runs maintain the same semantics.
 
 > Forward / 預測相關欄位（`ttm_eps_forward`、`pe_forward`、`predict_target_price`、`upside_pct`、`roe_forward`、`pe_percentile_forward`）已從 `valuation_daily` 移除。
 > ML pipeline 的 EPS 成長拆解（`base_eps_growth_pct` / `ml_eps_delta_pct`）在 `strategies/step2_finalize_strategy.py` 用 `predictions_results.csv` 自己算，不經 DB。
@@ -136,12 +135,12 @@ to force a specific window — used by the retry flow (`schedules/daily_retry.sh
 re-running stale dates. The other six calculators ignore env vars and always pick up
 from `MAX(date)` unless `--force-full` is passed.
 
-#### Migration Sequence (first cherry-pick / fresh DB)
+#### Migration Sequence (fresh DB / schema rebuild)
 
-Cherry-picking the calc-per-cohort changes onto an existing DB (or onto a fresh
-clone) requires this one-time sequence — `CREATE TABLE IF NOT EXISTS` will
-no-op on pre-existing tables, so a DB with old-schema tables (e.g. without
-`PRIMARY KEY (date, symbol)` or missing streak columns) needs a rebuild:
+A fresh clone (or any DB with old-schema tables — e.g. without
+`PRIMARY KEY (date, symbol)` or missing streak columns) needs the one-time
+rebuild sequence below. `CREATE TABLE IF NOT EXISTS` no-ops on pre-existing
+tables, so the old schema won't auto-upgrade:
 
 ```bash
 # 1. Rebuild image (source not mounted)
@@ -164,7 +163,7 @@ docker compose run --rm calculator python backfill_pit_percentile.py
 
 After step 3 all subsequent runs are incremental no-ops until new raw data
 arrives. Skip step 2/3 only if you know the DB was already rebuilt under the
-new schema (e.g. you previously merged this branch).
+current schema.
 
 ---
 
