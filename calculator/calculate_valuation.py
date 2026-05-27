@@ -30,8 +30,9 @@ def get_publish_date(q_str):
 
 def _create_table_if_missing(engine):
     with engine.begin() as conn:
-        conn.execute(text(
-            f"""
+        conn.execute(
+            text(
+                f"""
             CREATE TABLE IF NOT EXISTS {TABLE} (
                 date TEXT NOT NULL,
                 symbol TEXT NOT NULL,
@@ -46,10 +47,13 @@ def _create_table_if_missing(engine):
                 PRIMARY KEY (date, symbol)
             )
             """
-        ))
-        conn.execute(text(
-            f"CREATE INDEX IF NOT EXISTS idx_val_daily_symbol_date ON {TABLE} (symbol, date)"
-        ))
+            )
+        )
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS idx_val_daily_symbol_date ON {TABLE} (symbol, date)"
+            )
+        )
 
 
 def compute_new_rows(engine, last_processed):
@@ -169,7 +173,9 @@ def add_pit_expanding_rank(engine, new_df, last_processed):
 
 
 def run(force_full=False):
-    print("Starting Point-in-Time Valuation Calculator (incremental, PIT expanding rank)...")
+    print(
+        "Starting Point-in-Time Valuation Calculator (incremental, PIT expanding rank)..."
+    )
     engine = get_engine()
 
     if force_full:

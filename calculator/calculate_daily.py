@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import text
 
 sys.path.append(os.path.dirname(__file__))
-from _incremental import get_engine, get_last_processed_date, table_exists
+from _incremental import get_engine, get_last_processed_date
 
 
 ERROR_LOG = "/error_calculator.log"
@@ -129,21 +129,42 @@ def calculate_indicators(df_group):
 
     return df_group[
         [
-            "date", "symbol",
-            "ma5", "ma10", "ma20", "ma60", "ma120", "ma240",
-            "vma5", "vma10", "vma20", "vma60", "vma120", "vma240",
-            "k", "d", "rsi6", "rsi12",
-            "macd_dif", "macd_dea", "macd_hist",
-            "bb_upper", "bb_middle", "bb_lower",
-            "foreign_streak_days", "trust_streak_days", "dealer_streak_days",
+            "date",
+            "symbol",
+            "ma5",
+            "ma10",
+            "ma20",
+            "ma60",
+            "ma120",
+            "ma240",
+            "vma5",
+            "vma10",
+            "vma20",
+            "vma60",
+            "vma120",
+            "vma240",
+            "k",
+            "d",
+            "rsi6",
+            "rsi12",
+            "macd_dif",
+            "macd_dea",
+            "macd_hist",
+            "bb_upper",
+            "bb_middle",
+            "bb_lower",
+            "foreign_streak_days",
+            "trust_streak_days",
+            "dealer_streak_days",
         ]
     ]
 
 
 def _create_table_if_missing(engine):
     with engine.begin() as conn:
-        conn.execute(text(
-            f"""
+        conn.execute(
+            text(
+                f"""
             CREATE TABLE IF NOT EXISTS {TABLE} (
                 date TEXT NOT NULL,
                 symbol TEXT NOT NULL,
@@ -159,10 +180,13 @@ def _create_table_if_missing(engine):
                 PRIMARY KEY (date, symbol)
             )
             """
-        ))
-        conn.execute(text(
-            f"CREATE INDEX IF NOT EXISTS idx_tech_symbol_date ON {TABLE} (symbol, date)"
-        ))
+            )
+        )
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS idx_tech_symbol_date ON {TABLE} (symbol, date)"
+            )
+        )
 
 
 def run(force_full=False):
@@ -250,9 +274,7 @@ def run(force_full=False):
             if end_date is not None:
                 end_str = end_date.strftime("%Y-%m-%d")
                 conn.execute(
-                    text(
-                        f"DELETE FROM {TABLE} WHERE date >= :s AND date <= :e"
-                    ),
+                    text(f"DELETE FROM {TABLE} WHERE date >= :s AND date <= :e"),
                     {"s": start_str, "e": end_str},
                 )
             else:
@@ -274,7 +296,9 @@ def run(force_full=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compute technical_indicators incrementally.")
+    parser = argparse.ArgumentParser(
+        description="Compute technical_indicators incrementally."
+    )
     parser.add_argument(
         "--force-full",
         action="store_true",

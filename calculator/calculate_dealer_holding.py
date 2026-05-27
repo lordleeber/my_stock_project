@@ -75,8 +75,9 @@ LEFT JOIN foreign_holding fh
 
 
 def _create_table_if_missing(conn):
-    conn.execute(text(
-        f"""
+    conn.execute(
+        text(
+            f"""
         CREATE TABLE IF NOT EXISTS {TABLE} (
             date TEXT NOT NULL,
             market TEXT NOT NULL,
@@ -91,10 +92,13 @@ def _create_table_if_missing(conn):
             PRIMARY KEY (date, market, symbol)
         )
         """
-    ))
-    conn.execute(text(
-        f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_symbol_date ON {TABLE} (symbol, date)"
-    ))
+        )
+    )
+    conn.execute(
+        text(
+            f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_symbol_date ON {TABLE} (symbol, date)"
+        )
+    )
 
 
 def run(force_full=False):

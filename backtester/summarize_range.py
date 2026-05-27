@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -67,6 +68,28 @@ def main() -> None:
     print(f"net pnl          : {total_net_pnl:+,.0f} TWD")
     print(f"still open       : {len(still_open)}")
     print(f"no-quote skipped : {len(no_quote)}")
+
+    summary_path = rolling_dir / "rolling_summary.json"
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        mo = summary.get("monthly_stats_38_basis")
+        if mo and mo.get("cohort_count"):
+            print()
+            print(f"Monthly Sharpe (38-basis, n={mo['cohort_count']} real cohorts):")
+            print(
+                f"  mean / std     : {mo['mean_monthly_return_pct']:+.3f}% / "
+                f"{mo['std_monthly_return_pct']:.3f}%"
+            )
+            print(f"  win months     : {mo['win_months']}/{mo['cohort_count']}")
+            print(
+                f"  sharpe (mo)    : {mo['monthly_sharpe']:+.3f}  "
+                f"(annualized × √{mo['annualization_factor'] ** 2:.1f} = "
+                f"{mo['monthly_sharpe_annualized']:+.3f})"
+            )
+            print(
+                f"  worst / best   : {mo['worst_month_return_pct']:+.2f}% / "
+                f"{mo['best_month_return_pct']:+.2f}%"
+            )
 
     if args.show_monthly and not monthly.empty:
         print("\n--- Monthly Detail ---")
