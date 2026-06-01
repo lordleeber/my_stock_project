@@ -1,0 +1,13 @@
+# Host venv extras for the host-run ML / orchestration pipeline
+# (train_eps, strategies, backtester, schedules/*.sh) — packages that are NOT
+# provided by the Docker module images (scraper/processor/importer/calculator).
+#
+# This file is intentionally minimal: it tracks only the additions that the
+# host pipeline depends on beyond the usual scientific stack the venv already
+# carries (pandas, numpy, scikit-learn, lightgbm, sqlalchemy, ...). Install with:
+#   venv/bin/pip install -r requirements-host.txt
+
+# Taiwan (TWSE) trading calendar — used by schedules/playbook_run.sh to resolve
+# entry_date (first trading day after cutoff, incl. public holidays) without
+# querying daily_quotes. Pinned to match scraper/requirements.txt.
+pandas_market_calendars==5.2.4
