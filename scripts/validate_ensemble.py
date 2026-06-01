@@ -78,7 +78,10 @@ def run(cmd: list[str], *, env: dict | None = None, dry: bool, label: str) -> bo
     print(f"[run] {label}")
     result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
     ok = result.returncode == 0
-    print(f"[{'ok' if ok else 'FAIL'}] {label}" + ("" if ok else f" (rc={result.returncode})"))
+    print(
+        f"[{'ok' if ok else 'FAIL'}] {label}"
+        + ("" if ok else f" (rc={result.returncode})")
+    )
     return ok
 
 
@@ -214,12 +217,18 @@ def build_report(ks: list[int], groups: list[str], aggs: list[str], dry: bool) -
         lines.append("- (not run yet)\n")
 
     # matrix
-    recommendations: list[tuple[float, float, int, str]] = []  # (spread, -center, K, agg)
+    recommendations: list[
+        tuple[float, float, int, str]
+    ] = []  # (spread, -center, K, agg)
     lines.append("\n## Matrix — ensemble cells\n")
     group_cols = " | ".join(groups)
     group_sep = "|".join(["----"] * len(groups))
-    lines.append(f"| K | agg | {group_cols} | center | spread | PnL (mean, M) | std% (mean) | verdict |")
-    lines.append(f"|---|-----|{group_sep}|--------|--------|---------------|-------------|---------|")
+    lines.append(
+        f"| K | agg | {group_cols} | center | spread | PnL (mean, M) | std% (mean) | verdict |"
+    )
+    lines.append(
+        f"|---|-----|{group_sep}|--------|--------|---------------|-------------|---------|"
+    )
     for k in ks:
         for agg in aggs:
             sharpes, pnls, stds = [], [], []
@@ -278,17 +287,44 @@ def build_report(ks: list[int], groups: list[str], aggs: list[str], dry: bool) -
 # ------------------------------------------------------------------ main ---
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Multi-seed ensemble validation harness.")
-    p.add_argument("--ks", type=int, nargs="+", default=[10, 5], help="K values (default 10 5)")
-    p.add_argument("--groups", nargs="+", default=["g1", "g2", "g3"], help="seed groups")
-    p.add_argument("--aggs", nargs="+", default=["score", "rank"], choices=["score", "rank"])
-    p.add_argument("--no-control", action="store_true", help="skip the single-seed=42 control")
-    p.add_argument("--dry-run", action="store_true", help="print commands, do not execute")
-    p.add_argument("--skip-existing-train", action="store_true", help="reuse already-trained models")
-    p.add_argument("--report-only", action="store_true", help="only (re)build SUMMARY.md")
-    p.add_argument("--jobs", type=int, default=1, help="parallel training jobs (OMP-limited)")
-    p.add_argument("--omp-threads", type=int, default=None, help="OMP_NUM_THREADS per training job")
-    p.add_argument("--train-start", type=str, default=None, help="override step4_batch --start-date")
-    p.add_argument("--train-end", type=str, default=None, help="override step4_batch --end-date")
+    p.add_argument(
+        "--ks", type=int, nargs="+", default=[10, 5], help="K values (default 10 5)"
+    )
+    p.add_argument(
+        "--groups", nargs="+", default=["g1", "g2", "g3"], help="seed groups"
+    )
+    p.add_argument(
+        "--aggs", nargs="+", default=["score", "rank"], choices=["score", "rank"]
+    )
+    p.add_argument(
+        "--no-control", action="store_true", help="skip the single-seed=42 control"
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="print commands, do not execute"
+    )
+    p.add_argument(
+        "--skip-existing-train",
+        action="store_true",
+        help="reuse already-trained models",
+    )
+    p.add_argument(
+        "--report-only", action="store_true", help="only (re)build SUMMARY.md"
+    )
+    p.add_argument(
+        "--jobs", type=int, default=1, help="parallel training jobs (OMP-limited)"
+    )
+    p.add_argument(
+        "--omp-threads", type=int, default=None, help="OMP_NUM_THREADS per training job"
+    )
+    p.add_argument(
+        "--train-start",
+        type=str,
+        default=None,
+        help="override step4_batch --start-date",
+    )
+    p.add_argument(
+        "--train-end", type=str, default=None, help="override step4_batch --end-date"
+    )
     p.add_argument("--backtest-start", type=str, default="2022-07-11")
     p.add_argument("--top-n", type=int, default=15)
     p.add_argument("--position-amount", type=float, default=100_000.0)
@@ -319,7 +355,9 @@ def main() -> None:
     def _do_train(job):
         set_name, k, base = job
         return set_name, train_set(
-            set_name, k, base,
+            set_name,
+            k,
+            base,
             skip_existing=args.skip_existing_train,
             train_start=args.train_start,
             train_end=args.train_end,
@@ -340,22 +378,29 @@ def main() -> None:
     if not args.no_control:
         print("=== Training control (single seed=42) ===")
         ok = train_set(
-            CONTROL_SET, k=1, base_seed=42,
+            CONTROL_SET,
+            k=1,
+            base_seed=42,
             skip_existing=args.skip_existing_train,
-            train_start=args.train_start, train_end=args.train_end,
-            omp_threads=omp, dry=args.dry_run,
+            train_start=args.train_start,
+            train_end=args.train_end,
+            omp_threads=omp,
+            dry=args.dry_run,
         )
         train_results[CONTROL_SET] = ok
 
     # 2) score + backtest: each set x each agg (control: score only — agg is no-op).
-    print(f"\n=== Score + backtest ({len(train_jobs)} sets x {len(args.aggs)} aggs) ===")
+    print(
+        f"\n=== Score + backtest ({len(train_jobs)} sets x {len(args.aggs)} aggs) ==="
+    )
     for set_name, k, base in train_jobs:
         if not train_results.get(set_name, True):
             print(f"[skip] {set_name}: training failed")
             continue
         for agg in args.aggs:
             score_and_backtest(
-                set_name, agg,
+                set_name,
+                agg,
                 backtest_start=args.backtest_start,
                 top_n=args.top_n,
                 position_amount=args.position_amount,
@@ -363,7 +408,8 @@ def main() -> None:
             )
     if not args.no_control and train_results.get(CONTROL_SET, True):
         score_and_backtest(
-            CONTROL_SET, "score",
+            CONTROL_SET,
+            "score",
             backtest_start=args.backtest_start,
             top_n=args.top_n,
             position_amount=args.position_amount,

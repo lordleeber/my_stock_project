@@ -137,10 +137,16 @@ def parse_args() -> argparse.Namespace:
         help="Number of label bins per month (5=quintile, 10=decile; production 10)",
     )
     parser.add_argument(
-        "--reg-alpha", type=float, default=0.05, help="L1 regularization (production 0.05)"
+        "--reg-alpha",
+        type=float,
+        default=0.05,
+        help="L1 regularization (production 0.05)",
     )
     parser.add_argument(
-        "--reg-lambda", type=float, default=0.1, help="L2 regularization (production 0.1)"
+        "--reg-lambda",
+        type=float,
+        default=0.1,
+        help="L2 regularization (production 0.1)",
     )
     parser.add_argument(
         "--seed",
@@ -372,7 +378,9 @@ def main() -> None:
         if args.models_root is not None
         else (ROOT_DIR / "models_selection").resolve()
     )
-    out_dir = (models_root / (args.date if args.date is not None else "latest")).resolve()
+    out_dir = (
+        models_root / (args.date if args.date is not None else "latest")
+    ).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = out_dir / "selection_model.pkl"

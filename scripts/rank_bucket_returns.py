@@ -123,33 +123,42 @@ def report(label: str, models_root: Path, fra_path: Path, include_feb_mar: bool)
     for lo, hi in tiers:
         print(f"  rank {lo:>2}-{hi:<2}: {means[(lo, hi)]:+.3f}%")
     spread = means[(1, 10)] - means[(11, 20)]
-    print(f"  -> top1-10 minus 11-20: {spread:+.3f}pp  "
-          f"(top1-10 > 11-20 in {hit}/{n} cohorts = {hit / n * 100:.0f}%)")
+    print(
+        f"  -> top1-10 minus 11-20: {spread:+.3f}pp  "
+        f"(top1-10 > 11-20 in {hit}/{n} cohorts = {hit / n * 100:.0f}%)"
+    )
 
     # 2) quintiles
     qm, (qhit, qn) = quantile_buckets(cohorts, 5)
     seq = [qm[b] for b in range(1, 6)]
     print("\n[Quintiles] Q1(best)..Q5(worst) mean fwd_return:")
     print("  " + "  ".join(f"Q{b}={qm[b]:+.2f}%" for b in range(1, 6)))
-    print(f"  -> Q1-Q5 spread: {seq[0] - seq[-1]:+.3f}pp  "
-          f"(Q1 > Q5 in {qhit}/{qn} = {qhit / qn * 100:.0f}%)  "
-          f"monotonicity(Spearman bucket vs ret)={_spearman(range(1, 6), seq):+.2f}")
+    print(
+        f"  -> Q1-Q5 spread: {seq[0] - seq[-1]:+.3f}pp  "
+        f"(Q1 > Q5 in {qhit}/{qn} = {qhit / qn * 100:.0f}%)  "
+        f"monotonicity(Spearman bucket vs ret)={_spearman(range(1, 6), seq):+.2f}"
+    )
 
     # 3) deciles
     dm, (dhit, dn) = quantile_buckets(cohorts, 10)
     dseq = [dm[b] for b in range(1, 11)]
     print("\n[Deciles] Q1(best)..Q10(worst) mean fwd_return:")
     print("  " + "  ".join(f"Q{b}={dm[b]:+.2f}" for b in range(1, 11)))
-    print(f"  -> Q1-Q10 spread: {dseq[0] - dseq[-1]:+.3f}pp  "
-          f"(Q1 > Q10 in {dhit}/{dn} = {dhit / dn * 100:.0f}%)  "
-          f"monotonicity(Spearman)={_spearman(range(1, 11), dseq):+.2f}")
+    print(
+        f"  -> Q1-Q10 spread: {dseq[0] - dseq[-1]:+.3f}pp  "
+        f"(Q1 > Q10 in {dhit}/{dn} = {dhit / dn * 100:.0f}%)  "
+        f"monotonicity(Spearman)={_spearman(range(1, 11), dseq):+.2f}"
+    )
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Rank-bucket forward returns by ml_rank.")
     p.add_argument("--models-root", type=Path, default=ROOT / "models_selection")
-    p.add_argument("--include-feb-mar", action="store_true",
-                   help="Include PIT-leaked Feb/Mar cohorts (default: excluded)")
+    p.add_argument(
+        "--include-feb-mar",
+        action="store_true",
+        help="Include PIT-leaked Feb/Mar cohorts (default: excluded)",
+    )
     args = p.parse_args()
     fra = ROOT / "strategies" / "output" / "feature_return_analysis.csv"
 
