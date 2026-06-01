@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Pre-commit hook — run ruff on staged Python files before they can be committed.
+#
+# Mirrors the "Python Linter" GitHub Action (.github/workflows/lint.yaml,
+# ruff==0.12.12): `ruff format --check` + `ruff check`. Catches the format/lint
+# failures locally instead of after a red CI run.
+#
+# Scope: only STAGED *.py files (not the whole repo) so untracked WIP scripts
+# don't block unrelated commits. Non-mutating — on failure it prints the exact
+# fix command and aborts; it never silently rewrites your files.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+# Bypass for one commit (use sparingly):
+#   git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+RUFF="$ROOT/venv/bin/ruff"
+if [ ! -x "$RUFF" ]; then
+  RUFF="$(command -v ruff || true)"
+fi
+if [ -z "${RUFF:-}" ] || [ ! -x "$RUFF" ]; then
+  echo "pre-commit: ruff not found (expected venv/bin/ruff). Install it or" >&2
+  echo "            run 'git commit --no-verify' to skip. Skipping check." >&2
+  exit 0
+fi
+
+# Staged Added/Copied/Modified/Renamed *.py files, NUL-safe.
+mapfile -d '' -t files < <(
+  git diff --cached --name-only --diff-filter=ACMR -z -- '*.py'
+)
+if [ ${#files[@]} -eq 0 ]; then
+  exit 0
+fi
+
+fail=0
+echo "pre-commit: ruff format --check (${#files[@]} staged .py file(s))"
+"$RUFF" format --check "${files[@]}" || fail=1
+echo "pre-commit: ruff check"
+"$RUFF" check "${files[@]}" || fail=1
+
+if [ "$fail" -ne 0 ]; then
+  {
+    echo ""
+    echo "pre-commit BLOCKED: ruff found issues in staged files."
+    echo "  fix format : $RUFF format ${files[*]}"
+    echo "  fix lint   : $RUFF check --fix ${files[*]}"
+    echo "  then re-stage (git add) the files and commit again."
+    echo "  (override:  git commit --no-verify)"
+  } >&2
+  exit 1
+fi
