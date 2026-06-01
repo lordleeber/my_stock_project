@@ -227,3 +227,7 @@ tmp/
 # Multi-seed ensemble validation (regenerable — scripts/validate_ensemble.py)
 models_selection_val/
 backtester/output/val/
+
+# Claude Code per-machine local settings (personal permission grants / hooks).
+# Shared team settings belong in .claude/settings.json instead.
+.claude/settings.local.json
