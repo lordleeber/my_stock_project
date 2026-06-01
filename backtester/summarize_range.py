@@ -14,12 +14,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--show-monthly", action="store_true", help="Print per-month detail rows."
     )
+    parser.add_argument(
+        "--rolling-dir",
+        type=Path,
+        default=None,
+        help="Dir holding rolling_*.csv / rolling_summary.json "
+        "(default: backtester/output/rolling). Point at a run_rolling --out-dir.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    rolling_dir = (Path.cwd() / "backtester" / "output" / "rolling").resolve()
+    rolling_dir = (
+        args.rolling_dir.resolve()
+        if args.rolling_dir is not None
+        else (Path.cwd() / "backtester" / "output" / "rolling").resolve()
+    )
     trades_path = rolling_dir / "rolling_trades.csv"
     monthly_path = rolling_dir / "rolling_monthly.csv"
 

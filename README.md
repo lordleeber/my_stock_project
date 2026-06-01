@@ -66,7 +66,7 @@ venv/bin/python3 strategies/step4_train_selection_model.py
 venv/bin/python3 backtester/run_rolling.py \
   --start-date 2022-07-11 \
   --end-date 2025-10-11 \
-  --top-n 10 --position-amount 100000
+  --top-n 25 --position-amount 100000
 
 # 查看結果
 venv/bin/python3 backtester/summarize_range.py

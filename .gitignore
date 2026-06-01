@@ -223,3 +223,7 @@ results/
 **/result/
 **/results/
 tmp/
+
+# Multi-seed ensemble validation (regenerable — scripts/validate_ensemble.py)
+models_selection_val/
+backtester/output/val/

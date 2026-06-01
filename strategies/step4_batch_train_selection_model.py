@@ -104,6 +104,21 @@ def parse_args() -> argparse.Namespace:
         default=15,
         help="LGBMRanker min_child_samples passed to each step4 train",
     )
+    parser.add_argument(
+        "--n-seeds",
+        type=int,
+        default=10,
+        help="Train an N-seed ensemble per cohort (passed to step4 --n-seeds). "
+        "default 10 (production); 1 = single-seed. See "
+        "project_ensemble_validation_2026_06.",
+    )
+    parser.add_argument(
+        "--models-root",
+        type=Path,
+        default=None,
+        help="Root dir for model output (default models_selection/). Use an "
+        "isolated dir per validation group so they don't overwrite each other.",
+    )
     return parser.parse_args()
 
 
@@ -116,12 +131,17 @@ def main() -> None:
 
     python = sys.executable
     script = str(ROOT_DIR / "strategies" / "step4_train_selection_model.py")
+    models_root = (
+        args.models_root.resolve()
+        if args.models_root is not None
+        else (ROOT_DIR / "models_selection")
+    )
 
     ok = skipped = failed = 0
 
     for d in dates:
         if args.skip_existing:
-            model_path = ROOT_DIR / "models_selection" / d / "selection_model.pkl"
+            model_path = models_root / d / "selection_model.pkl"
             if model_path.exists():
                 if args.verbose:
                     print(f"[skip]  train_through={d}  (selection_model.pkl exists)")
@@ -145,7 +165,11 @@ def main() -> None:
             str(args.num_leaves),
             "--min-child-samples",
             str(args.min_child_samples),
+            "--n-seeds",
+            str(args.n_seeds),
         ]
+        if args.models_root is not None:
+            cmd += ["--models-root", str(models_root)]
 
         if args.dry_run:
             print(f"[dry]   train_through={d}  {' '.join(cmd)}")

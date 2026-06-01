@@ -75,7 +75,7 @@ venv/bin/python3 strategies/step5_score_and_publish.py --date $DATE
 venv/bin/python3 backtester/run_rolling.py \
   --start-date 2022-07-11 \
   --end-date $PREV_DATE \
-  --top-n 10 --position-amount 100000
+  --top-n 25 --position-amount 100000
 ```
 
 ---
@@ -112,7 +112,9 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 | ④ step4 | `models_selection/<PREV_DATE>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
 | ⑤ step5 | `models_selection/<DATE>/candidates_scored.csv`（**最終選股名單**） |
 
-選股建議：**`candidates_scored.csv` 依 `ml_rank` 取 top-10 等權買進，於 `entry_date` 開盤建倉**。
+選股建議：**`candidates_scored.csv` 依 `ml_rank` 取 top-25 等權買進，於 `entry_date` 開盤建倉**。
+
+> top-25 落在 2026-06 驗證出的 seed-robust Sharpe 高原（跨 4 個不相交 ensemble，月 Sharpe 在 N≈20-26 升到穩定的 ~0.74，過 ~26 才回落；對比 N=10 的 ~0.67）。詳見 `strategies/CLAUDE.md` 與記憶 `project_ensemble_validation_2026_06`。
 
 ---
 

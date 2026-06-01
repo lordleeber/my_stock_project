@@ -30,6 +30,12 @@ Walk-forward 設計（術語見 strategies/CLAUDE.md § Date Convention）：
 
   # Walk-forward 訓練：train_through playbook_date = 2024-06-11（cutoff 2024-06-10）
   venv/bin/python3 strategies/step4_train_selection_model.py --date 2024-06-11
+
+  # Multi-seed ensemble：訓 K 顆（seeds = [seed..seed+K-1]），step5 平均其預測。
+  # n_seeds=1（預設）維持單顆行為與舊 payload 格式 {"model", "feature_cols"}；
+  # n_seeds>1 存 {"models":[...], "feature_cols", "seeds", "ensemble":True}。
+  venv/bin/python3 strategies/step4_train_selection_model.py --date 2024-06-11 --n-seeds 10
+  # --models-root 改輸出根目錄（平行/隔離訓練用，預設 models_selection/）
 """
 
 from __future__ import annotations
@@ -120,17 +126,27 @@ def parse_args() -> argparse.Namespace:
     # Sharpe distribution to baseline level (mean 0.707, 90% of seeds within the
     # 0.05 threshold) at equal PnL. Do NOT revert to 31/5 without re-validating.
     parser.add_argument("--num-leaves", type=int, default=15)
+    # n_bins=10 / reg_alpha=0.05 / reg_lambda=0.1 are the production config — aligned
+    # with step4_batch so the bare `step4 --date PREV` call in schedules/playbook_run.sh
+    # produces the SAME model as the backtested walk-forward batch. (Previously these
+    # defaulted to 5 / 0 / 0, silently diverging from the validated config.)
     parser.add_argument(
         "--n-bins",
         type=int,
-        default=5,
-        help="Number of label bins per month (default 5=quintile, 10=decile)",
+        default=10,
+        help="Number of label bins per month (5=quintile, 10=decile; production 10)",
     )
     parser.add_argument(
-        "--reg-alpha", type=float, default=0.0, help="L1 regularization"
+        "--reg-alpha",
+        type=float,
+        default=0.05,
+        help="L1 regularization (production 0.05)",
     )
     parser.add_argument(
-        "--reg-lambda", type=float, default=0.0, help="L2 regularization"
+        "--reg-lambda",
+        type=float,
+        default=0.1,
+        help="L2 regularization (production 0.1)",
     )
     parser.add_argument(
         "--seed",
@@ -144,6 +160,27 @@ def parse_args() -> argparse.Namespace:
         default=15,
         help="LGBMRanker min_child_samples (raise to reduce pick variance; "
         "15 validated over 30 seeds, see --num-leaves note)",
+    )
+    # Production default: 10-seed ensemble (seeds [seed..seed+9] = 42..51). Validated
+    # 2026-06 to collapse the single-seed Sharpe lottery (sd ~0.049) to a stable centre
+    # ~0.716 with flat PnL. Set --n-seeds 1 to recover the legacy single-seed behaviour
+    # (payload reverts to {'model': ...}). See project_ensemble_validation_2026_06.
+    parser.add_argument(
+        "--n-seeds",
+        type=int,
+        default=10,
+        help="Train an ensemble of N models with seeds "
+        "[seed, seed+1, ..., seed+N-1]; step5 averages their predictions to "
+        "neutralise single-seed variance. default 10 (production); 1 = single-seed "
+        "(payload stays {'model': ...}).",
+    )
+    parser.add_argument(
+        "--models-root",
+        type=Path,
+        default=None,
+        help="Root dir for model output (default models_selection/). Point at an "
+        "isolated dir for parallel validation runs so groups don't overwrite "
+        "each other.",
     )
     return parser.parse_args()
 
@@ -261,31 +298,51 @@ def main() -> None:
     X_train = train_df[feat_cols].apply(pd.to_numeric, errors="coerce")
     y_train = build_rank_labels(train_df, n_bins=args.n_bins)
     train_groups = build_groups(train_df)
-
-    model = lgb.LGBMRanker(
-        objective="lambdarank",
-        n_estimators=args.n_estimators,
-        learning_rate=args.learning_rate,
-        num_leaves=args.num_leaves,
-        subsample=0.8,
-        subsample_freq=1,  # subsample 需要 freq>0 才生效，預設 0 等於 silently disabled
-        colsample_bytree=0.8,
-        min_child_samples=args.min_child_samples,
-        reg_alpha=args.reg_alpha,
-        reg_lambda=args.reg_lambda,
-        random_state=args.seed,
-        verbose=-1,
+    X_eval = (
+        eval_df[feat_cols].apply(pd.to_numeric, errors="coerce")
+        if not eval_df.empty
+        else None
     )
-    model.fit(X_train, y_train, group=train_groups)
 
-    train_pred = model.predict(X_train)
+    # Multi-seed ensemble：對 seeds = [seed, seed+1, ..., seed+n_seeds-1] 各訓一顆，
+    # step5 平均其預測以壓掉單 seed 變異（~1/sqrt(K)）。n_seeds=1 = 現行單顆行為。
+    seeds = list(range(args.seed, args.seed + args.n_seeds))
+    is_ensemble = len(seeds) > 1
+    if is_ensemble:
+        print(f"Training {len(seeds)}-seed ensemble: seeds={seeds}")
+
+    models: list[lgb.LGBMRanker] = []
+    train_preds: list[np.ndarray] = []
+    eval_preds: list[np.ndarray] = []
+    for s in seeds:
+        m = lgb.LGBMRanker(
+            objective="lambdarank",
+            n_estimators=args.n_estimators,
+            learning_rate=args.learning_rate,
+            num_leaves=args.num_leaves,
+            subsample=0.8,
+            subsample_freq=1,  # subsample 需要 freq>0 才生效，預設 0 等於 silently disabled
+            colsample_bytree=0.8,
+            min_child_samples=args.min_child_samples,
+            reg_alpha=args.reg_alpha,
+            reg_lambda=args.reg_lambda,
+            random_state=s,
+            verbose=-1,
+        )
+        m.fit(X_train, y_train, group=train_groups)
+        models.append(m)
+        train_preds.append(m.predict(X_train))
+        if X_eval is not None:
+            eval_preds.append(m.predict(X_eval))
+
+    # IC 用 ensemble 平均預測（單顆時即該顆預測）— 反映 ensemble 實際排序行為。
+    train_pred = np.mean(train_preds, axis=0)
     train_ic = spearman_ic(train_df, train_pred)
     print(f"Train Spearman IC: {train_ic:.4f}")
 
     eval_ic = None
-    if not eval_df.empty:
-        X_eval = eval_df[feat_cols].apply(pd.to_numeric, errors="coerce")
-        eval_pred = model.predict(X_eval)
+    if X_eval is not None:
+        eval_pred = np.mean(eval_preds, axis=0)
         eval_ic = spearman_ic(eval_df, eval_pred)
         print(f"Eval  Spearman IC: {eval_ic:.4f}")
 
@@ -295,15 +352,20 @@ def main() -> None:
         )
         print(mic.to_string(index=False))
 
-    # 特徵重要性。
+    # 特徵重要性（K 顆平均；單顆時即該顆）。
     importance = pd.DataFrame(
         {
             "feature": feat_cols,
-            "importance_gain": model.booster_.feature_importance(
-                importance_type="gain"
+            "importance_gain": np.mean(
+                [m.booster_.feature_importance(importance_type="gain") for m in models],
+                axis=0,
             ),
-            "importance_split": model.booster_.feature_importance(
-                importance_type="split"
+            "importance_split": np.mean(
+                [
+                    m.booster_.feature_importance(importance_type="split")
+                    for m in models
+                ],
+                axis=0,
             ),
         }
     ).sort_values("importance_gain", ascending=False)
@@ -311,15 +373,31 @@ def main() -> None:
     print(importance.head(20).to_string(index=False))
 
     # 儲存模型。
-    if args.date is not None:
-        out_dir = (ROOT_DIR / "models_selection" / args.date).resolve()
-    else:
-        out_dir = (ROOT_DIR / "models_selection" / "latest").resolve()
+    models_root = (
+        args.models_root.resolve()
+        if args.models_root is not None
+        else (ROOT_DIR / "models_selection").resolve()
+    )
+    out_dir = (
+        models_root / (args.date if args.date is not None else "latest")
+    ).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = out_dir / "selection_model.pkl"
     with open(model_path, "wb") as f:
-        pickle.dump({"model": model, "feature_cols": feat_cols}, f)
+        if is_ensemble:
+            pickle.dump(
+                {
+                    "models": models,
+                    "feature_cols": feat_cols,
+                    "seeds": seeds,
+                    "ensemble": True,
+                },
+                f,
+            )
+        else:
+            # 單顆：維持現行 payload 格式，向後相容（產出與舊版等價）。
+            pickle.dump({"model": models[0], "feature_cols": feat_cols}, f)
 
     importance.to_csv(out_dir / "feature_importance.csv", index=False)
 
@@ -342,6 +420,9 @@ def main() -> None:
             "reg_alpha": args.reg_alpha,
             "reg_lambda": args.reg_lambda,
             "seed": args.seed,
+            "n_seeds": args.n_seeds,
+            "seeds": seeds,
+            "ensemble": is_ensemble,
         },
     }
     (out_dir / "latest.json").write_text(
