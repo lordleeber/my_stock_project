@@ -74,11 +74,15 @@ venv/bin/python3 strategies/step4_train_selection_model.py --date "$PREV_DATE"
 echo "[6/7] strategies/step5_score_and_publish.py --date $DATE"
 venv/bin/python3 strategies/step5_score_and_publish.py --date "$DATE"
 
-echo "[7/7] backtester/run_rolling.py --end-date $PREV_DATE --top-n 10"
+echo "[7/7] backtester/run_rolling.py --end-date $PREV_DATE --top-n 25"
+# top-n 25: within the seed-robust Sharpe plateau validated 2026-06. Across 4
+# disjoint ensembles, monthly Sharpe climbs to a robust ~0.74 plateau over
+# N≈20-26 (vs ~0.67 at N=10) before easing past ~26. See
+# project_ensemble_validation_2026_06.
 venv/bin/python3 backtester/run_rolling.py \
     --start-date 2022-07-11 \
     --end-date "$PREV_DATE" \
-    --top-n 10 --position-amount 100000
+    --top-n 25 --position-amount 100000
 
 echo "========================================"
 echo "Monthly playbook completed at $(date)"

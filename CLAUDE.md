@@ -75,7 +75,7 @@ venv/bin/python3 strategies/step5_batch_score_and_publish.py  # batch all dates
 # candidates_scored.csv + DB daily_quotes coverage when omitted)
 venv/bin/python3 backtester/run_rolling.py \
   --start-date 2022-07-11 \
-  --top-n 10 --position-amount 100000
+  --top-n 25 --position-amount 100000
 venv/bin/python3 backtester/summarize_range.py
 ```
 

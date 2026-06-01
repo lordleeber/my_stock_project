@@ -169,7 +169,13 @@ See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scena
 ### Model hyperparameters (LGBMRanker)
 
 Production config (step4 / step4_batch defaults): `n_estimators=500, learning_rate=0.03,
-num_leaves=15, min_child_samples=15, reg_alpha=0.05, reg_lambda=0.1, n_bins=10, seed=42`.
+num_leaves=15, min_child_samples=15, reg_alpha=0.05, reg_lambda=0.1, n_bins=10, seed=42,
+n_seeds=10` (10-seed ensemble, seeds 42–51, scored with `--ensemble-agg score`).
+
+> Since 2026-06 **step4-single defaults match step4_batch** (previously single defaulted to
+> `n_bins=5, reg_alpha=0, reg_lambda=0`, silently diverging) — so the bare
+> `step4 --date PREV` call in `schedules/playbook_run.sh` now produces exactly the
+> backtested model.
 
 > **⚠️ `num_leaves=15 / min_child_samples=15` is a deliberate low-capacity choice — do
 > NOT bump back to the old `31 / 5` without re-validating across seeds.** During the
@@ -182,6 +188,34 @@ num_leaves=15, min_child_samples=15, reg_alpha=0.05, reg_lambda=0.1, n_bins=10, 
 > (95% CI [0.690, 0.725], 90% of seeds within the 0.05 fail-threshold) at PnL ≈ baseline.
 > `seed=42` is a fixed a-priori default (not selected on score); single-seed Sharpe ranges
 > ~0.64–0.83, so judge configs by the **distribution**, not one run.
+
+### Multi-seed ensemble (`--n-seeds`)
+
+Because single-seed Sharpe is a lottery (sd ~0.049 over 30 seeds), step4 trains a
+**K-seed ensemble** (default K=10) and step5 averages their predictions, pulling the result
+to the distribution centre (variance ~1/√K) instead of betting on one seed.
+
+- `step4 --n-seeds K` trains seeds `[seed, seed+1, …, seed+K-1]` (production `--seed 42
+  --n-seeds 10` = seeds 42–51). `step4_batch` forwards `--n-seeds`.
+- **Payload format is dual / backward-compatible**:
+  - `n_seeds == 1` (default) → `{"model": <ranker>, "feature_cols": [...]}` — **unchanged**, picks byte-stable.
+  - `n_seeds > 1` → `{"models": [m1..mK], "feature_cols": [...], "seeds": [...], "ensemble": True}`.
+  - step5 detects either, and still reads legacy on-disk `{"model": ...}` pkls.
+- `step5 --ensemble-agg {score,rank}` (default `score`): `score` = mean of raw predict
+  scores; `rank` = mean of per-model ranks with `ml_score = -mean_rank` (kept monotone-
+  increasing so `run_rolling`'s sort-by-`ml_score` is unaffected). No-op for single-model
+  payloads. `candidates_scored.csv` records `scored_by_ensemble_k` / `_seeds` / `_agg`.
+- `--models-root` (step4 / step4_batch / step5 / step5_batch) redirects the model dir so
+  parallel/disjoint runs don't collide; default stays `models_selection/`.
+- Validation harness: `scripts/validate_ensemble.py` (3 disjoint seed groups × K × agg →
+  full walk-forward + backtest; writes `backtester/output/val/SUMMARY.md`).
+
+> **Production runs the 10-seed ensemble as of 2026-06** (validated: 12 disjoint-group runs
+> all landed at monthly Sharpe ~0.68–0.74, center ~0.716 ≈ baseline, PnL flat — the
+> single-seed lottery is gone). K=10+score chosen on theory (1/√K variance reduction);
+> the 3-group spread was too noisy to rank K=5 vs K=10. See
+> `project_ensemble_validation_2026_06`. To recover legacy single-seed behaviour pass
+> `--n-seeds 1`.
 
 Concrete example for target playbook_date 2026-05-16 (cutoff 2026-05-15):
 

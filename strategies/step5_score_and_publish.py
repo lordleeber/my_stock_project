@@ -23,6 +23,7 @@ import pickle
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -60,6 +61,24 @@ def resolve_model_for_target(
     return best[1] if best else None
 
 
+def ensemble_score(models: list, X: pd.DataFrame, agg: str) -> np.ndarray:
+    """把 K 顆模型的預測合成單一 ml_score（越大越好，給 run_rolling 降冪排序用）。
+
+    - 單顆（len==1）+ agg='score'：等價於 model.predict(X)，向後相容。
+    - agg='score'：平均各顆原始 predict 分數。
+    - agg='rank' ：每顆先在候選集內算 rank（1=最佳），平均後取負（-mean_rank
+                   仍越大越好）。對各顆 score scale 差異較 robust。
+    """
+    preds = [pd.Series(m.predict(X), index=X.index) for m in models]
+    if agg == "score":
+        return np.mean([p.to_numpy() for p in preds], axis=0)
+    if agg == "rank":
+        ranks = [p.rank(ascending=False, method="average") for p in preds]
+        mean_rank = np.mean([r.to_numpy() for r in ranks], axis=0)
+        return -mean_rank
+    raise ValueError(f"unknown ensemble agg: {agg!r} (expected 'score' or 'rank')")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Score candidates using walk-forward selection model."
@@ -76,11 +95,32 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override model dir (e.g. models_selection/latest for production pick)",
     )
+    parser.add_argument(
+        "--models-root",
+        type=Path,
+        default=None,
+        help="Root dir for model lookup + candidates_scored.csv output "
+        "(default models_selection/). Use an isolated dir for parallel "
+        "validation runs.",
+    )
+    parser.add_argument(
+        "--ensemble-agg",
+        choices=["score", "rank"],
+        default="score",
+        help="Combine an ensemble payload's K models: 'score' = mean of raw "
+        "predict scores; 'rank' = mean of per-model ranks. No-op for "
+        "single-model payloads.",
+    )
     return parser.parse_args()
 
 
-def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) -> Path:
-    """對 target playbook date 的候選股評分，並將 candidates_scored.csv 寫入 models_selection/<DATE>/。"""
+def score_and_publish(
+    target_playbook_date: str,
+    model_dir: Path | None = None,
+    models_root: Path | None = None,
+    agg: str = "score",
+) -> Path:
+    """對 target playbook date 的候選股評分，並將 candidates_scored.csv 寫入 <models_root>/<DATE>/。"""
     parse_playbook_date(target_playbook_date)
 
     ds_path = (
@@ -96,7 +136,7 @@ def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) 
             f"Run: venv/bin/python3 strategies/step2_finalize_strategy.py --date {target_playbook_date}"
         )
 
-    models_root = ROOT_DIR / "models_selection"
+    models_root = models_root or (ROOT_DIR / "models_selection")
     if model_dir is None:
         model_dir = resolve_model_for_target(models_root, target_playbook_date)
         if model_dir is None:
@@ -112,8 +152,15 @@ def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) 
 
     with open(model_path, "rb") as f:
         payload = pickle.load(f)
-    model = payload["model"]
     feature_cols = payload["feature_cols"]
+    if "models" in payload:
+        # Ensemble payload（step4 --n-seeds > 1）。
+        models = payload["models"]
+        ens_seeds = payload.get("seeds")
+    else:
+        # 單顆 payload（含磁碟上既有舊格式）。
+        models = [payload["model"]]
+        ens_seeds = payload.get("seeds")
 
     df = pd.read_csv(ds_path)
     df["symbol"] = df["symbol"].astype(str).str.strip()
@@ -128,8 +175,16 @@ def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) 
         )
 
     X = df[feature_cols].apply(pd.to_numeric, errors="coerce")
-    df["ml_score"] = model.predict(X)
+    df["ml_score"] = ensemble_score(models, X, agg)
     df["ml_rank"] = df["ml_score"].rank(ascending=False, method="first").astype(int)
+
+    # Ensemble traceability：單顆 → k=1 / agg=single / seeds 空（舊 payload 無 seed）。
+    is_ensemble = len(models) > 1
+    df["scored_by_ensemble_k"] = len(models)
+    df["scored_by_ensemble_seeds"] = (
+        ",".join(str(s) for s in ens_seeds) if ens_seeds else ""
+    )
+    df["scored_by_ensemble_agg"] = agg if is_ensemble else "single"
 
     # 標註此次評分使用的 model 的 train_through（walk-forward 來源），
     # 避免日後看 candidates_scored.csv 誤以為是當月訓練的模型打的分。
@@ -147,7 +202,7 @@ def score_and_publish(target_playbook_date: str, model_dir: Path | None = None) 
 
     out = df.sort_values("ml_rank").reset_index(drop=True)
 
-    out_dir = ROOT_DIR / "models_selection" / target_playbook_date
+    out_dir = models_root / target_playbook_date
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "candidates_scored.csv"
     out.to_csv(out_path, index=False, encoding="utf-8-sig")
@@ -180,7 +235,12 @@ def main() -> None:
     target = args.date or latest_playbook_date()
     if args.date is None:
         print(f"[auto] --date 未指定，使用最新 canonical playbook date: {target}")
-    score_and_publish(target, model_dir=args.model_dir)
+    score_and_publish(
+        target,
+        model_dir=args.model_dir,
+        models_root=args.models_root,
+        agg=args.ensemble_agg,
+    )
 
 
 if __name__ == "__main__":

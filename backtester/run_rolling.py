@@ -351,6 +351,14 @@ def parse_args() -> argparse.Namespace:
         help="Root dir for selection models (default: models_selection/)",
     )
     parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Output dir for rolling_*.csv / rolling_summary.json "
+        "(default: backtester/output/rolling). Use a separate dir per "
+        "parallel validation run so they don't overwrite each other.",
+    )
+    parser.add_argument(
         "--verbose", action="store_true", help="Print per-month progress"
     )
     return parser.parse_args()
@@ -358,7 +366,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    out_dir = (Path.cwd() / "backtester" / "output" / "rolling").resolve()
+    out_dir = (
+        args.out_dir.resolve()
+        if args.out_dir is not None
+        else (Path.cwd() / "backtester" / "output" / "rolling").resolve()
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cost_cfg = CostConfig(commission_rate=args.commission_rate, tax_rate=args.tax_rate)

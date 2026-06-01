@@ -35,6 +35,20 @@ FIRST_SCORABLE_TARGET = "2022-07-11"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch-score all playbook dates.")
     parser.add_argument("--verbose", action="store_true", help="Print per-date output")
+    parser.add_argument(
+        "--models-root",
+        type=Path,
+        default=None,
+        help="Root dir for model lookup + output (default models_selection/). "
+        "Use an isolated dir per validation group.",
+    )
+    parser.add_argument(
+        "--ensemble-agg",
+        choices=["score", "rank"],
+        default="score",
+        help="Ensemble aggregation passed to step5 (score|rank). No-op for "
+        "single-model payloads.",
+    )
     return parser.parse_args()
 
 
@@ -80,13 +94,17 @@ def main() -> None:
     for d in dates:
         try:
             if args.verbose:
-                score_and_publish(d)
+                score_and_publish(
+                    d, models_root=args.models_root, agg=args.ensemble_agg
+                )
             else:
                 with (
                     contextlib.redirect_stdout(io.StringIO()),
                     contextlib.redirect_stderr(io.StringIO()),
                 ):
-                    score_and_publish(d)
+                    score_and_publish(
+                        d, models_root=args.models_root, agg=args.ensemble_agg
+                    )
             ok += 1
         except Exception as exc:
             print(f"[FAIL] {d}: {exc}")

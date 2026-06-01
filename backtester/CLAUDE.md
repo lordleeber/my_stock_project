@@ -12,19 +12,32 @@
 # candidates_scored.csv AND DB daily_quotes coverage for entry_date.
 venv/bin/python3 backtester/run_rolling.py \
   --start-date 2022-07-11 \
-  --top-n 10 --position-amount 100000
+  --top-n 25 --position-amount 100000
 
 # Explicit end (override auto-detect)
 venv/bin/python3 backtester/run_rolling.py \
   --start-date 2022-07-11 \
   --end-date 2026-04-11 \
-  --top-n 10 --position-amount 100000
+  --top-n 25 --position-amount 100000
 
-# Print aggregate summary from latest rolling_trades.csv
+# Isolated I/O for parallel runs: read models from one dir, write results to another
+venv/bin/python3 backtester/run_rolling.py \
+  --start-date 2022-07-11 --top-n 15 --position-amount 100000 \
+  --models-root models_selection_val/k10_g1 \
+  --out-dir backtester/output/val/k10_g1_score
+
+# Print aggregate summary from latest rolling_trades.csv (or a custom --rolling-dir)
 venv/bin/python3 backtester/summarize_range.py
+venv/bin/python3 backtester/summarize_range.py --rolling-dir backtester/output/val/k10_g1_score
 ```
 
 `--start-date` / `--end-date` 都是 canonical playbook run date（cutoff +1：5/8/11 月 = 16 號，其餘月份 = 11 號）。
+
+`--models-root` (default `models_selection/`) sets where `candidates_scored.csv` is read
+from; `--out-dir` (default `backtester/output/rolling/`) sets where `rolling_*.csv` /
+`rolling_summary.json` are written. Both default to current behaviour — set them only for
+parallel/validation runs that must not overwrite each other (see
+`scripts/validate_ensemble.py`).
 
 ## End-date auto-detection
 
