@@ -78,6 +78,23 @@ venv/bin/python3 backtester/run_rolling.py \
   --top-n 25 --position-amount 100000
 ```
 
+> **一次性遷移（2026-06 multi-seed ensemble 上線）**：上面 ④ 的每月
+> `step4 --date $PREV_DATE` 只會把**新的那一個 cohort** 訓成 ensemble（預設
+> `--n-seeds 10`，seeds 42–51）。但整條 walk-forward 回測要一致，**全部歷史 cohort
+> 都得是 10-seed ensemble** —— 2026-06 上線時已對全部 47 個 cohort 做過一次性 batch
+> 重訓 + 重評分（本機已完成）。模型 artifact 是 gitignored，所以**全新 checkout、
+> 或磁碟上還留著 2026-06 前的單 seed 模型時**，要重建：
+> ```bash
+> # （可選）先備份舊單 seed 模型，避免直接覆蓋；全新環境沒有舊模型可跳過
+> mv models_selection models_selection_pre_ensemble
+> venv/bin/python3 strategies/step4_batch_train_selection_model.py   # 預設 --n-seeds 10，重訓全 cohort
+> venv/bin/python3 strategies/step5_batch_score_and_publish.py       # 重新評分（寫入 scored_by_ensemble_* 欄）
+> venv/bin/python3 backtester/run_rolling.py --start-date 2022-07-11 --top-n 25 --position-amount 100000
+> ```
+> ⚠️ **不要加 `--skip-existing`**：它會跳過已存在的舊單 seed `selection_model.pkl`、
+> 不會覆蓋成 ensemble，導致回測新舊模型混用。詳見 `strategies/CLAUDE.md §
+> Multi-seed ensemble` 與記憶 `project_ensemble_validation_2026_06`。
+
 ---
 
 ## 為什麼順序不能亂
