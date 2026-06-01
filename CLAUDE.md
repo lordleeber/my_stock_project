@@ -16,6 +16,15 @@ All Python scripts use the repo-local venv:
 venv/bin/python3 <script.py>
 ```
 
+### Git Hooks (one-time setup per clone)
+Enable the version-controlled hooks in `.githooks/` (the ruff pre-commit hook
+mirrors the Python Linter CI). `core.hooksPath` is a local git setting, so every
+fresh clone must run this once:
+```bash
+git config core.hooksPath .githooks
+```
+See `.githooks/README.md` for details.
+
 ### Data Pipeline (Docker)
 ```bash
 # Full daily pipeline for a specific date
