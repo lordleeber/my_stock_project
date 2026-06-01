@@ -50,17 +50,41 @@ To avoid look-ahead bias, the calculator anchors financial data to their **offic
 Every daily valuation record uses the latest report *available at that specific date*.
 
 ### TTM EPS
-- **`ttm_eps_official`**: Sum of the 4 most recently published single-quarter EPS (`eps_q`).
+- **`ttm_eps_official`**: Sum of the 4 most recently published single-quarter EPS
+  (`eps_q`). Written for **every** row that has a full trailing-4-quarter window —
+  **including loss-making stocks where the sum is ≤ 0**. Only rows with fewer than
+  4 published quarters (NaN TTM) are dropped.
+
+  > **⚠️ Do NOT re-add a `ttm_eps_official > 0` row filter.** Dropping ≤0 rows was
+  > the root cause of issue #2: it left holes that downstream `latest <= date`
+  > joins silently forward-filled with a **stale positive** TTM (type A, e.g. 8089
+  > stuck at 0.16 across a loss stretch), and **froze persistently loss-making
+  > symbols at a one-off spike** (type B, e.g. 6499 frozen at 33.82 from a 2021Q2
+  > gain while the true TTM was −8.81). ~18–22% of the tradable universe is
+  > loss-making at any cutoff, so this is a large silent contract violation.
 
 ### Output Metrics
-- **`pe_calculated`**: `close / ttm_eps_official` (computed internally; not persisted to DB).
-- **`pe_official`**: 官方 PE（從 `pe_ratio` 直接合併）。
+- **`pe_calculated`**: `close / ttm_eps_official` (computed internally; not persisted
+  to DB). **NULL when `ttm_eps_official` ≤ 0** — a negative PE is meaningless and
+  would pollute the expanding-rank percentile.
+- **`pe_official`**: 官方 PE（從 `pe_ratio` 直接合併；**不依賴** `ttm_eps_official`）。
 - **`pe_percentile_official`**: **PIT expanding rank** — for each `(symbol, date)` row,
   rank `pe_calculated` against `{same symbol's PE values with date <= row's date}`. Once
   written, a row's percentile is **frozen** (PIT-safe). Implemented via
   `pandas.expanding().rank(pct=True)` over the historical DB tail concatenated with the
-  new batch.
-- **`roe_official`**: `ttm_eps_official / nav_per_share * 100`.
+  new batch. **NULL for ≤0-TTM rows** (their `pe_calculated` is NaN and is excluded
+  from the ranking, so positive-TTM percentiles are unchanged vs the pre-fix behaviour).
+- **`roe_official`**: `ttm_eps_official / nav_per_share * 100`. **Keeps its sign** —
+  a negative ROE is a valid feature for loss-making stocks. NULL only when
+  `nav_per_share` drives a div-by-zero / ±inf (negative-equity blowups).
+
+### Self-Reconciliation Check (`reconcile_ttm`)
+After each insert, the calculator verifies that **every symbol's latest stored
+`ttm_eps_official` equals the trailing-4Q `eps_q` sum** published as of that row's
+date (tolerance 0.10). Mismatches are logged to stdout + `/error_valuation_calculator.log`
+with the worst offenders, but **never abort the run**. A non-empty report flags either a
+regression here or a `quarterly_reports_xbrl` restatement the frozen history hasn't
+absorbed yet (→ rebuild with `--force-full`).
 
 > **Migration**: `calculator/backfill_pit_percentile.py` is the one-time migration that
 > rewrites all historical `pe_percentile_official` rows under the expanding-rank

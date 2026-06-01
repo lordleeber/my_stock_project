@@ -3,6 +3,7 @@ import os
 import sys
 import traceback
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import text
 
@@ -115,15 +116,38 @@ def compute_new_rows(engine, last_processed):
         by="symbol",
         direction="backward",
     )
+    # pe_ratio occasionally carries duplicate (symbol, date) rows (a few exist on
+    # 2023-05-15, e.g. 6472 with 26.17 vs 29.22). Without deduping, this LEFT merge
+    # fans one price row into several and violates the (date, symbol) primary key.
+    # The old >0 filter masked this by dropping those (loss-making) rows entirely.
+    df_official_pe = df_official_pe.drop_duplicates(
+        subset=["symbol", "date"], keep="last"
+    )
     df_combined = df_combined.merge(df_official_pe, on=["symbol", "date"], how="left")
-    df_combined = df_combined[df_combined["ttm_eps_official"] > 0].copy()
+    # Keep every row that has a real trailing-4Q TTM — INCLUDING TTM <= 0
+    # (loss-making). The old code dropped rows with ttm_eps_official <= 0 entirely,
+    # which (a) left holes that downstream asof / "latest <= date" joins silently
+    # forward-filled with a STALE positive TTM (issue #2 type A, e.g. 8089), and
+    # (b) froze persistently loss-making symbols at their last positive value —
+    # often a one-off spike (type B, e.g. 6499 stuck at 33.82 from a 2021Q2 gain).
+    # We now drop only rows with NO published quarter yet (NaN TTM, i.e. < 4 quarters
+    # available), so ttm_eps_official always equals the trailing-4Q eps_q sum.
+    df_combined = df_combined[df_combined["ttm_eps_official"].notna()].copy()
 
+    # pe_calculated is only meaningful for positive earnings: null it out when
+    # TTM <= 0 so a negative/garbage PE never pollutes the expanding-rank
+    # percentile. roe_official keeps its sign — a negative ROE is a valid feature
+    # for loss-making stocks — but guard div-by-zero / negative-equity blowups.
     df_combined["pe_calculated"] = (
         df_combined["close"] / df_combined["ttm_eps_official"]
     ).round(2)
+    df_combined.loc[df_combined["ttm_eps_official"] <= 0, "pe_calculated"] = np.nan
     df_combined["roe_official"] = (
         df_combined["ttm_eps_official"] / df_combined["nav_per_share"] * 100
     ).round(2)
+    df_combined["roe_official"] = df_combined["roe_official"].replace(
+        [np.inf, -np.inf], np.nan
+    )
     return df_combined
 
 
@@ -151,7 +175,13 @@ def add_pit_expanding_rank(engine, new_df, last_processed):
         ).round(2)
         history = history[["symbol", "date", "pe_calculated"]]
 
-    new_slim = new_df[["symbol", "date", "pe_calculated"]].copy()
+    # Only TTM>0 rows have a meaningful pe_calculated (TTM<=0 rows were nulled in
+    # compute_new_rows). Excluding them here keeps the ranking denominator
+    # identical to the old positive-only behaviour; the left-merge below leaves
+    # their pe_percentile_official as NaN (-> NULL), which is the desired result.
+    new_slim = new_df.loc[
+        new_df["pe_calculated"].notna(), ["symbol", "date", "pe_calculated"]
+    ].copy()
     new_slim["_is_new"] = True
     history = history.copy()
     history["_is_new"] = False
@@ -170,6 +200,81 @@ def add_pit_expanding_rank(engine, new_df, last_processed):
     out = new_df.merge(new_with_rank, on=["symbol", "date"], how="left")
     out["pe_percentile_official"] = (out["rank_pct"] * 100).round(4)
     return out
+
+
+def reconcile_ttm(engine, tol=0.10, max_examples=15):
+    """Self-check guard against silent drift (issue #2 recommendation 3).
+
+    For each symbol's LATEST valuation_daily row, the stored ttm_eps_official
+    should equal the trailing-4-quarter eps_q sum published as of that row's date.
+    Logs a warning (to stdout + ERROR_LOG) listing the worst offenders; never
+    raises, so it can't fail an otherwise-good calculator run. A non-empty report
+    flags either a regression here or a quarterly_reports_xbrl restatement that
+    the frozen history hasn't picked up (rebuild with --force-full to backfill)."""
+    try:
+        df_eps = pd.read_sql(
+            "SELECT date, symbol, eps_q FROM quarterly_reports_xbrl "
+            "WHERE period_type = 'quarter' ORDER BY symbol, date",
+            engine,
+        )
+        df_eps = df_eps.sort_values(["symbol", "date"])
+        df_eps["expected_ttm"] = df_eps.groupby("symbol")["eps_q"].transform(
+            lambda x: x.rolling(window=4).sum()
+        )
+        df_eps["publish_date"] = pd.to_datetime(df_eps["date"].apply(get_publish_date))
+        df_eps = df_eps.dropna(subset=["expected_ttm"]).sort_values("publish_date")
+
+        latest = pd.read_sql(
+            "SELECT DISTINCT ON (symbol) symbol, date, ttm_eps_official "
+            "FROM valuation_daily ORDER BY symbol, date DESC",
+            engine,
+        )
+        if latest.empty:
+            return
+        latest["date_ts"] = pd.to_datetime(latest["date"])
+        latest = latest.sort_values("date_ts")
+        merged = pd.merge_asof(
+            latest,
+            df_eps[["symbol", "publish_date", "expected_ttm"]],
+            left_on="date_ts",
+            right_on="publish_date",
+            by="symbol",
+            direction="backward",
+        )
+        checkable = merged[merged["expected_ttm"].notna()].copy()
+        checkable["diff"] = (
+            checkable["ttm_eps_official"] - checkable["expected_ttm"]
+        ).abs()
+        n_checked = len(checkable)
+        bad = checkable[checkable["diff"] > tol]
+
+        if len(bad) == 0:
+            print(
+                f"[reconcile] OK: all {n_checked} symbols' latest "
+                f"ttm_eps_official within {tol} of trailing-4Q eps_q sum."
+            )
+            return
+
+        pct = len(bad) / n_checked * 100 if n_checked else 0.0
+        msg = (
+            f"[reconcile] WARNING: {len(bad)}/{n_checked} symbols ({pct:.1f}%) have "
+            f"latest ttm_eps_official drifting > {tol} from trailing-4Q eps_q sum."
+        )
+        print(msg)
+        for _, r in (
+            bad.sort_values("diff", ascending=False).head(max_examples).iterrows()
+        ):
+            print(
+                f"  {r['symbol']} @ {r['date']}: stored={r['ttm_eps_official']:.2f} "
+                f"expected={r['expected_ttm']:.2f} (diff={r['diff']:.2f})"
+            )
+        try:
+            with open(ERROR_LOG, "a") as f:
+                f.write(msg + "\n")
+        except OSError:
+            pass
+    except Exception as e:  # never let the health-check abort the run
+        print(f"[reconcile] skipped (check failed: {e})")
 
 
 def run(force_full=False):
@@ -225,6 +330,8 @@ def run(force_full=False):
     print(
         f"{TABLE}: inserted {len(output_df)} rows; total {total_rows} ({min_date} ~ {max_date})"
     )
+
+    reconcile_ttm(engine)
 
 
 def main():

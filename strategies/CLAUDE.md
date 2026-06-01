@@ -166,6 +166,23 @@ See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scena
 - Scoring target cohort M (step5) picks the latest model whose `train_through_playbook_date < target_playbook_date`
 - Training the `train_through=M−1` model requires step3 fwd_return reaching cohort M−1, which requires step1+2 for cohort M (entry_date) to be done first
 
+### Model hyperparameters (LGBMRanker)
+
+Production config (step4 / step4_batch defaults): `n_estimators=500, learning_rate=0.03,
+num_leaves=15, min_child_samples=15, reg_alpha=0.05, reg_lambda=0.1, n_bins=10, seed=42`.
+
+> **⚠️ `num_leaves=15 / min_child_samples=15` is a deliberate low-capacity choice — do
+> NOT bump back to the old `31 / 5` without re-validating across seeds.** During the
+> ISSUE #2 valuation_daily fix we found the `31/5` ranker was **fragile**: a ~0.3% change
+> in training features (the corrected loss-making-stock `roe_official` / `pe_percentile_official`)
+> reshuffled ~26% of picks and dropped the 38-basis monthly Sharpe from ~0.70 to ~0.62
+> — purely a model-variance amplification (mean return / PnL were flat; std rose). Lowering
+> capacity (either `num_leaves↓` or `min_child_samples↑` — they're substitutes) restores
+> the Sharpe distribution to baseline: over **30 seeds**, `15/15` gives mean Sharpe **0.707**
+> (95% CI [0.690, 0.725], 90% of seeds within the 0.05 fail-threshold) at PnL ≈ baseline.
+> `seed=42` is a fixed a-priori default (not selected on score); single-seed Sharpe ranges
+> ~0.64–0.83, so judge configs by the **distribution**, not one run.
+
 Concrete example for target playbook_date 2026-05-16 (cutoff 2026-05-15):
 
 1. 2026-05-15 (Fri): target 2026-05-16's `quote_date` snapshot taken; cohort 2026-04-11's `exit_date` realises here too → `fwd_return_pct` for 2026-04-11 cohort becomes computable.
