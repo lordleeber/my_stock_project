@@ -84,6 +84,26 @@ def parse_args() -> argparse.Namespace:
         help="Skip train_through dates where selection_model.pkl already exists",
     )
     parser.add_argument("--verbose", action="store_true", help="Print per-date output")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="random_state passed to each step4 train (vary to probe model variance)",
+    )
+    # Lower-capacity defaults (15/15) validated over 30 seeds after the
+    # valuation_daily fix — see step4_train_selection_model.py --num-leaves note.
+    parser.add_argument(
+        "--num-leaves",
+        type=int,
+        default=15,
+        help="LGBMRanker num_leaves passed to each step4 train",
+    )
+    parser.add_argument(
+        "--min-child-samples",
+        type=int,
+        default=15,
+        help="LGBMRanker min_child_samples passed to each step4 train",
+    )
     return parser.parse_args()
 
 
@@ -119,6 +139,12 @@ def main() -> None:
             "0.05",
             "--reg-lambda",
             "0.1",
+            "--seed",
+            str(args.seed),
+            "--num-leaves",
+            str(args.num_leaves),
+            "--min-child-samples",
+            str(args.min_child_samples),
         ]
 
         if args.dry_run:

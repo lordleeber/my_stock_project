@@ -113,7 +113,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--n-estimators", type=int, default=500)
     parser.add_argument("--learning-rate", type=float, default=0.03)
-    parser.add_argument("--num-leaves", type=int, default=31)
+    # num_leaves=15 / min_child_samples=15 is the lower-capacity config validated
+    # over 30 seeds (issue #2 downstream): after the valuation_daily fix, the old
+    # 31/5 ranker amplified a 0.3% training-feature change into a robust monthly
+    # Sharpe regression (~0.62 vs baseline 0.70). Lowering capacity restores the
+    # Sharpe distribution to baseline level (mean 0.707, 90% of seeds within the
+    # 0.05 threshold) at equal PnL. Do NOT revert to 31/5 without re-validating.
+    parser.add_argument("--num-leaves", type=int, default=15)
     parser.add_argument(
         "--n-bins",
         type=int,
@@ -125,6 +131,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--reg-lambda", type=float, default=0.0, help="L2 regularization"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="random_state for LGBMRanker (vary to probe model variance)",
+    )
+    parser.add_argument(
+        "--min-child-samples",
+        type=int,
+        default=15,
+        help="LGBMRanker min_child_samples (raise to reduce pick variance; "
+        "15 validated over 30 seeds, see --num-leaves note)",
     )
     return parser.parse_args()
 
@@ -251,10 +270,10 @@ def main() -> None:
         subsample=0.8,
         subsample_freq=1,  # subsample 需要 freq>0 才生效，預設 0 等於 silently disabled
         colsample_bytree=0.8,
-        min_child_samples=5,
+        min_child_samples=args.min_child_samples,
         reg_alpha=args.reg_alpha,
         reg_lambda=args.reg_lambda,
-        random_state=42,
+        random_state=args.seed,
         verbose=-1,
     )
     model.fit(X_train, y_train, group=train_groups)
@@ -319,6 +338,10 @@ def main() -> None:
             "n_estimators": args.n_estimators,
             "learning_rate": args.learning_rate,
             "num_leaves": args.num_leaves,
+            "min_child_samples": args.min_child_samples,
+            "reg_alpha": args.reg_alpha,
+            "reg_lambda": args.reg_lambda,
+            "seed": args.seed,
         },
     }
     (out_dir / "latest.json").write_text(
