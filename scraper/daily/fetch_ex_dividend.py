@@ -34,8 +34,11 @@ def fetch_year_to_date(end_date: str, output_dir: str) -> None:
     utf8_path = dst_dir / "all.csv"
     force_reprocess = os.getenv("FORCE_REPROCESS", "0") == "1"
 
-    if utf8_path.exists() and not force_reprocess:
-        print(f"[EX_DIVIDEND] {utf8_path} exists, skip.")
+    # 當年度 all.csv 是「年初~end_date」的累計檔，新公告會持續加入，必須每天
+    # 重抓覆蓋；只有已結束的過去年度檔才是 immutable，可沿用快取直接 skip。
+    is_past_year = end_dt.year < datetime.date.today().year
+    if utf8_path.exists() and not force_reprocess and is_past_year:
+        print(f"[EX_DIVIDEND] {utf8_path} exists (past year), skip.")
         return
 
     url = _build_url(start_date, end_date)
