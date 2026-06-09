@@ -18,8 +18,11 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / audit / importer container（給 retry 在偵測到 stale 狀態時使用）
 
 - `schedules/weekly_update.sh`
-  - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding)`
-  - 自動偵測最新 TDCC 檔案日期後處理
+  - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding) -> processor(convert_dividend) -> importer(import_dividend)`
+  - 自動偵測最新 TDCC 檔案日期後處理（shareholding 段）
+  - 末段順帶處理除權息（dividend）：除權息 raw 由每日 `scraper-daily` 持續累積，這裡只需 process + import。
+    - `convert_dividend.py` 預設只重算**當年度**；`import_dividend.py` 預設只對**當年度** delete-before-insert（不 drop 整表）。過去年度視為 immutable 不重算/重匯。
+    - 首次 bootstrap 或補歷史：對這兩支帶 `DIVIDEND_FULL=1`（processor 重算所有年度、importer 全量 replace 整表）。
 
 - `schedules/monthly_update.sh`
   - 目標月份：自動抓「上個月」

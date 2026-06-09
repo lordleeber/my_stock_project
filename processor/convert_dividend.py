@@ -1,6 +1,7 @@
 import os
 import sys
 import csv
+import datetime
 import re
 from pathlib import Path
 import polars as pl
@@ -124,6 +125,17 @@ def process_file(csv_file):
         return None
 
 
+def _years_to_process(raw_path):
+    """要 (重新) 處理哪些年度目錄。
+
+    預設只處理「當年度」——過去年度的 raw 檔在跨年後即 immutable，每次都重算
+    純屬白工。設 DIVIDEND_FULL=1 才重算所有年度（首次 bootstrap / 補資料）。
+    """
+    if os.getenv("DIVIDEND_FULL", "0") == "1":
+        return sorted(p.name for p in raw_path.glob("20*") if p.is_dir())
+    return [str(datetime.date.today().year)]
+
+
 def main():
     raw_path = Path(RAW_DIR) / "ex_dividend"
     if not raw_path.exists():
@@ -132,15 +144,12 @@ def main():
 
     print("Starting Dividend Processor...")
 
-    for year_dir in sorted(raw_path.glob("20*")):
-        if not year_dir.is_dir():
-            continue
-        year = year_dir.name
-        print(f"Processing Year: {year}")
-
-        csv_file = year_dir / "all.csv"
+    for year in _years_to_process(raw_path):
+        csv_file = raw_path / year / "all.csv"
         if not csv_file.exists():
+            print(f"  [!] No raw file for {year}: {csv_file}, skip.")
             continue
+        print(f"Processing Year: {year}")
 
         df = process_file(str(csv_file))
         if df is not None:
