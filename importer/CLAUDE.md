@@ -45,6 +45,7 @@ Uses SQLAlchemy engine with psycopg2 driver.
 | `START_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
 | `END_DATE` | - | YYYYMMDD format (or YYYYQX for quarterly reports) |
 | `FORCE_REIMPORT` | 0 | Set to 1 to delete and re-import existing data |
+| `DIVIDEND_FULL` | 0 | (`import_dividend.py` only) Set to 1 to rebuild the whole `dividend` table across all years; default only delete-before-inserts the current year |
 | `DB_HOST` | db | PostgreSQL host |
 | `DB_USER` | user | Database user |
 | `DB_PASSWORD` | password | Database password |
@@ -59,6 +60,11 @@ docker compose run --rm -e START_DATE=20260201 -e END_DATE=20260201 importer pyt
 
 # Weekly import (shareholding)
 docker compose run --rm -e START_DATE=20260207 -e END_DATE=20260207 importer python import_weekly.py
+
+# Dividend import (除權息; current-year incremental — no date range needed)
+docker compose run --rm importer python import_dividend.py
+# Dividend full rebuild (first-time bootstrap / historical backfill)
+docker compose run --rm -e DIVIDEND_FULL=1 importer python import_dividend.py
 
 # Monthly import
 docker compose run --rm -e START_DATE=20260101 -e END_DATE=20260101 importer python import_monthly.py
@@ -82,6 +88,7 @@ docker compose run --rm -e START_DATE=2025Q4 -e END_DATE=2025Q4 importer python 
 |----------|-------|-------------|
 | `import_daily.py` | Daily categories | daily_quotes, market_indices, institutional_investors, institutional_summary, foreign_holding, margin_trading, margin_sbl, margin_summary, pe_ratio |
 | `import_weekly.py` | Weekly categories | shareholding |
+| `import_dividend.py` | 除權息 (dividend) | dividend；reads `processed/dividend/<year>/all.csv`. **Current-year delete-before-insert by default** (past years immutable, table not dropped); `DIVIDEND_FULL=1` or a missing table triggers a full all-years rebuild (replace). 不吃 START/END_DATE。Wired into `schedules/weekly_update.sh` (raw kept fresh by daily scrape). |
 | `import_monthly.py` | Monthly categories | monthly_revenue, stock_info, stock_tags |
 | `import_quarterly_xbrl.py` | Quarterly XBRL report table | quarterly_reports_xbrl (from `processed/quarterly_reports_xbrl/.../all_quarter.csv` + `all_accumulated.csv`) |
 | `import_xbrl.py` | Quarterly XBRL statement tables | balance_sheet_xbrl, income_statement_xbrl, cash_flow_xbrl (+ xbrl_codebook) |
@@ -358,6 +365,7 @@ START_DATE=20200210 END_DATE=20200210 docker compose run --rm importer python im
 **Files**:
 - `validator.py`: Statistical validation logic
 - `import_daily.py`, `import_weekly.py`, `import_monthly.py`, `import_xbrl.py`, `import_quarterly_xbrl.py`: Frequency-based import entry points
+- `import_dividend.py`: 除權息 import (current-year delete-before-insert; `DIVIDEND_FULL=1` for full rebuild). Run weekly via `schedules/weekly_update.sh`.
 
 **Key Functions**:
 ```python
