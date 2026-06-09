@@ -58,7 +58,13 @@ def _full_rebuild(engine, schema):
 
 
 def _import_year(engine, year, schema):
-    """單一年度 delete-before-insert，其他年度（immutable）原封不動。"""
+    """單一年度 delete-before-insert，其他年度（immutable）原封不動。
+
+    DELETE + INSERT + 列數驗證全包在「同一筆交易」內：任何一步失敗（含列數
+    不符觸發的 abort）都會整筆 rollback，不會留下「當年度已刪除卻沒補回」的
+    空窗。pandas to_sql 傳入這條已開啟交易的 connection 時，會沿用同一筆交易
+    （不另起、不提前 commit），commit 統一在 with 區塊正常結束時發生。
+    """
     csv_file = f"{PROCESSED_BASE}/{year}/all.csv"
     if not os.path.exists(csv_file):
         print(f"No processed file for {year} ({csv_file}); nothing to import.")
@@ -76,18 +82,18 @@ def _import_year(engine, year, schema):
                 text(f"DELETE FROM {TABLE_NAME} WHERE date LIKE :pat"),
                 {"pat": f"{year}-%"},
             )
-        df.to_pandas().to_sql(
-            name=TABLE_NAME, con=engine, if_exists="append", index=False
-        )
-        with engine.connect() as conn:
+            df.to_pandas().to_sql(
+                name=TABLE_NAME, con=conn, if_exists="append", index=False
+            )
             got = conn.execute(
                 text(f"SELECT count(*) FROM {TABLE_NAME} WHERE date LIKE :pat"),
                 {"pat": f"{year}-%"},
             ).scalar()
-        if got != expected:
-            abort_with_error(
-                f"Row count mismatch for {TABLE_NAME} {year}: imported={expected}, DB={got}"
-            )
+            if got != expected:
+                # 在交易內 abort → SystemExit 觸發 with 區塊 rollback，DELETE 一併回滾。
+                abort_with_error(
+                    f"Row count mismatch for {TABLE_NAME} {year}: imported={expected}, DB={got}"
+                )
         print(f"  -> Imported {expected} rows for {year} (DB {year} now has {got}).")
     except SystemExit:
         raise
