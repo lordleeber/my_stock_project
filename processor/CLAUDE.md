@@ -149,7 +149,7 @@ XBRL raw filename rules (strict, fail-fast):
 Known limitations / potentially inaccurate fields:
 
 - `name`:
-  - currently not populated in `quarterly_reports_xbrl` output (left empty).
+  - not emitted in `quarterly_reports_xbrl` output (absent from `OUTPUT_COLUMNS`).
 - `nav_per_share`:
   - currently approximated by `3XXX / (3110/10)` (rounded to 2 decimals).
   - this is a practical approximation, not guaranteed to exactly match `quarterly_reports` for all symbols.
@@ -164,7 +164,7 @@ Known limitations / potentially inaccurate fields:
 - `period`:
   - intentionally exists in `quarterly_reports_xbrl` (`all_quarter.csv` / `all_accumulated.csv`) but not in legacy `quarterly_reports`.
 - lineage columns:
-  - `src_file`, `src_row`, `src_col` are currently not populated in `quarterly_reports_xbrl`.
+  - `src_file`, `src_row`, `src_col` are not emitted in `quarterly_reports_xbrl` (absent from `OUTPUT_COLUMNS`).
 
 `*_acc_ly` and `*_acc_yoy` notes:
 
@@ -181,7 +181,9 @@ All processed CSVs must include lineage columns:
 - `pced_col`: source-column mapping (for example `x#x#1#2#...`)
 
 **Schema enforcement (single source of truth):**
-Before writing CSV, processor must enforce schema from `common/schemas.py`. This guarantees stable types before DB import (for example, `symbol` must be string, numeric fields must be `Float64`).
+Before writing CSV, the generic daily/weekly/monthly path enforces schema from `common/schemas.py`. This guarantees stable types before DB import (for example, `symbol` must be string, numeric fields must be `Float64`).
+
+> Exception — quarterly XBRL converters bypass `SCHEMA_COLS`: `convert_quarterly_reports_xbrl.py` writes via `csv.DictWriter(fieldnames=OUTPUT_COLUMNS)` directly (its own `OUTPUT_COLUMNS` list), with no `common/schemas.py` enforcement. Only the daily/weekly/monthly generic path applies `schemas.py`.
 
 **Strict symbol filtering:**
 For categories with `symbol`, keep only 4-digit numeric symbols. This excludes ETFs, warrants, preferred shares, and REITs.
@@ -208,6 +210,7 @@ docker compose build processor
   - `最後賣價 -> last_ask`
   - `最後買量(千股)/(張數) -> last_bid_volume`
   - `最後賣量(千股)/(張數) -> last_ask_volume`
+  - 註：以上是 raw-header 的 COL_MAP 對應；這些 `last_*` 欄位會被 `SCHEMA_COLS["daily_quotes"]`（只保留 `bid`/`ask`）丟棄，不會進入最終 processed `daily_quotes` CSV。
 - **Financial statements dual-track (XBRL)**：`quarterly_reports_xbrl` 與 `income_statement_xbrl` 同時存在 `quarter` 與 `accumulated` 兩種 `period_type`。Q4 single-quarter 是 `Q4_acc - Q3_acc` 反推（缺前期則 fallback `Q4_acc`），歷史 backfill 仍須依季別順序跑。
   - 注：legacy 的 `quarterly_reports` / `income_statement` / `balance_sheet` / `cash_flow` 表已停止寫入，相關處理流程在 `_deprecated/`。
 - **Important change**: `daily_quotes` no longer includes `pe_ratio` (to keep SII/OTC consistent). PE data is handled by standalone `pe_ratio` category.
@@ -217,5 +220,5 @@ docker compose build processor
   - `schedules/daily_update.sh`
   - `schedules/weekly_update.sh`
   - `schedules/monthly_update.sh`
-  - `schedules/xbrl_scrape_daily.sh`（每日 scrape，launchd 排程）
+  - `schedules/xbrl_scrape_daily.sh`（每日 scrape，systemd 排程）
   - `schedules/xbrl_process_import.sh`（公告期末/補資料用，process+import）

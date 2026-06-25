@@ -52,7 +52,7 @@ backtester/output/rolling/
 Target playbook_date D → 使用 `models_selection/<YYYY-MM-DD>/` 中 `train_through_playbook_date < D` 的最新模型。
 例如：target 2024-07-11 → 用 `models_selection/2024-06-11/`（若存在）。
 
-若無任何 versioned 模型，fallback 到 `models_selection/latest/`。
+若無任何 `train_through_playbook_date < D` 的 versioned 模型，`step5_score_and_publish.py::resolve_model_for_target` 會直接 raise `FileNotFoundError`（**沒有** fallback）。`models_selection/latest/` 在 walk-forward 解析時一律被略過，只有 operator 明確傳 `--model-dir models_selection/latest` 時才會用到。
 
 ---
 
@@ -122,11 +122,12 @@ venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 | `entry_date` / `exit_date` | 進出場日期 |
 | `entry_price` / `exit_price` | 進出場價格 |
 | `shares` | 股數 |
+| `capital_used` | 該筆投入金額（`entry_price × shares`） |
 | `gross_pnl` | 毛損益 |
 | `cost` | 手續費 + 稅 |
 | `net_pnl` | 淨損益 |
 | `return_pct` | 報酬率（% of capital_used） |
-| `exit_reason` | `monthly_rotation` / `still_open` |
+| `exit_reason` | `monthly_rotation` / `still_open` / `no_quote_on_exit` |
 
 ### rolling_monthly.csv
-每月持倉狀況與損益摘要。
+每月持倉狀況與損益摘要。15 個欄位的完整語意（含 cohort 雙時間軸的陷阱）見 [`backtester/CLAUDE.md`](CLAUDE.md) §`rolling_monthly.csv` Column Semantics。

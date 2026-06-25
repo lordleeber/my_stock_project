@@ -66,7 +66,7 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 - Monthly revenue:
   - snapshot: `data/raw/monthly_revenue/YYYY/YYYYMXX/tmp.csv` (overwritten each run)
   - cumulative: `data/raw/monthly_revenue/YYYY/YYYYMXX/market.csv` (append only newly published rows)
-- Quarterly XBRL: `data/raw/xbrl/YYYY/YYYYQX/<symbol>/...`（HTML / XBRL files）
+- Quarterly XBRL: `data/raw/xbrl/YYYY/YYYYQX/YYYYQX_<symbol>_YYYYMMDD.html`（flat：每檔直接寫入季別目錄，無 per-symbol 子目錄）
 
 > Legacy raw paths（不再寫入，僅作 archive）: `data/raw/quarterly_reports/`、`data/raw/income_statement/`、`data/raw/balance_sheet/`、`data/raw/cash_flow/`
 - Weekly shareholding: `data/raw/shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv`
@@ -95,5 +95,4 @@ docker compose run --rm scraper-quarterly \
 - `daily/check_outputs.py` 偵測到 missing raw 檔時：寫入 `error_scraper.log` 並讓 `scraper_daily.py` 回傳 `exit 1`，讓 `daily_update.sh` 因 `set -e` 中斷，觸發後續 retry。**不再靜默通過**（避免 TWSE 暫時回 empty 時整條 pipeline 假成功而落漏資料）。
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
-- `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。

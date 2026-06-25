@@ -194,7 +194,38 @@ current schema.
 ## Database Table Schemas
 
 ### technical_indicators
-... (same as before) ...
+```sql
+CREATE TABLE technical_indicators (
+    date TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    ma5 DOUBLE PRECISION,
+    ma10 DOUBLE PRECISION,
+    ma20 DOUBLE PRECISION,
+    ma60 DOUBLE PRECISION,
+    ma120 DOUBLE PRECISION,
+    ma240 DOUBLE PRECISION,
+    vma5 DOUBLE PRECISION,
+    vma10 DOUBLE PRECISION,
+    vma20 DOUBLE PRECISION,
+    vma60 DOUBLE PRECISION,
+    vma120 DOUBLE PRECISION,
+    vma240 DOUBLE PRECISION,
+    k DOUBLE PRECISION,
+    d DOUBLE PRECISION,
+    rsi6 DOUBLE PRECISION,
+    rsi12 DOUBLE PRECISION,
+    macd_dif DOUBLE PRECISION,
+    macd_dea DOUBLE PRECISION,
+    macd_hist DOUBLE PRECISION,
+    bb_upper DOUBLE PRECISION,
+    bb_middle DOUBLE PRECISION,
+    bb_lower DOUBLE PRECISION,
+    foreign_streak_days BIGINT,
+    trust_streak_days BIGINT,
+    dealer_streak_days BIGINT,
+    PRIMARY KEY (date, symbol)
+);
+```
 
 ### valuation_daily
 ```sql
@@ -206,9 +237,13 @@ CREATE TABLE valuation_daily (
     pe_official DOUBLE PRECISION,
     pe_percentile_official DOUBLE PRECISION,
     roe_official DOUBLE PRECISION,
+    pced_file TEXT,
+    pced_row BIGINT,
+    pced_col TEXT,
     PRIMARY KEY (date, symbol)
 );
 ```
+> `pced_file`/`pced_row`/`pced_col` 是 lineage 欄位，但 valuation_daily 是 calculator 算出來的（非 processor 產出的 CSV），所以填固定常數：`pced_file="calculated_pit"`、`pced_row=0`、`pced_col="x"`。
 
 
 ### Date Type Requirement (Important)

@@ -14,7 +14,7 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
 - `schedules/daily_update.sh`
   - 流程：`scraper-daily -> processor -> audit -> importer -> calculator`
   - 參數：可選 `YYYYMMDD`（不給則用今天）
-  - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_dealer_holding.py -> calculate_shareholding_concentration.py -> calculate_valuation.py`
+  - calculator 實際執行：`calculate_daily.py -> calculate_trust_holding.py -> calculate_dealer_holding.py -> calculate_shareholding_concentration.py -> calculate_short_interest_analysis.py -> calculate_margin_pressure_analysis.py -> calculate_valuation.py`
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / audit / importer container（給 retry 在偵測到 stale 狀態時使用）
 
 - `schedules/weekly_update.sh`
@@ -34,14 +34,16 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 參數：可選 `YYYYMMDD`（不給則用昨天）
   - 判斷邏輯（三層完整性檢查，全綠才 skip）：
     1. **log**：`logs/daily_update_<target_date>_*.log` 是否含 `Daily Stock Data Update Completed`
-    2. **raw**：8 個 daily category × `{sii,otc}` raw 檔是否存在且非 0 byte（含 `market_indices` otc-only）
-    3. **DB**：8 個 daily 表 × `{sii,otc}` 該日是否都有資料（`market_indices` 因 symbol 是中文指數名暫時排除）
+    2. **raw**：7 個 both-market category（`daily_quotes` / `institutional_summary` / `institutional_investors` / `foreign_holding` / `margin_trading` / `margin_sbl` / `pe_ratio`）× `{sii,otc}` + `market_indices`（otc-only）raw 檔是否存在且非 0 byte
+    3. **DB**：8 個 daily 表（`daily_quotes` / `institutional_investors` / `foreign_holding` / `margin_trading` / `margin_sbl` / `pe_ratio` / `institutional_summary` / `margin_summary`）× `{sii,otc}` 該日是否都有資料
+       - 兩層的表集合刻意不同：DB 層比 raw 層多了 `margin_summary`（DB-only，無對應 raw 檔層級檢查）、少了 `market_indices`（raw-only）
+       - `market_indices` 已每日入庫（sii+otc）但刻意不納入此 retry gate（DB 檢查只按 `date`+`market` 數列數、不看 symbol 內容），純為維持既有觸發條件不變；含 `market_indices` 在內的逐日完整性檢查見 `tools/check_db_completeness.py`
   - 修復路徑：
     - 非交易日（log 含 `No valid trading days`）→ skip
     - raw 缺 → 一般重跑（scraper 會補抓）
     - raw OK 但 DB 缺 → 設 `FORCE_REPROCESS=1` + `FORCE_REIMPORT=1` 讓 processor 重建 stale `processed/all.csv`、importer 覆寫 DB
     - log 沒成功 → 一般重跑全部
-  - Ubuntu 端在 02:00 及 04:00 各觸發一次（`schedules_ubuntu/stock-daily-retry.timer` 有兩個 `OnCalendar`）
+  - Ubuntu 端在 03:00 觸發一次（`schedules_ubuntu/stock-daily-retry.timer` 單一 `OnCalendar`）
 
 - `schedules/xbrl_scrape_daily.sh`
   - 流程：只跑 `scraper-quarterly python3 scraper/quarterly/fetch_xbrl.py`
@@ -65,6 +67,12 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
 
 - `schedules/backfill_xbrl.sh`
   - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。
+
+- `schedules/playbook_run.sh`
+  - 流程：每月 ML playbook — `train_eps/run_pipeline.py -> strategies/step1~step5 -> backtester/run_rolling.py`
+  - 參數：可選 `YYYY-MM-DD`（force run 指定 playbook date）；不給則用今天判斷
+  - self-gate：只在當月的 canonical playbook date（cutoff +1：5/8/11 月 = 16 號，其餘 = 11 號；見 `train_eps/shared_config.py::playbook_run_date`）實際執行，非該日直接 exit 0
+  - Ubuntu 端由 `stock-playbook-run.timer` 在每月 11 號與 16 號 04:00 觸發（兩個觸發點交給 script self-gate 收斂到正確那天）
 
 - `schedules/_deprecated/quarterly_update.sh`
   - 已停用。原本流程是 `scraper-quarterly -> processor(convert_quarterly) -> importer(import_quarterly)`，餵的是 legacy 季報表。改用 `xbrl_scrape_daily.sh` + `xbrl_process_import.sh`。

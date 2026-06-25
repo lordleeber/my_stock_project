@@ -50,7 +50,7 @@ step1~4 與 `run_pipeline.py` 的 `--date` 都是 optional。省略時自動鎖�
 - If any step fails, pipeline stops immediately and writes error details to repo root `error_train_eps.log`.
 
 ## Data Source
-- `prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
+- `step1_prepare_data.py` reads PostgreSQL directly (XBRL tables only). API mode has been removed — there is no `--data-source` flag.
 
 ## Playbook Run Date Calendar
 每月一次 canonical 訓練執行日（= cutoff 公告日 +1）。5/8/11 月為 16 號（季報公告日 +1），其餘月份為 11 號（月營收公告日 +1）：
@@ -173,7 +173,7 @@ venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 - `train_eps/step1_prepare_data.py` outputs only `dataset_train.csv` and `dataset_evaluate.csv` into `train_eps/output/<YYYY-MM-DD>/`.
 - No `dataset_meta.csv` or `dataset_live.csv` output.
 - No `daily_quotes` / `pe_ratio` fetch path.
-- Default `--start-year` is `2020` (same as global fetch range).
+- Training data starts at hardcoded `START_YEAR = 2020` (no CLI flag).
 - For 2020 rows, features that depend on 2019 historical quarters may be missing (`NaN`), including previous-Q4-related fields.
 - Missing feature values are allowed in training (LightGBM handles `NaN` natively).
 - Anchor-quarter samples must have `income_statement_xbrl + balance_sheet_xbrl + cash_flow_xbrl`; otherwise rows are excluded.

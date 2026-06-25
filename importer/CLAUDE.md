@@ -214,7 +214,9 @@ All `date` columns use **TEXT** type (not DATE), storing values as:
 ### Daily Quotes Table
 **No pe_ratio**: The `daily_quotes` table does not contain the `pe_ratio` column. Use the standalone `pe_ratio` table for valuation data.
 
-### Flow Statements (Income/Cash Flow/Reports)
+### ~~Flow Statements (Income/Cash Flow/Reports)~~ (deprecated)
+> 已 deprecated。`income_statement`/`cash_flow`/`quarterly_reports`/`balance_sheet` 這 4 張舊表已從 DB **DROP**，不再寫入；季報資料一律改走 `*_xbrl` 表（見 import_xbrl.py / import_quarterly_xbrl.py）。以下舊行為僅作 archive 參考。
+
 **Dual-Column Schema**: These tables contain both `_q` (single-quarter) and `_acc` (accumulated) versions of each flow-based field (e.g., `eps_q` and `eps_acc`). Data is prepared by the processor via subtractive calculation.
 
 ### Bid/Ask in daily_quotes`bid` and `ask` fields are **TEXT** type in the database (preserved from source format).
@@ -232,12 +234,17 @@ docker compose exec -T db psql -U user -d stock_db -c \
 venv/bin/python3 tools/create_indexes.py
 ```
 
-**Expected indexes (5 total)**:
+**Expected indexes (10 total)** — authoritative list is `tools/create_indexes.py`:
 - `idx_daily_quotes_date_symbol` (daily_quotes)
 - `idx_daily_quotes_symbol_date` (daily_quotes)
-- `idx_tech_symbol_date` (technical_indicators)
+- `idx_technical_indicators_symbol_date` (technical_indicators)
 - `idx_institutional_investors_symbol_date` (institutional_investors)
 - `idx_foreign_holding_symbol_date` (foreign_holding)
+- `idx_trust_holding_symbol_date` (trust_holding)
+- `idx_dealer_holding_symbol_date` (dealer_holding)
+- `idx_shareholding_concentration_symbol_date` (shareholding_concentration)
+- `idx_short_interest_analysis_symbol_date` (short_interest_analysis)
+- `idx_margin_pressure_analysis_symbol_date` (margin_pressure_analysis)
 
 ## Troubleshooting
 
