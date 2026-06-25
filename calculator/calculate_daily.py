@@ -184,7 +184,7 @@ def _create_table_if_missing(engine):
         )
         conn.execute(
             text(
-                f"CREATE INDEX IF NOT EXISTS idx_tech_symbol_date ON {TABLE} (symbol, date)"
+                f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_symbol_date ON {TABLE} (symbol, date)"
             )
         )
 
