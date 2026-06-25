@@ -2,7 +2,7 @@
 
 # 每日資料補跑腳本
 # 檢查前一天的 daily_update 是否成功，失敗則重新執行
-# 由 launchd 在 02:00 及 04:00 各觸發一次
+# 由 systemd timer 在 03:00 觸發（Ubuntu）
 
 set -euo pipefail
 
@@ -65,7 +65,8 @@ done
 
 # 第三層：檢查 DB 該日是否每個 (table, market) 都有資料
 # 用來防止「raw 完整、processed/all.csv stale、DB 只進部分 market」這類隱性缺漏
-# market_indices 已知從 2026-02 後沒進 DB（另一個獨立 bug），暫不納入檢查
+# market_indices 現已每日入庫（sii+otc），但不納入此 retry gate 以維持既有觸發條件不變；
+# 含 market_indices 在內的逐日完整性檢查見 tools/check_db_completeness.py
 TARGET_ISO="${TARGET_DATE:0:4}-${TARGET_DATE:4:2}-${TARGET_DATE:6:2}"
 DB_MISSING_LIST=$(docker compose exec -T db psql -U user -d stock_db -tAc "
 SELECT tbl || '/' || mkt FROM (
