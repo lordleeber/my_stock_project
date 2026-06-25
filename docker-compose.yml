@@ -60,8 +60,9 @@ services:
     # IMPORTANT:
     # - No code volume mount for /app (scraper code is baked into image).
     # - Any code change under scraper/ requires: docker compose build scraper-quarterly
-    # - 不再提供預設 command。XBRL 流程一律走 schedules/xbrl_run_pipeline.sh，
-    #   裡面會明確呼叫 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`。
+    # - 不再提供預設 command。XBRL scrape 走 schedules/xbrl_scrape_daily.sh，
+    #   裡面會明確呼叫 `python3 scraper/quarterly/fetch_xbrl.py --year ... --quarter ...`；
+    #   process+import 走 schedules/xbrl_process_import.sh。
     build:
       context: .
       dockerfile: scraper/Dockerfile

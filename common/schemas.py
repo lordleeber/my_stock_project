@@ -509,6 +509,10 @@ SCHEMA_COLS = {
         "pced_row",
         "pced_col",
     ],
+    # --- DEPRECATED: legacy 季報表 ---
+    # 以下 4 張表（income_statement / balance_sheet / cash_flow / quarterly_reports）
+    # 對應的 DB 表已 drop（季報資料一律改走 *_xbrl）。保留這些 SCHEMA_COLS 定義僅供
+    # 各模組 _deprecated/ 的舊 converter 參考；live pipeline 不再產出/匯入這些 category。
     "income_statement": [
         "date",
         "market",

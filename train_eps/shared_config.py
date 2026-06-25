@@ -48,7 +48,7 @@ def playbook_run_date(year: int, month: str | int) -> str:
     """回傳 playbook 月份對應的 canonical 訓練執行日（YYYY-MM-DD）。
 
     語意：cutoff（公告日）的「**隔天**」——也就是 train_eps 實際跑訓練那天。
-    cutoff 在 strategies/step1_prepare_data.py::model_release_date 定義（5/8/11 月 = 15 號，其他 = 10 號）；
+    cutoff 在 strategies/shared_config.py::cutoff_date_from_playbook 定義（5/8/11 月 = 15 號，其他 = 10 號）；
     這裡再 +1：5/8/11 月 = 16 號，其他月份 = 11 號。
 
     這跟 strategies 的 `cutoff_date` 概念不同：
