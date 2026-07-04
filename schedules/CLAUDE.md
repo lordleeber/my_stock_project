@@ -27,7 +27,8 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
 - `schedules/monthly_update.sh`
   - 目標月份：自動抓「上個月」
   - 只在每月 1~15 日執行（公告窗口），其餘日期直接 skip
-  - 流程：`scraper-monthly -> (day 15 only) generate_active_stocks -> processor(convert_monthly) -> importer(monthly_revenue, FORCE_REIMPORT=1)`
+  - 流程：`scraper-monthly -> (day 15 only) generate_active_stocks -> processor(convert_monthly) -> importer(monthly_revenue, FORCE_REIMPORT=1) -> (day 15 only) publish_active_stocks`
+  - `publish_active_stocks.py`（15 號、importer 之後）把 `active_stocks.txt` 全量 `PUT /active_stocks`（`{"symbols":[...]}`）到 My Stock Server。放在 importer 之後，push 失敗不擋營收入庫；失敗則 `set -e` 中止並觸發 `OnFailure` 通知。host 由 `STOCK_LIST_API_BASE` 覆寫（預設 `http://100.101.183.80:8053`）。
 
 - `schedules/daily_retry.sh`
   - 檢查前一天的 daily_update 是否成功，失敗才重跑

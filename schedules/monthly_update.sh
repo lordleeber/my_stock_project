@@ -2,7 +2,8 @@
 
 # 每月自動更新腳本
 # 排程: 每月 11 號執行，抓取上個月的營收
-# 執行順序: scraper-monthly -> generate active stocks -> processor -> importer
+# 執行順序: scraper-monthly -> generate active stocks -> processor -> importer -> publish active stocks
+# (generate + publish active_stocks 只在 15 號跑)
 
 set -euo pipefail
 
@@ -48,7 +49,7 @@ fi
 echo "Target: ${REVENUE_YEAR}/${REVENUE_MONTH}" | tee -a "$LOG_FILE"
 
 # 1. Scraper
-echo "[1/3] Running scraper-monthly for ${REVENUE_YEAR}/${REVENUE_MONTH}..." | tee -a "$LOG_FILE"
+echo "[1/5] Running scraper-monthly for ${REVENUE_YEAR}/${REVENUE_MONTH}..." | tee -a "$LOG_FILE"
 if REVENUE_YEAR=$REVENUE_YEAR REVENUE_MONTH=$REVENUE_MONTH docker compose run --rm scraper-monthly 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Scraper completed" | tee -a "$LOG_FILE"
 else
@@ -58,7 +59,7 @@ fi
 
 # 2. Generate active_stocks.txt (only on day 15)
 if [ "$TODAY_DAY" -eq 15 ]; then
-    echo "[2/4] Generating active_stocks.txt..." | tee -a "$LOG_FILE"
+    echo "[2/5] Generating active_stocks.txt..." | tee -a "$LOG_FILE"
     if python3 scraper/monthly/generate_active_stocks.py --date "$REVENUE_DATE" --output active_stocks.txt 2>&1 | tee -a "$LOG_FILE"; then
         echo "✓ Active stocks generated" | tee -a "$LOG_FILE"
     else
@@ -66,11 +67,11 @@ if [ "$TODAY_DAY" -eq 15 ]; then
         exit 1
     fi
 else
-    echo "[2/4] Skipping active_stocks.txt generation (only runs on day 15)." | tee -a "$LOG_FILE"
+    echo "[2/5] Skipping active_stocks.txt generation (only runs on day 15)." | tee -a "$LOG_FILE"
 fi
 
 # 3. Processor
-echo "[3/4] Running processor for monthly revenue..." | tee -a "$LOG_FILE"
+echo "[3/5] Running processor for monthly revenue..." | tee -a "$LOG_FILE"
 if docker compose run --rm -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE processor python convert_monthly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Processor completed" | tee -a "$LOG_FILE"
 else
@@ -79,12 +80,28 @@ else
 fi
 
 # 4. Importer (force reimport to refresh cumulative monthly publication progress)
-echo "[4/4] Running importer for monthly_revenue..." | tee -a "$LOG_FILE"
+echo "[4/5] Running importer for monthly_revenue..." | tee -a "$LOG_FILE"
 if docker compose run --rm -e FORCE_REIMPORT=1 -e START_DATE=$REVENUE_DATE -e END_DATE=$REVENUE_DATE importer python import_monthly.py 2>&1 | tee -a "$LOG_FILE"; then
     echo "✓ Importer completed" | tee -a "$LOG_FILE"
 else
     echo "✗ Importer failed" | tee -a "$LOG_FILE"
     exit 1
+fi
+
+# 5. Publish active_stocks to My Stock Server (only on day 15, after regeneration).
+#    Placed after the importer so a push failure never blocks the revenue import;
+#    a failure here trips set -e -> non-zero exit -> OnFailure phone push. API host
+#    overridable via STOCK_LIST_API_BASE (default http://100.101.183.80:8053).
+if [ "$TODAY_DAY" -eq 15 ]; then
+    echo "[5/5] Publishing active_stocks.txt to My Stock Server..." | tee -a "$LOG_FILE"
+    if venv/bin/python3 scripts/publish_active_stocks.py 2>&1 | tee -a "$LOG_FILE"; then
+        echo "✓ Active stocks published" | tee -a "$LOG_FILE"
+    else
+        echo "✗ Failed to publish active_stocks" | tee -a "$LOG_FILE"
+        exit 1
+    fi
+else
+    echo "[5/5] Skipping active_stocks publish (only runs on day 15)." | tee -a "$LOG_FILE"
 fi
 
 echo "========================================" | tee -a "$LOG_FILE"
