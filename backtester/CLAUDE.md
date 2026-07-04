@@ -26,7 +26,8 @@ venv/bin/python3 backtester/run_rolling.py \
   --models-root models_selection_val/k10_g1 \
   --out-dir backtester/output/val/k10_g1_score
 
-# Print aggregate summary from latest rolling_trades.csv (or a custom --rolling-dir)
+# Print aggregate summary; reads rolling_*.csv from a fixed default dir
+# (backtester/output/rolling/) unless overridden with --rolling-dir (no latest detection)
 venv/bin/python3 backtester/summarize_range.py
 venv/bin/python3 backtester/summarize_range.py --rolling-dir backtester/output/val/k10_g1_score
 ```
@@ -67,52 +68,65 @@ yet published as of the cohort's cutoff (PIT leak). Until
 `build_quarter_context` is rewritten to use a publish-aware anchor, the
 honest move is to refuse to backtest these cohorts.
 
-Behaviour during a skipped iteration:
-- **exit** runs normally: previous cohort is sold at `exit_date` (= the
-  trading day before the skipped playbook's `entry_date`); its
-  `realized_net_pnl` is recorded on the skipped row.
-- **entry** is suppressed: `entries=0`, `entries_failed_no_quote=0`,
-  `holdings_count` drops to 0 after exit.
+A skip month always suppresses **entry** (`entries=0`,
+`entries_failed_no_quote=0`, zero `portfolio_capital_deployed`), but **exit**
+behaviour differs between the two consecutive skip months:
+
+- **First skip month (Feb)** still runs exits to settle the prior (Jan) cohort:
+  the previous cohort is sold at `exit_date` (= the trading day before Feb's
+  `entry_date`), so the Feb row carries `exits=25`, a non-zero
+  `realized_net_pnl`, and a populated `cohort_year`/`cohort_month`.
+  `holdings_count` drops to 0 after the exit.
+- **Second skip month (Mar)** is a full no-op: the portfolio is already empty
+  from the Feb exit, so there is nothing to sell and nothing to buy — the Mar
+  row has `exits=0`, `realized_net_pnl=0`, and `cohort_year=NaN`.
 - Next non-skip iteration (typically April) starts with an empty portfolio
   and opens its full cohort.
 
 Result: yearly cohort count drops from 12 → 10 (Jan and Apr still run;
-Feb and Mar appear in `rolling_monthly.csv` but with `entries=0` and zero
-`portfolio_capital_deployed`). step1/step2/step5 still generate Feb/Mar
-artifacts — they're computed but never consumed by `run_rolling.py`.
+Feb and Mar appear in `rolling_monthly.csv` but with `entries=0`).
+step1/step2/step5 still generate Feb/Mar artifacts — they're computed but
+never consumed by `run_rolling.py`.
 
-## ⚠️ Monthly Sharpe — Always Use the 38-Basis
+## ⚠️ Monthly Sharpe — Filter to Settled-Cohort Rows
 
-Because Feb/Mar skip adds **no-PnL artifact rows** to `rolling_monthly.csv`,
-any monthly Sharpe / win-rate computed against the raw 47 rows silently
-deflates. The canonical convention is to filter on `cohort_year.notna()`
-(only rows where an actual cohort was settled), and use
-`top_n × position_amount` as the return denominator (not
+Because Feb/Mar skip and the first/last iterations add **no-PnL artifact
+rows** to `rolling_monthly.csv`, any monthly Sharpe / win-rate computed
+against the raw row count silently deflates. The canonical convention is to
+filter on `cohort_year.notna()` (only rows where an actual cohort was
+settled), and use `top_n × position_amount` as the return denominator (not
 `portfolio_capital_deployed`, which is 0 on Feb rows that just exited).
 
-The 9 artifact rows per 4-year run that must be excluded:
+**Row and cohort counts depend entirely on the `--start` / `--end` range** —
+do not treat any single number as canonical. The current live run
+(`2022-07-11` → `2026-06-11`) has **48 total rows, 39 settled cohorts**
+(`cohort_count=39`). Artifact rows excluded per the `cohort_year.notna()`
+filter:
 
 | Row type | Why excluded |
 |---|---|
-| First iteration (e.g., 2022-07-11) | No prior cohort to exit, `realized_net_pnl=0` |
-| Mar rows (4) | No exit (already empty from Feb skip) + no entry → `0/0` |
-| Apr rows (4) | Re-entry only, no exit (portfolio was empty) → entry-only |
+| First iteration | No prior cohort to exit, `realized_net_pnl=0`, `cohort_year=NaN` |
+| Mar rows (one per year) | No exit (already empty from Feb skip) + no entry → `cohort_year=NaN` |
+| Final still-open iteration | Re-entry only, cohort not yet settled |
 
-`run_rolling.py` writes the 38-basis numbers into
+`run_rolling.py` writes these settled-cohort numbers into
 `rolling_summary.json["monthly_stats_38_basis"]` (single source of truth).
 `summarize_range.py` reads them back. Don't recompute from
 `rolling_monthly.csv` ad-hoc — you'll trip over the artifact rows.
 
-Annualization factor = √(actual_cohorts / years_span), typically √10 ≈ 3.16
-post-skip (vs the textbook √12 from pre-skip days). It's stored explicitly
-in `monthly_stats_38_basis["annualization_factor"]` to keep prior-period
-comparisons honest.
+> **The `monthly_stats_38_basis` key name is a FROZEN/legacy misnomer.** The
+> code emits results under that key regardless of the actual cohort count —
+> the live run has `cohort_count=39`, not 38. Read `cohort_count` from inside
+> the object for the real n; the "38" in the key is historical, not a
+> guarantee.
 
-When comparing against pre-Feb/Mar-skip baselines (which used the old
-47-basis ann ×√12), the apples-to-apples metric is **per-cohort Sharpe
-ann ×√10**, not 47-basis ann ×√12. A 5-cohort drop in the denominator
-(47→38) on the same strategy gives a ~10% lower "ann ×√12" number for
-purely arithmetic reasons.
+Annualization factor = √(actual_cohorts / years_span), stored explicitly in
+`monthly_stats_38_basis["annualization_factor"]` (≈3.155 on the current run,
+vs the textbook √12 from pre-skip days) to keep prior-period comparisons
+honest. When comparing against pre-Feb/Mar-skip baselines (which annualized
+×√12), the apples-to-apples metric is **per-cohort Sharpe ann ×√(cohorts/years)**,
+not the raw-row-count ann ×√12 — a smaller cohort denominator on the same
+strategy lowers the "ann ×√12" number for purely arithmetic reasons.
 
 ## Output Files (`backtester/output/rolling/`)
 

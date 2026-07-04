@@ -2,7 +2,7 @@
 
 每月公告日後一天的標準作業流程：跑 EPS 模型、產出選股名單、重訓 selection model。
 
-> 資料管線（scraper / processor / importer / calculator）由 launchd 自動排程，不在本 playbook 範圍。詳見 [`schedules/CLAUDE.md`](schedules/CLAUDE.md)。
+> 資料管線（scraper / processor / importer / calculator）由 systemd 自動排程，不在本 playbook 範圍。詳見 [`schedules/CLAUDE.md`](schedules/CLAUDE.md)。
 
 > **Date narration convention**: CLI / 目錄 / 敘述都用具體 `YYYY-MM-DD`（playbook_date = cutoff +1）。
 > - **`cutoff_date`** = target cohort 的 PIT 截斷日（例：cohort 2026-04-11（cutoff 2026-04-10））。
@@ -177,13 +177,13 @@ grep "Daily Stock Data Update Completed" logs/daily_update_20260410_*.log
 ./schedules/daily_update.sh 20260410
 ```
 
-monthly_update（營收）的 launchd 排在每月 1–15 日；如果手動補 monthly：
+monthly_update（營收）的 systemd 排在每月 1–15 日；如果手動補 monthly：
 ```bash
 ./schedules/monthly_update.sh
 ```
 
 季報 XBRL：
-- 公告期內由 launchd 每天跑 `xbrl_scrape_daily.sh`，持續累積 raw 但不入庫
+- 公告期內由 systemd 每天跑 `xbrl_scrape_daily.sh`，持續累積 raw 但不入庫
 - 公告期末（或要更新 DB 時）手動跑全鏈路：
 ```bash
 ./schedules/xbrl_process_import.sh         # 視窗內依今天日期決定季別

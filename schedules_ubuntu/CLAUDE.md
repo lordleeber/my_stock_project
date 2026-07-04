@@ -94,7 +94,7 @@ systemctl --user disable --now stock-daily-update.timer
 
 大部分 timer-driven service 掛了 `OnFailure=stock-notify@%n.service`。任何 service 跑出 non-zero exit code，systemd 會自動觸發 `stock-notify@<failed-unit>.service`，由 `notify_failure.sh` 抓該 unit 最近 10 行 journal 後 POST 到 ntfy.sh 推到手機。
 
-**例外：`stock-daily-update.service` 不掛通知**。23:30 scraper 對 TWSE/TPEx 抓資料常 transient fail，但 02:00 / 04:00 排程的 `stock-daily-retry.service` 通常會救回（見 `schedules/daily_retry.sh` 三層 log/raw/db 檢查）。把通知掛在 daily-update 會半夜被假警報吵醒；改掛 retry 端，只有 retry 也炸（= 問題真的卡住）才推播。其他 4 個 service（weekly / monthly / xbrl / daily-retry）沒有 retry 救援，照常立即通知。
+**例外：`stock-daily-update.service` 不掛通知**。23:30 scraper 對 TWSE/TPEx 抓資料常 transient fail，但 03:00 排程的 `stock-daily-retry.service` 通常會救回（見 `schedules/daily_retry.sh` 三層 log/raw/db 檢查）。把通知掛在 daily-update 會半夜被假警報吵醒；改掛 retry 端，只有 retry 也炸（= 問題真的卡住）才推播。其他 5 個 service（weekly / monthly / xbrl / daily-retry / playbook-run）沒有 retry 救援，照常立即通知。
 
 ### 元件
 

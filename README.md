@@ -14,7 +14,7 @@ strategies/       ML 選股特徵工程、排名模型訓練
 models_selection/ 選股模型（walk-forward，每 playbook 一版，目錄 <YYYY-MM-DD>/）
 backtester/       滾動投資組合回測
 calculator/       DB 衍生表計算（technical_indicators / shareholding_concentration / valuation_daily 等）
-scripts/          GCP 部署與資料上傳腳本
+scripts/          GCS upload + ML 分析/診斷腳本
 common/           共用 schema、工具模組
 ```
 
@@ -104,7 +104,7 @@ venv/bin/python3 strategies/step5_score_and_publish.py --date 2025-10-11
 
 - 產生的 csv / json / pkl artifacts 不 commit，除非明確要求
 - 共用 DB schema 變更請同步更新 `common/schemas.py`
-- 季報資料一律走 XBRL（`*_xbrl` 表）。舊版季報 pipeline 已停用並移到各模組 `_deprecated/`，DB 舊表保留為 archive。
-  - 公告期內每日 scrape：`./schedules/xbrl_scrape_daily.sh`（launchd 自動執行；不入庫）
+- 季報資料一律走 XBRL（`*_xbrl` 表）。舊版季報 pipeline 已停用並移到各模組 `_deprecated/`，DB 舊表已 drop（僅保留 `*_xbrl` 表）。
+  - 公告期內每日 scrape：`./schedules/xbrl_scrape_daily.sh`（systemd 自動執行；不入庫）
   - 公告期末/補資料入庫：`./schedules/xbrl_process_import.sh [YYYYQX]`（process→import；前提是 raw 已存在）
 - 詳細說明見各子目錄的 `README.md` 與 `CLAUDE.md`
