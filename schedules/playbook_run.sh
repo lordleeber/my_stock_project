@@ -64,7 +64,7 @@ echo "========================================"
 # 的 XTAI 日曆計算（涵蓋週末 + 國定假日/連假），完全不依賴 daily_quotes。讓 step2 在
 # entry 當天清晨（04:00、entry 報價尚未進 DB）就能定出正確進場日、不必等資料。解析失敗
 # （套件缺/日曆查詢出錯）則留空 → step2 退回原本的 daily_quotes 解析（可能因資料未到而 raise）。
-echo "[2.5/7] resolve entry_date (XTAI calendar; first trading day after cutoff)"
+echo "[2.5/8] resolve entry_date (XTAI calendar; first trading day after cutoff)"
 ENTRY_DATE="$(venv/bin/python3 -c "
 import sys
 try:
@@ -86,30 +86,40 @@ else
     echo "        entry_date = unresolved  (step2 falls back to daily_quotes lookup)"
 fi
 
-echo "[1/7] train_eps/run_pipeline.py --date $DATE"
+echo "[1/8] train_eps/run_pipeline.py --date $DATE"
 venv/bin/python3 train_eps/run_pipeline.py --date "$DATE"
 
-echo "[2/7] strategies/step1_prepare_data.py --date $DATE"
+echo "[2/8] strategies/step1_prepare_data.py --date $DATE"
 venv/bin/python3 strategies/step1_prepare_data.py --date "$DATE"
 
 if [ -n "$ENTRY_DATE" ]; then
-    echo "[3/7] strategies/step2_finalize_strategy.py --date $DATE --entry-date $ENTRY_DATE"
+    echo "[3/8] strategies/step2_finalize_strategy.py --date $DATE --entry-date $ENTRY_DATE"
     venv/bin/python3 strategies/step2_finalize_strategy.py --date "$DATE" --entry-date "$ENTRY_DATE"
 else
-    echo "[3/7] strategies/step2_finalize_strategy.py --date $DATE"
+    echo "[3/8] strategies/step2_finalize_strategy.py --date $DATE"
     venv/bin/python3 strategies/step2_finalize_strategy.py --date "$DATE"
 fi
 
-echo "[4/7] strategies/step3_analyze_feature_returns.py"
+echo "[4/8] strategies/step3_analyze_feature_returns.py"
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
 
-echo "[5/7] strategies/step4_train_selection_model.py --date $PREV_DATE  (train_through)"
+echo "[5/8] strategies/step4_train_selection_model.py --date $PREV_DATE  (train_through)"
 venv/bin/python3 strategies/step4_train_selection_model.py --date "$PREV_DATE"
 
-echo "[6/7] strategies/step5_score_and_publish.py --date $DATE"
+echo "[6/8] strategies/step5_score_and_publish.py --date $DATE"
 venv/bin/python3 strategies/step5_score_and_publish.py --date "$DATE"
 
-echo "[7/7] backtester/run_rolling.py --end-date $PREV_DATE --top-n 25"
+echo "[7/8] scripts/publish_stock_list.py --date $DATE  (top-25 -> My Stock Server)"
+# Push the final top-25 picks to the My Stock Server API, keyed by the picks'
+# entry_date (first trading day after cutoff — the day the list is traded).
+# Idempotent upsert: GET the date, POST if new / PUT if it already exists.
+# Runs before the (observational) backtester so a backtester hiccup can't block
+# delivery. A failure here trips set -e -> non-zero exit -> OnFailure phone push:
+# delivery failing is a real failure worth knowing, even at 04:00.
+# Override target via STOCK_LIST_API_BASE (default http://100.101.183.80:8053).
+venv/bin/python3 scripts/publish_stock_list.py --date "$DATE"
+
+echo "[8/8] backtester/run_rolling.py --end-date $PREV_DATE --top-n 25"
 # top-n 25: within the seed-robust Sharpe plateau validated 2026-06. Across 4
 # disjoint ensembles, monthly Sharpe climbs to a robust ~0.74 plateau over
 # N≈20-26 (vs ~0.67 at N=10) before easing past ~26. See

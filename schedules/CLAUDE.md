@@ -69,9 +69,10 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。
 
 - `schedules/playbook_run.sh`
-  - 流程：每月 ML playbook — `train_eps/run_pipeline.py -> strategies/step1~step5 -> backtester/run_rolling.py`
+  - 流程：每月 ML playbook — `train_eps/run_pipeline.py -> strategies/step1~step5 -> scripts/publish_stock_list.py -> backtester/run_rolling.py`
   - 參數：可選 `YYYY-MM-DD`（force run 指定 playbook date）；不給則用今天判斷
   - self-gate：只在當月的 canonical playbook date（cutoff +1：5/8/11 月 = 16 號，其餘 = 11 號；見 `train_eps/shared_config.py::playbook_run_date`）實際執行，非該日直接 exit 0
+  - step5 出名單後、backtester 前，`publish_stock_list.py` 把 top-25（`ml_rank`）POST/PUT 到 My Stock Server（`POST/PUT /stock_list/{y}/{m}/{d}`，key = 名單的 `entry_date`）。放在 backtester 前，backtester（觀察用）出錯不會擋住名單送達；publish 失敗則 `set -e` 中止並觸發 `OnFailure` 手機推播。API host 由 `STOCK_LIST_API_BASE` 覆寫（預設 `http://100.101.183.80:8053`）。
   - Ubuntu 端由 `stock-playbook-run.timer` 在每月 11 號與 16 號 04:00 觸發（兩個觸發點交給 script self-gate 收斂到正確那天）
 
 - `schedules/_deprecated/quarterly_update.sh`
