@@ -708,15 +708,6 @@ SCHEMA_COLS = {
         "account_name_cht",
         "account_name_eng",
     ],
-    "equity_changes_xbrl": [
-        "date",
-        "symbol",
-        "publish_time",
-        "account_code",
-        "account_name",
-        "value_text",
-        "value_num",
-    ],
     "stock_info": [
         "symbol",
         "name",
