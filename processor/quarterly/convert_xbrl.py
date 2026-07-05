@@ -277,6 +277,11 @@ def get_section_ranges(html_text: str) -> dict[str, tuple[int, int]]:
         r'<div id="StatementsOfChangeInEquity"></div>',
         CASHFLOW_CATEGORY,
     )
+    # Equity-changes rows are intentionally NOT imported (no downstream consumer),
+    # but we still classify the equity section so its facts stay isolated in this
+    # bucket and are dropped at write time. Without this range, equity AsOf snapshots
+    # would fall through to classify_statement and be mislabelled BALANCE_CATEGORY,
+    # contaminating balance_sheet_xbrl. Keep it.
     _range(
         r'<div id="StatementsOfChangeInEquity"></div>',
         r'<div id="ReportOfIndependentAuditors"></div>',
@@ -632,52 +637,6 @@ def extract_cash_flow_code_map(
     return key_map, codebook
 
 
-def extract_equity_changes_code_map(
-    html_text: str,
-) -> tuple[dict[tuple[str, str, str], tuple[str, str]], dict[str, tuple[str, str]]]:
-    """
-    Equity changes section is from #StatementsOfChangeInEquity to #ReportOfIndependentAuditors.
-    """
-    key_map: dict[tuple[str, str, str], tuple[str, str]] = {}
-    codebook: dict[str, tuple[str, str]] = {}
-    start_m = re.search(
-        r'<div id="StatementsOfChangeInEquity"></div>', html_text, re.IGNORECASE
-    )
-    if not start_m:
-        return key_map, codebook
-    start = start_m.end()
-
-    end_m = re.search(
-        r'<div id="ReportOfIndependentAuditors"></div>',
-        html_text[start:],
-        re.IGNORECASE,
-    )
-    end = start + end_m.start() if end_m else len(html_text)
-    section = html_text[start:end]
-
-    for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>", section, re.IGNORECASE | re.DOTALL):
-        tds = re.findall(r"<td\b[^>]*>(.*?)</td>", tr, re.IGNORECASE | re.DOTALL)
-        if len(tds) < 2:
-            continue
-        account_code = clean_value_text(tds[0])
-        if not re.match(r"^[A-Z0-9]{1,5}$", account_code):
-            continue
-        account_name, account_name_en = parse_account_names(tds[1])
-        codebook[account_code] = (account_name, account_name_en)
-
-        for fact_m in FACT_RE.finditer(tr):
-            attrs = parse_attrs(fact_m.group(2))
-            fact_name = attrs.get("name", "")
-            context_ref = attrs.get("contextRef", "")
-            value_text = clean_value_text(fact_m.group(3))
-            if fact_name and context_ref and value_text:
-                key_map[(fact_name, context_ref, value_text)] = (
-                    account_code,
-                    account_name,
-                )
-    return key_map, codebook
-
-
 def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str):
     company_id = extract_company_id(html_text)
     company_name = extract_company_name(html_text)
@@ -687,7 +646,6 @@ def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str
     income_code_map, income_codebook = extract_income_statement_code_map(html_text)
     balance_code_map, balance_codebook = extract_balance_sheet_code_map(html_text)
     cashflow_code_map, cashflow_codebook = extract_cash_flow_code_map(html_text)
-    equity_code_map, equity_codebook = extract_equity_changes_code_map(html_text)
     for m in FACT_RE.finditer(html_text):
         fact_type = m.group(1)
         attrs = parse_attrs(m.group(2))
@@ -741,18 +699,14 @@ def iter_fact_rows(date_str: str, symbol: str, publish_time: str, html_text: str
             if mapped:
                 row["account_code"] = mapped[0]
                 row["account_name"] = mapped[1]
-        elif statement_category == EQUITY_CATEGORY:
-            mapped = equity_code_map.get(key)
-            if mapped:
-                row["account_code"] = mapped[0]
-                row["account_name"] = mapped[1]
+        # NOTE: equity-changes facts (statement_category == EQUITY_CATEGORY) are
+        # intentionally left unmapped and dropped downstream — see get_section_ranges.
         yield (
             row,
             statement_category,
             income_codebook,
             balance_codebook,
             cashflow_codebook,
-            equity_codebook,
         )
 
 
@@ -919,7 +873,6 @@ def main():
                         income_codebook,
                         balance_codebook,
                         cashflow_codebook,
-                        equity_codebook,
                     ) in iter_fact_rows(
                         date_str,
                         symbol,
