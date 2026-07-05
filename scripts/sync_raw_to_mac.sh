@@ -17,10 +17,11 @@ DST_HOST="172.16.4.17"
 DST_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/raw/"
 
 DRY_RUN=""
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN="--dry-run"
-  echo "[dry-run] 只預演，不實際傳輸"
-fi
+case "${1:-}" in
+  "")          ;;
+  --dry-run)   DRY_RUN="--dry-run"; echo "[dry-run] 只預演，不實際傳輸" ;;
+  *)           echo "未知參數：$1（只接受 --dry-run）" >&2; exit 1 ;;
+esac
 
 if [[ ! -d "${SRC_PATH}" ]]; then
   echo "來源目錄不存在：${SRC_PATH}" >&2
