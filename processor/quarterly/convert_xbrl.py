@@ -328,9 +328,6 @@ def keep_current_period_row(
 
     m_asof = re.match(r"^AsOf(\d{8})", context_ref)
     if m_asof:
-        if statement_category == EQUITY_CATEGORY:
-            # Equity changes table needs both beginning-of-year and quarter-end snapshots.
-            return m_asof.group(1) in {y_start, q_end}
         return (
             statement_category in (BALANCE_CATEGORY, CASHFLOW_CATEGORY)
             and m_asof.group(1) == q_end
@@ -346,7 +343,7 @@ def keep_current_period_row(
     if statement_category == INCOME_CATEGORY:
         # Keep single-quarter values only.
         return start == q_start
-    if statement_category in (CASHFLOW_CATEGORY, EQUITY_CATEGORY):
+    if statement_category == CASHFLOW_CATEGORY:
         # Interim reports are generally presented YTD to quarter-end.
         return start == y_start
     return False
