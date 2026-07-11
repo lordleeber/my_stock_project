@@ -27,7 +27,11 @@ from train_eps import step1_prepare_data as tp
 # （兩個最近季 + 同期去年 target 季當 TTM 近似，並非連續 3 季）。
 # strategies 採比 train_eps 寬鬆的門檻，保留更大的候選股宇宙。
 MIN_PSEUDO_TTM_EPS = 2.0
-MIN_VOLUME_LOTS = 500.0
+# 流動性門檻：近 20 個交易日均量（張）。2026-07 起取代舊「單日 quote_volume > 500 張」——
+# 單日 snapshot 對量能剛好安靜/爆量一天的股票雜訊太大（例：3147 於 2026-07 cohort
+# 因 quote_date 當日僅 151 張被剔除，但其 20 日均量 >1000 張）。
+# 單日 volume_lots 仍保留為 ranker 特徵，此門檻只影響候選宇宙。
+MIN_AVG20_VOLUME_LOTS = 400.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -370,9 +374,16 @@ def fetch_one_year_live(
       GROUP BY qr.symbol
     ),
     quote_latest AS (
-      -- 最新一筆 daily_quotes（在 cutoff_date 當天或之前）；
+      -- 最新一筆 daily_quotes（在 cutoff_date 當天或之前）＋近 20 個交易日均量；
       -- 與真正季度 (ly_q*/ty_q*) 無關，原 q3_* 命名沿用 deprecated。
-      SELECT symbol, quote_date, close, quote_volume
+      -- avg_volume_20d = 最近 20 筆交易日列的平均（上市未滿 20 日者取現有筆數平均），
+      -- 僅供流動性 filter 使用；rn=1 的單日 snapshot 欄位語意與舊版完全相同。
+      SELECT
+        symbol,
+        MAX(CASE WHEN rn = 1 THEN quote_date END)    AS quote_date,
+        MAX(CASE WHEN rn = 1 THEN close END)         AS close,
+        MAX(CASE WHEN rn = 1 THEN quote_volume END)  AS quote_volume,
+        AVG(quote_volume)                            AS avg_volume_20d
       FROM (
         SELECT
           d.symbol,
@@ -384,7 +395,8 @@ def fetch_one_year_live(
         JOIN anchor_data a ON a.symbol = d.symbol
         WHERE d.market = '{market}' AND d.date <= '{cutoff_date}'
       ) z
-      WHERE z.rn = 1
+      WHERE z.rn <= 20
+      GROUP BY symbol
     )
     SELECT
       {target_year} AS year,
@@ -406,7 +418,8 @@ def fetch_one_year_live(
       e.ty_q2_eps,
       q.quote_date,
       q.close,
-      q.quote_volume
+      q.quote_volume,
+      q.avg_volume_20d
     FROM anchor_data a
     LEFT JOIN pre_anchor_data p ON a.symbol = p.symbol
     JOIN this_monthly m ON a.symbol = m.symbol
@@ -572,6 +585,9 @@ def main() -> None:
         df.get("anchor_eps"), errors="coerce"
     )
     df["volume_lots"] = pd.to_numeric(df.get("quote_volume"), errors="coerce") / 1000.0
+    df["avg_volume_lots_20d"] = (
+        pd.to_numeric(df.get("avg_volume_20d"), errors="coerce") / 1000.0
+    )
     df["pe_current"] = tp.safe_div_positive(df.get("close"), df["ttm_eps"])
     df["feature_cutoff_date"] = cutoff_date
 
@@ -587,7 +603,10 @@ def main() -> None:
     df = df[(pseudo_ttm_eps_sum >= MIN_PSEUDO_TTM_EPS).fillna(False)].copy()
     rows_after_pseudo_ttm_filter = len(df)
 
-    volume_ok = pd.to_numeric(df.get("volume_lots"), errors="coerce") > MIN_VOLUME_LOTS
+    volume_ok = (
+        pd.to_numeric(df.get("avg_volume_lots_20d"), errors="coerce")
+        >= MIN_AVG20_VOLUME_LOTS
+    )
     df = df[volume_ok.fillna(False)].copy()
     rows_after_volume_filter = len(df)
 
@@ -633,6 +652,7 @@ def main() -> None:
         "pe_current",
         "ttm_eps",
         "volume_lots",
+        "avg_volume_lots_20d",
         "quote_date",
         "close",
         "ly_q1_eps",
@@ -689,7 +709,7 @@ def main() -> None:
         f"- min_pseudo_ttm_eps: {MIN_PSEUDO_TTM_EPS} "
         f"(pseudo-TTM sum = ly_target_eps + pre_anchor_eps + anchor_eps)"
     )
-    print(f"- min_volume_lots: {MIN_VOLUME_LOTS}")
+    print(f"- min_avg20_volume_lots: {MIN_AVG20_VOLUME_LOTS} (近 20 交易日均量)")
     print(f"- model_feature_count: {len(model_features)}")
     print(f"- elapsed_total_sec: {time.perf_counter() - t_all:.2f}")
 
