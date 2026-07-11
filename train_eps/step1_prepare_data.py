@@ -19,9 +19,11 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from shared_config import (
+    cutoff_date_from_playbook,
     format_quarter,
     latest_playbook_date,
     parse_playbook_date,
+    playbook_run_date,
     shift_quarter,
     target_quarter_for_playbook,
 )
@@ -401,6 +403,14 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
     target_q = qctx["target_q"]
     ly_target_q = qctx["ly_target_q"]
     ly_anchor_q = qctx["ly_anchor_q"]
+    # 該年 cohort 的 PIT 截斷日（公告日）— 月營收只取 cutoff 當下已公告的列，
+    # 與 strategies/feature_engineering.py 的 publish_time 過濾語意一致。
+    # 2026M01 以前 publish_time 為回填的法定截止日（≤ cutoff 恆成立），過濾為 no-op；
+    # 2026M02 起為真實公告日，遲報（如截止日撞假日順延）的列會被正確擋下，
+    # 使歷史 cohort 重跑結果與當時 frozen 產出一致（不吸進 post-cutoff 資料）。
+    cutoff_compact = cutoff_date_from_playbook(playbook_run_date(year, month)).replace(
+        "-", ""
+    )
 
     # ── 1. 主查：quarterly_reports_xbrl + monthly_revenue + eps_hist + stock_info(name)
     sql = f"""
@@ -426,6 +436,8 @@ def fetch_one_year(conn, year: int, market: str, month: str) -> pd.DataFrame:
              {",".join(mctx["sql_exprs"])}
       FROM monthly_revenue
       WHERE date IN ({",".join([f"'{d}'" for d in mctx["mr_dates"]])})
+        AND publish_time IS NOT NULL
+        AND publish_time <= '{cutoff_compact}'
       GROUP BY symbol
     ),
     eps_hist AS (

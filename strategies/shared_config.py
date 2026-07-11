@@ -15,7 +15,6 @@ daily_quotes 的查詢用 `date <= cutoff_date` 會自動退到最近交易日�
 
 from __future__ import annotations
 
-import datetime
 import sys
 from pathlib import Path
 
@@ -26,24 +25,11 @@ if str(_REPO) not in sys.path:
 
 from train_eps.shared_config import (  # noqa: E402, F401  — re-export
     MONTH_TO_TARGET_QNUM,
+    cutoff_date_from_playbook,
     latest_playbook_date,
     parse_playbook_date,
     playbook_run_date,
 )
-
-
-def cutoff_date_from_playbook(playbook_date: str) -> str:
-    """從 `--date YYYY-MM-DD`（playbook）推回 cutoff_date（公告日）。
-
-    cutoff_date = playbook_date − 1 calendar day。
-    例：playbook 2026-05-16 → cutoff 2026-05-15；2026-04-11 → 2026-04-10。
-
-    輸入會先用 `parse_playbook_date` 嚴格驗證是合法 canonical playbook date，
-    避免 off-cycle 日期 silent 推出錯誤的 cutoff_date。
-    """
-    parse_playbook_date(playbook_date)
-    dt = datetime.date.fromisoformat(playbook_date)
-    return (dt - datetime.timedelta(days=1)).isoformat()
 
 
 def year_month_from_playbook(playbook_date: str) -> tuple[int, str]:

@@ -48,7 +48,7 @@ def playbook_run_date(year: int, month: str | int) -> str:
     """回傳 playbook 月份對應的 canonical 訓練執行日（YYYY-MM-DD）。
 
     語意：cutoff（公告日）的「**隔天**」——也就是 train_eps 實際跑訓練那天。
-    cutoff 在 strategies/shared_config.py::cutoff_date_from_playbook 定義（5/8/11 月 = 15 號，其他 = 10 號）；
+    cutoff 由本檔 cutoff_date_from_playbook 反推（5/8/11 月 = 15 號，其他 = 10 號）；
     這裡再 +1：5/8/11 月 = 16 號，其他月份 = 11 號。
 
     這跟 strategies 的 `cutoff_date` 概念不同：
@@ -62,6 +62,23 @@ def playbook_run_date(year: int, month: str | int) -> str:
         raise ValueError(f"Unsupported month: {m}")
     day = 16 if m in {"05", "08", "11"} else 11
     return f"{int(year):04d}-{m}-{day:02d}"
+
+
+def cutoff_date_from_playbook(playbook_date: str) -> str:
+    """從 playbook run date（YYYY-MM-DD）推回 cutoff_date（公告日）。
+
+    cutoff_date = playbook_date − 1 calendar day。
+    例：playbook 2026-05-16 → cutoff 2026-05-15；2026-04-11 → 2026-04-10。
+
+    輸入會先用 `parse_playbook_date` 嚴格驗證是合法 canonical playbook date，
+    避免 off-cycle 日期 silent 推出錯誤的 cutoff_date。
+
+    （原定義在 strategies/shared_config.py；依「playbook 日期公式唯一定義於本檔」
+    規則移入，strategies 端改為 re-export，呼叫方 API 不變。）
+    """
+    parse_playbook_date(playbook_date)
+    dt = datetime.date.fromisoformat(playbook_date)
+    return (dt - datetime.timedelta(days=1)).isoformat()
 
 
 def latest_playbook_date(today: datetime.date | None = None) -> str:
