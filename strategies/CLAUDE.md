@@ -127,7 +127,11 @@ About 1–2% of symbols have different market labels across tables (e.g., `quart
 | Filter | Threshold |
 |---|---|
 | TTM EPS proxy | `ly_target_eps + pre_anchor_eps + anchor_eps ≥ 2.0` |
-| Min average volume | `volume_lots ≥ 500` |
+| Min 20-day average volume | `avg_volume_lots_20d ≥ 400`（近 20 個交易日均量，張） |
+
+> 2026-07 起流動性門檻由「單日 `volume_lots > 500`」改為 20 日均量——單日 snapshot
+> 對剛好安靜/爆量一天的股票雜訊太大。單日 `volume_lots` 仍保留為 ranker 特徵
+>（`FEATURE_COLS` 不變），此門檻只影響候選宇宙。
 
 Hard filter values are constants in `step1_prepare_data.py` near the top — change with care; backtester reproducibility depends on them.
 
@@ -270,6 +274,7 @@ Legacy column `prev_q4_eps` (always identical to `ly_q4_eps`) was removed; downs
 | `quote_date` | The trading date of the snapshot (typically equals cutoff_date unless cutoff falls on a non-trading day) |
 | `close` | Close price on `quote_date` |
 | `volume_lots` | Volume in lots (張，= shares ÷ 1000) on `quote_date` |
+| `avg_volume_lots_20d` | 近 20 個交易日均量（張；上市未滿 20 日者取現有筆數平均）。僅供 step1 流動性 filter，非 ranker 特徵 |
 | `ttm_eps` | Trailing-twelve-month EPS computed from quarterly EPS columns per the playbook month's anchor selection |
 | `pe_current` | `close / ttm_eps` |
 
