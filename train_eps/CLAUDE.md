@@ -178,6 +178,7 @@ venv/bin/python3 train_eps/step4_batch_predict_and_publish.py
 - Missing feature values are allowed in training (LightGBM handles `NaN` natively).
 - Anchor-quarter samples must have `income_statement_xbrl + balance_sheet_xbrl + cash_flow_xbrl`; otherwise rows are excluded.
 - Monthly revenue is handled with full-market scope (`sii + otc`) in pipeline output.
+- Monthly revenue is **PIT-filtered by `publish_time`**: each year's cohort only sees rows with `publish_time <=` that cohort's cutoff（公告日，= `cutoff_date_from_playbook(playbook_run_date(year, month))`），語意與 `strategies/feature_engineering.py` 一致。2026M01 以前 publish_time 為回填的法定截止日 → 過濾對合成史是 no-op（歷史 dataset 不變）；2026M02 起為真實公告日 → 遲報列（截止日撞假日/颱風順延）被正確擋下，重跑歷史 cohort 不會吸進 post-cutoff 資料（重跑結果與 frozen 產出一致）。被擋的月份該欄為 NaN（樣本列不會消失，LightGBM 原生處理）。
 - XBRL features are included for 11-month model:
   - `xbrl_gross_margin_q`, `xbrl_op_margin_q`, `xbrl_rd_ratio_q`, `xbrl_tax_rate_q`
   - `xbrl_current_ratio`, `xbrl_cash_to_assets`, `xbrl_cfo_to_ni_q`, `xbrl_capex_to_revenue_q`
