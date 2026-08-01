@@ -18,8 +18,10 @@ SHAP 用 LightGBM 原生 TreeSHAP(predict(pred_contrib=True)),不需安裝 shap 
 
 import argparse
 import glob
+import hashlib
 import os
 import pickle
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -82,6 +84,20 @@ def auto_scored_date(model_date):
             f"找不到由 {model_date} 模型打分的 candidates_scored.csv;請用 --scored-date 指定。"
         )
     return sorted(hits)[-1]
+
+
+def fingerprint(path):
+    """輸入檔的指紋:md5 前 12 碼 + mtime + 大小。
+
+    model pkl 與 candidates_scored.csv 都是 gitignored、會被 pipeline 重生的
+    artifact。同一組 (model_date, scored_date) 在不同時間點跑出來的報告數字可能
+    完全不同（例：2026-07-11 的 volume filter 改動重訓了模型也重生了候選池）。
+    把指紋寫進報告，日後才分得出手上這份是從哪個版本的輸入產生的。
+    """
+    p = Path(path)
+    h = hashlib.md5(p.read_bytes()).hexdigest()[:12]
+    mtime = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    return f"md5 `{h}` · mtime {mtime} · {p.stat().st_size:,} bytes"
 
 
 def direction_label(c):
@@ -184,10 +200,31 @@ def main():
         "",
         f"- 模型:`models_selection/{model_date}/selection_model.pkl`"
         f"(LGBMRanker ensemble, {len(models)} members, {len(feats)} 特徵)",
-        f"- 打分對象:`models_selection/{scored_date}/candidates_scored.csv`(walk-forward 該月生產 picks)",
+        f"- 打分對象:`models_selection/{scored_date}/candidates_scored.csv`"
+        f"(walk-forward 該月生產 picks,{len(df)} 檔候選)",
         "- SHAP:LightGBM 原生 TreeSHAP(`predict(pred_contrib=True)`),ensemble 成員平均",
         "- 方向(direction_spearman):feature 值 vs 其 SHAP 的 Spearman。+ 單調拉高分數,− 拉低,~0 非單調",
         "",
+        "### 輸入指紋",
+        "",
+        "兩個輸入都是 gitignored、會被 pipeline 重生的 artifact。同一組日期在不同時間",
+        "重跑可能得到完全不同的數字,所以比對兩份報告前先確認指紋是否相同。",
+        "",
+        f"- 產出時間:{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"- `selection_model.pkl`:{fingerprint(pkl)}",
+        f"- `candidates_scored.csv`:{fingerprint(scored_csv)}",
+        "",
+    ]
+    # 本檔每次重跑都會被覆寫，手動註記留不住；改由工具指出同目錄的封存版本。
+    archives = sorted(p.name for p in outdir.glob("feature_analysis.backup_*.md"))
+    if archives:
+        lines += [
+            "同目錄另有封存版本(舊輸入的分析,不會被本工具覆寫):",
+            "",
+            *[f"- [`{a}`]({a})" for a in archives],
+            "",
+        ]
+    lines += [
         "## SHAP 全域重要性 + 方向(Top 20)",
         "",
         "| feature | gain% | shap% | dir | label |",
