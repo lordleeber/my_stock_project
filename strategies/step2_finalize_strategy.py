@@ -59,7 +59,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "YYYY-MM-DD override：跳過 daily_quotes 下個交易日驗證，直接使用此日期。"
             "用於 DB 尚未匯入下個交易日報價時提前產出 picks。"
-            "技術/營收特徵仍以 <=entry_date 撈最新一筆，內容與 cutoff_date 一致。"
+            "只影響 entry_date 欄位（進場日/報酬錨點）；技術與營收特徵一律以 "
+            "cutoff_date 為 as-of，與此參數無關。"
         ),
     )
     return parser.parse_args()
@@ -82,6 +83,29 @@ def resolve_entry_date(engine, earliest: date) -> str:
             "可能 DB 未匯入該日期之後的報價，請先補資料再執行。"
         )
     return str(row[0])
+
+
+def assert_features_not_beyond_cutoff(engine, df: pd.DataFrame, cutoff_date: str):
+    """確認特徵快照沒有越過 cutoff——這是 look-ahead 的回歸防護。
+
+    step1 的 `quote_date` 定義是 `MAX(date) <= cutoff_date`，技術指標的 as-of
+    語意相同，兩者必須落在同一天。若哪天有人把 as-of 改回 entry_date，快照日
+    就會往後跑，這裡當場 raise，而不是安靜地讓整批 cohort 帶著先見之明。
+    """
+    stmt = text("SELECT MAX(date) FROM technical_indicators WHERE date <= :d")
+    with engine.connect() as conn:
+        snapshot = conn.execute(stmt, {"d": cutoff_date}).scalar()
+    quote_dates = set(df["quote_date"].dropna().astype(str))
+    if snapshot is None or not quote_dates:
+        raise SystemExit(
+            f"[FAIL] 無法驗證特徵 as-of：technical_indicators <= {cutoff_date} 無資料"
+        )
+    if str(snapshot) > cutoff_date or str(snapshot) not in quote_dates:
+        raise SystemExit(
+            f"[FAIL] 特徵快照 {snapshot} 與 step1 的 quote_date {sorted(quote_dates)} "
+            f"不一致（cutoff={cutoff_date}）——特徵可能取到 cutoff 之後的資料。"
+        )
+    print(f"feature as-of check: snapshot={snapshot} <= cutoff={cutoff_date} ✓")
 
 
 def compute_eps_growth_components(df: pd.DataFrame, month: str) -> pd.DataFrame:
@@ -198,7 +222,15 @@ def main() -> None:
         print(f"entry_date: {entry_date_str}")
     df["entry_date"] = entry_date_str
 
-    # 撈取 entry_date 的技術指標特徵。
+    # 特徵一律以 cutoff_date 為 as-of，不可用 entry_date。
+    #
+    # entry_date 在正式執行時是未來日期，DB 還沒有那天的資料，所以「<= entry_date
+    # 取最新」會自動退回 cutoff——PIT 正確，但那是牆上時鐘給的保證，不是程式碼給的。
+    # 歷史重跑時 DB 早已涵蓋 entry_date，同一段程式就會吃到決策當下拿不到的資料：
+    # 整批 cohort 因此帶著 1–3 個交易日的先見之明（實測 2344 的 ma5 由 07-09 的
+    # 177.3 變成 07-13 的 173.8），而正式推論拿到的是 cutoff 版，兩者長期不一致。
+    # cutoff_date 是 playbook_date 減一天的純函式，永遠可重現。
+    # entry_date 的職責只有兩個：進場日、以及 fwd_return 的錨點。
     symbols = df["symbol"].tolist()
     close_s = pd.to_numeric(df.set_index("symbol")["close"], errors="coerce")
     # volume_lots 在 csv 內為單位「張」，技術指標 vma* 以「股」為單位，這裡轉回股數。
@@ -206,7 +238,7 @@ def main() -> None:
         pd.to_numeric(df.set_index("symbol")["volume_lots"], errors="coerce") * 1000.0
     )
     tech = fetch_technical_features(
-        symbols, entry_date_str, close_series=close_s, volume_series=volume_s
+        symbols, cutoff_date, close_series=close_s, volume_series=volume_s
     )
     # 刪除 df 中已存在的技術指標欄位，避免重複。
     existing_tech = [c for c in TECHNICAL_FEATURE_COLS if c in df.columns]
@@ -215,8 +247,11 @@ def main() -> None:
     df = df.merge(tech, on="symbol", how="left")
     print(f"Technical features added: {len(TECHNICAL_FEATURE_COLS)} cols")
 
-    # 撈取 entry_date 的月營收特徵（透過 publish_time 過濾，確保 PIT 安全）。
-    rev = fetch_revenue_features(symbols, entry_date_str)
+    # 月營收特徵同樣以 cutoff_date 為 as-of（publish_time <= cutoff）。
+    # 用 entry_date 會放進公告日之後才申報的營收——2026-07 颱風那次就有 192 筆
+    # 2026M06 落在 cutoff 之後,決策當下拿不到。見 models_selection/2026-07-11/
+    # DIAG_lookahead_rev0713.md。
+    rev = fetch_revenue_features(symbols, cutoff_date)
     existing_rev = [c for c in REVENUE_FEATURE_COLS if c in df.columns]
     if existing_rev:
         df = df.drop(columns=existing_rev)
@@ -228,6 +263,8 @@ def main() -> None:
 
     # close / ttm_eps / volume_lots 由 step1 emit 為 canonical 欄位，
     # step2 不再加同義別名（避免兩個入口同一份資料）。
+
+    assert_features_not_beyond_cutoff(engine, df, cutoff_date)
 
     # 寫入更新後的 dataset_strategy.csv。
     df.to_csv(strategy_path, index=False, encoding="utf-8-sig")

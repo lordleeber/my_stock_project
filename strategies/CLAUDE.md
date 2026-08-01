@@ -160,7 +160,22 @@ venv/bin/python3 strategies/step2_finalize_strategy.py \
   --date 2026-05-16 --entry-date 2026-05-18
 ```
 
-When supplied, step2 skips the DB check and stamps the given date into the `entry_date` column. Technical and revenue features use `WHERE date <= ref_date` so they automatically fall back to the latest available data (= the `cutoff_date` row) — feature contents are identical to running after DB catches up. **Caller is responsible** for ensuring the override is a real trading day (no weekend / holiday).
+When supplied, step2 skips the DB check and stamps the given date into the `entry_date` column. It does **not** affect features: technical and revenue features are fetched `WHERE date <= cutoff_date`, so their content is the same whenever you run. **Caller is responsible** for ensuring the override is a real trading day (no weekend / holiday) — `entry_date` is the entry price and `fwd_return` anchor.
+
+### ⚠️ Feature as-of is `cutoff_date` — never `entry_date`
+
+`fetch_technical_features` / `fetch_revenue_features` take an `as_of_date` and return the latest row `<= as_of_date`. **It must be `cutoff_date`.**
+
+Passing `entry_date` looks harmless in a live run: `entry_date` is in the future, the DB physically has no rows for it, so the query falls back to the `cutoff_date` row anyway. But that PIT guarantee comes from the wall clock, not the code. Re-run the same cohort later — a batch rebuild, a restore, a backtest refresh — and the DB now covers `entry_date`, so the very same code silently picks up data that was not knowable at decision time.
+
+This was live until 2026-08. Effects measured on the 2026-07-11 cohort:
+
+- **26 of the selection model's 51 features** shift (21 technical/chip + 5 revenue).
+- 2344's `ma5` moves from 07-09's `177.3` to 07-13's `173.8`; 355–359 of 359 names change.
+- `close_vs_ma*` mixed two dates in one ratio — `close` came from step1 (`quote_date`) while the MA came from `entry_date`, producing a value matching no real market state.
+- 48 of 49 stored cohorts had been rebuilt in batch on 2026-07-11, so **the training set carried entry-date features while live inference carried cutoff-date features** — a systematic train/serve skew.
+
+`step2` calls `assert_features_not_beyond_cutoff()` before writing, which fails the run if the technical snapshot date is not the step1 `quote_date`. Do not weaken that check.
 
 See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scenario.
 
