@@ -164,3 +164,5 @@ Each major component has its own `CLAUDE.md` with detailed field-level specs:
 - `strategies/CLAUDE.md` — pipeline layout, XBRL table dependencies, anchor cash-flow conversion, step1 filters, walk-forward ordering
 - `backtester/CLAUDE.md` — rolling_monthly.csv column semantics (cohort vs rotation), still-open handling
 - `MONTHLY_PLAYBOOK.md` — 每月公告日後的 ML pipeline 作業流程（train_eps + strategies + selection model）
+- `RESTORE.md` — 重灌後從 Mac 備份還原整套環境（含 2026-08-01 的實測驗收基準）
+- `KNOWN_ISSUES.md` — 已確認但未修的問題。動到相關模組前先讀
