@@ -88,6 +88,13 @@ def decode_to_utf8(raw: bytes) -> str:
 
 
 def detect_blocked_reason(html_text: str) -> str | None:
+    # ⚠️ KNOWN BUG（見 KNOWN_ISSUES.md #1，2026-08-01 記錄，尚未修）：
+    # 下面兩個 marker 各差一個字，漏掉了 MOPS 的「安全性考量」阻擋頁：
+    #   "the page can not be accessed" vs 頁面實際的 "this page can not be accessed"
+    #   "頁面無法執行"                  vs 頁面實際的 "頁面無法呈現"
+    # 導致 2026Q2 有 1805 個阻擋頁被當成正常回應存檔，且因為 save_symbol_report()
+    # 的 skipped_exists 判斷而永遠不會重抓。修的時候請一併放寬條件（或改成正向
+    # 驗證 XBRL 結構 + 檔案大小下限），不要只補這兩個字串。
     lower = html_text.lower()
     marker_reason_pairs = [
         ("overrun - 查詢過於頻繁", "rate_limit"),

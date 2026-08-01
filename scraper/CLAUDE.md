@@ -96,3 +96,4 @@ docker compose run --rm scraper-quarterly \
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
+- ⚠️ **`fetch_xbrl.py` 的阻擋頁偵測目前會漏**（`KNOWN_ISSUES.md` #1）：`detect_blocked_reason()` 的兩個 marker 各差一個字，MOPS 的「安全性考量」阻擋頁會被當成正常回應存檔；又因為 dedupe key 剝掉 run_date 後綴，存壞了就永遠 SKIP 不重抓。2026Q2 已有 1805 檔中招（DB 未受污染）。動這支之前先讀 `KNOWN_ISSUES.md`。
