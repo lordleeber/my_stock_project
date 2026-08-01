@@ -6,6 +6,37 @@
 > 本文件只描述「還原」。日常作業流程見 [`MONTHLY_PLAYBOOK.md`](MONTHLY_PLAYBOOK.md),
 > 架構說明見 [`CLAUDE.md`](CLAUDE.md)。
 
+## 狀態:2026-08-01 的重灌還原已完成
+
+那次還原已依本文件執行完畢並驗證通過(dump md5 相符、§4.3 四項列數全中、
+`data/raw` 與 Mac 逐檔比對 0 缺漏、模型 50/61 目錄、6 個 timer + linger)。
+**本文件自此不是待辦清單,而是下一次硬碟故障或換機器時的災難復原手冊**,
+同時保存 2026-08-01 的實測基準——那組數字是備份當下的快照,事後無法回溯重測。
+
+### 實際跑過一次之後發現的三處落差(尚未修正)
+
+1. **§10 的驗收指令跑不起來,且逐行相同這個條件本身不可能達成。**
+   step5 需要 `strategies/output/<date>/dataset_strategy.csv`,但它被 `.gitignore`
+   的 `*.csv` 忽略,也不在 `backup_ubuntu_20260801/` 裡,§1–§9 沒有任何一步會產生它。
+   就算改用 step1 → step2 從 DB 重生,`step2_finalize_strategy.py` 的技術指標與
+   營收特徵都是取「≤ `entry_date` 的最新一筆」——正式執行時 entry_date 尚未到來,
+   DB 物理上沒有那天的資料所以 PIT 正確;歷史重跑時 DB 早已涵蓋 entry_date,
+   特徵就整組往後位移。2026-07-11 這個 cohort 實測:技術面 355–359 檔全變
+   (2344 的 ma5 由 07-09 的 177.3 變成 07-13 的 173.8),營收 26 檔遲報者變動。
+   **這不代表還原失敗。** 改用對時間穩健的判準即可:step1 的 symbol 集合逐一相同、
+   EPS 路徑特徵 `max|Δ| = 0`、XBRL/籌碼/估值特徵零差異——2026-08-01 這三項全過。
+2. **§5 的 rsync 會靜默回退 git 追蹤的檔案。**
+   `models_selection/` 底下有 3 個追蹤中的 `.md`(其餘 `.csv`/`.json`/`.pkl` 都被
+   gitignore)。備份快照建立於 12:11,而 PR #15 於 13:00 才 merge,所以備份裡是
+   舊版 `feature_analysis.md`,rsync 會把已 merge 的版本蓋掉。§5 的驗收只數目錄數
+   與檔案數,抓不到內容錯誤。跑完 §5 請加跑 `git status --short`(應為空),
+   有異動就 `git restore models_selection/ models_eps/`。加 `--exclude='*.md'`
+   可根本避免。
+3. **§2 少了 git identity。** 全新機器沒有 `~/.gitconfig`,第一次 commit 會以
+   `Author identity unknown` 失敗。不影響還原本身,所以要到數天後才發作:
+   `git config user.name "poyi"` / `git config user.email "poyilee1030@gmail.com"`
+   (設 local 即可)。另外 §1 的套件清單沒有 `gh`,PR 流程會用到。
+
 ---
 
 ## 0. 備份清單(2026-08-01 校驗)
