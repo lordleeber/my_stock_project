@@ -30,6 +30,21 @@ ROOT = Path(__file__).resolve().parent.parent
 MODELS_ROOT = ROOT / "models_selection"
 
 
+def model_dirs(filename):
+    """models_selection/<date>/<filename> 的排序清單，排除 latest。
+
+    models_selection/latest/ 是 production pick 的別名目錄（見
+    strategies/step5_score_and_publish.py --model-dir）。它不是 canonical
+    playbook date，且 "latest" 字典序排在所有 "YYYY-MM-DD" 之後，跨月漂移
+    若不排除會被它當成最新一欄並據以排序。
+    """
+    return sorted(
+        p
+        for p in glob.glob(str(MODELS_ROOT / "*" / filename))
+        if os.path.basename(os.path.dirname(p)) != "latest"
+    )
+
+
 def load_ensemble(pkl_path):
     with open(pkl_path, "rb") as f:
         obj = pickle.load(f)
@@ -54,7 +69,7 @@ def gain_importance(models, feats):
 def auto_scored_date(model_date):
     """找 scored_by_train_through_playbook_date == model_date 的最新 picks 目錄。"""
     hits = []
-    for p in sorted(glob.glob(str(MODELS_ROOT / "*" / "candidates_scored.csv"))):
+    for p in model_dirs("candidates_scored.csv"):
         try:
             head = pd.read_csv(p, nrows=1)
         except Exception:
@@ -152,9 +167,7 @@ def main():
     shap_df.to_csv(outdir / "shap_directionality.csv", index=False)
 
     # ---- cross-month importance drift ----
-    dirs = sorted(glob.glob(str(MODELS_ROOT / "*" / "selection_model.pkl")))[
-        -args.drift_n :
-    ]
+    dirs = model_dirs("selection_model.pkl")[-args.drift_n :]
     table = {}
     for p in dirs:
         d = os.path.basename(os.path.dirname(p))

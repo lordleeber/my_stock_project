@@ -3,16 +3,20 @@
 #
 # 用法：
 #   ./scripts/backup_db.sh              # dump + 推送到 Mac
-#   ./scripts/backup_db.sh --dry-run    # 只 dump 到本機，不推送
-#   ./scripts/backup_db.sh --local-only # 同 --dry-run（語意較清楚的別名）
+#   ./scripts/backup_db.sh --local-only # 只 dump 到本機，不推送
+#   ./scripts/backup_db.sh --dry-run    # 只印出計畫，什麼都不寫
 #
 # 注意：
+#   - `--dry-run` 與 sync_raw_to_*.sh 語意一致：不寫任何檔案。要「dump 但不推送」
+#     請用 `--local-only`（那會實際產出一個 GB 級的檔案）。
 #   - DB 是 bind mount 到 ./data/postgres。直接複製 live data dir 不是安全備份
 #     （torn page / 未 flush 的 WAL），一律走 pg_dump。
 #   - dump 在 container 內執行，避免 host 端 pg_dump 版本與 server 不匹配。
 #   - dump 檔留在 data/backups/（已被 .gitignore 的 data/ 蓋掉），不會進 repo，
 #     也不在 sync_raw_to_mac.sh 的同步路徑（那支只同步 data/raw/）內。
-#   - 還原：gunzip -c <dump>.sql.gz | docker compose exec -T db psql -U user -d stock_db
+#   - 還原目標 DB 必須是空的。dump 不帶 --clean，匯進已有資料的 DB 會一路噴
+#     "already exists" 並留下半套狀態。全新 initdb 後再匯入：
+#       gunzip -c <dump>.sql.gz | docker compose exec -T db psql -U user -d stock_db
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,15 +32,30 @@ DST_HOST="172.16.4.90"
 DST_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/backups/"
 
 PUSH=1
+DRY_RUN=0
 case "${1:-}" in
-  "")                     ;;
-  --dry-run|--local-only) PUSH=0; echo "[local-only] 只 dump 到本機，不推送到 Mac" ;;
-  *)                      echo "未知參數：$1（只接受 --dry-run / --local-only）" >&2; exit 1 ;;
+  "")           ;;
+  --local-only) PUSH=0 ;;
+  --dry-run)    DRY_RUN=1 ;;
+  *)            echo "未知參數：$1（只接受 --local-only / --dry-run）" >&2; exit 1 ;;
 esac
 
 if ! docker compose ps --status running --services | grep -qx "${DB_SERVICE}"; then
   echo "db container 未執行，請先 docker compose up -d ${DB_SERVICE}" >&2
   exit 1
+fi
+
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  # 與 sync_raw_to_*.sh 的 --dry-run 一致：不落地任何檔案。
+  size="$(docker compose exec -T "${DB_SERVICE}" \
+            psql -U "${DB_USER}" -d "${DB_NAME}" -tAc \
+            "SELECT pg_size_pretty(pg_database_size('${DB_NAME}'));" 2>/dev/null || echo '?')"
+  echo "[dry-run] 什麼都不寫。實際執行時會："
+  echo "  1. pg_dump ${DB_NAME}（目前 ${size}，gzip 後約為其 1/7）"
+  echo "     -> ${LOCAL_DIR}/${DB_NAME}_<timestamp>.sql.gz"
+  echo "  2. rsync 到 ${DST_USER}@${DST_HOST}:${DST_PATH}"
+  echo "要 dump 到本機但不推送，用 --local-only。"
+  exit 0
 fi
 
 mkdir -p "${LOCAL_DIR}"
