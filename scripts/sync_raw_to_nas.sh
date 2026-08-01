@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# sync_raw_to_mac.sh — 從本機（Ubuntu）推送 data/raw 到 Mac（可重跑、可續傳）
+# sync_raw_to_nas.sh — 從本機推送 data/raw 到 Ubuntu NAS server（可重跑、可續傳）
 #
 # 用法：
-#   ./scripts/sync_raw_to_mac.sh              # 實際同步
-#   ./scripts/sync_raw_to_mac.sh --dry-run    # 預演（不實際傳輸）
+#   ./scripts/sync_raw_to_nas.sh              # 實際同步
+#   ./scripts/sync_raw_to_nas.sh --dry-run    # 預演（不實際傳輸）
 #
 # 注意：
 #   - 結尾斜線代表「把 raw 的內容同步進目標的 raw」，勿移除。
@@ -12,9 +12,9 @@ set -euo pipefail
 
 SRC_PATH="/home/poyi/GitHubLL/my_stock_project/data/raw/"
 
-DST_USER="poyilee"
-DST_HOST="172.16.4.90"
-DST_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/raw/"
+DST_USER="poyi"
+DST_HOST="100.68.32.34"
+DST_PATH="/nas/data/raw/"
 
 DRY_RUN=""
 case "${1:-}" in
@@ -27,6 +27,9 @@ if [[ ! -d "${SRC_PATH}" ]]; then
   echo "來源目錄不存在：${SRC_PATH}" >&2
   exit 1
 fi
+
+ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+  "${DST_USER}@${DST_HOST}" "mkdir -p '${DST_PATH}'"
 
 rsync -avh \
   ${DRY_RUN} \
