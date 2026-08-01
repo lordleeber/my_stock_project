@@ -228,6 +228,10 @@ tmp/
 models_selection_val/
 backtester/output/val/
 
+# Run summary written by scripts/batch_train_eps_full.sh (the dates list it
+# reads, logs/playbook_dates.txt, IS tracked).
+logs/train_eps_full_summary.txt
+
 # Claude Code per-machine local settings (personal permission grants / hooks).
 # Shared team settings belong in .claude/settings.json instead.
 .claude/settings.local.json
