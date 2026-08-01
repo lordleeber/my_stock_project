@@ -13,6 +13,22 @@ ACTIVE_STOCKS_FILE = Path("active_stocks.txt")
 OUTPUT_ROOT = Path("data/raw/xbrl")
 MAX_RETRIES = 0
 
+# 正常的 inline XBRL 季報一定帶這兩個 namespace 之一；MOPS 的各式錯誤頁
+# （安全性阻擋頁、「檔案不存在!」、rate limit 頁）都沒有。
+# 2026-08-01 對 data/raw/xbrl 全量 41,158 檔驗證：>= 2 KB 的 39,328 檔 100% 命中，0 例外。
+XBRL_MARKERS = (
+    "http://www.xbrl.org/2003/instance",
+    "http://www.xbrl.org/2013/inlineXBRL",
+)
+
+# 報表大小下限（寫入磁碟的 utf-8 bytes）。同一次全量驗證：最小的正常報表
+# 351,319 bytes（2026Q1），沒有任何一份正常報表 < 200 KB；對照組是
+# 安全性阻擋頁 800 bytes、「檔案不存在!」97 bytes。取 100 KB，兩邊都留數量級餘裕。
+MIN_REPORT_BYTES = 100_000
+
+# 掃描既有檔案時只讀檔頭找 marker（namespace 都在最前面幾百 bytes）。
+HEAD_SCAN_BYTES = 8192
+
 
 def get_error_log_path() -> Path:
     app_log = Path("/app/error_scraper.log")
@@ -87,21 +103,41 @@ def decode_to_utf8(raw: bytes) -> str:
     return raw.decode("cp950", errors="replace")
 
 
-def detect_blocked_reason(html_text: str) -> str | None:
-    # ⚠️ KNOWN BUG（見 KNOWN_ISSUES.md #1，2026-08-01 記錄，尚未修）：
-    # 下面兩個 marker 各差一個字，漏掉了 MOPS 的「安全性考量」阻擋頁：
-    #   "the page can not be accessed" vs 頁面實際的 "this page can not be accessed"
-    #   "頁面無法執行"                  vs 頁面實際的 "頁面無法呈現"
-    # 導致 2026Q2 有 1805 個阻擋頁被當成正常回應存檔，且因為 save_symbol_report()
-    # 的 skipped_exists 判斷而永遠不會重抓。修的時候請一併放寬條件（或改成正向
-    # 驗證 XBRL 結構 + 檔案大小下限），不要只補這兩個字串。
+def validate_report(html_text: str) -> str | None:
+    """回傳失敗原因；None 代表看起來是一份正常的 XBRL 季報。
+
+    這是「能不能存檔」的唯一關卡，而且刻意採正向驗證：先前的作法是逐條列舉
+    MOPS 的錯誤頁字樣，結果兩個 marker 各差一個字（the/this、執行/呈現），
+    安全性阻擋頁就整批被當成正常回應存檔。要求回應具備季報應有的特徵，
+    比窮舉錯誤樣式難漏；MOPS 新增或改寫錯誤頁也不必跟著追。
+    """
+    if len(html_text.encode("utf-8")) < MIN_REPORT_BYTES:
+        return "too_small"
+    lower = html_text.lower()
+    if "<html" not in lower:
+        return "invalid_html"
+    if not any(marker.lower() in lower for marker in XBRL_MARKERS):
+        return "no_xbrl_markers"
+    return None
+
+
+def classify_failure_reason(html_text: str) -> str | None:
+    """辨識 MOPS 回應的類型，只用於把失敗原因寫得更清楚。
+
+    存檔與否一律由 validate_report() 決定，這裡漏判不會讓壞資料落地。
+    """
     lower = html_text.lower()
     marker_reason_pairs = [
-        ("overrun - 查詢過於頻繁", "rate_limit"),
-        ("查詢過於頻繁,請稍後再試", "rate_limit"),
+        # 實際訊息是 "OVERRUN - 查詢過於頻繁,請稍後再試"，只比對核心片語。
+        ("查詢過於頻繁", "rate_limit"),
         ("too many query requests from your ip", "rate_limit"),
-        ("the page can not be accessed", "page_not_accessible"),
+        # 不含冠詞，避免再被 the/this 這種一字之差絆倒。
+        ("page can not be accessed", "page_not_accessible"),
+        ("因為安全性考量", "page_not_accessible"),
+        ("頁面無法呈現", "page_not_accessible"),
         ("頁面無法執行", "page_not_accessible"),
+        # 該季報尚未申報（例如申報期限前來抓）。不是故障，等下次排程即可。
+        ("檔案不存在", "report_not_published"),
     ]
     for marker, reason in marker_reason_pairs:
         if marker.lower() in lower:
@@ -114,10 +150,32 @@ def strip_run_date_suffix(filename: str) -> str:
     return re.sub(r"_\d{8}(?=\.html$)", "", filename)
 
 
+def is_valid_report_file(path: Path) -> bool:
+    """既有檔案看起來是不是一份正常季報（大小 + 檔頭的 XBRL marker）。
+
+    只讀檔頭：整季約 1,600 份、每份約 500 KB，全讀進來只為了 dedupe 太浪費。
+    """
+    try:
+        if path.stat().st_size < MIN_REPORT_BYTES:
+            return False
+        with path.open("rb") as f:
+            head = f.read(HEAD_SCAN_BYTES).lower()
+    except OSError:
+        return False
+    return any(marker.lower().encode("utf-8") in head for marker in XBRL_MARKERS)
+
+
 def load_existing_report_names(out_dir: Path) -> set[str]:
+    """已存在「且內容有效」的報表檔名（去掉 run_date 後綴）。
+
+    只認有效檔案是刻意的：壞檔不列入 dedupe key，下次執行才會重抓。先前不分
+    好壞一律視為已抓過，導致 2026Q2 存進 1,805 個阻擋頁後就永遠 SKIP，
+    除非帶 --force 或手動刪檔，錯一次就卡死。
+    """
     names: set[str] = set()
     for path in out_dir.glob("*.html"):
-        names.add(strip_run_date_suffix(path.name))
+        if is_valid_report_file(path):
+            names.add(strip_run_date_suffix(path.name))
     return names
 
 
@@ -144,18 +202,19 @@ def save_symbol_report(
             print(f"[FETCH] {symbol} (attempt {attempt}/{attempts})")
             raw_html = fetch_xbrl_html(symbol, year, quarter)
             html_text = decode_to_utf8(raw_html)
-            if "<html" not in html_text.lower():
-                last_status = "invalid_html"
+            invalid_reason = validate_report(html_text)
+            if invalid_reason:
+                # 能認出是哪種 MOPS 回應就用它（report_not_published 只是還沒申報，
+                # 不是故障），認不出來才退回 validate_report 的結構性原因。
+                last_status = (
+                    classify_failure_reason(html_text)
+                    or f"invalid_report:{invalid_reason}"
+                )
                 print(f"[FAIL] {symbol} -> {last_status}")
             else:
-                blocked_reason = detect_blocked_reason(html_text)
-                if blocked_reason:
-                    last_status = f"blocked_page:{blocked_reason}"
-                    print(f"[FAIL] {symbol} -> {last_status}")
-                else:
-                    out_path.write_text(html_text, encoding="utf-8")
-                    existing_report_names.add(base_filename)
-                    return symbol, "ok"
+                out_path.write_text(html_text, encoding="utf-8")
+                existing_report_names.add(base_filename)
+                return symbol, "ok"
         except Exception as e:
             last_status = f"error:{e}"
             print(f"[FAIL] {symbol} -> {last_status}")
