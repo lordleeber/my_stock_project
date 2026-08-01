@@ -7,7 +7,7 @@
 set -euo pipefail
 
 SRC_USER="poyilee"
-SRC_HOST="172.16.4.17"
+SRC_HOST="172.16.4.90"
 SRC_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/raw/"
 
 DST_PATH="/home/poyi/GitHubLL/my_stock_project/data/raw/"
