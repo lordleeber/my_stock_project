@@ -29,6 +29,14 @@ MIN_REPORT_BYTES = 100_000
 # 掃描既有檔案時只讀檔頭找 marker（namespace 都在最前面幾百 bytes）。
 HEAD_SCAN_BYTES = 8192
 
+# 連續幾次 rate_limit 就中止本次執行。取 5 是為了不被單一次誤判打斷，
+# 又能在真的被封鎖時立刻收手（而不是把剩下 1,800 個 symbol 全部打完）。
+RATE_LIMIT_ABORT_STREAK = 5
+
+# 這些失敗是預期中的，不代表故障，不該影響退出碼。
+# report_not_published：該季報還沒申報（例如 8/14 前抓 Q2），等下次排程即可。
+BENIGN_FAILURE_REASONS = frozenset({"report_not_published"})
+
 
 def get_error_log_path() -> Path:
     app_log = Path("/app/error_scraper.log")
@@ -145,24 +153,55 @@ def classify_failure_reason(html_text: str) -> str | None:
     return None
 
 
+def base_status(status: str) -> str:
+    """去掉 save_symbol_report() 失敗時附加的 ";retries=N" 後綴。"""
+    return status.split(";", 1)[0]
+
+
+def decide_exit_code(saved: int, fail: int, non_benign_fail: int, aborted: bool) -> int:
+    """決定退出碼，讓 schedules/xbrl_scrape_daily.sh 能觸發 systemd 失敗通知。
+
+    舊版是 `0 if ok > 0 else 1`，而 ok 把 skipped_exists 也算進去，於是只要
+    目錄裡還有舊檔就永遠 exit 0 —— MOPS 改版導致每一次抓取都驗證失敗時，
+    資料蒐集會靜悄悄停擺而完全不告警。
+
+    條件刻意收得很緊：「這次有嘗試抓取、沒有任何一次成功，而且失敗全都不是
+    良性原因」。申報期限前整批 report_not_published 是正常的（例如 8/14 前
+    抓 Q2），少數幾檔 curl 暫時失敗也不該每晚叫一次 —— 會叫到沒人理。
+    真正要抓的是 MOPS 改版之類「每一次抓取都驗證失敗」的系統性狀況。
+    """
+    if aborted:
+        return 1
+    if saved == 0 and fail > 0 and non_benign_fail == fail:
+        return 1
+    return 0
+
+
 def strip_run_date_suffix(filename: str) -> str:
     # Convert YYYYQX_1234_YYYYMMDD.html -> YYYYQX_1234.html
     return re.sub(r"_\d{8}(?=\.html$)", "", filename)
 
 
 def is_valid_report_file(path: Path) -> bool:
-    """既有檔案看起來是不是一份正常季報（大小 + 檔頭的 XBRL marker）。
+    """既有檔案看起來是不是一份正常季報。
 
-    只讀檔頭：整季約 1,600 份、每份約 500 KB，全讀進來只為了 dedupe 太浪費。
+    先跑便宜的檢查（size + 檔頭 marker）擋掉絕大多數情形——整季約 1,600 份、
+    每份約 500 KB，全讀進來只為了 dedupe 太浪費。只有在檔案夠大、檔頭卻找不到
+    marker 時才整份讀進來交給 validate_report()，讓「有效」只有一套定義：
+    否則 marker 落在 HEAD_SCAN_BYTES 之後的報表會被判為沒抓過，每晚重抓、
+    每晚成功、每晚又被判沒抓過。
     """
     try:
         if path.stat().st_size < MIN_REPORT_BYTES:
             return False
         with path.open("rb") as f:
             head = f.read(HEAD_SCAN_BYTES).lower()
+        if any(marker.lower().encode("utf-8") in head for marker in XBRL_MARKERS):
+            return True
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
-    return any(marker.lower().encode("utf-8") in head for marker in XBRL_MARKERS)
+    return validate_report(text) is None
 
 
 def load_existing_report_names(out_dir: Path) -> set[str]:
@@ -177,6 +216,36 @@ def load_existing_report_names(out_dir: Path) -> set[str]:
         if is_valid_report_file(path):
             names.add(strip_run_date_suffix(path.name))
     return names
+
+
+def purge_invalid_siblings(
+    out_dir: Path, year: int, quarter: int, symbol: str, keep: Path
+) -> list[Path]:
+    """刪掉同一 symbol 底下其餘未通過驗證的 html，回傳被刪的路徑。
+
+    重抓成功後一定要清掉舊壞檔，否則自癒反而會弄壞下游：processor 的
+    collect_strict_html_per_symbol() 對同季同 symbol 出現兩個檔案是直接
+    raise、整季轉檔中止的（processor/CLAUDE.md「multiple html files are
+    forbidden」）。壞檔不列入 dedupe key 會讓它被重抓，新檔帶新的 run_date
+    後綴，兩個檔案就並存了。
+    """
+    prefix = f"{year}Q{quarter}_{symbol}"
+    # 只認 <quarter>_<symbol>.html 與 <quarter>_<symbol>_<YYYYMMDD>.html，
+    # 避免 glob 的前綴比對誤傷其他 symbol。
+    name_re = re.compile(rf"^{re.escape(prefix)}(?:_\d{{8}})?\.html$")
+    removed: list[Path] = []
+    for path in out_dir.glob(f"{prefix}*.html"):
+        if path == keep or not name_re.match(path.name):
+            continue
+        if is_valid_report_file(path):
+            continue
+        try:
+            path.unlink()
+        except OSError as e:
+            print(f"[WARN] {symbol} -> 無法刪除舊壞檔 {path.name}: {e}")
+            continue
+        removed.append(path)
+    return removed
 
 
 def save_symbol_report(
@@ -214,6 +283,10 @@ def save_symbol_report(
             else:
                 out_path.write_text(html_text, encoding="utf-8")
                 existing_report_names.add(base_filename)
+                for stale in purge_invalid_siblings(
+                    out_dir, year, quarter, symbol, out_path
+                ):
+                    print(f"[CLEAN] {symbol} -> removed stale {stale.name}")
                 return symbol, "ok"
         except Exception as e:
             last_status = f"error:{e}"
@@ -256,8 +329,12 @@ def main():
         f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)"
     )
 
-    ok = 0
+    saved = 0
+    skipped = 0
     fail = 0
+    non_benign_fail = 0
+    rate_limit_streak = 0
+    aborted = False
     status_count: dict[str, int] = {}
     failures: list[tuple[str, str]] = []
 
@@ -272,25 +349,45 @@ def main():
             force=force_reprocess,
         )
         status_count[status] = status_count.get(status, 0) + 1
-        if status in {"ok", "skipped_exists"}:
-            ok += 1
+        reason = base_status(status)
+        if reason == "ok":
+            saved += 1
+        elif reason == "skipped_exists":
+            skipped += 1
         else:
             fail += 1
             failures.append((symbol, status))
+            if reason not in BENIGN_FAILURE_REASONS:
+                non_benign_fail += 1
+
+        # 連續被 rate limit 就收手。2026-07-02 就是一路跑完 1,800 個 symbol，
+        # 把整季寫成阻擋頁；繼續打只會讓封鎖延長，該季隔天再試即可。
+        if reason == "rate_limit":
+            rate_limit_streak += 1
+            if rate_limit_streak >= RATE_LIMIT_ABORT_STREAK:
+                aborted = True
+                print(
+                    f"[ABORT] 連續 {rate_limit_streak} 次 rate_limit，"
+                    f"於第 {idx}/{len(symbols)} 個 symbol 中止本次執行。"
+                )
+                break
+        else:
+            rate_limit_streak = 0
 
         if idx % 100 == 0 or idx == len(symbols):
-            print(f"[{idx}/{len(symbols)}] ok={ok} fail={fail}")
+            print(f"[{idx}/{len(symbols)}] saved={saved} skipped={skipped} fail={fail}")
 
-        if status != "skipped_exists":
+        if reason != "skipped_exists":
             time.sleep(3)
 
-    print("Done.")
-    print(f"Saved: {ok}, Failed: {fail}")
+    print("Done." if not aborted else "Aborted.")
+    print(f"Saved: {saved}, Skipped: {skipped}, Failed: {fail}")
     for k in sorted(status_count):
         print(f"  {k}: {status_count[k]}")
 
     append_error_log(args.year, args.quarter, run_date, failures)
-    return 0 if ok > 0 else 1
+
+    return decide_exit_code(saved, fail, non_benign_fail, aborted)
 
 
 if __name__ == "__main__":
