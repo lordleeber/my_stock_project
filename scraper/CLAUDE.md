@@ -96,4 +96,12 @@ docker compose run --rm scraper-quarterly \
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
-- ⚠️ **`fetch_xbrl.py` 的阻擋頁偵測目前會漏**（`KNOWN_ISSUES.md` #1）：`detect_blocked_reason()` 的兩個 marker 各差一個字，MOPS 的「安全性考量」阻擋頁會被當成正常回應存檔；又因為 dedupe key 剝掉 run_date 後綴，存壞了就永遠 SKIP 不重抓。2026Q2 已有 1805 檔中招（DB 未受污染）。動這支之前先讀 `KNOWN_ISSUES.md`。
+- `fetch_xbrl.py` 用**正向驗證**決定能不能存檔（`validate_report()`）：回應必須 ≥ 100 KB 且帶 XBRL namespace（`xbrl.org/2003/instance` 或 `2013/inlineXBRL`），否則一律視為失敗。門檻是 2026-08-01 對 `data/raw/xbrl` 全量 41,158 檔校準出來的——最小的正常報表 351 KB、沒有任何一份 < 200 KB，而 MOPS 的安全性阻擋頁 800 bytes、「檔案不存在!」97 bytes。
+  - 之所以不是逐條列舉錯誤頁字樣：舊版就是這樣做，兩個 marker 各差一個字（`the`/`this`、`執行`/`呈現`），2026Q2 因此存進 1,805 個阻擋頁。要改判斷條件請維持正向驗證的形式，不要退回窮舉錯誤訊息。
+  - `classify_failure_reason()` 只負責把失敗原因寫清楚（`rate_limit` / `page_not_accessible` / `report_not_published`），漏判不會讓壞資料落地。
+  - `load_existing_report_names()` 只把**通過驗證**的檔案列入 dedupe key，所以存壞的檔案下次執行會自動重抓，不會像舊版那樣錯一次就永遠 SKIP。
+  - 重抓成功後 `purge_invalid_siblings()` 會刪掉同 symbol 的舊壞檔。**這步不能省**：processor 的 `collect_strict_html_per_symbol()` 對同季同 symbol 出現兩個 html 是直接 raise、整季轉檔中止，所以「重抓」和「清掉舊檔」必須成對出現。
+  - 連續 `RATE_LIMIT_ABORT_STREAK`（5）次 `rate_limit` 就**中止本次執行**並回傳非 0。2026-07-02 的事故就是被擋之後仍一路跑完 1,800 個 symbol，把整季寫成阻擋頁。
+  - 退出碼由 `decide_exit_code()` 決定：「有嘗試抓取、沒有任何一次成功、且失敗全都不是良性原因」才回非 0。舊版 `0 if ok > 0 else 1` 把 `skipped_exists` 算進 ok，只要目錄有舊檔就永遠 exit 0，MOPS 改版會靜悄悄停擺而不觸發 systemd 通知。
+  - 申報期限前來抓會大量收到 `report_not_published`（例如 8/14 前抓 Q2），這是正常的、不會告警，等排程逐日補齊即可。
+  - 測試：`scraper/tests/test_fetch_xbrl.py`。專案沒裝 pytest、CI 也只跑 ruff，所以本檔可直接執行：`venv/bin/python3 scraper/tests/test_fetch_xbrl.py`。

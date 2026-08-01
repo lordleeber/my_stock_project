@@ -13,6 +13,30 @@ ACTIVE_STOCKS_FILE = Path("active_stocks.txt")
 OUTPUT_ROOT = Path("data/raw/xbrl")
 MAX_RETRIES = 0
 
+# 正常的 inline XBRL 季報一定帶這兩個 namespace 之一；MOPS 的各式錯誤頁
+# （安全性阻擋頁、「檔案不存在!」、rate limit 頁）都沒有。
+# 2026-08-01 對 data/raw/xbrl 全量 41,158 檔驗證：>= 2 KB 的 39,328 檔 100% 命中，0 例外。
+XBRL_MARKERS = (
+    "http://www.xbrl.org/2003/instance",
+    "http://www.xbrl.org/2013/inlineXBRL",
+)
+
+# 報表大小下限（寫入磁碟的 utf-8 bytes）。同一次全量驗證：最小的正常報表
+# 351,319 bytes（2026Q1），沒有任何一份正常報表 < 200 KB；對照組是
+# 安全性阻擋頁 800 bytes、「檔案不存在!」97 bytes。取 100 KB，兩邊都留數量級餘裕。
+MIN_REPORT_BYTES = 100_000
+
+# 掃描既有檔案時只讀檔頭找 marker（namespace 都在最前面幾百 bytes）。
+HEAD_SCAN_BYTES = 8192
+
+# 連續幾次 rate_limit 就中止本次執行。取 5 是為了不被單一次誤判打斷，
+# 又能在真的被封鎖時立刻收手（而不是把剩下 1,800 個 symbol 全部打完）。
+RATE_LIMIT_ABORT_STREAK = 5
+
+# 這些失敗是預期中的，不代表故障，不該影響退出碼。
+# report_not_published：該季報還沒申報（例如 8/14 前抓 Q2），等下次排程即可。
+BENIGN_FAILURE_REASONS = frozenset({"report_not_published"})
+
 
 def get_error_log_path() -> Path:
     app_log = Path("/app/error_scraper.log")
@@ -87,21 +111,41 @@ def decode_to_utf8(raw: bytes) -> str:
     return raw.decode("cp950", errors="replace")
 
 
-def detect_blocked_reason(html_text: str) -> str | None:
-    # ⚠️ KNOWN BUG（見 KNOWN_ISSUES.md #1，2026-08-01 記錄，尚未修）：
-    # 下面兩個 marker 各差一個字，漏掉了 MOPS 的「安全性考量」阻擋頁：
-    #   "the page can not be accessed" vs 頁面實際的 "this page can not be accessed"
-    #   "頁面無法執行"                  vs 頁面實際的 "頁面無法呈現"
-    # 導致 2026Q2 有 1805 個阻擋頁被當成正常回應存檔，且因為 save_symbol_report()
-    # 的 skipped_exists 判斷而永遠不會重抓。修的時候請一併放寬條件（或改成正向
-    # 驗證 XBRL 結構 + 檔案大小下限），不要只補這兩個字串。
+def validate_report(html_text: str) -> str | None:
+    """回傳失敗原因；None 代表看起來是一份正常的 XBRL 季報。
+
+    這是「能不能存檔」的唯一關卡，而且刻意採正向驗證：先前的作法是逐條列舉
+    MOPS 的錯誤頁字樣，結果兩個 marker 各差一個字（the/this、執行/呈現），
+    安全性阻擋頁就整批被當成正常回應存檔。要求回應具備季報應有的特徵，
+    比窮舉錯誤樣式難漏；MOPS 新增或改寫錯誤頁也不必跟著追。
+    """
+    if len(html_text.encode("utf-8")) < MIN_REPORT_BYTES:
+        return "too_small"
+    lower = html_text.lower()
+    if "<html" not in lower:
+        return "invalid_html"
+    if not any(marker.lower() in lower for marker in XBRL_MARKERS):
+        return "no_xbrl_markers"
+    return None
+
+
+def classify_failure_reason(html_text: str) -> str | None:
+    """辨識 MOPS 回應的類型，只用於把失敗原因寫得更清楚。
+
+    存檔與否一律由 validate_report() 決定，這裡漏判不會讓壞資料落地。
+    """
     lower = html_text.lower()
     marker_reason_pairs = [
-        ("overrun - 查詢過於頻繁", "rate_limit"),
-        ("查詢過於頻繁,請稍後再試", "rate_limit"),
+        # 實際訊息是 "OVERRUN - 查詢過於頻繁,請稍後再試"，只比對核心片語。
+        ("查詢過於頻繁", "rate_limit"),
         ("too many query requests from your ip", "rate_limit"),
-        ("the page can not be accessed", "page_not_accessible"),
+        # 不含冠詞，避免再被 the/this 這種一字之差絆倒。
+        ("page can not be accessed", "page_not_accessible"),
+        ("因為安全性考量", "page_not_accessible"),
+        ("頁面無法呈現", "page_not_accessible"),
         ("頁面無法執行", "page_not_accessible"),
+        # 該季報尚未申報（例如申報期限前來抓）。不是故障，等下次排程即可。
+        ("檔案不存在", "report_not_published"),
     ]
     for marker, reason in marker_reason_pairs:
         if marker.lower() in lower:
@@ -109,16 +153,99 @@ def detect_blocked_reason(html_text: str) -> str | None:
     return None
 
 
+def base_status(status: str) -> str:
+    """去掉 save_symbol_report() 失敗時附加的 ";retries=N" 後綴。"""
+    return status.split(";", 1)[0]
+
+
+def decide_exit_code(saved: int, fail: int, non_benign_fail: int, aborted: bool) -> int:
+    """決定退出碼，讓 schedules/xbrl_scrape_daily.sh 能觸發 systemd 失敗通知。
+
+    舊版是 `0 if ok > 0 else 1`，而 ok 把 skipped_exists 也算進去，於是只要
+    目錄裡還有舊檔就永遠 exit 0 —— MOPS 改版導致每一次抓取都驗證失敗時，
+    資料蒐集會靜悄悄停擺而完全不告警。
+
+    條件刻意收得很緊：「這次有嘗試抓取、沒有任何一次成功，而且失敗全都不是
+    良性原因」。申報期限前整批 report_not_published 是正常的（例如 8/14 前
+    抓 Q2），少數幾檔 curl 暫時失敗也不該每晚叫一次 —— 會叫到沒人理。
+    真正要抓的是 MOPS 改版之類「每一次抓取都驗證失敗」的系統性狀況。
+    """
+    if aborted:
+        return 1
+    if saved == 0 and fail > 0 and non_benign_fail == fail:
+        return 1
+    return 0
+
+
 def strip_run_date_suffix(filename: str) -> str:
     # Convert YYYYQX_1234_YYYYMMDD.html -> YYYYQX_1234.html
     return re.sub(r"_\d{8}(?=\.html$)", "", filename)
 
 
+def is_valid_report_file(path: Path) -> bool:
+    """既有檔案看起來是不是一份正常季報。
+
+    先跑便宜的檢查（size + 檔頭 marker）擋掉絕大多數情形——整季約 1,600 份、
+    每份約 500 KB，全讀進來只為了 dedupe 太浪費。只有在檔案夠大、檔頭卻找不到
+    marker 時才整份讀進來交給 validate_report()，讓「有效」只有一套定義：
+    否則 marker 落在 HEAD_SCAN_BYTES 之後的報表會被判為沒抓過，每晚重抓、
+    每晚成功、每晚又被判沒抓過。
+    """
+    try:
+        if path.stat().st_size < MIN_REPORT_BYTES:
+            return False
+        with path.open("rb") as f:
+            head = f.read(HEAD_SCAN_BYTES).lower()
+        if any(marker.lower().encode("utf-8") in head for marker in XBRL_MARKERS):
+            return True
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return validate_report(text) is None
+
+
 def load_existing_report_names(out_dir: Path) -> set[str]:
+    """已存在「且內容有效」的報表檔名（去掉 run_date 後綴）。
+
+    只認有效檔案是刻意的：壞檔不列入 dedupe key，下次執行才會重抓。先前不分
+    好壞一律視為已抓過，導致 2026Q2 存進 1,805 個阻擋頁後就永遠 SKIP，
+    除非帶 --force 或手動刪檔，錯一次就卡死。
+    """
     names: set[str] = set()
     for path in out_dir.glob("*.html"):
-        names.add(strip_run_date_suffix(path.name))
+        if is_valid_report_file(path):
+            names.add(strip_run_date_suffix(path.name))
     return names
+
+
+def purge_invalid_siblings(
+    out_dir: Path, year: int, quarter: int, symbol: str, keep: Path
+) -> list[Path]:
+    """刪掉同一 symbol 底下其餘未通過驗證的 html，回傳被刪的路徑。
+
+    重抓成功後一定要清掉舊壞檔，否則自癒反而會弄壞下游：processor 的
+    collect_strict_html_per_symbol() 對同季同 symbol 出現兩個檔案是直接
+    raise、整季轉檔中止的（processor/CLAUDE.md「multiple html files are
+    forbidden」）。壞檔不列入 dedupe key 會讓它被重抓，新檔帶新的 run_date
+    後綴，兩個檔案就並存了。
+    """
+    prefix = f"{year}Q{quarter}_{symbol}"
+    # 只認 <quarter>_<symbol>.html 與 <quarter>_<symbol>_<YYYYMMDD>.html，
+    # 避免 glob 的前綴比對誤傷其他 symbol。
+    name_re = re.compile(rf"^{re.escape(prefix)}(?:_\d{{8}})?\.html$")
+    removed: list[Path] = []
+    for path in out_dir.glob(f"{prefix}*.html"):
+        if path == keep or not name_re.match(path.name):
+            continue
+        if is_valid_report_file(path):
+            continue
+        try:
+            path.unlink()
+        except OSError as e:
+            print(f"[WARN] {symbol} -> 無法刪除舊壞檔 {path.name}: {e}")
+            continue
+        removed.append(path)
+    return removed
 
 
 def save_symbol_report(
@@ -144,18 +271,23 @@ def save_symbol_report(
             print(f"[FETCH] {symbol} (attempt {attempt}/{attempts})")
             raw_html = fetch_xbrl_html(symbol, year, quarter)
             html_text = decode_to_utf8(raw_html)
-            if "<html" not in html_text.lower():
-                last_status = "invalid_html"
+            invalid_reason = validate_report(html_text)
+            if invalid_reason:
+                # 能認出是哪種 MOPS 回應就用它（report_not_published 只是還沒申報，
+                # 不是故障），認不出來才退回 validate_report 的結構性原因。
+                last_status = (
+                    classify_failure_reason(html_text)
+                    or f"invalid_report:{invalid_reason}"
+                )
                 print(f"[FAIL] {symbol} -> {last_status}")
             else:
-                blocked_reason = detect_blocked_reason(html_text)
-                if blocked_reason:
-                    last_status = f"blocked_page:{blocked_reason}"
-                    print(f"[FAIL] {symbol} -> {last_status}")
-                else:
-                    out_path.write_text(html_text, encoding="utf-8")
-                    existing_report_names.add(base_filename)
-                    return symbol, "ok"
+                out_path.write_text(html_text, encoding="utf-8")
+                existing_report_names.add(base_filename)
+                for stale in purge_invalid_siblings(
+                    out_dir, year, quarter, symbol, out_path
+                ):
+                    print(f"[CLEAN] {symbol} -> removed stale {stale.name}")
+                return symbol, "ok"
         except Exception as e:
             last_status = f"error:{e}"
             print(f"[FAIL] {symbol} -> {last_status}")
@@ -197,8 +329,12 @@ def main():
         f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)"
     )
 
-    ok = 0
+    saved = 0
+    skipped = 0
     fail = 0
+    non_benign_fail = 0
+    rate_limit_streak = 0
+    aborted = False
     status_count: dict[str, int] = {}
     failures: list[tuple[str, str]] = []
 
@@ -213,25 +349,45 @@ def main():
             force=force_reprocess,
         )
         status_count[status] = status_count.get(status, 0) + 1
-        if status in {"ok", "skipped_exists"}:
-            ok += 1
+        reason = base_status(status)
+        if reason == "ok":
+            saved += 1
+        elif reason == "skipped_exists":
+            skipped += 1
         else:
             fail += 1
             failures.append((symbol, status))
+            if reason not in BENIGN_FAILURE_REASONS:
+                non_benign_fail += 1
+
+        # 連續被 rate limit 就收手。2026-07-02 就是一路跑完 1,800 個 symbol，
+        # 把整季寫成阻擋頁；繼續打只會讓封鎖延長，該季隔天再試即可。
+        if reason == "rate_limit":
+            rate_limit_streak += 1
+            if rate_limit_streak >= RATE_LIMIT_ABORT_STREAK:
+                aborted = True
+                print(
+                    f"[ABORT] 連續 {rate_limit_streak} 次 rate_limit，"
+                    f"於第 {idx}/{len(symbols)} 個 symbol 中止本次執行。"
+                )
+                break
+        else:
+            rate_limit_streak = 0
 
         if idx % 100 == 0 or idx == len(symbols):
-            print(f"[{idx}/{len(symbols)}] ok={ok} fail={fail}")
+            print(f"[{idx}/{len(symbols)}] saved={saved} skipped={skipped} fail={fail}")
 
-        if status != "skipped_exists":
+        if reason != "skipped_exists":
             time.sleep(3)
 
-    print("Done.")
-    print(f"Saved: {ok}, Failed: {fail}")
+    print("Done." if not aborted else "Aborted.")
+    print(f"Saved: {saved}, Skipped: {skipped}, Failed: {fail}")
     for k in sorted(status_count):
         print(f"  {k}: {status_count[k]}")
 
     append_error_log(args.year, args.quarter, run_date, failures)
-    return 0 if ok > 0 else 1
+
+    return decide_exit_code(saved, fail, non_benign_fail, aborted)
 
 
 if __name__ == "__main__":
