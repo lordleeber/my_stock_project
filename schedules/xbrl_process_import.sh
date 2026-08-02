@@ -39,6 +39,10 @@ if [[ -n "$TARGET_DATE" ]]; then
     month_num=$((10#$month))
     day_num=$((10#$day))
 
+    # 這裡的窗口刻意比 xbrl_scrape_daily.sh 寬（那支起日收到申報期限前 30 天），
+    # 兩邊不要同步。scrape 收窄是為了省掉每夜 1.5 小時的空轉爬蟲；這支只是手動
+    # 補資料時用今天日期猜季別，收窄只會讓「4 月初想重跑 Q1 入庫」多打一次
+    # YYYYQX 參數。
     if (( month_num == 2 || month_num == 3 )); then
         TARGET_QUARTER="$((10#$year - 1))Q4"
     elif (( month_num == 4 )) || (( month_num == 5 && day_num <= 15 )); then
