@@ -125,7 +125,7 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 | 階段 | 產出 |
 |---|---|
 | ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook run date） |
-| ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`、`trade_candidates.csv` |
+| ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`（step5 的輸入）、`trade_candidates.csv`（診斷用，生產流程不讀） |
 | ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 PREV_DATE 的 fwd_return） |
 | ④ step4 | `models_selection/<PREV_DATE>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
 | ⑤ step5 | `models_selection/<DATE>/candidates_scored.csv`（**最終選股名單**） |

@@ -6,8 +6,14 @@
   models_eps/<YYYY-MM-DD>/predictions_results.csv
 
 寫入：
-  strategies/output/<YYYY-MM-DD>/dataset_strategy.csv  （原地更新，新增欄位）
-  strategies/output/<YYYY-MM-DD>/trade_candidates.csv  （供 run_rolling.py 使用）
+  strategies/output/<YYYY-MM-DD>/dataset_strategy.csv  （原地更新，新增欄位；step5 的輸入）
+  strategies/output/<YYYY-MM-DD>/trade_candidates.csv  （診斷用，見下）
+
+⚠️ trade_candidates.csv **不在生產路徑上**。run_rolling.py 讀的是
+models_selection/<D>/candidates_scored.csv（run_rolling.py:145），從不讀這個檔。
+目前只有 compare_versions.py（版本比對診斷）與 step2_batch 的 --skip-existing
+存在性檢查會碰它。因此它的 `eps_growth_total_pct > 0` 過濾**不會影響選股**：
+step5 讀的是未過濾的 dataset_strategy.csv，全部候選都會被打分。
 
 用法：
   venv/bin/python3 strategies/step2_finalize_strategy.py --date 2025-10-11
