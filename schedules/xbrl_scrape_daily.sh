@@ -1,12 +1,24 @@
 #!/bin/bash
 # 季報 XBRL 每日 scrape（公告期內持續累積 raw 資料；不跑 process / import）
 #
-# 公告時程：
-#   Q4 (前一年):   02/01 ~ 03/31
-#   Q1 (同年):     04/01 ~ 05/15
-#   Q2 (同年):     07/01 ~ 08/15
-#   Q3 (同年):     10/01 ~ 11/15
+# 抓取窗口（起日 = 申報期限前 30 天，結束日 = 申報期限）：
+#   Q4 (前一年):   03/01 ~ 03/31
+#   Q1 (同年):     04/15 ~ 05/15
+#   Q2 (同年):     07/15 ~ 08/15
+#   Q3 (同年):     10/15 ~ 11/15
 #   其他日期：     skip
+#
+# 起日取 T-30 而不是月初：整份名單掃一輪要 1,849 檔 × 3 秒 ≈ 1.5 小時，而實測
+# 最早的申報落在 T-32(2026Q1)、T-16(2026Q2)、T-28(2025Q4 年報)——2026Q2 那次
+# 從 07/01 開窗到 07/29 抓到第一份，中間 28 夜共約 5.2 萬次請求全部回「檔案不
+# 存在」。晚開窗不會漏資料：MOPS 給的是當下累積狀態，dedupe key 又是 symbol
+# 而非日期，開窗第一夜就會把先前已公告的一次補齊；XBRL 的 publish_time(=抓取
+# 日) 也沒有任何下游拿去做 PIT 判斷。少掃這幾十夜同時降低被 MOPS 擋的機率，
+# 而被擋最貴的時間點正是期限前那一週。
+#
+# 結束日刻意等於 train_eps/shared_config.py 的 cutoff（5/15、8/15、11/15）：
+# 窗口最後一夜抓到的財報，隔天 16 號的 playbook 正好吃得到。往後延的資料當月
+# walk-forward 本來就用不到，所以結束日不隨起日一起調。
 #
 # DB 入庫由 `xbrl_process_import.sh` 手動觸發（公告期末 / 補資料時）。
 
@@ -41,13 +53,13 @@ if [[ -n "$TARGET_DATE" ]]; then
     month_num=$((10#$month))
     day_num=$((10#$day))
 
-    if (( month_num == 2 || month_num == 3 )); then
+    if (( month_num == 3 )); then
         TARGET_QUARTER="$((10#$year - 1))Q4"
-    elif (( month_num == 4 )) || (( month_num == 5 && day_num <= 15 )); then
+    elif (( month_num == 4 && day_num >= 15 )) || (( month_num == 5 && day_num <= 15 )); then
         TARGET_QUARTER="${year}Q1"
-    elif (( month_num == 7 )) || (( month_num == 8 && day_num <= 15 )); then
+    elif (( month_num == 7 && day_num >= 15 )) || (( month_num == 8 && day_num <= 15 )); then
         TARGET_QUARTER="${year}Q2"
-    elif (( month_num == 10 )) || (( month_num == 11 && day_num <= 15 )); then
+    elif (( month_num == 10 && day_num >= 15 )) || (( month_num == 11 && day_num <= 15 )); then
         TARGET_QUARTER="${year}Q3"
     else
         SKIP_MODE=1

@@ -51,11 +51,21 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 用途：公告期內每天累積 raw XBRL；**不入庫**
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
   - 規則（不傳參數時，用今天日期判斷）：
-    - `02/01~03/31`：抓「前一年 Q4」
-    - `04/01~05/15`：抓「同年 Q1」
-    - `07/01~08/15`：抓「同年 Q2」
-    - `10/01~11/15`：抓「同年 Q3」
+    - `03/01~03/31`：抓「前一年 Q4」
+    - `04/15~05/15`：抓「同年 Q1」
+    - `07/15~08/15`：抓「同年 Q2」
+    - `10/15~11/15`：抓「同年 Q3」
     - 其他日期：直接 skip
+  - 起日 = 申報期限前 30 天。掃一輪 1,849 檔要 ~1.5 小時，而實測最早申報是
+    T-32 / T-16 / T-28（2026Q1 / 2026Q2 / 2025Q4）；2026Q2 從 07/01 開窗到
+    07/29 才抓到第一份，白掃 28 夜。晚開窗不會漏（MOPS 給累積狀態、dedupe key
+    是 symbol 不是日期），還能少冒被擋的風險。
+  - 結束日 = 申報期限，等於 `train_eps/shared_config.py` 的 cutoff（5/15、8/15、
+    11/15），讓最後一夜的財報趕得上隔天 16 號的 playbook。**不要跟著起日往後
+    延**：延出來的資料當月 walk-forward 用不到。金融業（金控/銀行/保險）季報
+    期限比一般公司晚（Q1/Q3 5/30、半年報 8/31）因此必然落在窗口外，但 converter
+    目前不支援金融業科目表（2025Q1~2026Q1 五季，raw 有 11~13 檔金控、DB 0 檔），
+    延窗口換不到 DB 資料；要補的正確順序是先讓 converter 支援，再一次性 backfill。
   - 透傳 `FORCE_REPROCESS` 給 scraper container
 
 - `schedules/xbrl_process_import.sh` _（手動觸發）_
@@ -63,6 +73,9 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 寫入 DB：`balance_sheet_xbrl` / `income_statement_xbrl` / `cash_flow_xbrl` / `xbrl_codebook` / `quarterly_reports_xbrl`
   - 前提：raw XBRL 已存在（由 `xbrl_scrape_daily.sh` 累積，或手動跑 fetch_xbrl.py）
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`；窗口外不再 silent skip，會 error 提示改傳 `YYYYQX`
+    - 這裡的窗口仍是原本較寬的 `02/01~03/31`、`04/01~05/15`、`07/01~08/15`、
+      `10/01~11/15`，刻意不跟著 scrape 收窄：scrape 的 T-30 是流量優化，而這支是
+      手動補資料用的，窗口收窄只會讓「4 月初想重跑 Q1 入庫」多打一次季別參數。
   - 用途：公告期末把累積的 raw 一次入庫；或補單季資料
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / importer container
 
