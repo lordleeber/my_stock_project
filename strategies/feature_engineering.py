@@ -15,6 +15,12 @@
   - step2_finalize_strategy.py  （fetch_* 特徵撈取，唯一的 fetch 呼叫端）
   - step3_analyze_feature_returns.py / step4_train_selection_model.py
     （只 import TECHNICAL_FEATURE_COLS / REVENUE_FEATURE_COLS 欄位常數）
+
+本模組不留沒有呼叫端的 fetch_*：這裡每支 fetch 都收 as_of_date，而 as-of 的防護
+（step2 的 assert_features_not_beyond_cutoff）只驗 step2 實際撈回的稽核欄，所以一支
+沒人叫的 fetch 等於一條沒有護欄的旁路，哪天被接上去就直接繞過檢查。
+fetch_institutional_flow_features / fetch_price_features 在 strategies_benchmark/
+（0d16ec9 移除）之後就沒有呼叫端，已一併刪除；需要時從 git 取回並補上稽核欄。
 """
 
 from __future__ import annotations
@@ -190,173 +196,6 @@ def fetch_technical_features(
     )
 
 
-# ── 法人買賣超特徵 ────────────────────────────────────────────────────────────
-
-INSTITUTIONAL_FLOW_COLS = [
-    "foreign_net_5d",
-    "trust_net_5d",
-    "smart_money_net_5d",
-]
-
-
-def fetch_institutional_flow_features(
-    symbols: list[str],
-    as_of_date: str,
-) -> pd.DataFrame:
-    """
-    計算 5 日法人淨買入比率（佔日均成交量的百分比）。
-
-    foreign_net_5d       = sum(foreign_net, 5d) / avg(volume, 5d)
-    trust_net_5d         = sum(trust_net, 5d) / avg(volume, 5d)
-    smart_money_net_5d   = (sum(foreign_net, 5d) + sum(trust_net, 5d)) / avg(volume, 5d)
-
-    回傳 DataFrame，欄位為 ['symbol'] + INSTITUTIONAL_FLOW_COLS。
-    """
-    if not symbols:
-        return pd.DataFrame(columns=["symbol"] + INSTITUTIONAL_FLOW_COLS)
-
-    # 撈取 as_of_date 當天或之前最近 5 個交易日的法人資料。
-    ii_stmt = text(
-        """
-        WITH ranked AS (
-            SELECT symbol, date, foreign_net, trust_net,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-            FROM institutional_investors
-            WHERE symbol IN :symbols
-              AND date <= :as_of_date
-        )
-        SELECT symbol, date, foreign_net, trust_net
-        FROM ranked WHERE rn <= 5
-        """
-    ).bindparams(bindparam("symbols", expanding=True))
-
-    # 從 daily_quotes 撈取最近 5 個交易日的成交量。
-    dq_stmt = text(
-        """
-        WITH ranked AS (
-            SELECT symbol, date, volume,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-            FROM daily_quotes
-            WHERE symbol IN :symbols
-              AND date <= :as_of_date
-              AND volume IS NOT NULL AND volume > 0
-        )
-        SELECT symbol, date, volume
-        FROM ranked WHERE rn <= 5
-        """
-    ).bindparams(bindparam("symbols", expanding=True))
-
-    engine = create_engine(get_db_url())
-    with engine.connect() as conn:
-        ii_df = pd.read_sql(
-            ii_stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
-        )
-        dq_df = pd.read_sql(
-            dq_stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
-        )
-
-    sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
-
-    if ii_df.empty or dq_df.empty:
-        for col in INSTITUTIONAL_FLOW_COLS:
-            sym_df[col] = np.nan
-        return sym_df
-
-    ii_df["symbol"] = ii_df["symbol"].astype(str).str.strip()
-    dq_df["symbol"] = dq_df["symbol"].astype(str).str.strip()
-    for col in ["foreign_net", "trust_net"]:
-        ii_df[col] = pd.to_numeric(ii_df[col], errors="coerce")
-    dq_df["volume"] = pd.to_numeric(dq_df["volume"], errors="coerce")
-
-    ii_agg = ii_df.groupby("symbol").agg(
-        foreign_net_sum=("foreign_net", "sum"),
-        trust_net_sum=("trust_net", "sum"),
-    )
-    dq_agg = dq_df.groupby("symbol").agg(avg_volume=("volume", "mean"))
-
-    agg = ii_agg.join(dq_agg, how="outer").reset_index()
-
-    def _flow_ratio(net_sum: pd.Series, avg_vol: pd.Series) -> pd.Series:
-        return (net_sum / avg_vol).where(avg_vol > 0)
-
-    agg["foreign_net_5d"] = _flow_ratio(agg["foreign_net_sum"], agg["avg_volume"])
-    agg["trust_net_5d"] = _flow_ratio(agg["trust_net_sum"], agg["avg_volume"])
-    agg["smart_money_net_5d"] = _flow_ratio(
-        agg["foreign_net_sum"] + agg["trust_net_sum"], agg["avg_volume"]
-    )
-
-    result = sym_df.merge(
-        agg[["symbol"] + INSTITUTIONAL_FLOW_COLS], on="symbol", how="left"
-    )
-    return result[["symbol"] + INSTITUTIONAL_FLOW_COLS].reset_index(drop=True)
-
-
-# ── 價格 / 波動率特徵 ─────────────────────────────────────────────────────────
-
-PRICE_FEATURE_COLS = [
-    "hist_vol_20d",
-]
-
-
-def fetch_price_features(
-    symbols: list[str],
-    as_of_date: str,
-) -> pd.DataFrame:
-    """
-    從收盤價計算 20 日年化歷史波動率。
-
-    hist_vol_20d = std(daily_log_return, 20d) * sqrt(252)
-
-    回傳 DataFrame，欄位為 ['symbol'] + PRICE_FEATURE_COLS。
-    """
-    if not symbols:
-        return pd.DataFrame(columns=["symbol"] + PRICE_FEATURE_COLS)
-
-    stmt = text(
-        """
-        WITH ranked AS (
-            SELECT symbol, date, close,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-            FROM daily_quotes
-            WHERE symbol IN :symbols
-              AND date <= :as_of_date
-              AND close IS NOT NULL AND close > 0
-        )
-        SELECT symbol, date, close
-        FROM ranked WHERE rn <= 21
-        """
-    ).bindparams(bindparam("symbols", expanding=True))
-
-    engine = create_engine(get_db_url())
-    with engine.connect() as conn:
-        df = pd.read_sql(
-            stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
-        )
-
-    sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
-
-    if df.empty:
-        sym_df["hist_vol_20d"] = np.nan
-        return sym_df
-
-    df["symbol"] = df["symbol"].astype(str).str.strip()
-    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
-    records = []
-    for sym, grp in df.groupby("symbol"):
-        grp = grp.sort_values("date").reset_index(drop=True)
-        closes = grp["close"].dropna().values
-        if len(closes) < 2:
-            records.append({"symbol": sym, "hist_vol_20d": np.nan})
-            continue
-        log_returns = np.diff(np.log(closes))
-        hist_vol = float(np.std(log_returns, ddof=1) * np.sqrt(252))
-        records.append({"symbol": sym, "hist_vol_20d": hist_vol})
-
-    result = sym_df.merge(pd.DataFrame(records), on="symbol", how="left")
-    return result[["symbol"] + PRICE_FEATURE_COLS].reset_index(drop=True)
-
-
 # ── 月營收特徵 ────────────────────────────────────────────────────────────────
 
 REVENUE_FEATURE_COLS = [
@@ -395,8 +234,13 @@ def fetch_revenue_features(
     DIAG_lookahead_rev0713.md。
 
     回傳 DataFrame，欄位為 ['symbol', 'rev_max_publish_time'] + REVENUE_FEATURE_COLS。
-    rev_max_publish_time 為該檔所有被使用列（rn 1–6）的 publish_time 上界
+    rev_max_publish_time 為該檔**所有撈回列**（rn 1–6）的 publish_time 上界
     （YYYYMMDD），供呼叫端驗證 as-of 沒有越過 cutoff，驗完即丟。
+
+    注意稽核欄涵蓋的是「撈回列」不是「餵進特徵的列」——特徵只讀 rn 1–3
+    （rn 1 / rn <= 3 / rn == 3），rn 4–6 撈了沒用。稽核欄仍取全部撈回列，因為
+    上界取愈寬只會愈保守（SQL 已用 publish_time <= as_of 過濾，不會偽陽性），
+    而且日後改動特徵公式的 rn 範圍時這一欄不必跟著改。
     缺少資料的股票，所有特徵欄位填 NaN。
     """
     if not symbols:
@@ -458,8 +302,9 @@ def fetch_revenue_features(
     for sym, grp in df.groupby("symbol"):
         grp = grp.sort_values("rn").reset_index(drop=True)
 
-        # 該檔所有被使用列的 publish_time 上界（str，YYYYMMDD 字典序 = 時間序），
-        # 供 step2 驗證 as-of 沒有越過 cutoff。
+        # 該檔所有撈回列的 publish_time 上界（str，YYYYMMDD 字典序 = 時間序），
+        # 供 step2 驗證 as-of 沒有越過 cutoff。刻意不限縮到實際餵進特徵的
+        # rn 1–3，理由見 docstring。
         max_publish = str(grp["publish_time"].max())
 
         r1 = grp[grp["rn"] == 1]
