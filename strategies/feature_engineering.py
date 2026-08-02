@@ -360,6 +360,17 @@ REVENUE_FEATURE_COLS = [
 ]
 
 
+def expected_revenue_month(as_of_date: str) -> str:
+    """as_of_date 當下「應該」已經公告的最新月營收月份 = 當月的前一個月。
+
+    台股月營收須於次月 10 日前申報，而 cutoff_date 落在當月 10 或 15 日，
+    所以正常情況下最新可得的就是前一個月。回傳格式 "YYYYMXX"。
+    """
+    year, month = int(as_of_date[:4]), int(as_of_date[5:7])
+    year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return f"{year}M{month:02d}"
+
+
 def fetch_revenue_features(
     symbols: list[str],
     as_of_date: str,  # "YYYY-MM-DD"，一律傳 cutoff_date
@@ -420,11 +431,28 @@ def fetch_revenue_features(
     for col in ["yoy_pct", "mom_pct", "cumulative_yoy_pct"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # 過期的股票一律填 NaN，不拿舊月份頂替。
+    #
+    # 若某檔到 cutoff 都還沒申報當期營收（遲報），rn=1 會是更早的月份。沿用它
+    # 等於讓 revenue_yoy_1m 這個欄位對不同股票量到不同月份，而模型分不出來——
+    # 2026-07 颱風那次，6727 亞泰金屬的 2026M06 遲至 07-13 才公告，回退到
+    # 2026M05 的 +54.10%，但實際的 2026M06 是 −23.89%，方向完全相反。
+    # 本模組對「完全沒有資料」的股票本來就填 NaN，過期理應比照辦理，
+    # 而且 NaN 是 LightGBM 原生支援的。
+    expected_month = expected_revenue_month(as_of_date)
+    stale_symbols: list[str] = []
+
     records = []
     for sym, grp in df.groupby("symbol"):
         grp = grp.sort_values("rn").reset_index(drop=True)
 
         r1 = grp[grp["rn"] == 1]
+        latest_month = str(r1["date"].iloc[0]) if len(r1) else ""
+        if latest_month < expected_month:
+            stale_symbols.append(sym)
+            records.append({"symbol": sym, **{c: np.nan for c in REVENUE_FEATURE_COLS}})
+            continue
+
         yoy_1m = (
             float(r1["yoy_pct"].iloc[0])
             if len(r1) and pd.notna(r1["yoy_pct"].iloc[0])
@@ -465,6 +493,12 @@ def fetch_revenue_features(
                 "revenue_yoy_3m_avg": yoy_3m_avg,
                 "revenue_yoy_accel": yoy_accel,
             }
+        )
+
+    if stale_symbols:
+        print(
+            f"revenue features: {len(stale_symbols)}/{len(symbols)} symbols stale "
+            f"(latest published month < {expected_month} as of {as_of_date}) -> NaN"
         )
 
     result = pd.DataFrame(records)
