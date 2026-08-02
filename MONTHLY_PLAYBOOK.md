@@ -57,7 +57,8 @@ venv/bin/python3 strategies/step2_finalize_strategy.py --date $DATE
 #   解法：加 --entry-date YYYY-MM-DD 明確指定下個交易日，跳過 DB 驗證。
 #   範例：venv/bin/python3 strategies/step2_finalize_strategy.py \
 #           --date 2026-05-16 --entry-date 2026-05-18
-#   技術/營收特徵仍以 <=entry_date 撈最新一筆（fallback 到 cutoff_date），內容一致。
+#   --entry-date 只影響 entry_date 欄位（進場日/報酬錨點）；技術與營收特徵一律以
+#   cutoff_date 為 as-of，與此參數無關。
 
 # ③ 重建 fwd_return ground truth（現在 PREV_DATE 的 exit_date 才能定義出來）
 venv/bin/python3 strategies/step3_analyze_feature_returns.py
@@ -124,7 +125,7 @@ step5(M)    walk-forward 自動挑到剛訓好的 train_through=M-1 模型
 | 階段 | 產出 |
 |---|---|
 | ① train_eps | `models_eps/<YYYY-MM-DD>/predictions_results.csv`（每檔 EPS delta 預測；目錄即 playbook run date） |
-| ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`、`trade_candidates.csv` |
+| ② strategies step1+2 | `strategies/output/<DATE>/dataset_strategy.csv`（step5 的輸入）、`trade_candidates.csv`（診斷用，生產流程不讀） |
 | ③ step3 | `strategies/output/feature_return_analysis.csv`（含到 PREV_DATE 的 fwd_return） |
 | ④ step4 | `models_selection/<PREV_DATE>/selection_model.pkl` + `feature_importance.csv` + `latest.json` |
 | ⑤ step5 | `models_selection/<DATE>/candidates_scored.csv`（**最終選股名單**） |
@@ -238,7 +239,7 @@ A: 沒差。所有指令都是 idempotent + PIT，過幾天再補跑會得到完
    venv/bin/python3 strategies/step2_finalize_strategy.py \
      --date 2026-05-16 --entry-date 2026-05-18
    ```
-   step2 跳過 DB 驗證、技術/營收特徵自動 fallback 到 `<=entry_date` 的最新一筆（= cutoff_date 那筆），內容與等到報價匯入後再跑完全相同。**但要自己負責確認 `entry_date` 真的是下個交易日**（別填到週六/週日/國定假日）。
+   step2 跳過 DB 驗證。技術/營收特徵以 `cutoff_date` 為 as-of，不受這個參數影響，所以無論何時跑內容都一樣。**但要自己負責確認 `entry_date` 真的是下個交易日**（別填到週六/週日/國定假日），因為它是進場價與 `fwd_return` 的錨點。
 
 ### Q6: 用了 `--entry-date` 之後，backtester 還能跑這個月嗎？
 不能跑完整 rotation：backtester 的 `auto-detect` 規則要求 `daily_quotes` 必須有 entry_date 之後的列，2026-05-16 在 DB 補上 2026-05-18 之前會被自動跳過。如果強制 `--end-date 2026-05-16`，可以結算上個月的 cohort（PnL 已實現），但本月 cohort 會全部 `entries_failed_no_quote`、無法建倉。完整 rotation 仍需等今天 daily pipeline 完成。

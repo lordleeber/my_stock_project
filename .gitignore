@@ -235,3 +235,6 @@ logs/train_eps_full_summary.txt
 # Claude Code per-machine local settings (personal permission grants / hooks).
 # Shared team settings belong in .claude/settings.json instead.
 .claude/settings.local.json
+
+# 一次性重建前的備份（models_selection / strategies output 快照）。
+backup_pre_*/

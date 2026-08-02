@@ -4,6 +4,13 @@
 依指定基準日，從 technical_indicators 撈取預計算的技術指標，
 並從 monthly_revenue 撈取月營收特徵。
 
+⚠️ **本模組所有 `as_of_date` 參數一律傳 `cutoff_date`，不可傳 `entry_date`。**
+每支函式的語意都是「取 <= as_of_date 的最新一筆」。傳 entry_date 在正式執行時
+看似無害（那天還沒到、DB 沒資料，自動退回 cutoff），但那個 PIT 保證來自牆上
+時鐘而非程式碼：歷史重跑時 DB 早已涵蓋 entry_date，同一段程式就會取到決策當下
+拿不到的資料。詳見 strategies/CLAUDE.md「Feature as-of is cutoff_date」。
+新增函式請沿用這個契約。
+
 被以下腳本使用：
   - step3_analyze_feature_returns.py  （訓練資料生成）
   - step5_score_and_publish.py        （生產選股評分）
@@ -78,16 +85,19 @@ TECHNICAL_FEATURE_COLS = [
 
 def fetch_technical_features(
     symbols: list[str],
-    ref_date: str,
+    as_of_date: str,
     close_series: "pd.Series | None" = None,
     volume_series: "pd.Series | None" = None,
 ) -> pd.DataFrame:
     """
-    從資料庫撈取 ref_date 當天或之前的最新技術指標，並計算衍生比值特徵。
+    從資料庫撈取 as_of_date 當天或之前的最新技術指標，並計算衍生比值特徵。
 
     參數：
         symbols:       股票代碼列表。
-        ref_date:      基準日（entry_date），使用 <= 此日期的最新一筆。
+        as_of_date:      PIT 基準日，使用 <= 此日期的最新一筆。
+                       **必須傳 cutoff_date，不可傳 entry_date。** entry_date 在
+                       正式執行時尚未發生，DB 沒資料所以看似無害；歷史重跑時
+                       DB 早已涵蓋該日，同一段程式就會取到決策當下拿不到的列。
         close_series:  Optional Series（index=symbol），用於計算比值的收盤價。
                        若為 None，以 bb_middle 作為 bb_position 的代理收盤價。
         volume_series: Optional Series（index=symbol），用於 vol_vs_vma 比值計算。
@@ -106,7 +116,7 @@ def fetch_technical_features(
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM technical_indicators
             WHERE symbol IN :symbols
-              AND date <= :ref_date
+              AND date <= :as_of_date
         )
         SELECT symbol, date, {col_list}
         FROM latest
@@ -116,11 +126,13 @@ def fetch_technical_features(
 
     engine = create_engine(get_db_url())
     with engine.connect() as conn:
-        ti = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
+        ti = pd.read_sql(
+            stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
+        )
 
     if ti.empty:
         raise RuntimeError(
-            f"technical_indicators 在 ref_date={ref_date} 沒有任何 symbol 的資料 — "
+            f"technical_indicators 在 as_of_date={as_of_date} 沒有任何 symbol 的資料 — "
             f"傳入 {len(symbols)} 個 symbols 全部無 PIT 技術指標。"
             "通常代表 DB 未匯入該日期或 calculator 未跑完，請補資料再執行。"
         )
@@ -181,7 +193,7 @@ INSTITUTIONAL_FLOW_COLS = [
 
 def fetch_institutional_flow_features(
     symbols: list[str],
-    ref_date: str,
+    as_of_date: str,
 ) -> pd.DataFrame:
     """
     計算 5 日法人淨買入比率（佔日均成交量的百分比）。
@@ -195,7 +207,7 @@ def fetch_institutional_flow_features(
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + INSTITUTIONAL_FLOW_COLS)
 
-    # 撈取 ref_date 當天或之前最近 5 個交易日的法人資料。
+    # 撈取 as_of_date 當天或之前最近 5 個交易日的法人資料。
     ii_stmt = text(
         """
         WITH ranked AS (
@@ -203,7 +215,7 @@ def fetch_institutional_flow_features(
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM institutional_investors
             WHERE symbol IN :symbols
-              AND date <= :ref_date
+              AND date <= :as_of_date
         )
         SELECT symbol, date, foreign_net, trust_net
         FROM ranked WHERE rn <= 5
@@ -218,7 +230,7 @@ def fetch_institutional_flow_features(
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM daily_quotes
             WHERE symbol IN :symbols
-              AND date <= :ref_date
+              AND date <= :as_of_date
               AND volume IS NOT NULL AND volume > 0
         )
         SELECT symbol, date, volume
@@ -229,10 +241,10 @@ def fetch_institutional_flow_features(
     engine = create_engine(get_db_url())
     with engine.connect() as conn:
         ii_df = pd.read_sql(
-            ii_stmt, conn, params={"symbols": symbols, "ref_date": ref_date}
+            ii_stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
         )
         dq_df = pd.read_sql(
-            dq_stmt, conn, params={"symbols": symbols, "ref_date": ref_date}
+            dq_stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
         )
 
     sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
@@ -280,7 +292,7 @@ PRICE_FEATURE_COLS = [
 
 def fetch_price_features(
     symbols: list[str],
-    ref_date: str,
+    as_of_date: str,
 ) -> pd.DataFrame:
     """
     從收盤價計算 20 日年化歷史波動率。
@@ -299,7 +311,7 @@ def fetch_price_features(
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM daily_quotes
             WHERE symbol IN :symbols
-              AND date <= :ref_date
+              AND date <= :as_of_date
               AND close IS NOT NULL AND close > 0
         )
         SELECT symbol, date, close
@@ -309,7 +321,9 @@ def fetch_price_features(
 
     engine = create_engine(get_db_url())
     with engine.connect() as conn:
-        df = pd.read_sql(stmt, conn, params={"symbols": symbols, "ref_date": ref_date})
+        df = pd.read_sql(
+            stmt, conn, params={"symbols": symbols, "as_of_date": as_of_date}
+        )
 
     sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
 
@@ -346,16 +360,31 @@ REVENUE_FEATURE_COLS = [
 ]
 
 
+def expected_revenue_month(as_of_date: str) -> str:
+    """as_of_date 當下「應該」已經公告的最新月營收月份 = 當月的前一個月。
+
+    台股月營收須於次月 10 日前申報，而 cutoff_date 落在當月 10 或 15 日，
+    所以正常情況下最新可得的就是前一個月。回傳格式 "YYYYMXX"。
+    """
+    year, month = int(as_of_date[:4]), int(as_of_date[5:7])
+    year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return f"{year}M{month:02d}"
+
+
 def fetch_revenue_features(
     symbols: list[str],
-    ref_date: str,  # "YYYY-MM-DD" (entry_date)
+    as_of_date: str,  # "YYYY-MM-DD"，一律傳 cutoff_date
 ) -> pd.DataFrame:
     """
-    僅使用 ref_date 當天或之前已發布的資料，撈取月營收特徵。
+    僅使用 as_of_date 當天或之前已發布的資料，撈取月營收特徵。
 
-    PIT 安全：以 publish_time <= ref_date_compact (YYYYMMDD) 過濾 monthly_revenue。
-    對於 entry_date 約在 M/11 的月份 M，可取得 M/10 前已發布的營收資料，
-    即涵蓋 M-1 月的資料（於 M 月 10 日前發布）。
+    PIT 安全：以 publish_time <= as_of_compact (YYYYMMDD) 過濾 monthly_revenue。
+    cutoff_date 落在 M/10 或 M/15，可取得該日前已發布的營收，即涵蓋 M-1 月。
+
+    **必須傳 cutoff_date，不可傳 entry_date。** 傳 entry_date 會把公告日之後才
+    申報的營收放進來——2026-07 颱風延後申報那次，1838 筆 2026M06 有 192 筆落在
+    cutoff 之後，決策當下拿不到。見 models_selection/2026-07-11/
+    DIAG_lookahead_rev0713.md。
 
     回傳 DataFrame，欄位為 ['symbol'] + REVENUE_FEATURE_COLS。
     缺少資料的股票，所有特徵欄位填 NaN。
@@ -363,7 +392,7 @@ def fetch_revenue_features(
     if not symbols:
         return pd.DataFrame(columns=["symbol"] + REVENUE_FEATURE_COLS)
 
-    ref_compact = ref_date.replace("-", "")  # "YYYYMMDD"
+    as_of_compact = as_of_date.replace("-", "")  # "YYYYMMDD"
 
     # 每個股票撈取最近 6 個月，以 publish_time 做 PIT 過濾。
     # monthly_revenue.date 格式為 "YYYYMXX"（如 "2025M09"），字母排序即為時間順序。
@@ -375,7 +404,7 @@ def fetch_revenue_features(
             FROM monthly_revenue
             WHERE symbol IN :symbols
               AND publish_time IS NOT NULL
-              AND publish_time <= :ref_compact
+              AND publish_time <= :as_of_compact
         )
         SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, rn
         FROM rev
@@ -386,14 +415,14 @@ def fetch_revenue_features(
     engine = create_engine(get_db_url())
     with engine.connect() as conn:
         df = pd.read_sql(
-            stmt, conn, params={"symbols": symbols, "ref_compact": ref_compact}
+            stmt, conn, params={"symbols": symbols, "as_of_compact": as_of_compact}
         )
 
     sym_df = pd.DataFrame({"symbol": [str(s) for s in symbols]})
 
     if df.empty:
         raise RuntimeError(
-            f"monthly_revenue 在 publish_time <= {ref_compact} 沒有任何資料 — "
+            f"monthly_revenue 在 publish_time <= {as_of_compact} 沒有任何資料 — "
             f"傳入 {len(symbols)} 個 symbols 全部無已發布月營收。"
             "通常代表 DB 未匯入或 publish_time 欄位為空，請補資料再執行。"
         )
@@ -402,11 +431,28 @@ def fetch_revenue_features(
     for col in ["yoy_pct", "mom_pct", "cumulative_yoy_pct"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # 過期的股票一律填 NaN，不拿舊月份頂替。
+    #
+    # 若某檔到 cutoff 都還沒申報當期營收（遲報），rn=1 會是更早的月份。沿用它
+    # 等於讓 revenue_yoy_1m 這個欄位對不同股票量到不同月份，而模型分不出來——
+    # 2026-07 颱風那次，6727 亞泰金屬的 2026M06 遲至 07-13 才公告，回退到
+    # 2026M05 的 +54.10%，但實際的 2026M06 是 −23.89%，方向完全相反。
+    # 本模組對「完全沒有資料」的股票本來就填 NaN，過期理應比照辦理，
+    # 而且 NaN 是 LightGBM 原生支援的。
+    expected_month = expected_revenue_month(as_of_date)
+    stale_symbols: list[str] = []
+
     records = []
     for sym, grp in df.groupby("symbol"):
         grp = grp.sort_values("rn").reset_index(drop=True)
 
         r1 = grp[grp["rn"] == 1]
+        latest_month = str(r1["date"].iloc[0]) if len(r1) else ""
+        if latest_month < expected_month:
+            stale_symbols.append(sym)
+            records.append({"symbol": sym, **{c: np.nan for c in REVENUE_FEATURE_COLS}})
+            continue
+
         yoy_1m = (
             float(r1["yoy_pct"].iloc[0])
             if len(r1) and pd.notna(r1["yoy_pct"].iloc[0])
@@ -447,6 +493,12 @@ def fetch_revenue_features(
                 "revenue_yoy_3m_avg": yoy_3m_avg,
                 "revenue_yoy_accel": yoy_accel,
             }
+        )
+
+    if stale_symbols:
+        print(
+            f"revenue features: {len(stale_symbols)}/{len(symbols)} symbols stale "
+            f"(latest published month < {expected_month} as of {as_of_date}) -> NaN"
         )
 
     result = pd.DataFrame(records)

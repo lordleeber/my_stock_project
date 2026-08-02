@@ -83,7 +83,7 @@ All CLI args use `--date YYYY-MM-DD`（playbook_date，cutoff +1）；省略則�
 | Step | Script | Output |
 |---|---|---|
 | 1 | `step1_prepare_data.py --date D` | `output/<D>/dataset_strategy.csv` (~38 cols, after ttm/volume filter) |
-| 2 | `step2_finalize_strategy.py --date D` | enrich `dataset_strategy.csv` with technical/revenue/EPS-prediction features (~69 cols); write `trade_candidates.csv` |
+| 2 | `step2_finalize_strategy.py --date D` | enrich `dataset_strategy.csv` with technical/revenue/EPS-prediction features (~69 cols); write `trade_candidates.csv`（診斷用，不在生產路徑上——見 [Step2 Adds](#step2-adds)） |
 | 3 | `step3_analyze_feature_returns.py` | `feature_return_analysis.csv` (fwd_return ground truth)，掃描所有 `output/<D>/` |
 | 4 | `step4_train_selection_model.py --date D` | `models_selection/<D>/selection_model.pkl` + feature_importance + latest.json（`D` = train_through_playbook_date） |
 | 5 | `step5_score_and_publish.py --date D` | `models_selection/<D>/candidates_scored.csv` (final picks by `ml_rank`，`D` = target_playbook_date) |
@@ -144,11 +144,24 @@ Hard filter values are constants in `step1_prepare_data.py` near the top — cha
   - `base_eps_growth_pct = 100 × (anchor_eps − ttm_rolloff_eps) / ttm_eps`（純會計，含去年同季 base effect）
   - `ml_eps_delta_pct    = 100 × pred_lgb_delta / ttm_eps`（純 train_eps model 訊號）
   - `eps_growth_total_pct = base + ml`（= 舊版 `pred_upside_pct`，smoothed 主訊號）
+    - **語意：下一季財報公布後，TTM EPS 預期變動幾 %。** TTM 視窗每季往前滾一格，進來一季新的、踢掉一季舊的；本欄 = `(預測的新進季 − 被踢掉的季) / 現在的 TTM`。所以 **`<= 0` 代表預期滾動四季 EPS 會縮水或持平**。
+    - 例（2026-07 cohort，踢掉 2025Q2）：6187 萬潤 TTM 15.26，出去 4.16、進來 3.37+0.507=3.88 → 新 TTM ≈ 14.98 → **−1.86%**。
+    - ⚠️ **低基期陷阱**：`ttm_rolloff_eps` 為負（去年同季虧損）時，移除一個負數會機械式拉高 `base`。例：2344 華邦電踢掉的 2025Q2 是 −0.29，`base` 因此衝到 +75%，但那不等於本業動能。audit 結論是 58 個 cohort 中 `base` 解釋約 85% 的排序變異——這正是當初把單一 `pred_upside_pct` 拆成 base / ml 兩欄的原因。
   - 其中 `ttm_rolloff_eps` 是該 playbook 月份 TTM 視窗即將踢出去的那季 EPS，月份對應與 step1 `compute_ttm_eps_by_month` 一致：02-04→`ly_q1_eps`、05-07→`ly_q2_eps`、08-10→`ly_q3_eps`、11-01→`ly_q4_eps`
   - 為什麼留三欄？base 跟 ml 算術上 Spearman ≈ −0.5（高 base 通常伴隨負 ml — ML 對極端 anchor 預測 mean reversion），LightGBM 學「兩特徵相加」靠 tree splits 拼湊效率較差。實測 (audit) 拿掉 `total` 只留 base+ml 時 backtest 4 年 PnL 從 +3.82M 掉到 +3.24M (−15%)；補回 `total` 後 PnL 恢復 +3.82M、win_rate 微升、median return 從 5.10% 升到 5.69%，且 `ml_eps_delta_pct` 仍以獨立 feature 進入 top 7 = ML 訊號真的有額外可歸因價值。
 - `entry_date` = the cutoff_date's next trading day
 
 `trade_candidates.csv` filters `dataset_strategy.csv` by `eps_growth_total_pct > 0`（與舊版 `pred_upside_pct > 0` 數學等價）和 sorts by `eps_growth_total_pct` desc；同時暴露 `base_eps_growth_pct` / `ml_eps_delta_pct` 兩欄方便歸因 picks 是 base-driven 還是 ML-driven。
+
+> ### ⚠️ `trade_candidates.csv` 不在生產路徑上，那道 `> 0` 過濾沒有生效
+>
+> `run_rolling.py` 讀的是 `models_selection/<D>/candidates_scored.csv`（`run_rolling.py:145`、`:291`），**從不讀 `trade_candidates.csv`**。目前只有 `compare_versions.py`（版本比對診斷）與 `step2_batch` 的 `--skip-existing` 存在性檢查會用到它。
+>
+> 因此 `eps_growth_total_pct > 0` 這道濾網**不會影響選股**：step5 讀的是未過濾的 `dataset_strategy.csv`，全部候選一律打分，`candidates_scored.csv` 的列數等於候選池大小。
+>
+> 實測（2026-08 重建後全 49 個 cohort）：top-25 合計 1,225 個標的，其中 **71 個（5.8%）`eps_growth_total_pct <= 0`**，分布在 32/49 個 cohort，單月最多 5 檔。也就是說 ranker 確實會把「預期滾動 EPS 衰退」的股票排進前 25，而且一直如此。
+>
+> 這是設計問題不是 bug：ranker 有 51 個特徵，EPS 成長只是其中之一。要不要把 `> 0` 搬進 step5 變成硬性門檻，需要重跑對照才能判斷好壞。在做出決定之前，**不要以為那道濾網有在保護選股**。
 
 ### `--entry-date` Override (step2)
 
@@ -160,7 +173,22 @@ venv/bin/python3 strategies/step2_finalize_strategy.py \
   --date 2026-05-16 --entry-date 2026-05-18
 ```
 
-When supplied, step2 skips the DB check and stamps the given date into the `entry_date` column. Technical and revenue features use `WHERE date <= ref_date` so they automatically fall back to the latest available data (= the `cutoff_date` row) — feature contents are identical to running after DB catches up. **Caller is responsible** for ensuring the override is a real trading day (no weekend / holiday).
+When supplied, step2 skips the DB check and stamps the given date into the `entry_date` column. It does **not** affect features: technical and revenue features are fetched `WHERE date <= cutoff_date`, so their content is the same whenever you run. **Caller is responsible** for ensuring the override is a real trading day (no weekend / holiday) — `entry_date` is the entry price and `fwd_return` anchor.
+
+### ⚠️ Feature as-of is `cutoff_date` — never `entry_date`
+
+`fetch_technical_features` / `fetch_revenue_features` take an `as_of_date` and return the latest row `<= as_of_date`. **It must be `cutoff_date`.**
+
+Passing `entry_date` looks harmless in a live run: `entry_date` is in the future, the DB physically has no rows for it, so the query falls back to the `cutoff_date` row anyway. But that PIT guarantee comes from the wall clock, not the code. Re-run the same cohort later — a batch rebuild, a restore, a backtest refresh — and the DB now covers `entry_date`, so the very same code silently picks up data that was not knowable at decision time.
+
+This was live until 2026-08. Effects measured on the 2026-07-11 cohort:
+
+- **26 of the selection model's 51 features** shift (21 technical/chip + 5 revenue).
+- 2344's `ma5` moves from 07-09's `177.3` to 07-13's `173.8`; 355–359 of 359 names change.
+- `close_vs_ma*` mixed two dates in one ratio — `close` came from step1 (`quote_date`) while the MA came from `entry_date`, producing a value matching no real market state.
+- 48 of 49 stored cohorts had been rebuilt in batch on 2026-07-11, so **the training set carried entry-date features while live inference carried cutoff-date features** — a systematic train/serve skew.
+
+`step2` calls `assert_features_not_beyond_cutoff()` before writing, which fails the run if the technical snapshot date is not the step1 `quote_date`. Do not weaken that check.
 
 See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scenario.
 
