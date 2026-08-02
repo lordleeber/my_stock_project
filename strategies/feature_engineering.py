@@ -12,8 +12,9 @@
 新增函式請沿用這個契約。
 
 被以下腳本使用：
-  - step3_analyze_feature_returns.py  （訓練資料生成）
-  - step5_score_and_publish.py        （生產選股評分）
+  - step2_finalize_strategy.py  （fetch_* 特徵撈取，唯一的 fetch 呼叫端）
+  - step3_analyze_feature_returns.py / step4_train_selection_model.py
+    （只 import TECHNICAL_FEATURE_COLS / REVENUE_FEATURE_COLS 欄位常數）
 """
 
 from __future__ import annotations
@@ -103,10 +104,14 @@ def fetch_technical_features(
         volume_series: Optional Series（index=symbol），用於 vol_vs_vma 比值計算。
 
     回傳：
-        DataFrame，欄位為 ['symbol'] + TECHNICAL_FEATURE_COLS。
+        DataFrame，欄位為 ['symbol', 'tech_snapshot_date'] + TECHNICAL_FEATURE_COLS。
+        tech_snapshot_date 為每檔實際取到的快照日，供呼叫端驗證 as-of 沒有越過
+        cutoff（見 step2 的 assert_features_not_beyond_cutoff），驗完即丟。
     """
     if not symbols:
-        return pd.DataFrame(columns=["symbol"] + TECHNICAL_FEATURE_COLS)
+        return pd.DataFrame(
+            columns=["symbol", "tech_snapshot_date"] + TECHNICAL_FEATURE_COLS
+        )
 
     col_list = ", ".join(_TI_COLS)
     stmt = text(
@@ -179,7 +184,10 @@ def fetch_technical_features(
             f"fetch_technical_features 內部 bug：未建立欄位 {missing_cols}"
         )
 
-    return ti[["symbol"] + TECHNICAL_FEATURE_COLS].reset_index(drop=True)
+    ti = ti.rename(columns={"date": "tech_snapshot_date"})
+    return ti[["symbol", "tech_snapshot_date"] + TECHNICAL_FEATURE_COLS].reset_index(
+        drop=True
+    )
 
 
 # ── 法人買賣超特徵 ────────────────────────────────────────────────────────────
@@ -386,11 +394,15 @@ def fetch_revenue_features(
     cutoff 之後，決策當下拿不到。見 models_selection/2026-07-11/
     DIAG_lookahead_rev0713.md。
 
-    回傳 DataFrame，欄位為 ['symbol'] + REVENUE_FEATURE_COLS。
+    回傳 DataFrame，欄位為 ['symbol', 'rev_max_publish_time'] + REVENUE_FEATURE_COLS。
+    rev_max_publish_time 為該檔所有被使用列（rn 1–6）的 publish_time 上界
+    （YYYYMMDD），供呼叫端驗證 as-of 沒有越過 cutoff，驗完即丟。
     缺少資料的股票，所有特徵欄位填 NaN。
     """
     if not symbols:
-        return pd.DataFrame(columns=["symbol"] + REVENUE_FEATURE_COLS)
+        return pd.DataFrame(
+            columns=["symbol", "rev_max_publish_time"] + REVENUE_FEATURE_COLS
+        )
 
     as_of_compact = as_of_date.replace("-", "")  # "YYYYMMDD"
 
@@ -399,14 +411,14 @@ def fetch_revenue_features(
     stmt = text(
         """
         WITH rev AS (
-            SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct,
+            SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, publish_time,
                    ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
             FROM monthly_revenue
             WHERE symbol IN :symbols
               AND publish_time IS NOT NULL
               AND publish_time <= :as_of_compact
         )
-        SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, rn
+        SELECT symbol, date, yoy_pct, mom_pct, cumulative_yoy_pct, publish_time, rn
         FROM rev
         WHERE rn <= 6
         """
@@ -446,11 +458,21 @@ def fetch_revenue_features(
     for sym, grp in df.groupby("symbol"):
         grp = grp.sort_values("rn").reset_index(drop=True)
 
+        # 該檔所有被使用列的 publish_time 上界（str，YYYYMMDD 字典序 = 時間序），
+        # 供 step2 驗證 as-of 沒有越過 cutoff。
+        max_publish = str(grp["publish_time"].max())
+
         r1 = grp[grp["rn"] == 1]
         latest_month = str(r1["date"].iloc[0]) if len(r1) else ""
         if latest_month < expected_month:
             stale_symbols.append(sym)
-            records.append({"symbol": sym, **{c: np.nan for c in REVENUE_FEATURE_COLS}})
+            records.append(
+                {
+                    "symbol": sym,
+                    "rev_max_publish_time": max_publish,
+                    **{c: np.nan for c in REVENUE_FEATURE_COLS},
+                }
+            )
             continue
 
         yoy_1m = (
@@ -487,6 +509,7 @@ def fetch_revenue_features(
         records.append(
             {
                 "symbol": sym,
+                "rev_max_publish_time": max_publish,
                 "revenue_yoy_1m": yoy_1m,
                 "revenue_mom_1m": mom_1m,
                 "revenue_cum_yoy": cum_yoy,
@@ -507,4 +530,6 @@ def fetch_revenue_features(
         if col not in result.columns:
             result[col] = np.nan
 
-    return result[["symbol"] + REVENUE_FEATURE_COLS].reset_index(drop=True)
+    return result[
+        ["symbol", "rev_max_publish_time"] + REVENUE_FEATURE_COLS
+    ].reset_index(drop=True)

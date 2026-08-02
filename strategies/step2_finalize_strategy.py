@@ -91,27 +91,50 @@ def resolve_entry_date(engine, earliest: date) -> str:
     return str(row[0])
 
 
-def assert_features_not_beyond_cutoff(engine, df: pd.DataFrame, cutoff_date: str):
-    """確認特徵快照沒有越過 cutoff——這是 look-ahead 的回歸防護。
+def assert_features_not_beyond_cutoff(
+    tech: pd.DataFrame,
+    rev: pd.DataFrame,
+    quote_dates: set[str],
+    cutoff_date: str,
+) -> None:
+    """以實際撈回的列驗證特徵 as-of 沒有越過 cutoff——look-ahead 的回歸防護。
 
-    step1 的 `quote_date` 定義是 `MAX(date) <= cutoff_date`，技術指標的 as-of
-    語意相同，兩者必須落在同一天。若哪天有人把 as-of 改回 entry_date，快照日
-    就會往後跑，這裡當場 raise，而不是安靜地讓整批 cohort 帶著先見之明。
+    斷言的輸入是 fetch_* 回傳的稽核欄（tech_snapshot_date / rev_max_publish_time），
+    不是另發查詢：檢驗的必須是「撈回來的資料本身」，若哪天有人把 as-of 改回
+    entry_date，歷史重跑一取到 cutoff 之後的列就當場 raise，而不是安靜地讓
+    整批 cohort 帶著先見之明。（live run 時 entry_date 尚無資料、fetch 會退回
+    cutoff 列，本檢查不會誤報；它引爆在第一次歷史重跑——損害發生的那一刻。）
+
+    同時交叉比對 step1 的 `quote_date`（定義 = daily_quotes MAX(date) <= cutoff，
+    與技術指標 as-of 語意相同）：兩者不一致代表 step1 產出後 DB 又匯入了新資料。
     """
-    stmt = text("SELECT MAX(date) FROM technical_indicators WHERE date <= :d")
-    with engine.connect() as conn:
-        snapshot = conn.execute(stmt, {"d": cutoff_date}).scalar()
-    quote_dates = set(df["quote_date"].dropna().astype(str))
-    if snapshot is None or not quote_dates:
+    tech_max = tech["tech_snapshot_date"].dropna().astype(str).max()
+    if not isinstance(tech_max, str) or not quote_dates:
         raise SystemExit(
-            f"[FAIL] 無法驗證特徵 as-of：technical_indicators <= {cutoff_date} 無資料"
+            f"[FAIL] 無法驗證特徵 as-of：技術特徵快照日或 step1 quote_date 為空"
+            f"（cutoff={cutoff_date}）"
         )
-    if str(snapshot) > cutoff_date or str(snapshot) not in quote_dates:
+    if tech_max > cutoff_date:
         raise SystemExit(
-            f"[FAIL] 特徵快照 {snapshot} 與 step1 的 quote_date {sorted(quote_dates)} "
-            f"不一致（cutoff={cutoff_date}）——特徵可能取到 cutoff 之後的資料。"
+            f"[FAIL] 技術特徵快照 {tech_max} 越過 cutoff {cutoff_date}——"
+            "fetch 的 as-of 是不是被改回 entry_date 了？"
         )
-    print(f"feature as-of check: snapshot={snapshot} <= cutoff={cutoff_date} ✓")
+    if tech_max not in quote_dates:
+        raise SystemExit(
+            f"[FAIL] 技術特徵快照 {tech_max} 與 step1 quote_date {sorted(quote_dates)} "
+            "不一致——step1 產出後 DB 可能又匯入了新資料，請重跑 step1。"
+        )
+    cutoff_compact = cutoff_date.replace("-", "")
+    rev_max = rev["rev_max_publish_time"].dropna().astype(str).max()
+    if isinstance(rev_max, str) and rev_max > cutoff_compact:
+        raise SystemExit(
+            f"[FAIL] 營收 publish_time {rev_max} 越過 cutoff {cutoff_compact}——"
+            "決策當下拿不到的申報被放進特徵了。"
+        )
+    print(
+        f"feature as-of check: tech={tech_max}, rev_publish<={rev_max}, "
+        f"cutoff={cutoff_date} ✓"
+    )
 
 
 def compute_eps_growth_components(df: pd.DataFrame, month: str) -> pd.DataFrame:
@@ -246,6 +269,18 @@ def main() -> None:
     tech = fetch_technical_features(
         symbols, cutoff_date, close_series=close_s, volume_series=volume_s
     )
+    # 月營收特徵同樣以 cutoff_date 為 as-of（publish_time <= cutoff）。
+    # 用 entry_date 會放進公告日之後才申報的營收——2026-07 颱風那次就有 192 筆
+    # 2026M06 落在 cutoff 之後,決策當下拿不到。見 models_selection/2026-07-11/
+    # DIAG_lookahead_rev0713.md。
+    rev = fetch_revenue_features(symbols, cutoff_date)
+
+    # 以實際撈回的列驗證 as-of；稽核欄驗完即丟，CSV schema 不變。
+    quote_dates = set(df["quote_date"].dropna().astype(str))
+    assert_features_not_beyond_cutoff(tech, rev, quote_dates, cutoff_date)
+    tech = tech.drop(columns=["tech_snapshot_date"])
+    rev = rev.drop(columns=["rev_max_publish_time"])
+
     # 刪除 df 中已存在的技術指標欄位，避免重複。
     existing_tech = [c for c in TECHNICAL_FEATURE_COLS if c in df.columns]
     if existing_tech:
@@ -253,11 +288,6 @@ def main() -> None:
     df = df.merge(tech, on="symbol", how="left")
     print(f"Technical features added: {len(TECHNICAL_FEATURE_COLS)} cols")
 
-    # 月營收特徵同樣以 cutoff_date 為 as-of（publish_time <= cutoff）。
-    # 用 entry_date 會放進公告日之後才申報的營收——2026-07 颱風那次就有 192 筆
-    # 2026M06 落在 cutoff 之後,決策當下拿不到。見 models_selection/2026-07-11/
-    # DIAG_lookahead_rev0713.md。
-    rev = fetch_revenue_features(symbols, cutoff_date)
     existing_rev = [c for c in REVENUE_FEATURE_COLS if c in df.columns]
     if existing_rev:
         df = df.drop(columns=existing_rev)
@@ -269,8 +299,6 @@ def main() -> None:
 
     # close / ttm_eps / volume_lots 由 step1 emit 為 canonical 欄位，
     # step2 不再加同義別名（避免兩個入口同一份資料）。
-
-    assert_features_not_beyond_cutoff(engine, df, cutoff_date)
 
     # 寫入更新後的 dataset_strategy.csv。
     df.to_csv(strategy_path, index=False, encoding="utf-8-sig")

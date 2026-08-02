@@ -188,7 +188,7 @@ This was live until 2026-08. Effects measured on the 2026-07-11 cohort:
 - `close_vs_ma*` mixed two dates in one ratio — `close` came from step1 (`quote_date`) while the MA came from `entry_date`, producing a value matching no real market state.
 - 48 of 49 stored cohorts had been rebuilt in batch on 2026-07-11, so **the training set carried entry-date features while live inference carried cutoff-date features** — a systematic train/serve skew.
 
-`step2` calls `assert_features_not_beyond_cutoff()` before writing, which fails the run if the technical snapshot date is not the step1 `quote_date`. Do not weaken that check.
+`step2` calls `assert_features_not_beyond_cutoff()` on the **actually fetched rows**: `fetch_technical_features` / `fetch_revenue_features` return audit columns (`tech_snapshot_date` / `rev_max_publish_time`, dropped after the check), and the run fails if the technical snapshot exceeds `cutoff_date` or differs from step1's `quote_date`, or if any revenue row's `publish_time` exceeds cutoff. Point the as-of back at `entry_date` and the first historical rebuild fails loudly. (A live run with the same regression passes — at that moment the DB genuinely has no post-cutoff rows, so there is nothing wrong to detect; the guard fires the first time damage would actually occur.) Do not weaken that check, and do not replace its inputs with independent DB queries — asserting on anything other than the fetched rows is how the previous version of this guard ended up vacuous.
 
 See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scenario.
 
