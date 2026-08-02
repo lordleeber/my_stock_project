@@ -51,11 +51,14 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 用途：公告期內每天累積 raw XBRL；**不入庫**
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`
   - 規則（不傳參數時，用今天日期判斷）：
-    - `02/01~03/31`：抓「前一年 Q4」
-    - `04/01~05/15`：抓「同年 Q1」
-    - `07/01~08/15`：抓「同年 Q2」
-    - `10/01~11/15`：抓「同年 Q3」
+    - `03/01~03/31`：抓「前一年 Q4」
+    - `04/15~05/15`：抓「同年 Q1」
+    - `07/15~08/15`：抓「同年 Q2」
+    - `10/15~11/15`：抓「同年 Q3」
     - 其他日期：直接 skip
+  - 窗口 = 「申報期限前 30 天」到「申報期限」（Q2/Q3 多留一天到 15 號，對齊
+    `train_eps/shared_config.py` 的 cutoff）。**要調窗口前先讀 script header**：
+    起日為什麼不是月初、結束日為什麼不能往後延，理由與實測數字都在那裡。
   - 透傳 `FORCE_REPROCESS` 給 scraper container
 
 - `schedules/xbrl_process_import.sh` _（手動觸發）_
@@ -63,6 +66,9 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
   - 寫入 DB：`balance_sheet_xbrl` / `income_statement_xbrl` / `cash_flow_xbrl` / `xbrl_codebook` / `quarterly_reports_xbrl`
   - 前提：raw XBRL 已存在（由 `xbrl_scrape_daily.sh` 累積，或手動跑 fetch_xbrl.py）
   - 參數：可選 `YYYYMMDD` 或 `YYYYQX`；窗口外不再 silent skip，會 error 提示改傳 `YYYYQX`
+    - 窗口刻意比 `xbrl_scrape_daily.sh` 寬（維持原本的月初開窗：`02/01~03/31`、
+      `04/01~05/15`、`07/01~08/15`、`10/01~11/15`），兩邊不要同步；理由見該 script
+      條件式上方的註解。
   - 用途：公告期末把累積的 raw 一次入庫；或補單季資料
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / importer container
 
