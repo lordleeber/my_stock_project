@@ -106,12 +106,15 @@ def assert_features_not_beyond_cutoff(
     cutoff 列，本檢查不會誤報；它引爆在第一次歷史重跑——損害發生的那一刻。）
 
     同時交叉比對 step1 的 `quote_date`（定義 = daily_quotes MAX(date) <= cutoff，
-    與技術指標 as-of 語意相同）：兩者不一致代表 step1 產出後 DB 又匯入了新資料。
+    與技術指標 as-of 語意相同）：兩者不一致代表 step1 與 step2 之間 DB 動過。
+
+    「驗不了」一律等同失敗：兩邊的稽核欄都是 fail-closed。這道 guard 存在的理由
+    就是撐過未來的重構，靜默放行的檢查等於沒有檢查——那正是本函式在修的失效模式。
     """
     tech_max = tech["tech_snapshot_date"].dropna().astype(str).max()
     if not isinstance(tech_max, str) or not quote_dates:
         raise SystemExit(
-            f"[FAIL] 無法驗證特徵 as-of：技術特徵快照日或 step1 quote_date 為空"
+            "[FAIL] 無法驗證特徵 as-of：技術特徵快照日或 step1 quote_date 為空"
             f"（cutoff={cutoff_date}）"
         )
     if tech_max > cutoff_date:
@@ -119,14 +122,32 @@ def assert_features_not_beyond_cutoff(
             f"[FAIL] 技術特徵快照 {tech_max} 越過 cutoff {cutoff_date}——"
             "fetch 的 as-of 是不是被改回 entry_date 了？"
         )
-    if tech_max not in quote_dates:
+
+    # step1 的 quote_date 是 per-symbol 的（`PARTITION BY d.symbol`），停牌／冷門股
+    # 會讓集合變成多值。tech_max 的語意是「市場上 <= cutoff 的最新交易日」，也就是
+    # max(quote_dates)，所以要等值比對而非集合成員判定：用 `in` 的話，技術指標整批
+    # 落後時只要那個舊日期剛好等於某檔停牌股的 quote_date 就會被放行。
+    latest_quote = max(quote_dates)
+    if tech_max < latest_quote:
         raise SystemExit(
-            f"[FAIL] 技術特徵快照 {tech_max} 與 step1 quote_date {sorted(quote_dates)} "
-            "不一致——step1 產出後 DB 可能又匯入了新資料，請重跑 step1。"
+            f"[FAIL] 技術特徵快照 {tech_max} 落後 step1 最新 quote_date {latest_quote}"
+            "——technical_indicators 沒跟上 daily_quotes，calculator 可能未跑完；"
+            "請先補跑 calculator（重跑 step1 不會改變這個結果）。"
         )
+    if tech_max > latest_quote:
+        raise SystemExit(
+            f"[FAIL] 技術特徵快照 {tech_max} 超前 step1 最新 quote_date {latest_quote}"
+            "——step1 產出後 DB 又匯入了新資料，請重跑 step1。"
+        )
+
     cutoff_compact = cutoff_date.replace("-", "")
     rev_max = rev["rev_max_publish_time"].dropna().astype(str).max()
-    if isinstance(rev_max, str) and rev_max > cutoff_compact:
+    if not isinstance(rev_max, str):
+        raise SystemExit(
+            "[FAIL] 無法驗證營收 as-of：rev_max_publish_time 全為空"
+            f"（cutoff={cutoff_date}）——fetch_revenue_features 是不是不再回傳稽核欄了？"
+        )
+    if rev_max > cutoff_compact:
         raise SystemExit(
             f"[FAIL] 營收 publish_time {rev_max} 越過 cutoff {cutoff_compact}——"
             "決策當下拿不到的申報被放進特徵了。"

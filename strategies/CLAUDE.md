@@ -188,7 +188,21 @@ This was live until 2026-08. Effects measured on the 2026-07-11 cohort:
 - `close_vs_ma*` mixed two dates in one ratio — `close` came from step1 (`quote_date`) while the MA came from `entry_date`, producing a value matching no real market state.
 - 48 of 49 stored cohorts had been rebuilt in batch on 2026-07-11, so **the training set carried entry-date features while live inference carried cutoff-date features** — a systematic train/serve skew.
 
-`step2` calls `assert_features_not_beyond_cutoff()` on the **actually fetched rows**: `fetch_technical_features` / `fetch_revenue_features` return audit columns (`tech_snapshot_date` / `rev_max_publish_time`, dropped after the check), and the run fails if the technical snapshot exceeds `cutoff_date` or differs from step1's `quote_date`, or if any revenue row's `publish_time` exceeds cutoff. Point the as-of back at `entry_date` and the first historical rebuild fails loudly. (A live run with the same regression passes — at that moment the DB genuinely has no post-cutoff rows, so there is nothing wrong to detect; the guard fires the first time damage would actually occur.) Do not weaken that check, and do not replace its inputs with independent DB queries — asserting on anything other than the fetched rows is how the previous version of this guard ended up vacuous.
+`step2` calls `assert_features_not_beyond_cutoff()` on the **actually fetched rows**: `fetch_technical_features` / `fetch_revenue_features` return audit columns (`tech_snapshot_date` / `rev_max_publish_time`, dropped after the check). The run fails if:
+
+| condition | message points at |
+|---|---|
+| tech snapshot > `cutoff_date` | as-of 被改回 `entry_date`（look-ahead 本體） |
+| tech snapshot < `max(quote_dates)` | calculator 未跑完，`technical_indicators` 落後 `daily_quotes`（重跑 step1 沒用） |
+| tech snapshot > `max(quote_dates)` | step1 產出後 DB 又匯入新資料，請重跑 step1 |
+| any revenue `publish_time` > cutoff | 決策當下拿不到的申報進了特徵 |
+| 任一稽核欄全空 | 驗不了 = 失敗（fail-closed） |
+
+比對 step1 的 `quote_date` 用 **等值於 `max(quote_dates)`**，不是集合成員判定：`quote_date` 是 per-symbol 的（step1 `PARTITION BY d.symbol`），停牌股會讓集合變多值，用 `in` 的話技術指標整批落後時只要撞上某檔停牌股的舊 `quote_date` 就會被放行。
+
+Point the as-of back at `entry_date` and the first historical rebuild fails loudly. **A live run with the same regression still passes** — at that moment the DB genuinely has no post-cutoff rows, so there is nothing for a runtime check to detect. 補上這個缺口的是 `strategies/tests/test_feature_asof_guard.py`：assert 是純 DataFrame 函式（不收 engine、不發查詢），所以回歸在 commit 當下就會被測試攔下，不必等到第一次歷史重跑。
+
+Do not weaken that check, and do not replace its inputs with independent DB queries — asserting on anything other than the fetched rows is how the previous version of this guard ended up vacuous.
 
 See [`MONTHLY_PLAYBOOK.md` Q5](../MONTHLY_PLAYBOOK.md) for the operational scenario.
 
