@@ -171,7 +171,10 @@ services:
       POSTGRES_DB: stock_db
       TZ: Asia/Taipei
     ports:
-      - "5419:5432"
+      # 只綁 loopback：純本機開發，不對外暴露。host 端 venv 腳本走 localhost:5419
+      # （common/db.py），容器內服務走 compose network 的 db:5432，兩者都不受影響。
+      # 真要從別台機器連，用 ssh -L 轉發，不要把這行改回 0.0.0.0。
+      - "127.0.0.1:5419:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
