@@ -130,13 +130,13 @@ TWSE/TPEx/MOPS/TDCC
 
 ### Database
 
-- PostgreSQL 15, default: `user/password@localhost:5432/stock_db`
+- PostgreSQL 15, default: `user/password@localhost:5419/stock_db`（host port 只綁 `127.0.0.1`，不對外）
 - All `date` columns use **TEXT** type (not DATE) for consistency
 - Symbols are 4-digit numeric strings stored as TEXT
 - Date formats: daily → `YYYY-MM-DD`, quarterly → `YYYYQX`, monthly revenue → `YYYYMXX`
 - All Python code accesses DB directly via SQLAlchemy `create_engine(get_db_url())` + raw SQL through `text()` — no ORM models
 - Host-side scripts use `common/db.py:get_db_url()` (defaults to `localhost:5419`); in-container services read `DB_HOST`/`DB_PORT` env vars (defaults to `db:5432` via docker network)
-- Read-only role `readonly`（只有 SELECT，連 CREATE TABLE 都不行）供外部查詢/BI 用。建立或改密碼：`RO_PASSWORD='...' ./scripts/create_readonly_user.sh`；查目前授權：`./scripts/create_readonly_user.sh --show`。腳本含 `ALTER DEFAULT PRIVILEGES`，pipeline 之後新建的表會自動帶 SELECT，不必重跑
+- 外部查詢/BI 走 read-only role `readonly`（只有 SELECT）。建立與維護見 `scripts/create_readonly_user.sh`（`--show` 查現況），該 script 的 header 記錄了授權範圍與取捨
 
 ## Critical Rules
 
