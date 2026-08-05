@@ -120,7 +120,6 @@ def get_prev_quarter(date_str):
     return f"{year}Q{q - 1}"
 
 
-
 # 加入 common 目錄到搜尋路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from common.schemas import get_polars_schema  # noqa: E402
@@ -222,9 +221,6 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
         # 選擇映射
         col_mapping = SII_MAPPING if market == "sii" else OTC_MAPPING
         src_col_str = generate_src_col(SCHEMA_COLS, col_mapping)
-        rel_path = file_path.replace(
-            "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
-        )
 
         records = []
         for row_idx in range(header_idx + 1, len(rows)):
@@ -330,7 +326,7 @@ def process_csv_file(file_path, date_str, market, prev_df=None):
                         data[q_field] = data[acc_field]
 
             # 加入 lineage 欄位
-            data["src_file"] = rel_path
+            data["src_file"] = file_path
             data["src_row"] = row_idx + 1
             data["src_col"] = src_col_str
 

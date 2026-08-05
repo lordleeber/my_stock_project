@@ -83,10 +83,6 @@ def process_file(csv_file):
             if raw_name in headers:
                 col_indices[col] = headers.index(raw_name)
 
-        rel_path = csv_file.replace(
-            "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
-        )
-
         records = []
         for row_idx in range(header_idx + 1, len(rows)):
             row = rows[row_idx]
@@ -113,7 +109,7 @@ def process_file(csv_file):
                     row[col_indices["rights_dividend_value"]]
                 ),
                 "type": row[col_indices["type"]].strip(),
-                "src_file": rel_path,
+                "src_file": csv_file,
                 "src_row": row_idx + 1,
                 "src_col": "x",  # 簡化處理
             }

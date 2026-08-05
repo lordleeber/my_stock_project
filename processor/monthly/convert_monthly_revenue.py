@@ -255,12 +255,6 @@ def process_monthly_revenue():
                     df.columns.tolist(), use_mapping, is_english, file_path
                 )
 
-                # Calculate relative path for src_file
-                # Convert absolute path to relative path from /app/data/raw
-                rel_path = file_path.replace(
-                    "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
-                )
-
                 # Build new dataframe with lineage tracking
                 new_df = pd.DataFrame()
 
@@ -296,7 +290,7 @@ def process_monthly_revenue():
                 # Add lineage columns
                 # src_row: 1-based line number (header_row + 1 for header, then data rows)
                 # The first data row is at line header_row + 2 (1-indexed)
-                new_df["src_file"] = rel_path
+                new_df["src_file"] = file_path
                 new_df["src_row"] = range(header_row + 2, header_row + 2 + len(df))
                 new_df["src_col"] = src_col_str
 
