@@ -313,7 +313,7 @@ docker compose run --rm calculator python calculate_daily.py --force-full
 ## Troubleshooting
 
 ### Issue: Calculator runs forever or crashes
-- **Solution**: Check Docker memory allocation. Increase to 4GB+ in Docker Desktop settings.
+- **Solution**: Check Docker memory allocation. Ensure the daemon can use 4GB+.
 
 ### Issue: Missing indicator values (NULL) for recent dates
 - **Cause**: Indicators require historical data. MA60 needs 60 days of data.

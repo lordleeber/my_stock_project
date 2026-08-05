@@ -2,12 +2,11 @@
 
 這個目錄裝 **cross-platform** 的 shell script（業務邏輯層），不綁特定 OS。
 
-實際的時間排程（誰在什麼時候呼叫這些 .sh）由各 OS 的目錄負責：
+實際的時間排程（誰在什麼時候呼叫這些 .sh）由 OS 專屬的目錄負責：
 
 - **Ubuntu**：`schedules_ubuntu/`（systemd `.timer` + `.service`） — 生產環境
-- **macOS**：`schedules_macos/`（launchd `.plist`） — 已 deprecated，僅作 archive
 
-shell script 內容與 OS 無關，兩邊都能直接 invoke。
+shell script 內容與 OS 無關，任何平台都能直接 invoke。
 
 ## Available Scripts
 
@@ -118,11 +117,10 @@ shell script 內容與 OS 無關，兩邊都能直接 invoke。
 ## OS-Specific 排程操作
 
 - Ubuntu (systemd)：`schedules_ubuntu/CLAUDE.md`
-- macOS (launchd)：`schedules_macos/CLAUDE.md`（已 deprecated）
 
 ## Notes
 
-- 執行腳本前請確認 Docker Desktop / Docker Engine 已啟動。
+- 執行腳本前請確認 Docker Engine 已啟動（`systemctl status docker`）。
 - 若有改 Dockerfile/程式碼，請先重建相關 service image。
 - 月腳本僅在每月 15 號更新專案根目錄的 `active_stocks.txt`。
 - Daily/Weekly/Monthly 寫入對應 `logs/*_update_*.log`；XBRL daily scrape 寫入 `logs/xbrl_scrape_*.log`，手動 process+import 寫入 `logs/xbrl_process_import_*.log`。
