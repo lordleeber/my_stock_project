@@ -4,10 +4,6 @@
 
 實際的執行邏輯（scraper / processor / importer / calculator / XBRL）完全沿用 `schedules/` 目錄下的同名 `.sh`，這裡只負責「**什麼時間呼叫哪支 .sh**」。
 
-## 為何不直接重用 `schedules_macos/` 的 plist？
-
-`schedules_macos/*.plist` 是 macOS launchd 專用格式；Linux 用的是 systemd unit 檔。兩種排程系統概念類似但語法不同，所以 plist 必須轉成 `.service` + `.timer`。
-
 ## 目錄內容
 
 | Unit | 觸發時間 | 呼叫的 script |
@@ -29,7 +25,7 @@
    newgrp docker   # 或登出再登入
    ```
 2. **專案路徑**：unit 預設 `WorkingDirectory=%h/GitHubLL/my_stock_project`。若放在別處，把 `schedules_ubuntu/*.service` 裡的兩個路徑（`WorkingDirectory` 與 `ExecStart`）一起改掉。
-3. **`logs/` 與 venv**：跟 macOS 相同，由各 `.sh` 自己處理。
+3. **`logs/` 與 venv**：由各 `.sh` 自己處理，unit 不需額外設定。
 
 ## 安裝
 
@@ -87,8 +83,6 @@ systemctl --user disable --now stock-daily-update.timer
 
 - **systemd journal**：每次 service 執行的 stdout/stderr 都寫到 journal，用 `journalctl --user -u <unit>` 查。
 - **script 內部 log**：`schedules/*.sh` 本身會在專案 `logs/` 裡寫 `daily_update_<date>_<ts>.log` 等檔案，由 cross-platform shell 邏輯控制，與 OS 無關。
-
-不需要 macOS 那種 `/tmp/launchd_*_stdout.log` workaround（那是 macOS 26.4 launchd 不能寫 `~/Documents/` 的特殊問題）。
 
 ## Failure Notification（ntfy.sh 手機推播）
 
@@ -153,18 +147,18 @@ vim ~/.config/systemd/user/stock-notify.env
 - **計算用 `journalctl --user -u <unit> -n 12`**，所以 unit 沒跑過的話會收到 "No entries" — 測試假 unit 名時是正常現象。
 - **不通知「資料舊但沒 crash」這類 silent failure**。若要抓「process exit 0 但 DB 沒進資料」的情境，需另寫 freshness-check cron（未做）。
 
-## 與 macOS schedules_macos/ 的差異速查
+## 速查
 
-| 面向 | macOS (`schedules_macos/`) | Ubuntu (`schedules_ubuntu/`) |
-|---|---|---|
-| 排程引擎 | launchd | systemd --user |
-| Unit 格式 | `.plist` (XML) | `.service` + `.timer` |
-| 安裝目錄 | `~/Library/LaunchAgents/` | `~/.config/systemd/user/` |
-| 載入 | `launchctl bootstrap gui/$(id -u) ...` | `systemctl --user enable --now ...` |
-| 手動觸發 | `launchctl kickstart -p gui/$(id -u)/<label>` | `systemctl --user start <unit>` |
-| stdout/stderr | 寫到 `/tmp/launchd_*.log` | `journalctl --user -u <unit>` |
-| Retry 兩時間點 | 拆成 2 個 plist | 1 個 timer + 2 行 `OnCalendar=` |
-| 登出後仍跑 | launchd `gui/<uid>` agent 保留 | 需 `loginctl enable-linger $USER` |
+| 面向 | 做法 |
+|---|---|
+| 排程引擎 | systemd --user |
+| Unit 格式 | `.service` + `.timer` |
+| 安裝目錄 | `~/.config/systemd/user/` |
+| 載入 | `systemctl --user enable --now ...` |
+| 手動觸發 | `systemctl --user start <unit>` |
+| stdout/stderr | `journalctl --user -u <unit>` |
+| Retry 兩時間點 | 1 個 timer + 2 行 `OnCalendar=` |
+| 登出後仍跑 | 需 `loginctl enable-linger $USER` |
 
 ## Notes
 

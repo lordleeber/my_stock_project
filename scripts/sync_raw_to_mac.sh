@@ -14,7 +14,7 @@ SRC_PATH="/home/poyi/GitHubLL/my_stock_project/data/raw/"
 
 DST_USER="poyilee"
 DST_HOST="172.16.4.90"
-DST_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/raw/"
+DST_PATH="/Users/poyilee/GitHubLL/my_stock_project/data/raw/"
 
 DRY_RUN=""
 case "${1:-}" in

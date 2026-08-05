@@ -161,9 +161,6 @@ def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None
 
         headers = [h.strip() for h in rows[0]]
         col_mapping = build_col_mapping(headers, mapping)
-        rel_path = csv_file.replace(
-            "/Users/poyilee/Documents/GitHubLL/my_stock_project/", "/app/"
-        )
         statement_type = detect_statement_type(market, os.path.basename(csv_file))
 
         schema = SCHEMA_COLS.get(category)
@@ -186,7 +183,7 @@ def process_csv_file(csv_file, date_str, market, category, mapping, prev_df=None
                 pl.lit(date_str).alias("date"),
                 pl.lit(market).alias("market"),
                 pl.lit(statement_type).alias("statement_type"),
-                pl.lit(rel_path).alias("src_file"),
+                pl.lit(csv_file).alias("src_file"),
                 pl.lit(src_col_str).alias("src_col"),
             ]
         )
