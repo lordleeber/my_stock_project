@@ -41,7 +41,7 @@
 
 ## 0. 備份清單(2026-08-01 校驗)
 
-Mac 上 `/Users/poyilee/Documents/GitHubLL/my_stock_project/`:
+Mac 上 `/Users/poyilee/GitHubLL/my_stock_project/`:
 
 | 路徑 | 內容 | 規模 | 校驗狀態 |
 |---|---|---|---|
@@ -153,7 +153,7 @@ docker compose ps                 # 等 STATUS 出現 (healthy)
 ```bash
 mkdir -p data/backups
 rsync -avh --progress \
-  poyilee@172.16.4.90:/Users/poyilee/Documents/GitHubLL/my_stock_project/data/backups/stock_db_20260801_115024.sql.gz \
+  poyilee@172.16.4.90:/Users/poyilee/GitHubLL/my_stock_project/data/backups/stock_db_20260801_115024.sql.gz \
   data/backups/
 
 # 先驗完整性再匯入
@@ -199,7 +199,7 @@ docker compose exec -T db psql -U user -d stock_db -t -c \
 ## 5. 還原模型目錄
 
 ```bash
-DST=poyilee@172.16.4.90:/Users/poyilee/Documents/GitHubLL/my_stock_project/backup_ubuntu_20260801
+DST=poyilee@172.16.4.90:/Users/poyilee/GitHubLL/my_stock_project/backup_ubuntu_20260801
 rsync -avh --progress "$DST/models_selection" "$DST/models_eps" .
 ```
 
@@ -219,7 +219,7 @@ echo "$(ls models_eps        | wc -l) dirs, $(find models_eps        -type f | w
 ## 6. 還原機器本地設定(不在 git 裡)
 
 ```bash
-rsync -avh poyilee@172.16.4.90:/Users/poyilee/Documents/GitHubLL/my_stock_project/backup_ubuntu_20260801/machine_local/ /tmp/machine_local/
+rsync -avh poyilee@172.16.4.90:/Users/poyilee/GitHubLL/my_stock_project/backup_ubuntu_20260801/machine_local/ /tmp/machine_local/
 ```
 
 | 檔案 | 放回哪裡 | 說明 |

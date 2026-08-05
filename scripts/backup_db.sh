@@ -29,7 +29,7 @@ LOCAL_DIR="data/backups"
 
 DST_USER="poyilee"
 DST_HOST="172.16.4.90"
-DST_PATH="/Users/poyilee/Documents/GitHubLL/my_stock_project/data/backups/"
+DST_PATH="/Users/poyilee/GitHubLL/my_stock_project/data/backups/"
 
 PUSH=1
 DRY_RUN=0
