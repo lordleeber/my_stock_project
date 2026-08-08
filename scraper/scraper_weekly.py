@@ -28,7 +28,12 @@ def main():
         return rc
 
     tdcc_date = os.getenv("TDCC_DATE", "").strip()
-    check_weekly_outputs(output_root, tdcc_date)
+    missing = check_weekly_outputs(output_root, tdcc_date)
+    if missing:
+        # 與 scraper_daily.py 同慣例：checker 回報問題就讓 entrypoint 非零退出，
+        # weekly_update.sh 的 set -e 會中斷，systemd 的 OnFailure 才推得出通知。
+        print(f"[FAIL] {len(missing)} weekly output problem(s) detected.")
+        return 1
     return 0
 
 

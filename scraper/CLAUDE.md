@@ -93,6 +93,23 @@ docker compose run --rm scraper-quarterly \
 - 這次重構目標是「入口與分層一致化」。既有抓取邏輯（TWSE/TPEx/MOPS/TDCC）保持不變。
 - daily/weekly/monthly 入口會在抓取完成後自動執行對應 `check_outputs`；quarterly XBRL 目前沒有 check_outputs（後續可補）。
 - `daily/check_outputs.py` 偵測到 missing raw 檔時：寫入 `error_scraper.log` 並讓 `scraper_daily.py` 回傳 `exit 1`，讓 `daily_update.sh` 因 `set -e` 中斷，觸發後續 retry。**不再靜默通過**（避免 TWSE 暫時回 empty 時整條 pipeline 假成功而落漏資料）。
+- `weekly/check_outputs.py` 除了驗檔案存在，還驗**快照新鮮度**：最新的
+  `TDCC_OD_1-5_YYYYMMDD.csv` 日期必須落在 `[today-7, today-1]`，否則寫入
+  `error_scraper.log` 並讓 `scraper_weekly.py` 回傳 `exit 1`（與 daily 同慣例），
+  `weekly_update.sh` 因 `set -e` 中斷，`stock-weekly-update.service` 的
+  `OnFailure=stock-notify@` 就會推播，由人工介入。
+  - 為什麼需要：`fetch_tdcc.py` 打的 OpenData endpoint **沒有日期參數**，永遠只回
+    最新一週。TDCC 延遲發布時它會抓回上週那份、覆寫同名舊檔，而舊版檢查只看
+    「最新檔存在且 >10 bytes」、`weekly_update.sh` 又從最新檔名反推 `TARGET_DATE`，
+    於是整條 pipeline 靜默通過，該週永久缺漏（2026-07-09 就是這樣掉的，見
+    `KNOWN_ISSUES.md`）。TDCC OpenData 不提供歷史，補救只能逐檔爬歷史查詢頁。
+  - 檢查刻意**不預測 TDCC 會選週五還是週四**（實測 52 份裡 47 週五、5 週四，
+    且 2026-02-13 週五休市仍照發週五），只斷言新鮮度 —— 所以不必維護交易日曆。
+  - 指定 `TDCC_DATE` 時跳過新鮮度檢查（回補、手動重跑是刻意鎖定舊日期）。
+  - 農曆年整週休市時 TDCC 確實沒有快照，會告警一次（一整年只有這一次），
+    確認後用 `ALLOW_STALE_TDCC=1` 放行。
+  - 測試：`venv/bin/python3 scraper/tests/test_check_weekly_freshness.py`（含 2026-07-12
+    那次真實漏抓的重演，以及一整年逐週日重播）。
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。
 - `fetch_monthly_revenue.py` 會把每次抓到的 `tmp.csv` 逐筆合併到 `market.csv`，並寫入 `publish_time`（預設當天 `YYYYMMDD`，可由 `PUBLISH_TIME` 覆寫）。
 - `scraper/Dockerfile` 已內建 `curl`（供 `weekly/fetch_tdcc.py` 使用）。
