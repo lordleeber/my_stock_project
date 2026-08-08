@@ -38,6 +38,12 @@ services:
     environment:
       - OUTPUT_DIR=/app/data
       - RAW_DIR=/app/data/raw
+      # 這兩個是 weekly/check_outputs.py 的操作旋鈕，必須在這裡宣告才進得了
+      # container：compose 不會自動把 host 的環境變數帶進去，所以少了這兩行
+      # 時 `ALLOW_STALE_TDCC=1 ./schedules/weekly_update.sh` 這條文件上的救援
+      # 路徑會完全無效（gate 照樣擋，而且看不出原因）。
+      - TDCC_DATE=${TDCC_DATE:-}
+      - ALLOW_STALE_TDCC=${ALLOW_STALE_TDCC:-0}
       - TZ=Asia/Taipei
 
   # 月營收 (每月 10 日後執行)

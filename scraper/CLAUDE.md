@@ -51,7 +51,14 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - `MARKET_TYPE` (`SII`/`OTC`/`ALL`)
 
 - Weekly
-  - optional: `TDCC_DATE`（指定要驗證的週資料日期，YYYYMMDD）
+  - optional: `TDCC_DATE`（YYYYMMDD）。語意是「斷言這一份」：對 `fetch_tdcc.py`
+    是**斷言 API 回來的就是這一天**（不符即拒寫並回非 0），對 `check_outputs.py`
+    是**指定要驗證硬碟上的哪一份**（此時跳過新鮮度檢查）。
+    **不能用來回補歷史** —— OpenData endpoint 沒有日期參數，永遠只回最新一週，
+    強行指定舊日期只會把本週資料存成舊檔名。回補請用 `weekly/fetch_tdcc_history.py`。
+  - optional: `ALLOW_STALE_TDCC=1`（放行新鮮度告警，農曆年那週用）
+  - 這兩個都已在 `docker-compose.yml` 的 `scraper-weekly` 宣告；compose 不會自動
+    把 host 環境變數帶進 container，少了宣告就等於這兩個旋鈕不存在。
   - `scraper_weekly.py` 固定輸出到 `/app/data/raw/shareholding`
 
 - Monthly
@@ -103,11 +110,17 @@ docker compose run --rm scraper-quarterly \
     「最新檔存在且 >10 bytes」、`weekly_update.sh` 又從最新檔名反推 `TARGET_DATE`，
     於是整條 pipeline 靜默通過，該週永久缺漏（2026-07-09 就是這樣掉的，見
     `KNOWN_ISSUES.md`）。TDCC OpenData 不提供歷史，補救只能逐檔爬歷史查詢頁。
-  - 檢查刻意**不預測 TDCC 會選週五還是週四**（實測 52 份裡 47 週五、5 週四，
+  - 檢查刻意**不預測 TDCC 會選週五還是週四**（實測 52 份裡 45 週五、7 週四，
     且 2026-02-13 週五休市仍照發週五），只斷言新鮮度 —— 所以不必維護交易日曆。
-  - 指定 `TDCC_DATE` 時跳過新鮮度檢查（回補、手動重跑是刻意鎖定舊日期）。
+  - 指定 `TDCC_DATE` 時跳過新鮮度檢查（刻意鎖定硬碟上某一份來重驗）。
   - 農曆年整週休市時 TDCC 確實沒有快照，會告警一次（一整年只有這一次），
-    確認後用 `ALLOW_STALE_TDCC=1` 放行。
+    確認後用 `ALLOW_STALE_TDCC=1 ./schedules/weekly_update.sh` 放行。
+  - gate 只擋 shareholding 分支：`weekly_update.sh` 的除權息 process+import 與
+    TDCC 無關，會照跑到底，最後才依兩條分支的成敗決定退出碼。
+  - 檔名日期解析集中在 `_snapshot_date()`，`99999999` / `20261332` 這種過得了
+    `\d{8}` 卻不是合法日期的值一律 fail-closed，不會讓 checker 直接 traceback。
+  - 錯誤寫入走 `common/error_log.py`，**寫不進去也不會拋例外**（見該檔 docstring
+    與 `RESTORE.md` §落差4）：壞掉的若是錯誤處理器，gate 反而會失效。
   - 測試：`venv/bin/python3 scraper/tests/test_check_weekly_freshness.py`（含 2026-07-12
     那次真實漏抓的重演，以及一整年逐週日重播）。
 - `monthly/check_outputs.py` 目前會同時檢查 `tmp.csv` 與 `market.csv`。

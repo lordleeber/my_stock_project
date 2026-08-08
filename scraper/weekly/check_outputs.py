@@ -1,30 +1,41 @@
 import datetime
 import os
 import re
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-def _error_log_path() -> Path:
-    # 與 quarterly/fetch_xbrl.py::get_error_log_path 同一個 pattern：容器內走
-    # /app（compose 有 bind mount 出來），容器外（測試、手動執行）落在 CWD，
-    # 免得因為 /app 不存在直接 FileNotFoundError。
-    app_log = Path("/app/error_scraper.log")
-    return app_log if app_log.parent.exists() else Path("error_scraper.log")
+from common.error_log import append_error_log  # noqa: E402
+
+ERROR_LOG = "error_scraper.log"
+
+# TDCC OpenData 的檔名契約。只在這裡定義一次：之前 _extract_date 與 _check_freshness
+# 各抄一份，兩份對同一個輸入的行為還不一致（前者回 ""、後者回 fail-closed tuple）。
+TDCC_FILENAME_RE = re.compile(r"TDCC_OD_1-5_(\d{8})\.csv$")
+
+
+def _snapshot_date(path: Path):
+    """從檔名解析快照日期；解析不出來（含 8 碼但不是合法日期）時回傳 None。
+
+    `20261332`、`99999999` 這類值過得了 `\\d{8}` 卻過不了 strptime。這裡把
+    ValueError 收乾淨，呼叫端才能一致地走 fail-closed，而不是讓 checker 直接
+    traceback——那等於連「有問題」都報不出來。
+    """
+    m = TDCC_FILENAME_RE.search(path.name)
+    if not m:
+        return None
+    try:
+        return datetime.datetime.strptime(m.group(1), "%Y%m%d").date()
+    except ValueError:
+        return None
 
 
 def _append_missing(title, context, missing):
     if not missing:
         return
-    error_md = _error_log_path()
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_md, "a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] {title}\n")
-        for line in context:
-            f.write(f"{line}\n")
-        f.write("Missing files:\n")
-        for path in missing:
-            f.write(f"- {path}\n")
-    print(f"\n[WARN] Missing outputs detected. See: {error_md}")
+    lines = list(context) + ["Missing files:"] + [f"- {p}" for p in missing]
+    append_error_log(ERROR_LOG, title, lines)
 
 
 def _is_file_valid(path: Path, min_bytes: int, min_lines: int) -> bool:
@@ -49,16 +60,14 @@ def _find_latest_tdcc_file(base_dir: Path):
     if not candidates:
         return None
 
-    def _extract_date(path: Path):
-        m = re.search(r"TDCC_OD_1-5_(\d{8})\.csv$", path.name)
-        return m.group(1) if m else ""
-
-    candidates.sort(key=lambda p: _extract_date(p))
+    # 解析不出日期的排在最前面，才不會蓋掉真正最新的那一份；真的只有壞檔時
+    # 仍會被選中，並在 _check_freshness 走 fail-closed。
+    candidates.sort(key=lambda p: (_snapshot_date(p) or datetime.date.min, p.name))
     return candidates[-1]
 
 
 # TDCC 每週發布一份快照，基準日一律是週五；週五休市則順延到週四（實測 2025-08
-# ~2026-08 的 52 份：47 份週五、5 份週四，且 2026-02-13 週五休市仍照發週五）。
+# ~2026-08 的 52 份：45 份週五、7 份週四，且 2026-02-13 週五休市仍照發週五）。
 # 我們每週日 10:20 跑，所以「這次該拿到的那一份」必然落在 [today-7, today-1]：
 # 往前推 7 天一定涵蓋到剛過去的那個週四/週五，而今天（週日）本身不會是基準日。
 #
@@ -75,11 +84,10 @@ FRESHNESS_WINDOW_DAYS = 7
 
 def _check_freshness(latest_path: Path, today: datetime.date):
     """回傳 (是否新鮮, 說明字串, 快照日期)。無法解析檔名日期時視為不新鮮（fail-closed）。"""
-    m = re.search(r"TDCC_OD_1-5_(\d{8})\.csv$", latest_path.name)
-    if not m:
+    snap = _snapshot_date(latest_path)
+    if snap is None:
         return False, f"cannot parse snapshot date from {latest_path.name}", None
 
-    snap = datetime.datetime.strptime(m.group(1), "%Y%m%d").date()
     oldest_ok = today - datetime.timedelta(days=FRESHNESS_WINDOW_DAYS)
     newest_ok = today - datetime.timedelta(days=1)
 
@@ -127,8 +135,11 @@ def check_weekly_outputs(output_dir, tdcc_date=""):
             missing.append(str(latest))
         else:
             context.append(f"Latest file: {latest}")
-            # 新鮮度只在 auto-detect 模式檢查。指定 TDCC_DATE 時是刻意鎖定某一天
-            # （回補、手動重跑），此時舊日期是預期行為，不該告警。
+            # 新鮮度只在 auto-detect 模式檢查。指定 TDCC_DATE 是「驗證硬碟上某
+            # 一份既有快照」（重跑檢查、事後查核），此時舊日期是預期行為。
+            # 注意 TDCC_DATE **不能**用來回補：OpenData endpoint 沒有日期參數，
+            # 拿回來的永遠是最新一週；fetch_tdcc.py 現在會直接拒絕把最新資料寫成
+            # 舊檔名。真的要補歷史請用 weekly/fetch_tdcc_history.py。
             fresh, reason, _snap = _check_freshness(latest, datetime.date.today())
             context.append(f"Freshness: {reason}")
             if not fresh:

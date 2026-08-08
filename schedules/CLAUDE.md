@@ -17,7 +17,13 @@ shell script 內容與 OS 無關，任何平台都能直接 invoke。
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / audit / importer container（給 retry 在偵測到 stale 狀態時使用）
 
 - `schedules/weekly_update.sh`
-  - 流程：`scraper-weekly -> processor(convert_weekly) -> importer(shareholding) -> processor(convert_dividend) -> importer(import_dividend)`
+  - **兩條互相獨立的分支**，各自記成敗、最後才決定退出碼：
+    - A. shareholding：`scraper-weekly -> processor(convert_weekly) -> importer(import_weekly)`
+    - B. dividend：`processor(convert_dividend) -> importer(import_dividend)`
+  - B 不吃 TDCC，所以 **A 失敗時 B 照跑**。weekly 沒有 retry timer，一次連坐就是
+    除權息整整一週不更新；而 A 失敗最常見的原因（TDCC 延遲發布、農曆年沒有快照）
+    跟除權息毫無關係。任一分支失敗即 `exit 1`，systemd 的 `OnFailure` 照樣推播。
+  - A 失敗導致 TARGET_DATE 解析不出來時，log 檔名標成 `weekly_update_UNKNOWN_*`
   - 自動偵測最新 TDCC 檔案日期後處理（shareholding 段）
   - 末段順帶處理除權息（dividend）：除權息 raw 由每日 `scraper-daily` 持續累積，這裡只需 process + import。
     - `convert_dividend.py` 預設只重算**當年度**；`import_dividend.py` 預設只對**當年度** delete-before-insert（不 drop 整表）。過去年度視為 immutable 不重算/重匯。
@@ -70,6 +76,14 @@ shell script 內容與 OS 無關，任何平台都能直接 invoke。
       條件式上方的註解。
   - 用途：公告期末把累積的 raw 一次入庫；或補單季資料
   - 透傳 `FORCE_REPROCESS` / `FORCE_REIMPORT` 給 processor / importer container
+
+- `schedules/ensure_error_logs.sh`
+  - 每支會跑 `docker compose` 的腳本在 `cd` 到 repo root 之後第一件事就呼叫它
+  - 確保 5 個 `error_*.log` 存在。它們被 `.gitignore` 忽略，全新 clone 上不存在，
+    而 compose 用 **file** bind mount 掛它們——source 不存在時 docker 會建成
+    **root 所有的目錄**，之後所有 `open(..., "a")` 固定拋 `IsADirectoryError`。
+    2026-08-01 已踩過（`RESTORE.md` §落差4）。
+  - 已經變成目錄時不自己修（`rmdir` 要 root），只印出明確指令並回非 0
 
 - `schedules/backfill_xbrl.sh`
   - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。

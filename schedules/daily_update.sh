@@ -9,6 +9,8 @@ set -o pipefail  # 確保管道指令中任何一段失敗都會回傳錯誤碼
 # 設定工作目錄
 cd "$(dirname "$0")/.."
 
+./schedules/ensure_error_logs.sh
+
 # 設定日期範圍（支援傳入日期參數，預設為今天）
 TARGET_DATE=${1:-$(date +%Y%m%d)}
 export START_DATE=$TARGET_DATE

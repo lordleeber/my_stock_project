@@ -1,23 +1,28 @@
-import datetime
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from common.error_log import append_error_log  # noqa: E402
+
+ERROR_LOG = "error_scraper.log"
 
 
 def _append_missing(missing, date_list, market_type):
     if not missing:
         return
 
-    error_md = Path("/app/error_scraper.log")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_md, "a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] scraper-daily missing outputs\n")
-        f.write(f"Market Type: {market_type}\n")
-        f.write(f"Dates: {', '.join(date_list)}\n")
-        f.write("Missing files:\n")
-        for path in missing:
-            f.write(f"- {path}\n")
-
-    print(f"\n[WARN] Missing outputs detected. See: {error_md}")
+    append_error_log(
+        ERROR_LOG,
+        "scraper-daily missing outputs",
+        [
+            f"Market Type: {market_type}",
+            f"Dates: {', '.join(date_list)}",
+            "Missing files:",
+        ]
+        + [f"- {p}" for p in missing],
+    )
 
 
 def _is_file_valid(path: Path, min_bytes: int, min_lines: int) -> bool:

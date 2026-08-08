@@ -21,7 +21,11 @@ Examples:
 
 Environment Variables:
     RAW_DIR: Base directory for raw data (default: ../data/raw)
-    TDCC_DATE: Force specific date in YYYYMMDD format (optional)
+    TDCC_DATE: Assert the expected date in YYYYMMDD format (optional).
+               This endpoint has no date parameter and always returns the latest
+               week, so a value that disagrees with the response aborts the run
+               instead of writing a mislabeled file. Use fetch_tdcc_history.py
+               to backfill past weeks.
 """
 
 import os
@@ -165,7 +169,8 @@ def main():
     )
     parser.add_argument(
         "--date",
-        help="Force specific date (YYYYMMDD). If not provided, date will be auto-detected from API response",
+        help="Assert the expected date (YYYYMMDD); aborts if the API returns a different one. "
+        "If not provided, the date is auto-detected from the API response",
     )
     parser.add_argument(
         "--output-dir",
@@ -196,8 +201,24 @@ def main():
     # Use forced date if provided, otherwise use detected date
     date_str = force_date or detected_date
 
+    # 這個 endpoint 沒有日期參數，回來的永遠是「最新一週」。所以 force_date 與
+    # 實際資料日期不符時，唯一能做的事就是不要寫——舊版只印一行 ⚠️ 就照寫，等於
+    # 把本週的資料存成舊檔名，而 check_outputs 又刻意對指定日期跳過新鮮度檢查，
+    # 於是 weekly_update.sh 會用錯誤的 TARGET_DATE 把它匯進 DB。
     if force_date and force_date != detected_date:
-        print(f"⚠️  Using forced date {force_date} (API has data for {detected_date})")
+        print(
+            f"❌ Refusing to save: requested date {force_date} but the API returned "
+            f"data for {detected_date}."
+        )
+        print(
+            "   TDCC OpenData 不提供歷史資料，永遠只回最新一週；把它存成 "
+            f"TDCC_OD_1-5_{force_date}.csv 會產生日期錯誤的資料。"
+        )
+        print(
+            "   要回補歷史請用 scraper/weekly/fetch_tdcc_history.py（爬歷史查詢頁）；"
+            "TDCC_DATE 只能用來指定 check_outputs 要驗證硬碟上的哪一份。"
+        )
+        return 1
 
     # Save data
     if args.no_prompt:

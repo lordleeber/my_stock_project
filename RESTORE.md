@@ -48,6 +48,18 @@
    內容一直隨 `--rm` 消失(2026Q2 那 9 筆 `invalid_report:too_small` 就查不到了),
    一併補上。現在程式碼裡的 5 個路徑與 compose mount 一一對應。
 
+   §2 的 touch 步驟靠人記得照做,所以另外補了兩層不依賴人的防線:
+   - `schedules/ensure_error_logs.sh`:每支會跑 `docker compose` 的排程腳本
+     開頭都會呼叫它,自動 touch 出這 5 個檔;已經變成目錄時印出明確的
+     `sudo rmdir` 指令並回非 0(rmdir 要 root,不自己修)。
+   - `common/error_log.py`:scraper 四個 checker 的寫入改走這裡,**寫不進去
+     也不拋例外**,改成把整筆紀錄印到 stdout。壞掉的若是錯誤處理器本身,
+     絕不能連帶讓呼叫端的判斷結果消失——weekly 的新鮮度 gate 在全新 clone 上
+     第一次執行就會踩到這條路徑。
+   > processor/importer/calculator 的 `write_error_report()` 尚未改用
+   > `common/error_log.py`,仍會在目錄情況下拋 `IsADirectoryError`;
+   > 上面兩層防線已讓它不容易發生,但要根治得逐一改過去。
+
 ---
 
 ## 0. 備份清單(2026-08-01 校驗)
