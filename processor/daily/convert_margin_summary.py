@@ -1,9 +1,7 @@
 import os
 import io
 import datetime
-import traceback
 import re
-from pathlib import Path
 import pandas as pd
 import polars as pl
 from .convert_category_base import get_category_date_dir
@@ -15,32 +13,16 @@ CATEGORY = "margin_summary"
 INPUT_CATEGORY = "margin_trading"
 
 
-def log_processing_error(msg, date_str=None, category=None):
-    error_file = Path("/app/error_processor.log")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(f"\n## Processor Runtime Error - {timestamp}\n")
-        if date_str:
-            f.write(f"**Date:** {date_str}\n")
-        if category:
-            f.write(f"**Category:** {category}\n")
-        f.write(f"**Message:** {msg}\n")
-        f.write(f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n")
-        f.write("---\n")
-    print(f"❌ Error logged to error_processor.log: {msg}")
+from _error_report import (  # noqa: E402
+    fail_invalid_params as _fail_invalid_params,
+)
+from _error_report import log_processing_error  # noqa: E402, F401
 
 
 def fail_invalid_params(msg):
-    error_file = Path("/app/error_processor.log")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(f"\n## Processor Runtime Error - {timestamp}\n")
-        f.write("**Entry:** daily/convert_margin_summary.py\n")
-        f.write(f"**Category:** {CATEGORY}\n")
-        f.write(f"**Message:** {msg}\n")
-        f.write("---\n")
-    print(msg)
-    raise SystemExit(1)
+    _fail_invalid_params(
+        msg, entry="daily/convert_margin_summary.py", category=CATEGORY
+    )
 
 
 def _handle_margin_summary(date_str, raw_dir=RAW_DIR):

@@ -14,6 +14,10 @@ The calculator component refines raw market and financial data into actionable i
 Error handling is fail-fast:
 - Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
 - Exits immediately with non-zero status.
+- `abort_with_error` 由 `calculator/_error_report.py::make_abort(ERROR_LOG)` 產生（7 支
+  原本各抄一份，其中 6 份還漏了「執行時間」——報告是 `"w"` 覆寫的，沒時間戳就看不出
+  是哪次跑留下的）。寫入走 `common/error_log.py`（**fail-soft**）：log 被 docker 建成
+  目錄時仍印得出真正的錯誤訊息再 exit 1（見 `RESTORE.md` §落差4）。
 
 ### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
 

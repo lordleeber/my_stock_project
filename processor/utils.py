@@ -6,30 +6,9 @@ import os
 from pathlib import Path
 from common.schemas import COLUMN_MAP, NUMERIC_COLS
 
-
-def log_parsing_error(file_path, msg, exception=None):
-    """
-    將 CSV 解析階段的錯誤訊息記錄到專用的 error_processor.log 檔案
-    """
-    error_file = Path("/app/error_processor.log")
-    timestamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-    date_str = "Unknown"
-
-    # 嘗試從新路徑結構提取日期 (YYYY/YYYYMMDD)
-    parts = Path(file_path).parts
-    if len(parts) >= 2:
-        potential_date = parts[-2]
-        if len(potential_date) == 8 and potential_date.isdigit():
-            date_str = potential_date
-
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(f"\n## Utils Parsing Error - {timestamp}\n")
-        f.write(f"**Date:** {date_str}\n")
-        f.write(f"**File:** {Path(file_path).name}\n")
-        f.write(f"**Message:** {msg}\n")
-        if exception:
-            f.write(f"**Exception:** {str(exception)}\n")
-        f.write("---\n")
+# 這支的兩個呼叫點都在 except 區塊裡（「記一筆、回 None、跳過這個檔」的降級路徑），
+# 所以寫 log 失敗絕不能升級成中斷——見 _error_report.py 的 docstring。
+from _error_report import log_parsing_error  # noqa: F401
 
 
 def clean_dataframe(df, return_col_mapping=False):

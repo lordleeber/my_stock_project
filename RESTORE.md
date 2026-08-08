@@ -56,9 +56,12 @@
      也不拋例外**,改成把整筆紀錄印到 stdout。壞掉的若是錯誤處理器本身,
      絕不能連帶讓呼叫端的判斷結果消失——weekly 的新鮮度 gate 在全新 clone 上
      第一次執行就會踩到這條路徑。
-   > processor/importer/calculator 的 `write_error_report()` 尚未改用
-   > `common/error_log.py`,仍會在目錄情況下拋 `IsADirectoryError`;
-   > 上面兩層防線已讓它不容易發生,但要根治得逐一改過去。
+   processor / importer / calculator 的 17 個寫入點也已全部改用
+   `common/error_log.py`(2026-08-08),各模組原本的 log 格式逐字保留。實測
+   把 log 換成目錄後:importer/calculator 的 `abort_with_error()` 仍印出**真正的
+   錯誤訊息**並 exit 1(舊版連訊息都印不出來,只剩一行指著寫 log 那行的
+   traceback);processor 的 `log_parsing_error()` 維持降級、不再把整個 run 打死。
+   測試:`venv/bin/python3 common/tests/test_error_log.py`。
 
 ---
 

@@ -19,6 +19,10 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 - Input: `data/raw/...`
 - Output: `data/processed/...`
 - Error log: `/app/error_processor.log`
+  - 寫入一律走 `processor/_error_report.py` → `common/error_log.py`（**fail-soft**）。
+    log 被 docker 建成目錄時（`RESTORE.md` §落差4）舊版會就地拋 `IsADirectoryError`，
+    把 `raise DataQualityError` 與降級用的 `return None` 一起吃掉；現在寫不進去會
+    改印到 stdout，呼叫端的判斷結果一定送得出去。格式與舊版逐字相同。
 
 ## Entry Points
 

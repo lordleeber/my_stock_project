@@ -12,7 +12,10 @@ import sys
 
 # 加入 common 目錄到搜尋路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from common.error_log import write_error_log
 from common.schemas import get_polars_schema
+
+ERROR_LOG = "error_importer.log"
 
 
 CODE_COL_RE = re.compile(r"^code(\d+)$")
@@ -20,18 +23,23 @@ VALUE_COL_RE = re.compile(r"^value(\d+)$")
 
 
 def abort_with_error(message, exception=None):
-    """Write error to error_importer.log and exit immediately."""
-    error_file = "/app/error_importer.log"
-    with open(error_file, "w") as f:
-        f.write("# Importer 錯誤報告\n\n")
-        f.write(
-            f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
-        f.write(f"## 錯誤訊息\n\n{message}\n\n")
-        if exception:
-            f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
+    """Write error to error_importer.log and exit immediately.
+
+    寫檔走 common.error_log 的 fail-soft 版本：log 被 docker 建成目錄時
+    （RESTORE.md §落差4）舊版會在 open() 那行就拋 IsADirectoryError，後面的
+    print(message) 與 SystemExit(1) 都跑不到——程序仍非 0 結束，但**真正的錯誤
+    訊息一個字都不剩**。現在訊息一定印得出來。
+    """
+    report = "# Importer 錯誤報告\n\n"
+    report += f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    report += f"## 錯誤訊息\n\n{message}\n\n"
+    if exception:
+        report += f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n"
+
+    path = write_error_log(ERROR_LOG, report, mode="w", notice=False)
     print(f"\n❌ {message}")
-    print(f"錯誤已寫入 {error_file}")
+    if path is not None:
+        print(f"錯誤已寫入 {path}")
     raise SystemExit(1)
 
 

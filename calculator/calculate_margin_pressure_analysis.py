@@ -1,25 +1,18 @@
 import os
 import sys
-import traceback
 
 from sqlalchemy import text
 
 sys.path.append(os.path.dirname(__file__))
 from _incremental import get_engine, get_last_processed_date, parse_force_full
 
+from _error_report import make_abort
+
 ERROR_LOG = "/error_calculator.log"
 TABLE = "margin_pressure_analysis"
 
 
-def abort_with_error(message, exception=None):
-    with open(ERROR_LOG, "w") as f:
-        f.write("# Calculator 錯誤報告\n\n")
-        f.write(f"## 錯誤訊息\n\n{message}\n\n")
-        if exception is not None:
-            f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
-    print(f"\n❌ {message}")
-    print(f"錯誤已寫入 {ERROR_LOG}")
-    raise SystemExit(1)
+abort_with_error = make_abort(ERROR_LOG)
 
 
 # Single-row derivation: all margin_pressure_analysis metrics come from

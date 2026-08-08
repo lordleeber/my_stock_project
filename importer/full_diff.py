@@ -4,8 +4,16 @@
 
 import os
 import glob
+import sys
+from pathlib import Path
+
 import polars as pl
 from sqlalchemy import text
+
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from common.error_log import write_error_log  # noqa: E402
+
+ERROR_LOG = "error_importer.log"
 
 
 def export_table_to_df(engine, table_name):
@@ -304,51 +312,56 @@ def full_diff_validation(engine):
     return all_reports
 
 
-def write_diff_report(reports, output_file="/app/error_importer.log"):
-    """寫入 diff 報告"""
+def build_diff_report(reports):
+    """把 diff 結果組成報告字串（格式與舊版逐字相同）。"""
     import datetime
 
-    with open(output_file, "w") as f:
-        f.write("# Importer 完整 Diff 報告\n\n")
-        f.write(
-            f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
+    out = ["# Importer 完整 Diff 報告\n\n"]
+    out.append(f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
-        for table_name, report in reports.items():
-            f.write(f"## {table_name}\n\n")
-            f.write(f"- CSV 筆數: {report['csv_count']:,}\n")
-            f.write(f"- DB 筆數: {report['db_count']:,}\n")
-            f.write(f"- 差異: {abs(report['csv_count'] - report['db_count']):,}\n\n")
+    for table_name, report in reports.items():
+        out.append(f"## {table_name}\n\n")
+        out.append(f"- CSV 筆數: {report['csv_count']:,}\n")
+        out.append(f"- DB 筆數: {report['db_count']:,}\n")
+        out.append(f"- 差異: {abs(report['csv_count'] - report['db_count']):,}\n\n")
 
-            if report["only_in_csv_count"] > 0:
-                f.write(f"### 只在 CSV 存在（{report['only_in_csv_count']:,} 筆）\n\n")
-                f.write("前 100 筆:\n```\n")
-                for key in report["only_in_csv"][:100]:
-                    f.write(f"{key}\n")
-                f.write("```\n\n")
+        if report["only_in_csv_count"] > 0:
+            out.append(f"### 只在 CSV 存在（{report['only_in_csv_count']:,} 筆）\n\n")
+            out.append("前 100 筆:\n```\n")
+            for key in report["only_in_csv"][:100]:
+                out.append(f"{key}\n")
+            out.append("```\n\n")
 
-            if report["only_in_db_count"] > 0:
-                f.write(f"### 只在 DB 存在（{report['only_in_db_count']:,} 筆）\n\n")
-                f.write("前 100 筆:\n```\n")
-                for key in report["only_in_db"][:100]:
-                    f.write(f"{key}\n")
-                f.write("```\n\n")
+        if report["only_in_db_count"] > 0:
+            out.append(f"### 只在 DB 存在（{report['only_in_db_count']:,} 筆）\n\n")
+            out.append("前 100 筆:\n```\n")
+            for key in report["only_in_db"][:100]:
+                out.append(f"{key}\n")
+            out.append("```\n\n")
 
-            if report["value_diffs_count"] > 0:
-                f.write(f"### 數值差異（{report['value_diffs_count']:,} 筆）\n\n")
-                f.write("前 50 筆:\n")
-                for key, diffs in report["value_diffs"][:50]:
-                    f.write(f"\n**{key}**\n")
-                    for col, val_csv, val_db in diffs[:5]:  # 每筆最多顯示 5 個欄位
-                        f.write(f"- `{col}`: CSV=`{val_csv}` vs DB=`{val_db}`\n")
-                f.write("\n")
+        if report["value_diffs_count"] > 0:
+            out.append(f"### 數值差異（{report['value_diffs_count']:,} 筆）\n\n")
+            out.append("前 50 筆:\n")
+            for key, diffs in report["value_diffs"][:50]:
+                out.append(f"\n**{key}**\n")
+                for col, val_csv, val_db in diffs[:5]:  # 每筆最多顯示 5 個欄位
+                    out.append(f"- `{col}`: CSV=`{val_csv}` vs DB=`{val_db}`\n")
+            out.append("\n")
 
-            f.write("---\n\n")
+        out.append("---\n\n")
 
-        f.write("## 建議處理方式\n\n")
-        f.write("1. 檢查「只在 CSV」的資料是否正確匯入\n")
-        f.write("2. 檢查「只在 DB」的資料是否為舊資料（應該被刪除）\n")
-        f.write("3. 檢查「數值差異」的原因（型別轉換？精度問題？）\n")
-        f.write("4. 考慮使用 `FORCE_REIMPORT=1` 重新匯入\n")
+    out.append("## 建議處理方式\n\n")
+    out.append("1. 檢查「只在 CSV」的資料是否正確匯入\n")
+    out.append("2. 檢查「只在 DB」的資料是否為舊資料（應該被刪除）\n")
+    out.append("3. 檢查「數值差異」的原因（型別轉換？精度問題？）\n")
+    out.append("4. 考慮使用 `FORCE_REIMPORT=1` 重新匯入\n")
+    return "".join(out)
 
-    print(f"\n✅ Diff 報告已寫入: {output_file}")
+
+def write_diff_report(reports, output_file=ERROR_LOG):
+    """寫入 diff 報告（fail-soft，見 common/error_log.py）。"""
+    path = write_error_log(
+        Path(output_file).name, build_diff_report(reports), mode="w", notice=False
+    )
+    if path is not None:
+        print(f"\n✅ Diff 報告已寫入: {path}")
