@@ -2,11 +2,17 @@ import argparse
 import os
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from common.error_log import append_error_log as append_to_error_log  # noqa: E402
+
+ERROR_LOG = "error_scraper.log"
 
 BASE_URL = "https://mopsov.twse.com.tw/server-java/t164sb01"
 ACTIVE_STOCKS_FILE = Path("active_stocks.txt")
@@ -38,26 +44,21 @@ RATE_LIMIT_ABORT_STREAK = 5
 BENIGN_FAILURE_REASONS = frozenset({"report_not_published"})
 
 
-def get_error_log_path() -> Path:
-    app_log = Path("/app/error_scraper.log")
-    return app_log if app_log.parent.exists() else Path("error_scraper.log")
-
-
 def append_error_log(
     year: int, quarter: int, run_date: str, failures: list[tuple[str, str]]
 ):
     if not failures:
         return
-    error_log = get_error_log_path()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with error_log.open("a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] scraper-quarterly-detail-xbrl failures\n")
-        f.write(f"Quarter: {year}Q{quarter}\n")
-        f.write(f"run_date: {run_date}\n")
-        f.write(f"failed_count: {len(failures)}\n")
-        for symbol, status in failures:
-            f.write(f"- {symbol}: {status}\n")
-    print(f"\n[WARN] Failures written to: {error_log}")
+    append_to_error_log(
+        ERROR_LOG,
+        "scraper-quarterly-detail-xbrl failures",
+        [
+            f"Quarter: {year}Q{quarter}",
+            f"run_date: {run_date}",
+            f"failed_count: {len(failures)}",
+        ]
+        + [f"- {symbol}: {status}" for symbol, status in failures],
+    )
 
 
 def load_symbols(path: Path) -> list[str]:

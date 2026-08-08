@@ -13,7 +13,7 @@
 **本文件自此不是待辦清單,而是下一次硬碟故障或換機器時的災難復原手冊**,
 同時保存 2026-08-01 的實測基準——那組數字是備份當下的快照,事後無法回溯重測。
 
-### 實際跑過一次之後發現的三處落差(尚未修正)
+### 實際跑過一次之後發現的四處落差(1–3 尚未修正,4 已於 2026-08-08 修正)
 
 1. **§10 的驗收指令跑不起來,且逐行相同這個條件本身不可能達成。**
    step5 需要 `strategies/output/<date>/dataset_strategy.csv`,但它被 `.gitignore`
@@ -36,6 +36,29 @@
    `Author identity unknown` 失敗。不影響還原本身,所以要到數天後才發作:
    `git config user.name "poyi"` / `git config user.email "poyilee1030@gmail.com"`
    (設 local 即可)。另外 §1 的套件清單沒有 `gh`,PR 流程會用到。
+4. **§2 少了「先 touch 出 error log 檔」,結果三個檔案被 docker 建成 root 目錄。**
+   2026-08-01 17:47 實際發生:`error_processor.log`、`error_importer.log`、
+   `error_calculator.log` 全變成 `drwxr-xr-x root root`,`write_error_report()`
+   從此固定拋 `IsADirectoryError`。因為壞的是錯誤處理器,交易日一路正常,
+   直到 2026-08-08 查資料完整性時才從 8/1、8/2 兩份 log 的 traceback 發現。
+   資料沒受影響(pipeline 仍會非零退出擋住污染),但各腳本叫你去看的那份
+   error log 永遠是空的。已補 §2 的 touch 步驟。
+   同時發現 `docker-compose.yml` 從一開始就漏了兩個 mount:4 個 scraper service
+   的 `error_scraper.log`、calculator 的 `error_valuation_calculator.log`——
+   內容一直隨 `--rm` 消失(2026Q2 那 9 筆 `invalid_report:too_small` 就查不到了),
+   一併補上。現在程式碼裡的 5 個路徑與 compose mount 一一對應。
+
+   §2 的 touch 步驟靠人記得照做,所以另外補了兩層不依賴人的防線:
+   - `schedules/ensure_error_logs.sh`:每支會跑 `docker compose` 的排程腳本
+     開頭都會呼叫它,自動 touch 出這 5 個檔;已經變成目錄時印出明確的
+     `sudo rmdir` 指令並回非 0(rmdir 要 root,不自己修)。
+   - `common/error_log.py`:scraper 四個 checker 的寫入改走這裡,**寫不進去
+     也不拋例外**,改成把整筆紀錄印到 stdout。壞掉的若是錯誤處理器本身,
+     絕不能連帶讓呼叫端的判斷結果消失——weekly 的新鮮度 gate 在全新 clone 上
+     第一次執行就會踩到這條路徑。
+   > processor/importer/calculator 的 `write_error_report()` 尚未改用
+   > `common/error_log.py`,仍會在目錄情況下拋 `IsADirectoryError`;
+   > 上面兩層防線已讓它不容易發生,但要根治得逐一改過去。
 
 ---
 
@@ -111,6 +134,20 @@ cd ~/GitHubLL/my_stock_project
 ```bash
 git config core.hooksPath .githooks
 ```
+
+建出 5 個 error log 檔。它們被 `.gitignore` 的 `*.log` 忽略,全新 clone 不會有,
+而 `docker-compose.yml` 會把它們 bind mount 進各 container:
+
+```bash
+touch error_processor.log error_importer.log error_calculator.log \
+      error_valuation_calculator.log error_scraper.log
+```
+
+> **必須趕在第一次 `docker compose` 之前做。** bind mount 的 source 不存在時,
+> docker 會照 target 自動建一個 **root 所有的目錄**,之後所有
+> `open(..., "a")` 都固定拋 `IsADirectoryError`。壞掉的是錯誤處理器本身,
+> 所以只在「真的出錯的那一天」才發作——而那天你正好最需要這份 log。
+> 已經踩過一次,見 §狀態 的落差 4。
 
 ---
 

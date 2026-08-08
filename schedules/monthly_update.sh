@@ -10,6 +10,8 @@ set -euo pipefail
 # 設定工作目錄
 cd "$(dirname "$0")/.."
 
+./schedules/ensure_error_logs.sh
+
 # 設定日誌目錄
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"

@@ -1,20 +1,18 @@
-import datetime
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from common.error_log import append_error_log  # noqa: E402
+
+ERROR_LOG = "error_scraper.log"
 
 
 def _append_missing(title, context, missing):
     if not missing:
         return
-    error_md = Path("/app/error_scraper.log")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(error_md, "a", encoding="utf-8") as f:
-        f.write(f"\n[{timestamp}] {title}\n")
-        for line in context:
-            f.write(f"{line}\n")
-        f.write("Missing files:\n")
-        for path in missing:
-            f.write(f"- {path}\n")
-    print(f"\n[WARN] Missing outputs detected. See: {error_md}")
+    lines = list(context) + ["Missing files:"] + [f"- {p}" for p in missing]
+    append_error_log(ERROR_LOG, title, lines)
 
 
 def check_monthly_outputs(output_dir, year, month):

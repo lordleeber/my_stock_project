@@ -4,6 +4,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+./schedules/ensure_error_logs.sh
+
 START_QUARTER="${1:-}"
 END_QUARTER="${2:-}"
 

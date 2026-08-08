@@ -9,6 +9,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+./schedules/ensure_error_logs.sh
+
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
 EXEC_TS=$(date +%Y%m%d_%H%M%S)
