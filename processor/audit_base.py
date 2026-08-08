@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 
 # _raise_error() 在這之後才 raise DataQualityError，所以寫 log 絕對不能拋例外——
 # 否則 6 處 except DataQualityError 的分類處理全部落空。見 _error_report.py。
-from _error_report import write_error_report  # noqa: F401
+from _error_report import write_error_report
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
 

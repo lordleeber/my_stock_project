@@ -1,3 +1,4 @@
+import functools
 import os
 import re
 import polars as pl
@@ -37,13 +38,14 @@ KEEP_INSTITUTIONS = [
 from _error_report import (  # noqa: E402
     fail_invalid_params as _fail_invalid_params,
 )
-from _error_report import log_processing_error  # noqa: E402, F401
+from _error_report import log_processing_error  # noqa: E402
 
-
-def fail_invalid_params(msg):
-    _fail_invalid_params(
-        msg, entry="daily/convert_institutional_summary.py", category=CATEGORY
-    )
+# 呼叫端一律 `fail_invalid_params(msg)`，entry/category 在這裡綁定一次。
+fail_invalid_params = functools.partial(
+    _fail_invalid_params,
+    entry="daily/convert_institutional_summary.py",
+    category=CATEGORY,
+)
 
 
 def _handle_institutional_summary(date_str, raw_dir=RAW_DIR):

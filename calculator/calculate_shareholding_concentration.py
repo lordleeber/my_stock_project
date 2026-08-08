@@ -11,14 +11,9 @@ from _incremental import (
     table_exists,
 )
 
-from _error_report import make_abort
+from _error_report import abort_with_error
 
-ERROR_LOG = "/error_calculator.log"
 TABLE = "shareholding_concentration"
-
-
-abort_with_error = make_abort(ERROR_LOG)
-
 
 # WoW LAG computed inline. For incremental runs we need the **previous TDCC
 # snapshot** per symbol to compute the new row's WoW delta — so the WHERE

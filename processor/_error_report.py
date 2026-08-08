@@ -44,8 +44,13 @@ def log_processing_error(msg, date_str=None, category=None):
     report += f"**Traceback:**\n```python\n{traceback.format_exc()}\n```\n"
     report += "---\n"
 
-    write_error_log(ERROR_LOG, report, mode="a", notice=False)
-    print(f"❌ Error logged to error_processor.log: {msg}")
+    path = write_error_log(ERROR_LOG, report, mode="a", notice=False)
+    # 訊息本身一定要印；「已寫入 log」只有真的寫進去才能講，否則操作者會照著這句
+    # 去翻一個空目錄，然後誤判成「處理器沒記到東西 = 沒發生錯誤」。
+    if path is not None:
+        print(f"❌ Error logged to {path}: {msg}")
+    else:
+        print(f"❌ Error: {msg}")
 
 
 def fail_invalid_params(msg, entry=None, category=None):
@@ -73,10 +78,13 @@ def write_error_report(date_str, category, issue):
     report += "\n**Processing stopped. Fix this error before continuing.**\n"
     report += "---\n"
 
-    write_error_log(ERROR_LOG, report, mode="a", notice=False)
+    path = write_error_log(ERROR_LOG, report, mode="a", notice=False)
     print(f"\n❌ Data quality error in {category}:")
     print(f"   {issue}")
-    print("📝 Report written to error_processor.log")
+    # 寫不進去時不要宣稱寫進去了——issue 上面已經印過，write_error_log 也會把
+    # 整份報告 dump 到 stdout，不會有東西消失。
+    if path is not None:
+        print(f"📝 Report written to {path}")
 
 
 def log_parsing_error(file_path, msg, exception=None):

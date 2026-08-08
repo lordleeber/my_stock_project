@@ -143,8 +143,8 @@ services:
       - TZ=Asia/Taipei
     volumes:
       - ./common:/app/common
-      - ./error_calculator.log:/error_calculator.log
-      - ./error_valuation_calculator.log:/error_valuation_calculator.log
+      - ./error_calculator.log:/app/error_calculator.log
+      - ./error_valuation_calculator.log:/app/error_valuation_calculator.log
     depends_on:
       db:
         condition: service_healthy

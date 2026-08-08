@@ -3,7 +3,6 @@ import glob
 import os
 import re
 import time
-import traceback
 from pathlib import Path
 
 import polars as pl
@@ -12,7 +11,7 @@ import sys
 
 # 加入 common 目錄到搜尋路徑
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from common.error_log import write_error_log
+from common.error_log import format_exception, write_error_log
 from common.schemas import get_polars_schema
 
 ERROR_LOG = "error_importer.log"
@@ -33,8 +32,8 @@ def abort_with_error(message, exception=None):
     report = "# Importer 錯誤報告\n\n"
     report += f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     report += f"## 錯誤訊息\n\n{message}\n\n"
-    if exception:
-        report += f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n"
+    if exception is not None:
+        report += f"## Traceback\n\n```\n{format_exception(exception)}\n```\n"
 
     path = write_error_log(ERROR_LOG, report, mode="w", notice=False)
     print(f"\n❌ {message}")

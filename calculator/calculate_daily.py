@@ -9,15 +9,11 @@ sys.path.append(os.path.dirname(__file__))
 from _incremental import get_engine, get_last_processed_date
 
 
-from _error_report import make_abort
+from _error_report import abort_with_error
 
-ERROR_LOG = "/error_calculator.log"
 TABLE = "technical_indicators"
 # MA240 needs ~480 trading days of history. 500 calendar days covers it.
 BUFFER_DAYS = 500
-
-
-abort_with_error = make_abort(ERROR_LOG)
 
 
 def _parse_date(date_str):

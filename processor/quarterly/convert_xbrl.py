@@ -81,7 +81,15 @@ def log_duplicate_and_exit(category: str, row: dict[str, str]):
         f"account_code={row.get('account_code', '')},value_text={row.get('value_text', '')},value_num={row.get('value_num', '')}\n"
     )
     error_log = write_error_log(ERROR_LOG, report, mode="a", notice=False)
-    print(f"Error: duplicate row detected in {category}. See {error_log or ERROR_LOG}")
+    # 寫不進去時**不能**退回 ERROR_LOG 檔名——那句話跟成功時長得一模一樣，卻把
+    # 操作者指向一個確定沒有內容的檔案。重複列的 key 這時只在 stdout 的 dump 裡。
+    if error_log is not None:
+        print(f"Error: duplicate row detected in {category}. See {error_log}")
+    else:
+        print(
+            f"Error: duplicate row detected in {category}. "
+            "寫入 error log 失敗，重複列的內容已 dump 到 stdout（見上方 [WARN]）。"
+        )
     raise SystemExit(1)
 
 

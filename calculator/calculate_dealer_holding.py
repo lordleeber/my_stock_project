@@ -6,14 +6,9 @@ from sqlalchemy import text
 sys.path.append(os.path.dirname(__file__))
 from _incremental import get_engine, get_last_processed_date, parse_force_full
 
-from _error_report import make_abort
+from _error_report import abort_with_error
 
-ERROR_LOG = "/error_calculator.log"
 TABLE = "dealer_holding"
-
-
-abort_with_error = make_abort(ERROR_LOG)
-
 
 # Cumulative SUM: each new row's dealer_held_shares = previous cumulative total
 # (from existing rows) + cumulative SUM of new dealer_net deltas.

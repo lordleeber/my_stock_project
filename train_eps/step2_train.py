@@ -12,9 +12,11 @@ from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error
 
 _HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+for _path in (_HERE, _HERE.parent):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
+from common.error_log import write_error_log  # noqa: E402
 from shared_config import (  # noqa: E402
     latest_playbook_date,
     load_shared_config,
@@ -220,9 +222,13 @@ def main() -> None:
             f"  train_mae_lgb_pred_eps ({lgb_mae:.4f}) > train_mae_baseline_anchor_eps ({bl_mae:.4f})\n"
             f"  模型 in-sample 表現劣於 baseline，請確認 feature/label 是否正確串接。\n"
         )
-        with log_path.open("a", encoding="utf-8") as f:
-            f.write(msg)
-        print(f"[WARNING] sanity check failed — 詳見 {log_path}")
+        # fail-soft：這是**警告**路徑（印完就繼續走完 train），寫 log 失敗絕不能
+        # 把它升級成中斷。見 common/error_log.py。
+        written = write_error_log(str(log_path), msg, mode="a", notice=False)
+        if written is not None:
+            print(f"[WARNING] sanity check failed — 詳見 {written}")
+        else:
+            print("[WARNING] sanity check failed — 詳見上方 dump（error log 寫不進去）")
 
     print(f"train completed: {date_dir.name}")
     print(json.dumps(metrics, indent=2))

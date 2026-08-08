@@ -12,12 +12,19 @@ The calculator component refines raw market and financial data into actionable i
 4.  **Valuation (`calculate_valuation.py`)**: Computes PIT-accurate TTM EPS, PE, PE percentile, and ROE (backward / published-quarter only).
 
 Error handling is fail-fast:
-- Any runtime error writes to `/error_calculator.log` or `/error_valuation_calculator.log`
-- Exits immediately with non-zero status.
-- `abort_with_error` 由 `calculator/_error_report.py::make_abort(ERROR_LOG)` 產生（7 支
-  原本各抄一份，其中 6 份還漏了「執行時間」——報告是 `"w"` 覆寫的，沒時間戳就看不出
-  是哪次跑留下的）。寫入走 `common/error_log.py`（**fail-soft**）：log 被 docker 建成
-  目錄時仍印得出真正的錯誤訊息再 exit 1（見 `RESTORE.md` §落差4）。
+- 六支 `calculate_*.py`（daily / dealer_holding / trust_holding /
+  shareholding_concentration / short_interest_analysis / margin_pressure_analysis）
+  的 runtime error 走 `abort_with_error()`：寫一份報告到 `/app/error_calculator.log`
+  後 exit 1。
+- ⚠️ **`calculate_valuation.py` 不走這條路**——它的 `main()` 是
+  `except Exception: traceback.print_exc(); sys.exit(1)`，crash 只會出現在 stdout／
+  stderr，`/app/error_valuation_calculator.log` **不會**有東西。那個檔案唯一的內容是
+  `reconcile_ttm()` 的健檢警告（見下方 Self-Reconciliation Check）。跑掛了要找原因
+  請看 container 的輸出，不是那份 log。
+- `abort_with_error` 收在 `calculator/_error_report.py`（6 支原本各抄一份，其中 5 份
+  還漏了「執行時間」——報告是 `"w"` 覆寫的，沒時間戳就看不出是哪次跑留下的；log
+  檔名也各留一份常數）。寫入走 `common/error_log.py`（**fail-soft**）：log 被 docker
+  建成目錄時仍印得出真正的錯誤訊息再 exit 1（見 `RESTORE.md` §落差4）。
 
 ### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
 
@@ -85,7 +92,7 @@ Every daily valuation record uses the latest report *available at that specific 
 ### Self-Reconciliation Check (`reconcile_ttm`)
 After each insert, the calculator verifies that **every symbol's latest stored
 `ttm_eps_official` equals the trailing-4Q `eps_q` sum** published as of that row's
-date (tolerance 0.10). Mismatches are logged to stdout + `/error_valuation_calculator.log`
+date (tolerance 0.10). Mismatches are logged to stdout + `/app/error_valuation_calculator.log`
 with the worst offenders, but **never abort the run**. A non-empty report flags either a
 regression here or a `quarterly_reports_xbrl` restatement the frozen history hasn't
 absorbed yet (→ rebuild with `--force-full`).

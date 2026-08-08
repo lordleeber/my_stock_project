@@ -8,7 +8,7 @@ from common.schemas import COLUMN_MAP, NUMERIC_COLS
 
 # 這支的兩個呼叫點都在 except 區塊裡（「記一筆、回 None、跳過這個檔」的降級路徑），
 # 所以寫 log 失敗絕不能升級成中斷——見 _error_report.py 的 docstring。
-from _error_report import log_parsing_error  # noqa: F401
+from _error_report import log_parsing_error
 
 
 def clean_dataframe(df, return_col_mapping=False):
