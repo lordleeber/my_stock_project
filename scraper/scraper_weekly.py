@@ -8,7 +8,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scraper.weekly import fetch_tdcc
-from scraper.weekly.check_outputs import check_weekly_outputs
+from scraper.weekly.check_outputs import (
+    check_weekly_outputs,
+    fail_if_problems,
+    normalize_tdcc_date,
+)
 
 
 def main():
@@ -27,14 +31,10 @@ def main():
     if rc != 0:
         return rc
 
-    tdcc_date = os.getenv("TDCC_DATE", "").strip()
-    missing = check_weekly_outputs(output_root, tdcc_date)
-    if missing:
-        # 與 scraper_daily.py 同慣例：checker 回報問題就讓 entrypoint 非零退出，
-        # weekly_update.sh 的 set -e 會中斷，systemd 的 OnFailure 才推得出通知。
-        print(f"[FAIL] {len(missing)} weekly output problem(s) detected.")
-        return 1
-    return 0
+    # 驗證與失敗回報都走 check_outputs 的共用函式，兩個 entrypoint 才不會漂開
+    # （之前這裡少了 TDCC_DATE 的格式驗證，同一個輸入在兩邊行為不同）。
+    tdcc_date = normalize_tdcc_date(os.getenv("TDCC_DATE"))
+    return fail_if_problems(check_weekly_outputs(output_root, tdcc_date))
 
 
 if __name__ == "__main__":

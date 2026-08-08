@@ -115,8 +115,25 @@ docker compose run --rm scraper-quarterly \
   - 指定 `TDCC_DATE` 時跳過新鮮度檢查（刻意鎖定硬碟上某一份來重驗）。
   - 農曆年整週休市時 TDCC 確實沒有快照，會告警一次（一整年只有這一次），
     確認後用 `ALLOW_STALE_TDCC=1 ./schedules/weekly_update.sh` 放行。
+  - **另外驗連續性**：相鄰兩份快照間隔 > `MAX_SNAPSHOT_GAP_DAYS`（9 天）就告警。
+    新鮮度只看最新那一份，有個結構性盲點——缺口一旦被下一週的快照蓋過去就永遠
+    看不見了（7/12 告警若被錯過，7/19 抓到 7/17 就會安靜通過，7/09 永久消失）。
+    - 門檻怎麼來的：實測 52 份的間隔分布是 6 天 ×6、7 天 ×37、8 天 ×8、13 天 ×1
+      （13 天那次是農曆年）；漏一週會變成 14 天。取 9 天，正常週零誤報。
+    - 只回看 `CONTINUITY_LOOKBACK_DAYS`（30 天 ≈ 4 個週日）。TDCC OpenData 沒有
+      歷史，舊缺口補不回來，每週重報只會變成長期雜訊、最後被忽略——那就跟沒有
+      gate 一樣了。用途是「讓被錯過的那次告警再有幾次機會」，不是清點歷史。
+  - 未來日期的檔案（手動 cp 錯之類）會被排除在 latest 候選之外並**單獨指名回報**，
+    不會像以前那樣被選成 latest 把 gate 永久卡死。
   - gate 只擋 shareholding 分支：`weekly_update.sh` 的除權息 process+import 與
     TDCC 無關，會照跑到底，最後才依兩條分支的成敗決定退出碼。
+  - `ALLOW_STALE_TDCC=1` 放行時會在 log 寫下 `Waived by ALLOW_STALE_TDCC=1:` 區塊
+    （不只印 stdout）——刻意跳過的那一週必須留得下紀錄，否則幾個月後回頭查籌碼
+    缺口時，這份 log 反而看不出是誰知情跳過的。
+  - log 裡 `Problems:` / `Waived by ...:` 的每一筆都以**真實路徑**開頭、後接原因，
+    可以直接拿去 `ls`；不再混入 `<year>/TDCC_OD_1-5_YYYYMMDD.csv` 這種佔位字串。
+  - `normalize_tdcc_date()` / `fail_if_problems()` 由 `scraper_weekly.py` 與
+    `check_outputs.main()` 共用，兩個 entrypoint 對同一個輸入行為一致。
   - 檔名日期解析集中在 `_snapshot_date()`，`99999999` / `20261332` 這種過得了
     `\d{8}` 卻不是合法日期的值一律 fail-closed，不會讓 checker 直接 traceback。
   - 錯誤寫入走 `common/error_log.py`，**寫不進去也不會拋例外**（見該檔 docstring

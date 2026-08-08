@@ -22,9 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from common.error_log import append_error_log  # noqa: E402
 from scraper.weekly.check_outputs import (  # noqa: E402
     FRESHNESS_WINDOW_DAYS,
+    MAX_SNAPSHOT_GAP_DAYS,
+    _check_continuity,
     _check_freshness,
     _find_latest_tdcc_file,
     check_weekly_outputs,
+    normalize_tdcc_date,
 )
 
 # TDCC 2025-08 ~ 2026-08 的真實快照日期（取自歷史查詢頁的 scaDate 下拉選單）。
@@ -93,6 +96,30 @@ def _cwd(path):
         yield
     finally:
         os.chdir(prev)
+
+
+@contextlib.contextmanager
+def _env(**kv):
+    prev = {k: os.environ.get(k) for k in kv}
+    os.environ.update({k: v for k, v in kv.items() if v is not None})
+    try:
+        yield
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _make_snapshots(root, date_strs):
+    """在 <root>/raw/shareholding/<year>/ 底下建出這些快照檔。"""
+    for d in date_strs:
+        year_dir = root / "raw" / "shareholding" / d[:4]
+        year_dir.mkdir(parents=True, exist_ok=True)
+        (year_dir / f"TDCC_OD_1-5_{d}.csv").write_text(
+            f"資料日期,證券代號\n{d},2330\n", encoding="utf-8"
+        )
 
 
 def _path(date_str):
@@ -262,7 +289,7 @@ def test_garbage_filename_does_not_hide_the_real_latest(tmp_path):
     for name in ("TDCC_OD_1-5_99999999.csv", "TDCC_OD_1-5_20260807.csv"):
         (share / name).write_text("x", encoding="utf-8")
 
-    latest = _find_latest_tdcc_file(tmp_path)
+    latest, _future = _find_latest_tdcc_file(tmp_path, _date("2026-08-09"))
     assert latest.name == "TDCC_OD_1-5_20260807.csv", f"選到了 {latest}"
 
 
@@ -298,6 +325,112 @@ def test_gate_still_fires_when_the_error_log_is_a_directory(tmp_path):
     with _cwd(tmp_path):
         missing = check_weekly_outputs(str(tmp_path))
     assert missing, "log 寫入失敗不能吃掉 missing"
+
+
+def test_future_dated_file_does_not_wedge_the_gate(tmp_path):
+    """一個未來日期的檔案（手動 cp 錯之類）以前會永遠被選成 latest，於是就算正確
+    的當週快照已經抓回來，每次都還是回報 in the future——gate 被永久卡死。"""
+    _make_snapshots(tmp_path, ["20990709", "20260807"])
+
+    latest, future = _find_latest_tdcc_file(
+        tmp_path / "raw" / "shareholding", _date("2026-08-09")
+    )
+    assert latest.name == "TDCC_OD_1-5_20260807.csv", f"latest 選到了 {latest}"
+    assert [p.name for p in future] == ["TDCC_OD_1-5_20990709.csv"]
+
+    with _cwd(tmp_path):
+        problems = check_weekly_outputs(str(tmp_path), today=_date("2026-08-09"))
+    # 仍必須回報（壞檔要有人去刪），但訊息要指名道姓是哪一個檔
+    assert len(problems) == 1, problems
+    assert "20990709" in problems[0] and "future" in problems[0]
+
+
+def test_continuity_catches_a_hole_the_freshness_check_cannot(tmp_path):
+    """2026-07-12 的告警若被錯過，7/19 時最新的是 7/17、落在新鮮度窗口內 →
+    fresh=True，7/09 就這樣安靜地永久消失。連續性檢查就是為了補這個盲點。"""
+    _make_snapshots(tmp_path, ["20260626", "20260703", "20260717"])  # 缺 07-09
+
+    with _cwd(tmp_path):
+        problems = check_weekly_outputs(str(tmp_path), today=_date("2026-07-19"))
+
+    fresh, _, _ = _check_freshness(_path("20260717"), _date("2026-07-19"))
+    assert fresh, "前提：新鮮度檢查在這個情境下確實會放行"
+    assert problems, "新鮮度放行時，連續性必須接手把缺口報出來"
+    assert "2026-07-03" in problems[0] and "2026-07-17" in problems[0]
+
+
+def test_continuity_is_quiet_on_a_normal_year():
+    """整年真實快照逐週日重播：只有農曆年缺口在 lookback 窗口內時會響，其餘每個
+    週日都必須安靜——否則這個檢查會變成每週雜訊，最後跟沒有 gate 一樣。"""
+    snaps = sorted(_snapshot_date(s) for s in REAL_SNAPSHOTS)
+    normal_gaps = [(b - a).days for a, b in zip(snaps, snaps[1:]) if (b - a).days != 13]
+    assert max(normal_gaps) <= MAX_SNAPSHOT_GAP_DAYS, (
+        f"正常週最大間隔 {max(normal_gaps)} 天已逼近門檻 {MAX_SNAPSHOT_GAP_DAYS}，會誤報"
+    )
+
+    sunday = snaps[0]
+    while sunday.weekday() != 6:
+        sunday += datetime.timedelta(days=1)
+
+    noisy = []
+    while sunday <= snaps[-1]:
+        if _check_continuity(snaps, sunday):
+            noisy.append(sunday)
+        sunday += datetime.timedelta(days=7)
+
+    # 缺口的兩端都進入 lookback 窗口之後才看得到，所以是農曆年之後的那 3 個週日；
+    # 2026-02-22 當天由新鮮度 gate 負責告警，兩者不重複。
+    assert [f"{d}" for d in noisy] == ["2026-03-01", "2026-03-08", "2026-03-15"], noisy
+
+
+def test_continuity_lookback_eventually_goes_quiet():
+    """舊缺口補不回來（TDCC OpenData 沒有歷史），不能每週重報到天荒地老。"""
+    snaps = [_date("2026-06-26"), _date("2026-07-03"), _date("2026-07-17")]
+    assert _check_continuity(snaps, _date("2026-07-19")), "剛發生時必須報"
+    assert not _check_continuity(snaps, _date("2026-09-06")), "超過 lookback 後要安靜"
+
+
+def test_waived_stale_snapshot_is_still_recorded(tmp_path):
+    """ALLOW_STALE_TDCC=1 是刻意放行，但必須在 error log 留下紀錄——否則幾個月後
+    回頭查籌碼缺口時，這份 log 看不出那週是被人知情跳過的。"""
+    _make_snapshots(tmp_path, ["20260703"])
+
+    with _cwd(tmp_path), _env(ALLOW_STALE_TDCC="1"):
+        problems = check_weekly_outputs(str(tmp_path), today=_date("2026-08-09"))
+    assert problems == [], "放行時不該回報問題"
+
+    log = (tmp_path / "error_scraper.log").read_text(encoding="utf-8")
+    assert "Waived by ALLOW_STALE_TDCC=1" in log, log
+    assert "TDCC_OD_1-5_20260703.csv" in log, log
+
+
+def test_reported_problems_start_with_a_real_path(tmp_path):
+    """log 裡每一筆都要能直接拿去 ls；之前混了 `<year>/TDCC_OD_1-5_YYYYMMDD.csv`
+    這種佔位字串，任何拿 log 撈路徑重抓的工具都會拿到不存在的檔名。"""
+    _make_snapshots(tmp_path, ["20260703"])
+
+    with _cwd(tmp_path):
+        problems = check_weekly_outputs(str(tmp_path), today=_date("2026-08-09"))
+
+    assert problems
+    for p in problems:
+        head = p.split(" — ")[0]
+        assert "<" not in head and "YYYYMMDD" not in head, f"佔位字串: {p}"
+        assert Path(head).exists(), f"不存在的路徑: {head}"
+
+
+def test_both_entrypoints_share_one_tdcc_date_validation():
+    """scraper_weekly.py 以前少了這段驗證，同一個輸入在兩個 entrypoint 行為不同。"""
+    assert normalize_tdcc_date("20260709") == "20260709"
+    assert normalize_tdcc_date("2026-07-09") == "", "格式錯誤應回退到 latest 模式"
+    assert normalize_tdcc_date("  ") == ""
+    assert normalize_tdcc_date(None) == ""
+
+    import scraper.scraper_weekly as sw
+
+    assert sw.normalize_tdcc_date is normalize_tdcc_date
+    assert sw.fail_if_problems([]) == 0
+    assert sw.fail_if_problems(["x"]) == 1
 
 
 def _run_standalone() -> int:
