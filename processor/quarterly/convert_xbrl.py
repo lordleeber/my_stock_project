@@ -8,6 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _error_report import ERROR_LOG  # noqa: E402
+from common.error_log import write_error_log  # noqa: E402
 
 CATEGORY = "xbrl"
 BALANCE_CATEGORY = "balance_sheet_xbrl"
@@ -69,22 +72,24 @@ def read_html_text(path: Path) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def get_error_log_path() -> Path:
-    app_log = Path("/app/error_processor.log")
-    return app_log if app_log.parent.exists() else Path("error_processor.log")
-
-
 def log_duplicate_and_exit(category: str, row: dict[str, str]):
-    error_log = get_error_log_path()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with error_log.open("a", encoding="utf-8") as f:
-        f.write(f"\n[{ts}] duplicate row detected in {category}\n")
-        f.write(
-            "key="
-            f"date={row.get('date', '')},symbol={row.get('symbol', '')},"
-            f"account_code={row.get('account_code', '')},value_text={row.get('value_text', '')},value_num={row.get('value_num', '')}\n"
+    report = f"\n[{ts}] duplicate row detected in {category}\n"
+    report += (
+        "key="
+        f"date={row.get('date', '')},symbol={row.get('symbol', '')},"
+        f"account_code={row.get('account_code', '')},value_text={row.get('value_text', '')},value_num={row.get('value_num', '')}\n"
+    )
+    error_log = write_error_log(ERROR_LOG, report, mode="a", notice=False)
+    # 寫不進去時**不能**退回 ERROR_LOG 檔名——那句話跟成功時長得一模一樣，卻把
+    # 操作者指向一個確定沒有內容的檔案。重複列的 key 這時只在 stdout 的 dump 裡。
+    if error_log is not None:
+        print(f"Error: duplicate row detected in {category}. See {error_log}")
+    else:
+        print(
+            f"Error: duplicate row detected in {category}. "
+            "寫入 error log 失敗，重複列的內容已 dump 到 stdout（見上方 [WARN]）。"
         )
-    print(f"Error: duplicate row detected in {category}. See {error_log}")
     raise SystemExit(1)
 
 

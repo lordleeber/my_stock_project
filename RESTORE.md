@@ -56,9 +56,19 @@
      也不拋例外**,改成把整筆紀錄印到 stdout。壞掉的若是錯誤處理器本身,
      絕不能連帶讓呼叫端的判斷結果消失——weekly 的新鮮度 gate 在全新 clone 上
      第一次執行就會踩到這條路徑。
-   > processor/importer/calculator 的 `write_error_report()` 尚未改用
-   > `common/error_log.py`,仍會在目錄情況下拋 `IsADirectoryError`;
-   > 上面兩層防線已讓它不容易發生,但要根治得逐一改過去。
+   processor(9)/ importer(1)/ calculator(7)/ train_eps(2)的 error log 寫入點
+   也已全部改用 `common/error_log.py`(2026-08-08),各模組原本的 log 格式逐字
+   保留。實測把 log 換成目錄後:importer/calculator 的 `abort_with_error()` 仍
+   印出**真正的錯誤訊息**並 exit 1(舊版連訊息都印不出來,只剩一行指著寫 log
+   那行的 traceback);processor 的 `log_parsing_error()` 維持降級、不再把整個
+   run 打死;`train_eps/run_pipeline.py` 失敗時的 returncode/stdout/stderr 不會
+   再被寫 log 的例外吃掉。測試:`venv/bin/python3 common/tests/test_error_log.py`。
+
+   同一時間把 calculator 兩份 log 的 container 掛載點從檔案系統根目錄
+   (`/error_calculator.log`)改成 `/app/...`,與 processor/importer/scraper 一致
+   (host 端檔名不變,只有 container 內的路徑變)。原本為了那一個特例,
+   `resolve_error_log_path()` 得多帶一條 `container_dir != "/"` 判斷,calculator
+   那邊還得到處 `lstrip("/")`——四處耦合現在全部消失。
 
 ---
 

@@ -13,6 +13,9 @@ The importer loads processed CSV data into PostgreSQL database:
 - Supports incremental and full refresh modes
 - Handles deduplication by date+market or date+symbol
 - **Fail-fast**: any import error writes to `error_importer.log` and exits immediately (`SystemExit(1)`)
+  - 寫入走 `common/error_log.py`（**fail-soft**）：log 被 docker 建成目錄時仍會印出
+    真正的錯誤訊息再 exit 1。舊版是在寫檔那行就拋 `IsADirectoryError`，後面的
+    `print(message)` 執行不到，等於**錯誤原因完全消失**（見 `RESTORE.md` §落差4）。
 
 ### 🔴 STRICT IMAGE REBUILD RULE (CORE MANDATE)
 

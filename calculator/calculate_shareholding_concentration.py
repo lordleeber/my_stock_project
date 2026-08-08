@@ -1,6 +1,5 @@
 import os
 import sys
-import traceback
 
 from sqlalchemy import text
 
@@ -12,20 +11,9 @@ from _incremental import (
     table_exists,
 )
 
-ERROR_LOG = "/error_calculator.log"
+from _error_report import abort_with_error
+
 TABLE = "shareholding_concentration"
-
-
-def abort_with_error(message, exception=None):
-    with open(ERROR_LOG, "w") as f:
-        f.write("# Calculator 錯誤報告\n\n")
-        f.write(f"## 錯誤訊息\n\n{message}\n\n")
-        if exception is not None:
-            f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
-    print(f"\n❌ {message}")
-    print(f"錯誤已寫入 {ERROR_LOG}")
-    raise SystemExit(1)
-
 
 # WoW LAG computed inline. For incremental runs we need the **previous TDCC
 # snapshot** per symbol to compute the new row's WoW delta — so the WHERE

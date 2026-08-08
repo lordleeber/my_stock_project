@@ -7,9 +7,11 @@ from datetime import datetime
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+for _path in (_HERE, _HERE.parent):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
+from common.error_log import write_error_log  # noqa: E402
 from shared_config import latest_playbook_date, parse_playbook_date  # noqa: E402
 
 
@@ -27,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def append_error_log(
+def log_step_failure(
     log_path: Path,
     step_name: str,
     cmd: list[str],
@@ -35,6 +37,14 @@ def append_error_log(
     stdout: str,
     stderr: str,
 ) -> None:
+    """把失敗的 step 記進 `error_train_eps.log`（格式與舊版逐字相同）。
+
+    寫入走 `common.error_log`（**fail-soft**）：舊版是裸 `log_path.open("a")`，
+    log 一旦被建成目錄就在這一行拋 `IsADirectoryError`，連帶把 step 的
+    returncode / stdout / stderr 全部吃掉，而 `raise SystemExit(returncode)`
+    也執行不到——正是 `RESTORE.md` §落差4 那個失敗模式。現在寫不進去會把整筆
+    內容 dump 到 stdout，退出碼一定送得出去。
+    """
     ts = datetime.now().isoformat(timespec="seconds")
     lines = [
         f"[{ts}] TRAIN_EPS PIPELINE FAILED",
@@ -48,8 +58,7 @@ def append_error_log(
         "=" * 80,
         "",
     ]
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    write_error_log(str(log_path), "\n".join(lines), mode="a", notice=False)
 
 
 def run_step(step_name: str, cmd: list[str], cwd: Path, log_path: Path) -> None:
@@ -64,7 +73,7 @@ def run_step(step_name: str, cmd: list[str], cwd: Path, log_path: Path) -> None:
         )
 
     if proc.returncode != 0:
-        append_error_log(
+        log_step_failure(
             log_path, step_name, cmd, proc.returncode, proc.stdout, proc.stderr
         )
         raise SystemExit(proc.returncode)

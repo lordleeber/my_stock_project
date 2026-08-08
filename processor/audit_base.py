@@ -8,9 +8,12 @@ Provides common functionality for all category-specific checkers.
 import os
 import csv
 import pandas as pd
-from datetime import datetime
 from pathlib import Path
 from abc import ABC, abstractmethod
+
+# _raise_error() 在這之後才 raise DataQualityError，所以寫 log 絕對不能拋例外——
+# 否則 6 處 except DataQualityError 的分類處理全部落空。見 _error_report.py。
+from _error_report import write_error_report
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
@@ -67,26 +70,6 @@ def clean_value_for_comparison(val):
     if s and all(c == "-" for c in s):
         return ""
     return s
-
-
-def write_error_report(date_str, category, issue):
-    """Write a single error to error_processor.log and raise exception to stop"""
-    error_file = Path("/app/error_processor.log")
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    report = f"\n## Data Quality Error - {date_str}\n"
-    report += f"**Detected at:** {timestamp}\n"
-    report += f"**Category:** {category}\n"
-    report += f"**Error:** {issue}\n"
-    report += "\n**Processing stopped. Fix this error before continuing.**\n"
-    report += "---\n"
-
-    with open(error_file, "a", encoding="utf-8") as f:
-        f.write(report)
-
-    print(f"\n❌ Data quality error in {category}:")
-    print(f"   {issue}")
-    print("📝 Report written to error_processor.log")
 
 
 def get_processed_date_path(category, date_str, market=None):

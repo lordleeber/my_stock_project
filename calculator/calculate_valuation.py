@@ -12,7 +12,9 @@ sys.path.append(os.path.dirname(__file__))
 from common.schemas import SCHEMA_COLS
 from _incremental import get_engine, get_last_processed_date
 
-ERROR_LOG = "/error_valuation_calculator.log"
+from common.error_log import write_error_log
+
+ERROR_LOG = "error_valuation_calculator.log"
 TABLE = "valuation_daily"
 
 
@@ -268,11 +270,10 @@ def reconcile_ttm(engine, tol=0.10, max_examples=15):
                 f"  {r['symbol']} @ {r['date']}: stored={r['ttm_eps_official']:.2f} "
                 f"expected={r['expected_ttm']:.2f} (diff={r['diff']:.2f})"
             )
-        try:
-            with open(ERROR_LOG, "a") as f:
-                f.write(msg + "\n")
-        except OSError:
-            pass
+        # 這裡本來就 fail-soft，但是**靜默**吞掉 OSError——log 被建成目錄時
+        # （RESTORE.md §落差4）reconcile 的結論就這樣沒了，而且沒有任何跡象。
+        # 改走共用寫入：寫不進去會印出原因與內容，不會無聲無息。
+        write_error_log(ERROR_LOG, msg + "\n", mode="a", notice=False)
     except Exception as e:  # never let the health-check abort the run
         print(f"[reconcile] skipped (check failed: {e})")
 

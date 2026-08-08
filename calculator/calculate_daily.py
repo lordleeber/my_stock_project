@@ -1,8 +1,6 @@
 import argparse
-import datetime
 import os
 import sys
-import traceback
 
 import pandas as pd
 from sqlalchemy import text
@@ -11,24 +9,11 @@ sys.path.append(os.path.dirname(__file__))
 from _incremental import get_engine, get_last_processed_date
 
 
-ERROR_LOG = "/error_calculator.log"
+from _error_report import abort_with_error
+
 TABLE = "technical_indicators"
 # MA240 needs ~480 trading days of history. 500 calendar days covers it.
 BUFFER_DAYS = 500
-
-
-def abort_with_error(message, exception=None):
-    with open(ERROR_LOG, "w") as f:
-        f.write("# Calculator 錯誤報告\n\n")
-        f.write(
-            f"執行時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
-        f.write(f"## 錯誤訊息\n\n{message}\n\n")
-        if exception is not None:
-            f.write(f"## Traceback\n\n```\n{traceback.format_exc()}\n```\n")
-    print(f"\n❌ {message}")
-    print(f"錯誤已寫入 {ERROR_LOG}")
-    raise SystemExit(1)
 
 
 def _parse_date(date_str):
