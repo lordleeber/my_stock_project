@@ -15,33 +15,27 @@
 
 ---
 
-## `shareholding` 缺 2026-07-09 一週（尚未回補）
+## `shareholding` 的 2026-07-09 是部分快照（1849 檔，其他日期 ~2952）
 
-DB 的 `shareholding` / `shareholding_concentration` 從 2026-07-03 直接跳到 2026-07-17，
-中間那週的 TDCC 快照（基準日 **2026-07-09**，因為 7/10 週五休市而順延到週四）從未入庫，
-`data/raw/shareholding/2026/` 也沒有對應檔案。
+那一週的 TDCC 快照原本整份漏掉（7/10 週五休市 → 基準日順延到週四 → 7/12 沒抓到 →
+7/19 抓到的已是 7/17），**已於 2026-08-10 回補入庫**。但回補只能逐檔爬歷史查詢頁
+（TDCC OpenData 沒有歷史），股票清單用 `active_stocks.txt` 的 1849 檔，所以這一天
+**永遠會比鄰近日期少約 1100 檔**：
 
-**漏掉的機制已於 2026-08-08 修掉**（`scraper/weekly/check_outputs.py` 的新鮮度檢查，
-見該檔的區塊註解與 `scraper/tests/test_check_weekly_freshness.py`），所以**不會再發生**；
-這裡記的是**已經漏掉的那一週還沒補回來**。
+```
+2026-07-03  2952
+2026-07-09  1849   ← 回補，部分快照
+2026-07-17  2955
+```
 
-實測影響（2026-08-08 查證）：
+殘留影響只有一處：那 ~1100 檔沒補到的股票，它們 **2026-07-17 那列的 `*_wow` 仍是
+14 天差分冒充週差分**（LAG 跳過 07-09 直接接到 07-03）。有補到的 1849 檔已是正確的
+週差分。實測沒有任何 cohort 的 top-2 會讀到 07-17 那列，所以目前無下游影響。
 
-- **cohort 2026-07-11（cutoff 07-10）**：`step1_prepare_data.py` 取 `date <= cutoff` 的最新
-  兩筆 concentration，實際拿到 `07-03 + 06-26`，正確應為 `07-09 + 07-03`。8 個籌碼特徵
-  整週落後，`large_holder_two_week_up` 的兩週配對也錯。
-- **cohort 2026-08-11（cutoff 08-10）**：取到 `08-07 + 07-31`，**不受影響**。
-- `shareholding_concentration` 在 2026-07-17 那列的 `*_wow` 是拿 07-03 當 LAG 基準
-  （14 天差分冒充週差分），但沒有任何 cohort 的 top-2 會讀到它。
+受影響的 **cohort 2026-07-11（cutoff 07-10）已確認完全修復**：359 檔全部在 07-09
+有 concentration，`step1` 取到的最新兩筆從錯誤的 `07-03 + 06-26` 回到正確的
+`07-09 + 07-03`。
 
-**性質是「資料較舊」，不是 look-ahead** —— PIT 上偏保守，不是洩漏，所以嚴重度低於
-`strategies/CLAUDE.md` 記的 entry_date 事件。
-
-回補成本（評估過但尚未執行）：TDCC OpenData（`getOD.ashx?id=1-5`）只給最新一週，
-歷史只能走 `scraper/weekly/fetch_tdcc_history.py` 的**逐檔查詢**（每檔 sleep 1–2 秒，
-2952 檔約 75 分鐘），而且輸出是 per-stock 格式（`序,持股分級,人數,股數,占集保庫存數比例(%)`
-外加一列「合計」），要另寫轉檔才能餵給 `convert_shareholding.py` 的 bulk 格式。
-另外原始 bulk 檔有 4001 個 symbol、DB 匯入後 2952，逐檔重建**無論如何都是部分快照**。
-回補後還要 `--force-full` 重算 `shareholding_concentration`（incremental 只 append
-`date > last_processed`，回填早於 07-31 的日期不會被吸收），再重跑 cohort 2026-07-11 的
-step1+step2 與 step3。2026-08-08 單檔實測（2330 / 20260709）確認資料**取得到**。
+回補流程記在 `scraper/weekly/merge_shareholding.py` 的 docstring（fetch → merge →
+convert → import → `--force-full`）。漏抓機制本身已於 2026-08-08 修掉，見
+`scraper/weekly/check_outputs.py` 的新鮮度 + 連續性 gate。

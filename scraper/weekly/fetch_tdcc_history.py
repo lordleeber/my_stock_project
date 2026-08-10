@@ -182,8 +182,14 @@ def main():
         "--output",
         "-o",
         type=str,
-        default="data/raw/shareholding",
-        help="Output directory",
+        # 刻意**不是** data/raw/shareholding：那裡放的是 OpenData 的 bulk 檔
+        # （`YYYY/TDCC_OD_1-5_YYYYMMDD.csv`），本檔輸出的是 per-stock 的
+        # `date=YYYYMMDD/<symbol>.csv`，兩種格式混在同一棵樹下只會讓人誤以為
+        # 該週已經有資料。per-stock 檔要先經 weekly/merge_shareholding.py 合併成
+        # bulk 才進得了 processor/weekly/convert_shareholding.py，而那支的預設
+        # 輸入就是這個目錄。
+        default="data/raw/shareholding_div",
+        help="Output directory (per-stock; merge_shareholding.py reads from here)",
     )
     parser.add_argument(
         "--list-dates",
