@@ -31,8 +31,10 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - `check_outputs.py`: daily 輸出完整性檢查
 
 - `weekly/`
-  - `fetch_tdcc.py`: TDCC OpenData 單次抓取（使用 `curl`）
-  - `fetch_tdcc_history.py`: TDCC 歷史資料抓取
+  - `fetch_tdcc.py`: TDCC OpenData 單次抓取（使用 `curl`），bulk 格式，**只有最新一週**
+  - `fetch_tdcc_history.py`: 逐檔爬 TDCC 歷史查詢頁，**per-stock 格式**，回補用
+  - `merge_shareholding.py`: 把 per-stock 檔合併回 bulk 格式，餵給 processor（見下方「回補一週」）。
+    **輸出檔已存在時預設拒寫**，理由見該節「要點」的 `--force` 那條
   - `check_outputs.py`: weekly 輸出檢查
 
 - `monthly/`
@@ -55,7 +57,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
     是**斷言 API 回來的就是這一天**（不符即拒寫並回非 0），對 `check_outputs.py`
     是**指定要驗證硬碟上的哪一份**（此時跳過新鮮度檢查）。
     **不能用來回補歷史** —— OpenData endpoint 沒有日期參數，永遠只回最新一週，
-    強行指定舊日期只會把本週資料存成舊檔名。回補請用 `weekly/fetch_tdcc_history.py`。
+    強行指定舊日期只會把本週資料存成舊檔名。回補走 `weekly/fetch_tdcc_history.py`
+    +`weekly/merge_shareholding.py`，見上方「回補漏掉的一週 shareholding」。
   - optional: `ALLOW_STALE_TDCC=1`（放行新鮮度告警，農曆年那週用）
   - 這兩個都已在 `docker-compose.yml` 的 `scraper-weekly` 宣告；compose 不會自動
     把 host 環境變數帶進 container，少了宣告就等於這兩個旋鈕不存在。
@@ -77,6 +80,9 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 
 > Legacy raw paths（不再寫入，僅作 archive）: `data/raw/quarterly_reports/`、`data/raw/income_statement/`、`data/raw/balance_sheet/`、`data/raw/cash_flow/`
 - Weekly shareholding: `data/raw/shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv`
+- Weekly shareholding（回補中間態，per-stock）: `data/raw/shareholding_div/date=YYYYMMDD/<symbol>.csv`
+  —— `fetch_tdcc_history.py` 的輸出，經 `merge_shareholding.py` 合併後才變成上面那個 bulk 檔。
+  刻意分開兩棵樹：混在一起會讓人誤以為該週已經有可用資料。
 
 ## Commands
 
@@ -95,6 +101,53 @@ docker compose run --rm scraper-quarterly \
     python3 scraper/quarterly/fetch_xbrl.py --year 2025 --quarter 4
 ```
 
+### 回補漏掉的一週 shareholding
+
+新鮮度／連續性 gate 響了、確認某週真的漏掉時走這條。**OpenData endpoint 沒有日期
+參數**（`TDCC_DATE` 只是斷言，不能拿來指定歷史），唯一的歷史來源是逐檔查詢頁。
+
+```bash
+# 1. 逐檔爬（~1.4 秒/檔，1849 檔約 55 分鐘；可中斷續跑，已存在的檔會 skip）
+docker compose run --rm \
+  -v "$PWD/active_stocks.txt:/app/active_stocks.txt:ro" \
+  --entrypoint "" scraper-weekly \
+  python scraper/weekly/fetch_tdcc_history.py \
+    --date YYYYMMDD --file /app/active_stocks.txt --no-verify
+
+# 2. 合併成 bulk（純 stdlib，host 直接跑）
+venv/bin/python3 scraper/weekly/merge_shareholding.py --date YYYYMMDD
+
+# 3. 接回常規 pipeline
+docker compose run --rm -e START_DATE=YYYYMMDD -e END_DATE=YYYYMMDD \
+  processor python convert_weekly.py
+docker compose run --rm -e START_DATE=YYYYMMDD -e END_DATE=YYYYMMDD \
+  importer python import_weekly.py
+docker compose run --rm calculator \
+  python calculate_shareholding_concentration.py --force-full
+```
+
+要點：
+
+- **第 3 步的 `--force-full` 不能省**：concentration 的 incremental 只 append
+  `date > last_processed`，回填一個早於現有 max 的日期不會被吸收。代價是重建整張表
+  （~777k 列），順帶會把任何落後的日期一併補算。
+- **`--file` 用 `active_stocks.txt`**（repo 根目錄，月更）。它比 bulk 檔的 symbol 數少
+  （1849 vs ~2952），所以回補出來**必然是部分快照** —— 這是 TDCC 的限制，不是 bug。
+  該檔涵蓋了選股宇宙，實測對受影響 cohort 是 100% 覆蓋。
+- **每檔必須湊滿 15 個分級**，`merge_shareholding.py` 會把不足的整檔剔除並列名。
+  這是刻意的：`audit_shareholding.py` 要求每個 symbol 剛好 15 列，缺一列會讓**整個
+  日期**硬失敗，寧可少幾檔也不要整批卡住。查詢頁的「合　計」與「差異數調整（說明4）」
+  這類非分級列不在 mapping 裡，會自動被丟掉。
+- **第 2 步不會覆寫既有的 bulk 檔**，已存在就印出該檔的 symbol 數並 exit 1。因為那份
+  很可能是 OpenData 抓回來的完整快照（~2952 檔），而回補產出的只有 1849 檔；raw 檔
+  又是 `audit_shareholding.py` 回讀 lineage 的唯一來源，蓋掉就無法從 `data/processed`
+  還原。最容易誤觸的路徑是：為了驗單一檔而留下 `date=YYYYMMDD/<symbol>.csv`，之後
+  一次 `--all` 把那週的好檔改寫成 15 列。
+  - 真的要換（例如補抓了更多 symbol 後重新合併）才加 `--force`，而且**只能搭
+    `--date`**；`--all --force` 會直接被拒絕，避免一個旗標放行整棵樹。
+  - `--force` 時若新快照的 symbol 數比舊的少，會另外印一行警告。
+- 完整案例見 `KNOWN_ISSUES.md` 的 2026-07-09 那筆。
+
 ## Notes
 
 - 這次重構目標是「入口與分層一致化」。既有抓取邏輯（TWSE/TPEx/MOPS/TDCC）保持不變。
@@ -108,8 +161,9 @@ docker compose run --rm scraper-quarterly \
   - 為什麼需要：`fetch_tdcc.py` 打的 OpenData endpoint **沒有日期參數**，永遠只回
     最新一週。TDCC 延遲發布時它會抓回上週那份、覆寫同名舊檔，而舊版檢查只看
     「最新檔存在且 >10 bytes」、`weekly_update.sh` 又從最新檔名反推 `TARGET_DATE`，
-    於是整條 pipeline 靜默通過，該週永久缺漏（2026-07-09 就是這樣掉的，見
-    `KNOWN_ISSUES.md`）。TDCC OpenData 不提供歷史，補救只能逐檔爬歷史查詢頁。
+    於是整條 pipeline 靜默通過，該週就這樣掉了（2026-07-09 就是這樣掉的，見
+    `KNOWN_ISSUES.md`）。TDCC OpenData 不提供歷史，補救只能逐檔爬歷史查詢頁 ——
+    流程見上方「回補漏掉的一週 shareholding」（1849 檔約 55 分鐘，且必然是部分快照）。
   - 檢查刻意**不預測 TDCC 會選週五還是週四**（實測 52 份裡 45 週五、7 週四，
     且 2026-02-13 週五休市仍照發週五），只斷言新鮮度 —— 所以不必維護交易日曆。
   - 指定 `TDCC_DATE` 時跳過新鮮度檢查（刻意鎖定硬碟上某一份來重驗）。
