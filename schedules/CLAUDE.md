@@ -88,14 +88,16 @@ shell script 內容與 OS 無關，任何平台都能直接 invoke。
 - `schedules/backfill_xbrl.sh` _（手動觸發）_
   - 範圍補齊（多季）。**只跑 scrape 階段**（不含 processor/importer）；補完後對每季呼叫 `xbrl_process_import.sh`。兩段刻意不合併：scrape 動輒數十小時且只碰網路，import 會寫 DB，混在一支裡中斷起來很危險。
   - 參數：`<START_QUARTER> <END_QUARTER> [--report-id {auto,C,A}] [--run-date YYYYMMDD] [--dry-run]`
-  - **`--run-date` 預設依季別自動推導**（Q1 `YYYY0515`／Q2 `YYYY0815`／Q3 `YYYY1115`／Q4 隔年 `0331`），即各季申報期限日，與該季既有 raw 檔名的眾數後綴一致。
+  - **`--run-date` 預設依季別自動推導**，且分兩種情形：
+    - **已收攤的季別** → 該季申報期限日（Q1 `YYYY0515`／Q2 `YYYY0815`／Q3 `YYYY1115`／Q4 隔年 `0331`）。這種季別的既有 raw 後綴 100% 統一成這個值（2024Q2 實測 1,645 份全是 `_20240815`）。
+    - **申報期限未到的季別** → 用「今天」，並在輸出標記 `[LIVE]`。這種季別的 raw 是 `xbrl_scrape_daily.sh` 每天累積的，後綴本來就分散（2026Q2 累積期間實測散在 `_20260807`~`_20260814`），沒有眾數後綴可對齊；蓋上未來的期限日還會讓 `publish_time` 早於實際取得日。日常請直接走 `xbrl_scrape_daily.sh`。
     - 這個後綴就是 processor 讀出來的 `publish_time`。舊版沒傳它、`fetch_xbrl.py` 退成「執行當天」，回補 2020Q1 會生出 `2020Q1_1342_20260816.html`：`publish_time` 在同季自相矛盾，而且檔名與既有的 `_20200515` 不同會讓 `collect_strict_html_per_symbol()` 判定「同季同 symbol 兩個 html」而**整季 raise**。
     - 傳 `--run-date` 可覆寫，但它會套用到範圍內每一季，跨季時會出警告。
   - **`--report-id` 預設 `auto`**（對齊 `fetch_xbrl.py`）。`C` 只抓合併、`A` 只抓個體。
   - ⚠️ **從零重建 raw 必須兩趟**：先 `--report-id C`，再 `--report-id A`。
     - 空目錄用 `A`：`save_symbol_report` 只對「完全沒有檔」的 symbol 送請求，結果是只拿到個體財報、漏掉全部合併財報。
     - 空目錄用 `auto` 也拿不到個體財報：個體 fallback 受 `INDIVIDUAL_FALLBACK_MIN_COVERAGE=0.60` 管制，而 coverage 是「開跑時磁碟已有檔數 ÷ 掃描宇宙」**只在開跑時算一次**（`fetch_xbrl.py:500`），空目錄 = 0% < 60%，`auto` 會退成 C-only。
-  - 可中斷：已抓到的檔在下次執行回報 `skipped_exists` 且**不 sleep**，重跑一個抓完的季別只花幾秒。Ctrl+C 會攔下訊號主動 `docker stop` scraper 容器（`docker compose run` 的 Ctrl+C 只殺得掉本機 client，容器會被 containerd 收養繼續跑）。
+  - 可中斷：已抓到的檔在下次執行回報 `skipped_exists` 且**不 sleep**，重跑一個抓完的季別只花幾秒。Ctrl+C 會攔下訊號主動 `docker stop`（`docker compose run` 的 Ctrl+C 只殺得掉本機 client，容器會被 containerd 收養繼續跑）。容器以 `--name xbrl-backfill-<PID>-<季別>` 具名，trap 只停自己啟動的那一個 —— 同一台機器上同時跑兩段不同季別是常見作法（靠 `skipped_exists` 互不干擾），用 `--filter name=scraper-quarterly-run` 一網打盡會把另一趟也殺掉。
   - 例：
     ```bash
     ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --dry-run        # 先看每季參數
