@@ -66,6 +66,11 @@ REPORT_CATEGORY_RE = re.compile(
     r"<ix:nonNumeric\b[^>]*\bname=['\"]tifrs-notes:ReportCategory['\"][^>]*>(.*?)</ix:nonNumeric>",
     re.IGNORECASE | re.DOTALL,
 )
+# 個體財報另一種標準英譯 "Non-consolidated report" 的各種寫法（連字號／空白／連寫）。
+# 用 regex 而不是列舉字面值，是因為漏掉哪一種都會靜默倒向合併 —— 見
+# normalize_report_category()。分隔用 `*` 不是 `?`：raw 路徑上 clean_value_text()
+# 已把 \s+ 收成單一空白，但這個函式也被直接呼叫，多吃幾個空白不花成本。
+NON_CONSOLIDATED_RE = re.compile(r"non[\s-]*consolidated")
 
 OUTPUT_COLUMNS = [
     "date",
@@ -301,7 +306,7 @@ def normalize_report_category(raw_category: str) -> str:
     # （目前 41,000 份 raw 只出現 Consolidated report / Individual report 兩種值，
     #   這裡純粹是為了讓誤判的方向倒向「停下來」而不是「猜成合併」。）
     s = (raw_category or "").strip().lower()
-    if "individual" in s or "non-consolidated" in s or "nonconsolidated" in s:
+    if "individual" in s or NON_CONSOLIDATED_RE.search(s):
         return REPORT_CATEGORY_INDIVIDUAL
     if "consolidated" in s:
         return REPORT_CATEGORY_CONSOLIDATED

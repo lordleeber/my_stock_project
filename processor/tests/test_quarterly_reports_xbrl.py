@@ -80,6 +80,7 @@ def test_normalize_report_category_non_consolidated_is_individual():
 
     先比對 consolidated 會把它歸成合併、去取取不到的 8610，net_income 靜默落成
     NULL，而且分類「成功」了所以 UnknownReportCategoryError 也不會觸發。
+    連字號／空白／連寫三種寫法都要涵蓋，漏掉哪一種都是同一個靜默失敗。
     """
     assert (
         normalize_report_category("Non-consolidated report")
@@ -87,6 +88,10 @@ def test_normalize_report_category_non_consolidated_is_individual():
     )
     assert (
         normalize_report_category("Nonconsolidated report")
+        == REPORT_CATEGORY_INDIVIDUAL
+    )
+    assert (
+        normalize_report_category("Non consolidated report")
         == REPORT_CATEGORY_INDIVIDUAL
     )
     assert (
