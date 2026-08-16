@@ -33,7 +33,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 - `weekly/`
   - `fetch_tdcc.py`: TDCC OpenData 單次抓取（使用 `curl`），bulk 格式，**只有最新一週**
   - `fetch_tdcc_history.py`: 逐檔爬 TDCC 歷史查詢頁，**per-stock 格式**，回補用
-  - `merge_shareholding.py`: 把 per-stock 檔合併回 bulk 格式，餵給 processor（見下方「回補一週」）
+  - `merge_shareholding.py`: 把 per-stock 檔合併回 bulk 格式，餵給 processor（見下方「回補一週」）。
+    **輸出檔已存在時預設拒寫**，理由見該節「要點」的 `--force` 那條
   - `check_outputs.py`: weekly 輸出檢查
 
 - `monthly/`
@@ -137,6 +138,14 @@ docker compose run --rm calculator \
   這是刻意的：`audit_shareholding.py` 要求每個 symbol 剛好 15 列，缺一列會讓**整個
   日期**硬失敗，寧可少幾檔也不要整批卡住。查詢頁的「合　計」與「差異數調整（說明4）」
   這類非分級列不在 mapping 裡，會自動被丟掉。
+- **第 2 步不會覆寫既有的 bulk 檔**，已存在就印出該檔的 symbol 數並 exit 1。因為那份
+  很可能是 OpenData 抓回來的完整快照（~2952 檔），而回補產出的只有 1849 檔；raw 檔
+  又是 `audit_shareholding.py` 回讀 lineage 的唯一來源，蓋掉就無法從 `data/processed`
+  還原。最容易誤觸的路徑是：為了驗單一檔而留下 `date=YYYYMMDD/<symbol>.csv`，之後
+  一次 `--all` 把那週的好檔改寫成 15 列。
+  - 真的要換（例如補抓了更多 symbol 後重新合併）才加 `--force`，而且**只能搭
+    `--date`**；`--all --force` 會直接被拒絕，避免一個旗標放行整棵樹。
+  - `--force` 時若新快照的 symbol 數比舊的少，會另外印一行警告。
 - 完整案例見 `KNOWN_ISSUES.md` 的 2026-07-09 那筆。
 
 ## Notes

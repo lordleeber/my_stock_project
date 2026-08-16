@@ -31,9 +31,16 @@ TDCC OpenData（`getOD.ashx?id=1-5`，即 fetch_tdcc.py 打的那支）只給最
 輸出: data/raw/shareholding/YYYY/TDCC_OD_1-5_YYYYMMDD.csv
       欄位: 資料日期,證券代號,持股分級,人數,股數,占集保庫存數比例%
 
+輸出檔已存在時**預設拒寫**（要覆寫得加 `--force`，且只能搭 `--date`）。理由見
+merge_date() 內的註解：同名的 bulk 檔可能是 OpenData 抓回來的完整快照（~2952 檔），
+而回補產出的必然是部分快照（1849 檔），無聲覆蓋會把 lineage 的真實來源換成殘缺版
+且救不回來。
+
 用法:
     venv/bin/python3 scraper/weekly/merge_shareholding.py --date 20260709
     venv/bin/python3 scraper/weekly/merge_shareholding.py --all
+    # 補抓了更多 symbol、要重新合併同一天時：
+    venv/bin/python3 scraper/weekly/merge_shareholding.py --date 20260709 --force
 
 環境變數:
     RAW_DIR: raw 資料根目錄（預設 <repo>/data/raw）
@@ -125,7 +132,18 @@ def _read_stock(file_path, symbol, date_str):
     return rows if len(rows) == EXPECTED_LEVELS else []
 
 
-def merge_date(date_str):
+def count_symbols(file_path):
+    """數既有 bulk 檔的 distinct 證券代號；讀不動就回 None（只用於訊息，不擋流程）。"""
+    try:
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            symbols = {(row.get("證券代號") or "").strip() for row in csv.DictReader(f)}
+        symbols.discard("")
+        return len(symbols)
+    except Exception:
+        return None
+
+
+def merge_date(date_str, force=False):
     """把某一天的 per-stock 檔合併成一份 bulk CSV。"""
     input_date_dir = Path(INPUT_DIR) / f"date={date_str}"
 
@@ -137,6 +155,30 @@ def merge_date(date_str):
     if not csv_files:
         print(f"⚠️  No CSV files found in {input_date_dir}")
         return False
+
+    year_dir = Path(OUTPUT_DIR) / date_str[:4]
+    output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
+
+    # 同名的 bulk 檔可能是 fetch_tdcc.py 從 OpenData 抓回來的**完整**快照（~2952 檔）。
+    # 這裡的產出必然是部分快照（active_stocks.txt 只有 1849 檔），而且 raw 檔就是
+    # audit_shareholding._verify_lineage 回讀的真實來源 —— 覆寫掉就沒得從
+    # data/processed 還原。實務上很容易誤觸：為了驗一檔而留下的
+    # date=YYYYMMDD/<symbol>.csv，之後一次 `--all` 就會把那週的好檔改寫成 15 列。
+    # 所以預設拒寫，要覆寫必須明講 --force。
+    existing_symbols = None
+    if output_file.exists():
+        existing_symbols = count_symbols(output_file)
+        detail = (
+            f"（{existing_symbols} symbols）" if existing_symbols is not None else ""
+        )
+        if not force:
+            print(f"❌ Output already exists: {output_file}{detail}")
+            print(
+                "   拒絕覆寫：這份可能是 OpenData 的完整快照，而本次合併只涵蓋 "
+                f"{len(csv_files)} 檔。確認要換成回補版才加 --force。"
+            )
+            return False
+        print(f"⚠️  Overwriting existing {output_file}{detail} (--force)")
 
     print(f"Processing {date_str}: {len(csv_files)} stocks...")
 
@@ -164,9 +206,14 @@ def merge_date(date_str):
         print(f"❌ No valid data to write for {date_str}")
         return False
 
-    year_dir = Path(OUTPUT_DIR) / date_str[:4]
+    if existing_symbols is not None and processed_stocks < existing_symbols:
+        # --force 已經是操作者的明示同意，這裡不再擋，但覆寫成更小的快照值得留一行。
+        print(
+            f"  ⚠️  Replacing {existing_symbols} symbols with {processed_stocks} "
+            f"— the snapshot for {date_str} gets smaller"
+        )
+
     year_dir.mkdir(parents=True, exist_ok=True)
-    output_file = year_dir / f"TDCC_OD_1-5_{date_str}.csv"
 
     with open(output_file, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDS)
@@ -191,8 +238,19 @@ def main():
     parser.add_argument(
         "--all", action="store_true", help="Merge all dates found in shareholding_div"
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing bulk CSV (refused by default)",
+    )
 
     args = parser.parse_args()
+
+    # --force 的正當用途只有一個：某一天補抓了更多 symbol，要重新合併那一天。
+    # 對整棵樹一次性放行等於把上面擋掉的誤覆寫又整批放回來，所以不接受這個組合。
+    if args.all and args.force:
+        print("❌ --force is per-date on purpose; use --date YYYYMMDD --force")
+        return 1
 
     if args.all:
         if not os.path.isdir(INPUT_DIR):
@@ -210,11 +268,13 @@ def main():
         success_count = sum(
             1 for d in date_dirs if merge_date(d.replace("date=", "", 1))
         )
-        print(f"\n✅ Completed: {success_count}/{len(date_dirs)} dates processed")
-        return 0 if success_count == len(date_dirs) else 1
+        ok = success_count == len(date_dirs)
+        mark = "✅" if ok else "❌"
+        print(f"\n{mark} Completed: {success_count}/{len(date_dirs)} dates processed")
+        return 0 if ok else 1
 
     if args.date:
-        return 0 if merge_date(args.date) else 1
+        return 0 if merge_date(args.date, force=args.force) else 1
 
     parser.print_help()
     return 1
