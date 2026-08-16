@@ -43,7 +43,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - `check_outputs.py`: monthly 輸出檢查
 
 - `quarterly/`
-  - `fetch_xbrl.py`: 季報 XBRL 抓取（MOPS XBRL HTML），輸出到 `data/raw/xbrl/YYYY/YYYYQX/`
+  - `fetch_xbrl.py`: 季報 XBRL 抓取（MOPS XBRL HTML），輸出到 `data/raw/xbrl/YYYY/YYYYQX/`。
+    **合併(C)抓不到會自動退到個體(A)**，見下方「合併財報 vs 個體財報」
   - `_deprecated/`: 已停用的舊版季報抓取（`fetch_quarterly_reports.py`、`check_outputs.py`）
 
 ## Required Env Vars
@@ -69,6 +70,12 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 
 - Quarterly XBRL
   - 由 `fetch_xbrl.py` 直接吃 `--year` / `--quarter` 參數（不再使用 `REPORT_YEAR`/`REPORT_QUARTER` 環境變數）。一般透過 `schedules/xbrl_scrape_daily.sh` 觸發。
+  - 另有兩個**只給回補用**的旗標，日常排程不要帶：
+    - `--run-date YYYYMMDD`：覆寫檔名後綴。這個後綴就是 processor 讀出來的
+      `publish_time`，回補歷史季別時必須指定該季**申報期限**，否則 2020Q1 會冒出
+      一批 2026 年的 publish_time，與該季既有資料（整季統一）自相矛盾。
+    - `--report-id {auto,C,A}`：`auto`（預設）= C 抓不到再退 A。回補早已過申報期限
+      的歷史季別時 C 必定不存在，直接指定 `A` 可省一半請求。
 
 ## Raw Output Paths (current)
 
@@ -206,3 +213,21 @@ docker compose run --rm calculator \
   - 退出碼由 `decide_exit_code()` 決定：「有嘗試抓取、沒有任何一次成功、且失敗全都不是良性原因」才回非 0。舊版 `0 if ok > 0 else 1` 把 `skipped_exists` 算進 ok，只要目錄有舊檔就永遠 exit 0，MOPS 改版會靜悄悄停擺而不觸發 systemd 通知。
   - 申報期限前來抓會大量收到 `report_not_published`（例如 8/14 前抓 Q2），這是正常的、不會告警，等排程逐日補齊即可。
   - 測試：`scraper/tests/test_fetch_xbrl.py`。專案沒裝 pytest、CI 也只跑 ruff，所以本檔可直接執行：`venv/bin/python3 scraper/tests/test_fetch_xbrl.py`。
+
+### 合併財報 vs 個體財報（`REPORT_ID`）
+
+MOPS `t164sb01` 的 `REPORT_ID` 有兩種：`C` = 合併財報、`A` = 個體財報。**台灣規定無子公司者免編合併財務報表、以個體財報申報**，這類公司對 `C` 查詢一律回 97 bytes 的「檔案不存在!」。
+
+舊版把 `REPORT_ID` 寫死成 `C`，於是它們從 2020 年起完全不在資料庫裡。2026-08-16 實測：`active_stocks.txt` 裡抓不到 C 的非金融公司有 167 檔，其中 **165 檔只有個體財報**，佔選股宇宙約 10%（台灣高鐵、寶雅、全國電、采鈺、精材、昇佳電子、宏捷科、福懋科、星宇航空、長榮航太…）。
+
+現在的行為（`REPORT_ID_FALLBACK_CHAIN`）：
+
+- 先打 `C`；**只有**失敗原因是 `report_not_published` 才退到 `A` 再打一次。
+  `rate_limit` / `page_not_accessible` 是站方狀態，換 `REPORT_ID` 照樣被擋，還會拖慢 `RATE_LIMIT_ABORT_STREAK` 收手，所以不 fallback。
+- 兩次請求之間一樣 sleep `FETCH_INTERVAL_SECONDS`（3 秒），否則這些 symbol 的瞬時請求速率會是別人的兩倍。
+- 合併命中就**不會**多打 A —— 絕大多數 symbol 走這條，多打一次等於整季請求量翻倍。
+- 存檔狀態：合併是 `ok`（刻意不改，既有 log 都吃這個字），個體是 `ok_a`，讓收尾統計看得出這一季有幾檔靠 fallback 收進來。計數與退出碼一律走 `is_saved_status()`。
+
+**檔名格式不變**（`YYYYQX_<symbol>_YYYYMMDD.html`，不編報表別）。C 與 A 對同一 symbol 同一季互斥（2330／富邦金雙向實測），永遠只會存一份，所以 processor 的「同季同 symbol 出現兩個 html 就 raise」不受影響。報表別由內容自帶的 `tifrs-notes:ReportCategory`（`Consolidated report` / `Individual report`）判讀，不靠檔名。
+
+> 金融業（金控/銀行/保險）**不在**這件事的範圍內：它們是有合併財報的（走 `C` 抓得到），不進資料庫的原因是 processor 只認一般業 TIFRS 科目表 —— 見 `KNOWN_ISSUES.md`。另外它們的半年報申報期限是 8/31，8 月中來抓 Q2 收到 `report_not_published` 是正常的。

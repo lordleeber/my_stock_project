@@ -12,14 +12,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "quarterly"))
 
+import fetch_xbrl  # noqa: E402
 from fetch_xbrl import (  # noqa: E402
     MIN_REPORT_BYTES,
+    REPORT_ID_CONSOLIDATED,
+    REPORT_ID_INDIVIDUAL,
     base_status,
     classify_failure_reason,
     decide_exit_code,
+    is_saved_status,
     is_valid_report_file,
     load_existing_report_names,
+    parse_run_date,
     purge_invalid_siblings,
+    save_symbol_report,
+    saved_status,
     validate_report,
 )
 
@@ -215,6 +222,155 @@ def test_purge_does_not_touch_prefix_neighbours(tmp_path: Path):
 
     assert purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh) == []
     assert neighbour.exists()
+
+
+# --- parse_run_date：檔名後綴 = publish_time ---------------------------------
+
+
+def test_parse_run_date_defaults_to_today():
+    from datetime import datetime
+
+    assert parse_run_date(None) == datetime.now().strftime("%Y%m%d")
+
+
+def test_parse_run_date_accepts_explicit_date():
+    # 回補歷史季別時要能把 publish_time 釘在該季申報期限，而不是回補當天。
+    assert parse_run_date("20200515") == "20200515"
+
+
+def test_parse_run_date_rejects_bad_format():
+    for bad in ("abc", "2020-05-15", "202005", "202005151"):
+        try:
+            parse_run_date(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"should reject {bad!r}")
+
+
+def test_parse_run_date_rejects_impossible_date():
+    # 過得了 \d{8} 卻不是合法日期 —— 不能讓它寫進檔名再變成 publish_time。
+    for bad in ("20261332", "20260230", "20260000"):
+        try:
+            parse_run_date(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"should reject {bad!r}")
+
+
+# --- saved_status / is_saved_status ------------------------------------------
+
+
+def test_saved_status_keeps_ok_for_consolidated():
+    # 合併財報的狀態字串刻意不改，既有 log 與監控都吃 "ok"。
+    assert saved_status(REPORT_ID_CONSOLIDATED) == "ok"
+
+
+def test_saved_status_marks_individual():
+    assert saved_status(REPORT_ID_INDIVIDUAL) == "ok_a"
+
+
+def test_is_saved_status_covers_both():
+    assert is_saved_status("ok")
+    assert is_saved_status("ok_a")
+    # 失敗與 skip 都不算存檔成功，否則 decide_exit_code 會誤判。
+    for reason in ("skipped_exists", "report_not_published", "rate_limit", "error:x"):
+        assert not is_saved_status(reason), reason
+
+
+# --- save_symbol_report：REPORT_ID fallback ----------------------------------
+
+
+class FakeFetcher:
+    """依 REPORT_ID 回傳預先排好的回應，並記下呼叫順序。"""
+
+    def __init__(self, by_report_id: dict[str, str]):
+        self.by_report_id = by_report_id
+        self.calls: list[str] = []
+
+    def __call__(self, symbol, year, quarter, report_id):
+        self.calls.append(report_id)
+        return self.by_report_id[report_id].encode("utf-8")
+
+
+def _save(tmp_path: Path, fetcher, **kwargs):
+    """呼叫 save_symbol_report，並把 sleep 拿掉（fallback 之間有 3 秒間隔）。"""
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        return save_symbol_report(
+            "1234", 2026, 2, "20260816", tmp_path, set(), fetcher=fetcher, **kwargs
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+
+
+def test_consolidated_hit_does_not_probe_individual(tmp_path: Path):
+    # 絕大多數 symbol 走這條；多打一次 A 等於整季請求量翻倍。
+    f = FakeFetcher({"C": make_report()})
+    assert _save(tmp_path, f) == ("1234", "ok")
+    assert f.calls == ["C"]
+    assert (tmp_path / "2026Q2_1234_20260816.html").exists()
+
+
+def test_falls_back_to_individual_when_consolidated_missing(tmp_path: Path):
+    # 本次 bug 的核心回歸測試：無子公司的公司只有個體財報。
+    f = FakeFetcher({"C": NOT_PUBLISHED, "A": make_report()})
+    assert _save(tmp_path, f) == ("1234", "ok_a")
+    assert f.calls == ["C", "A"]
+    # 檔名不帶報表別 —— processor 的「同季同 symbol 只能有一個 html」不受影響。
+    assert (tmp_path / "2026Q2_1234_20260816.html").exists()
+
+
+def test_both_report_ids_missing_stays_benign(tmp_path: Path):
+    # 申報期限前整批如此，不該因為多試了一個報表別就變成非良性失敗。
+    f = FakeFetcher({"C": NOT_PUBLISHED, "A": NOT_PUBLISHED})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C", "A"]
+    assert base_status(status) == "report_not_published"
+    assert base_status(status) in fetch_xbrl.BENIGN_FAILURE_REASONS
+
+
+def test_rate_limit_does_not_fall_back(tmp_path: Path):
+    # 換 REPORT_ID 一樣會被擋，而且會拖慢 RATE_LIMIT_ABORT_STREAK 收手。
+    f = FakeFetcher({"C": RATE_LIMITED, "A": make_report()})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C"]
+    assert base_status(status) == "rate_limit"
+
+
+def test_block_page_does_not_fall_back(tmp_path: Path):
+    f = FakeFetcher({"C": BLOCK_PAGE, "A": make_report()})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C"]
+    assert base_status(status) == "page_not_accessible"
+
+
+def test_individual_only_chain_skips_consolidated(tmp_path: Path):
+    # 回補早已過申報期限的歷史季別：C 必定不存在，跳過可省一半請求。
+    f = FakeFetcher({"A": make_report()})
+    assert _save(tmp_path, f, report_ids=("A",)) == ("1234", "ok_a")
+    assert f.calls == ["A"]
+
+
+def test_existing_valid_report_short_circuits_fetch(tmp_path: Path):
+    (tmp_path / "2026Q2_1234_20260701.html").write_text(make_report(), encoding="utf-8")
+    f = FakeFetcher({"C": make_report(), "A": make_report()})
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        result = save_symbol_report(
+            "1234",
+            2026,
+            2,
+            "20260816",
+            tmp_path,
+            load_existing_report_names(tmp_path),
+            fetcher=f,
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+    assert result == ("1234", "skipped_exists")
+    assert f.calls == []
 
 
 # --- decide_exit_code：什麼情況該告警 ---------------------------------------
