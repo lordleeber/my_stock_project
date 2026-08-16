@@ -241,6 +241,19 @@ docker compose exec -T db psql -U user -d stock_db -t -c \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
 ```
 
+### 補建索引與後加的欄位
+
+備份的年代若早於某次 schema 變更，還原回來的 DB 會少掉那些索引／欄位。兩支都是
+idempotent，還原後一律跑一次（沒缺就是 no-op）：
+
+```bash
+venv/bin/python3 tools/create_indexes.py     # 10 個複合索引
+venv/bin/python3 tools/sync_db_columns.py    # 後來才加進 schemas.py 的欄位
+```
+
+漏跑 `sync_db_columns.py` 的症狀：processed CSV 帶著新欄位、DB 沒有，importer 的
+`to_sql(if_exists="append")` 會在那張表上炸掉。
+
 ---
 
 ## 5. 還原模型目錄

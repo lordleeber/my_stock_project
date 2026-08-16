@@ -169,10 +169,9 @@ XBRL raw filename rules (strict, fail-fast):
 —— 41,000 份 raw 全數帶得出這個欄位且只有兩種值，所以判不出來代表來源格式變了，這時
 悄悄退回合併基礎正是要修的那個 bug。
 
-> DB migration（既有資料庫需手動執行一次；新建的表由 `to_sql` 自動帶出此欄）：
-> ```sql
-> ALTER TABLE quarterly_reports_xbrl ADD COLUMN IF NOT EXISTS report_category TEXT;
-> ```
+> DB migration：既有資料庫（含從加欄之前的備份還原回來的）需補建此欄，跑
+> `venv/bin/python3 tools/sync_db_columns.py`（idempotent，沒缺就是 no-op）。
+> 全新的 DB 不需要 —— importer 的 `to_sql` 會依 DataFrame 自動建出此欄。
 > 尚未重跑的季別此欄為 NULL，待全季 backfill 後補齊。
 - `publish_time` source rule (strict):
   - Do not read publish_time from `income_statement_xbrl` / `balance_sheet_xbrl` / `cash_flow_xbrl`.

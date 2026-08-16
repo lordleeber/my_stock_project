@@ -23,10 +23,15 @@
 prev_inc_a, _ = read_wide_code_map(prev_inc_a_path, symbol)
 ```
 
-`read_wide_code_map()` 回傳的是 **dict**，這行卻拿它解包成兩個變數。損益表的寬列
-一定不只 2 個科目，所以每次都拋 `ValueError: too many values to unpack`，被下一行的
-`except ValueError: prev_inc_a = {}` 接掉 —— `prev_inc_a` **恆為空 dict**，去年同季
-的基準永遠取不到。
+`read_wide_code_map()` 回傳的是 **dict**，這行卻拿它解包成兩個變數。實務上損益表寬列
+的科目數不會剛好是 2，所以解包幾乎總是拋 `ValueError: too many values to unpack`，
+被下一行的 `except ValueError: prev_inc_a = {}` 接掉 —— `prev_inc_a` 留在空 dict，
+去年同季的基準取不到。
+
+同一個 `except` 還吃掉另一條正常路徑：symbol 不在去年同季檔案裡時，
+`read_wide_code_map()` 自己就拋 `ValueError`。另有一個未被接到的邊角 —— 萬一科目
+剛好 2 個，解包會「成功」讓 `prev_inc_a` 變成一個科目**字串**，之後 `.get()` 拋
+`AttributeError`，該檔會被 `main()` 的廣義 handler 整個丟出該季。
 
 實測（2026-08-16）：全部 26 季 × 兩種 `period_type`，以下 12 欄 100% NULL。
 

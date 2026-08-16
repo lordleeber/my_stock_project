@@ -237,6 +237,18 @@ docker compose exec -T db psql -U user -d stock_db -c \
 venv/bin/python3 tools/create_indexes.py
 ```
 
+## Schema Column Sync
+
+專案沒有 migration framework：新表由 `to_sql(if_exists="append")` 依 DataFrame 自動建出，所以**全新的 DB 不需要任何 migration**。但既有的 DB（或從加欄之前的備份還原回來的 DB）會少掉後來才加進 `common/schemas.py` 的欄位，這時 processed CSV 帶著新欄位、DB 沒有，`to_sql` append 就會炸。
+
+補建走 `tools/sync_db_columns.py`（idempotent，`ADD COLUMN IF NOT EXISTS` 清單，沒缺就是 no-op）：
+
+```bash
+venv/bin/python3 tools/sync_db_columns.py
+```
+
+importer 本身刻意不做 DDL —— 它的職責是把 CSV 灌進 DB。加了新欄位就往該 script 的 `COLUMN_STMTS` append 一行，並同步 `common/schemas.py`。
+
 **Expected indexes (10 total)** — authoritative list is `tools/create_indexes.py`:
 - `idx_daily_quotes_date_symbol` (daily_quotes)
 - `idx_daily_quotes_symbol_date` (daily_quotes)

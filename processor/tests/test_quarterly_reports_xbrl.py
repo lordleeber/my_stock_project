@@ -75,6 +75,26 @@ def test_normalize_report_category_is_case_insensitive():
     assert normalize_report_category("individual report") == REPORT_CATEGORY_INDIVIDUAL
 
 
+def test_normalize_report_category_non_consolidated_is_individual():
+    """ "Non-consolidated report" 含有 "consolidated" 子字串，必須判成個體。
+
+    先比對 consolidated 會把它歸成合併、去取取不到的 8610，net_income 靜默落成
+    NULL，而且分類「成功」了所以 UnknownReportCategoryError 也不會觸發。
+    """
+    assert (
+        normalize_report_category("Non-consolidated report")
+        == REPORT_CATEGORY_INDIVIDUAL
+    )
+    assert (
+        normalize_report_category("Nonconsolidated report")
+        == REPORT_CATEGORY_INDIVIDUAL
+    )
+    assert (
+        normalize_report_category("NON-CONSOLIDATED REPORT")
+        == REPORT_CATEGORY_INDIVIDUAL
+    )
+
+
 def test_normalize_report_category_unknown_returns_empty():
     """判不出來就回空字串，交給呼叫端 raise —— 不猜、不預設成合併。"""
     assert normalize_report_category("Combined report") == ""

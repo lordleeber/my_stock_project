@@ -294,11 +294,17 @@ def normalize_market(raw_market: str) -> str:
 
 
 def normalize_report_category(raw_category: str) -> str:
+    # 個體要先判。"Non-consolidated report" 是個體財報的另一種標準英譯，它**含有**
+    # "consolidated" 子字串 —— 先比對合併會把它歸成合併基礎，於是去取 8610、取不到、
+    # net_income 落成 NULL，而且因為分類「成功」了，UnknownReportCategoryError 不會
+    # 觸發，正好對這批本 PR 要救的公司靜默失敗。
+    # （目前 41,000 份 raw 只出現 Consolidated report / Individual report 兩種值，
+    #   這裡純粹是為了讓誤判的方向倒向「停下來」而不是「猜成合併」。）
     s = (raw_category or "").strip().lower()
+    if "individual" in s or "non-consolidated" in s or "nonconsolidated" in s:
+        return REPORT_CATEGORY_INDIVIDUAL
     if "consolidated" in s:
         return REPORT_CATEGORY_CONSOLIDATED
-    if "individual" in s:
-        return REPORT_CATEGORY_INDIVIDUAL
     return ""
 
 
@@ -333,10 +339,14 @@ def build_experiment_row(
     prev_inc_a: dict[str, str] = {}
     if prev_inc_a_path.exists():
         try:
-            # BUG（既存，本 PR 不動）：read_wide_code_map 回傳的是 dict，這裡卻拿它
-            # 解包成兩個變數 —— 損益表的寬列一定不只 2 個科目，於是每次都拋
-            # ValueError 被下面接掉，prev_inc_a 恆為 {}。結果是 12 個
-            # *_acc_ly / *_acc_yoy 欄位在全部 26 季 100% NULL（已對 DB 實測），
+            # BUG（既存，本 PR 不動）：read_wide_code_map() 回傳的是 dict，這裡卻拿
+            # 它解包成兩個變數。實務上損益表寬列的科目數不會剛好是 2，所以解包幾乎
+            # 總是拋 ValueError 被下面接掉，prev_inc_a 留在 {} —— 實測 12 個
+            # *_acc_ly / *_acc_yoy 欄位在全部 26 季 100% NULL。
+            # 另外兩條路徑也落到同一個 except：symbol 不在去年同季檔案裡時，
+            # read_wide_code_map() 自己就拋 ValueError。而萬一科目剛好 2 個，解包會
+            # 「成功」讓 prev_inc_a 變成一個科目字串，之後 .get() 拋 AttributeError
+            # —— 那個不會被這裡接到，整檔會被 main() 的廣義 handler 丟出該季。
             # 其中 eps_acc_yoy / revenue_acc_yoy 還被 strategies/step1_prepare_data.py
             # 當特徵吃進去。修它會動到 ML 特徵、必須連帶重跑 4/4 的驗證，所以留給
             # 獨立的 PR；詳見 KNOWN_ISSUES.md。
