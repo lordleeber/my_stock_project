@@ -21,14 +21,14 @@
 #   既有檔是 _20200515。後果有兩層：publish_time 在同一季自相矛盾；檔名不同導致
 #   collect_strict_html_per_symbol() 判定「同季同 symbol 兩個 html」而**整季 raise**。
 #
-#   推導分兩種情形，取決於申報期限是否已過：
-#     已收攤的季別 -> 用該季申報期限日（Q1 0515 / Q2 0815 / Q3 1115 / Q4 隔年 0331）。
-#         這種季別的既有檔後綴 100% 統一成這個值（2024Q2 實測 1,645 份全是 _20240815）。
-#     期限未到的季別 -> 用「今天」，並標記 [LIVE]。
-#         這種季別的 raw 是 xbrl_scrape_daily.sh 每天累積的，後綴本來就分散
-#         （2026Q2 累積期間實測散在 _20260807~_20260814），沒有眾數後綴可對齊；
-#         而且蓋上未來的期限日會讓 publish_time 早於實際取得日。跟著每日 scrape
-#         用「今天」，才與同季其他列一致。日常請直接走 xbrl_scrape_daily.sh。
+#   推導看的是**該季磁碟上既有檔的後綴**，不是日曆（理由見 resolve_run_date 上方
+#   的註解與實測數字）：
+#     既有後綴只有一種 -> 沿用它。2020Q1~2025Q3 這 23 季都屬此類，值就是該季申報期限日。
+#     既有後綴有多種   -> 用今天，標記 [累積季別]。2025Q4 起的季別是 xbrl_scrape_daily.sh
+#                         每天累積出來的，後綴本來就散（2026Q1 實測 21 種、
+#                         20260413~20260801），沒有單一值可對齊。
+#     完全沒有檔       -> 期限已過用期限日、未過用今天並標記 [LIVE]。前者對齊歷史慣例，
+#                         用於災難重建；後者避免蓋上未來日期。
 #
 #   真要用別的值再傳 --run-date 覆寫。
 #
@@ -143,8 +143,7 @@ if (( 10#$start_year > 10#$end_year )) || { (( 10#$start_year == 10#$end_year ))
     exit 1
 fi
 
-# 各季的申報期限日。**已收攤的季別**，該季既有 raw 檔名的後綴就是這個值
-# （2024Q2 實測 1,645 份 100% 是 _20240815，Q1/Q3/Q4 同樣統一）。
+# 各季的申報期限日。只在該季 raw 完全是空的時候當預設值用（見 resolve_run_date）。
 deadline_for() {
     local y="$1" q="$2"
     case "$q" in
@@ -156,25 +155,47 @@ deadline_for() {
     esac
 }
 
-# 申報期限還沒到的季別**不能**用期限日當後綴：那會蓋上一個未來日期，而且該季
-# raw 是 xbrl_scrape_daily.sh 每天累積的、後綴本來就分散（2026Q2 累積期間實測
-# 散在 _20260807~_20260814），根本沒有「眾數後綴」可對齊。這種季別跟著每日
-# scrape 的作法用「今天」，publish_time 才與同季其他列一致。
-run_date_for() {
-    local y="$1" q="$2" deadline today
-    deadline="$(deadline_for "$y" "$q")" || return 1
+# 決定該季要用的檔名後綴，判準是**磁碟上既有檔的後綴**，不是日曆。
+#
+# 為什麼不能看日曆：後綴散不散，取決於「這季是不是 xbrl_scrape_daily.sh 每天
+# 累積出來的」，與申報期限過了沒無關。2026-08-17 全量實測：
+#     2020Q1 ~ 2025Q3（23 季）  後綴各只有 1 種，就是該季申報期限日
+#     2025Q4                    23 種，20260303~20260331
+#     2026Q1                    21 種，20260413~20260801
+#     2026Q2                    16 種，20260729~20260815
+# 分水嶺是每日 scrape 上線的 2026-03，不是期限。拿期限日去套 2026Q1 會把新抓的
+# 檔蓋成 20260515，比同季既有檔最晚的 20260801 還早 —— 純粹把 publish_time 往
+# 前壓。（不會炸 collect_strict_html_per_symbol()：save_symbol_report 只對完全
+# 沒檔的 symbol 送請求，不會產生同季同 symbol 兩份 html。）
+#
+# 規則：
+#   既有後綴只有一種   -> 沿用它（該季是一次抓齊的，維持統一）
+#   既有後綴有多種     -> 用今天（每日累積季別，本來就散，今天才是實際取得日）
+#   完全沒有檔         -> 期限已過用期限日（對齊歷史慣例）、未過用今天
+#
+# 輸出 "<YYYYMMDD>\t<註記>"，註記為空代表沿用既有唯一後綴。
+resolve_run_date() {
+    local y="$1" q="$2" dir suffixes count deadline today
+    dir="data/raw/xbrl/${y}/${y}Q${q}"
     today="$(date +%Y%m%d)"
-    if (( 10#$deadline > 10#$today )); then
-        echo "$today"
-    else
-        echo "$deadline"
-    fi
-}
+    deadline="$(deadline_for "$y" "$q")" || return 1
 
-is_live_quarter() {
-    local deadline
-    deadline="$(deadline_for "$1" "$2")" || return 1
-    (( 10#$deadline > 10#$(date +%Y%m%d) ))
+    suffixes=""
+    if [[ -d "$dir" ]]; then
+        suffixes=$(find "$dir" -maxdepth 1 -name "${y}Q${q}_*_*.html" -printf '%f\n' 2>/dev/null \
+            | sed -E 's/.*_([0-9]{8})\.html$/\1/' | sort -u)
+    fi
+    count=$(printf '%s' "$suffixes" | grep -c . || true)
+
+    if (( count == 1 )); then
+        printf '%s\t\n' "$suffixes"
+    elif (( count > 1 )); then
+        printf '%s\t[累積季別] 既有後綴 %s 種，用今天\n' "$today" "$count"
+    elif (( 10#$deadline > 10#$today )); then
+        printf '%s\t[LIVE] 無既有檔且申報期限未到，用今天\n' "$today"
+    else
+        printf '%s\t[空目錄] 用申報期限日\n' "$deadline"
+    fi
 }
 
 if [[ -n "$RUN_DATE_OVERRIDE" && "$START_QUARTER" != "$END_QUARTER" ]]; then
@@ -228,22 +249,23 @@ FAILED_QUARTERS=()
 
 while (( year < end_year_num || (year == end_year_num && quarter <= end_q_num) )); do
     target="${year}Q${quarter}"
-    run_date="${RUN_DATE_OVERRIDE:-$(run_date_for "$year" "$quarter")}"
 
-    live_note=""
-    if [[ -z "$RUN_DATE_OVERRIDE" ]] && is_live_quarter "$year" "$quarter"; then
-        live_note="  [LIVE] 申報期限未到，用今天而非期限日"
+    if [[ -n "$RUN_DATE_OVERRIDE" ]]; then
+        run_date="$RUN_DATE_OVERRIDE"
+        note="  [覆寫]"
+    else
+        resolved="$(resolve_run_date "$year" "$quarter")"
+        run_date="${resolved%%$'\t'*}"
+        note="${resolved#*$'\t'}"
+        [[ -n "$note" ]] && note="  $note"
     fi
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
         printf "[DRY] %-8s --report-id %-4s --run-date %s%s\n" \
-            "$target" "$REPORT_ID" "$run_date" "$live_note" | tee -a "$LOG_FILE"
+            "$target" "$REPORT_ID" "$run_date" "$note" | tee -a "$LOG_FILE"
     else
         echo "" | tee -a "$LOG_FILE"
-        echo "[RUN] $target (report_id=$REPORT_ID run_date=$run_date)$live_note" | tee -a "$LOG_FILE"
-        if [[ -n "$live_note" ]]; then
-            echo "      這一季仍在累積中，日常請走 ./schedules/xbrl_scrape_daily.sh" | tee -a "$LOG_FILE"
-        fi
+        echo "[RUN] $target (report_id=$REPORT_ID run_date=$run_date)$note" | tee -a "$LOG_FILE"
 
         CURRENT_CONTAINER="${CONTAINER_PREFIX}-${target}"
         if docker compose run --rm --name "$CURRENT_CONTAINER" \
