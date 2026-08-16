@@ -30,8 +30,12 @@ FETCH_INTERVAL_SECONDS = 3
 # 佔選股宇宙 10%（台灣高鐵、寶雅、采鈺、精材、昇佳電子、宏捷科…）。
 # 兩者對同一 symbol 同一季互斥（實測 2330／富邦金雙向驗證），所以永遠只會存一份，
 # 檔名格式因此維持不變，processor 的「同季同 symbol 禁止兩個 html」規則不受影響。
-# 報表別不編進檔名：報表內容自帶 tifrs-notes:ReportCategory
-# （Consolidated report / Individual report），由 processor 自己判讀。
+#
+# 報表別不編進檔名，因為報表內容自帶 tifrs-notes:ReportCategory
+# （Consolidated report / Individual report）。但**目前下游還沒有人讀它** ——
+# 個體財報進到 *_xbrl 後與合併財報無從分辨，而個體財報沒有 8610（歸屬母公司
+# 業主淨利），總資產／總權益也是母公司單體基礎。接手判讀與 net_income 取數是
+# 下一個 PR 的事，在那之前不要假設下游分得出來。
 REPORT_ID_CONSOLIDATED = "C"
 REPORT_ID_INDIVIDUAL = "A"
 REPORT_ID_FALLBACK_CHAIN = (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL)
@@ -40,6 +44,28 @@ REPORT_ID_FALLBACK_CHAIN = (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL)
 # page_not_accessible 是站方狀態，換 REPORT_ID 照樣被擋，徒然多打一次請求，
 # 還會拖慢 RATE_LIMIT_ABORT_STREAK 收手的速度。
 FALLBACK_TRIGGER_REASON = "report_not_published"
+
+# 啟動個體財報 fallback 的門檻：本季已收到的報表數 / 掃描宇宙。
+#
+# 申報期限**之前**，C 回「尚未申報」代表的就是「還沒到期」—— 這種公司若是個體
+# 申報，A 同樣還沒申報，多打一次純屬浪費。而 scrape 窗口一開就是期限前 30 天，
+# 那幾夜幾乎整批 report_not_published：2026-08-01 那夜 1,763 檔，每檔多一次請求
+# 加 3 秒間隔就是多出約 88 分鐘。xbrl scrape 23:50 起跑、stock-daily-retry 03:00
+# 觸發，這樣壓過去會直接吃掉 retry 的時間。
+#
+# 用「本季已收到多少」判斷窗口尾端，比在這裡再抄一份申報期限日期表可靠 ——
+# 那份表在 schedules/xbrl_scrape_daily.sh，而且刻意與 xbrl_process_import.sh
+# 的窗口不同步（見兩支 script 的註解），多一份副本遲早會走鐘。
+#
+# 2026Q2 實測逐夜覆蓋率：08-01 0% → 08-06 10% → 08-11 28% → 08-13 53% →
+# 08-14 72% → 08-15 89%。門檻取 0.80 只在 08-15 那夜觸發，正是 A 探測唯一
+# 有意義的時點（08-14 的 510 次無謂探測也一併省下）。
+#
+# 天花板意識：C 收得到的比例就是覆蓋率上限（2026Q2 = 1,645/1,851 ≈ 89%）。
+# 個體申報的占比若從現在的 ~9% 漲到 20% 以上，這個門檻就再也達不到、個體財報
+# 會收不進來 —— 屆時要調低。啟用與否每次執行都印在 log 開頭，不會默默失效。
+# 回補歷史季別請直接用 --report-id A，不受本門檻影響。
+INDIVIDUAL_FALLBACK_MIN_COVERAGE = 0.80
 
 # 正常的 inline XBRL 季報一定帶這兩個 namespace 之一；MOPS 的各式錯誤頁
 # （安全性阻擋頁、「檔案不存在!」、rate limit 頁）都沒有。
@@ -218,6 +244,25 @@ def saved_status(report_id: str) -> str:
     return f"ok_{report_id.lower()}"
 
 
+def resolve_report_ids(requested: str, coverage: float) -> tuple[tuple[str, ...], str]:
+    """決定這次要依序嘗試哪些報表別，並附一句寫進 log 的理由。
+
+    `auto` 之下個體財報的 fallback 只在本季已大致收齊時才啟用 ——
+    理由與門檻的推導見 INDIVIDUAL_FALLBACK_MIN_COVERAGE。
+    """
+    if requested != "auto":
+        return (requested,), "explicit"
+
+    pct = f"coverage {coverage:.0%}"
+    threshold = f"{INDIVIDUAL_FALLBACK_MIN_COVERAGE:.0%}"
+    if coverage >= INDIVIDUAL_FALLBACK_MIN_COVERAGE:
+        return REPORT_ID_FALLBACK_CHAIN, f"{pct} >= {threshold}，個體 fallback 啟用"
+    return (
+        (REPORT_ID_CONSOLIDATED,),
+        f"{pct} < {threshold}，個體 fallback 未啟用（申報期限前，A 一樣還沒申報）",
+    )
+
+
 def is_saved_status(reason: str) -> bool:
     """這個 base status 代表「有一份報表落地」嗎？
 
@@ -287,16 +332,27 @@ def load_existing_report_names(out_dir: Path) -> set[str]:
     return names
 
 
-def purge_invalid_siblings(
-    out_dir: Path, year: int, quarter: int, symbol: str, keep: Path
+def purge_sibling_reports(
+    out_dir: Path,
+    year: int,
+    quarter: int,
+    symbol: str,
+    keep: Path,
+    include_valid: bool = False,
 ) -> list[Path]:
-    """刪掉同一 symbol 底下其餘未通過驗證的 html，回傳被刪的路徑。
+    """刪掉同一 symbol 底下其餘的 html，回傳被刪的路徑。
 
-    重抓成功後一定要清掉舊壞檔，否則自癒反而會弄壞下游：processor 的
+    重抓成功後一定要清掉舊檔，否則自癒反而會弄壞下游：processor 的
     collect_strict_html_per_symbol() 對同季同 symbol 出現兩個檔案是直接
     raise、整季轉檔中止的（processor/CLAUDE.md「multiple html files are
     forbidden」）。壞檔不列入 dedupe key 會讓它被重抓，新檔帶新的 run_date
     後綴，兩個檔案就並存了。
+
+    `include_valid` 只在 FORCE_REPROCESS 時打開。平常抓取遇到已存在的有效檔
+    會直接 skip、根本不會走到這裡，所以預設只清壞檔、不動有效檔；但 force 是
+    刻意覆寫，此時舊的有效檔若留著就正好湊成「同季同 symbol 兩個 html」，
+    整季轉檔會當場中止 —— 尤其 force 搭 --run-date 改後綴時新舊檔名必然不同，
+    百分之百踩中。force 之後這個目錄對該 symbol 只會剩下剛寫入的那一份。
     """
     prefix = f"{year}Q{quarter}_{symbol}"
     # 只認 <quarter>_<symbol>.html 與 <quarter>_<symbol>_<YYYYMMDD>.html，
@@ -306,12 +362,12 @@ def purge_invalid_siblings(
     for path in out_dir.glob(f"{prefix}*.html"):
         if path == keep or not name_re.match(path.name):
             continue
-        if is_valid_report_file(path):
+        if not include_valid and is_valid_report_file(path):
             continue
         try:
             path.unlink()
         except OSError as e:
-            print(f"[WARN] {symbol} -> 無法刪除舊壞檔 {path.name}: {e}")
+            print(f"[WARN] {symbol} -> 無法刪除舊檔 {path.name}: {e}")
             continue
         removed.append(path)
     return removed
@@ -367,8 +423,8 @@ def save_symbol_report(
                 else:
                     out_path.write_text(html_text, encoding="utf-8")
                     existing_report_names.add(base_filename)
-                    for stale in purge_invalid_siblings(
-                        out_dir, year, quarter, symbol, out_path
+                    for stale in purge_sibling_reports(
+                        out_dir, year, quarter, symbol, out_path, include_valid=force
                     ):
                         print(f"[CLEAN] {symbol} -> removed stale {stale.name}")
                     print(f"[SAVE] {symbol} REPORT_ID={report_id} -> {filename}")
@@ -425,19 +481,19 @@ def main():
     except ValueError as e:
         print(f"Error: {e}")
         return 1
-    report_ids = (
-        REPORT_ID_FALLBACK_CHAIN if args.report_id == "auto" else (args.report_id,)
-    )
     quarter_key = f"{args.year}Q{args.quarter}"
     out_dir = OUTPUT_ROOT / str(args.year) / quarter_key
     out_dir.mkdir(parents=True, exist_ok=True)
     existing_report_names = load_existing_report_names(out_dir)
 
+    coverage = len(existing_report_names) / len(symbols)
+    report_ids, chain_note = resolve_report_ids(args.report_id, coverage)
+
     print(f"Target quarter: {quarter_key}")
     print(f"Symbols: {len(symbols)}")
     print(f"Output: {out_dir}")
     print(f"run_date: {run_date}")
-    print(f"report_id: {args.report_id} (chain: {','.join(report_ids)})")
+    print(f"report_id: {args.report_id} -> chain {','.join(report_ids)} ({chain_note})")
     print(f"existing_reports: {len(existing_report_names)}")
     print(
         f"overwrite: {'enabled' if force_reprocess else 'disabled'} (FORCE_REPROCESS)"

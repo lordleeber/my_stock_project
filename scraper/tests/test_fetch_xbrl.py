@@ -24,7 +24,8 @@ from fetch_xbrl import (  # noqa: E402
     is_valid_report_file,
     load_existing_report_names,
     parse_run_date,
-    purge_invalid_siblings,
+    purge_sibling_reports,
+    resolve_report_ids,
     save_symbol_report,
     saved_status,
     validate_report,
@@ -183,7 +184,7 @@ def test_load_existing_report_names_ignores_invalid(tmp_path: Path):
     assert names == {"2026Q2_2222.html"}
 
 
-# --- purge_invalid_siblings ------------------------------------------------
+# --- purge_sibling_reports ------------------------------------------------
 
 
 def test_purge_removes_only_invalid_siblings(tmp_path: Path):
@@ -194,7 +195,7 @@ def test_purge_removes_only_invalid_siblings(tmp_path: Path):
     other = tmp_path / "2026Q2_9999_20260702.html"
     other.write_text(BLOCK_PAGE, encoding="utf-8")
 
-    removed = purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh)
+    removed = purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh)
 
     assert removed == [stale]
     assert not stale.exists()
@@ -209,8 +210,55 @@ def test_purge_keeps_valid_siblings(tmp_path: Path):
     fresh = tmp_path / "2026Q2_1234_20260801.html"
     fresh.write_text(make_report(), encoding="utf-8")
 
-    assert purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh) == []
+    assert purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh) == []
     assert older.exists()
+
+
+def test_purge_removes_valid_siblings_when_forced(tmp_path: Path):
+    # FORCE_REPROCESS 是刻意覆寫。舊的有效檔留著就湊成「同季同 symbol 兩個
+    # html」，collect_strict_html_per_symbol() 會整季 raise。
+    older = tmp_path / "2026Q2_1234_20260730.html"
+    older.write_text(make_report(), encoding="utf-8")
+    fresh = tmp_path / "2026Q2_1234_20260801.html"
+    fresh.write_text(make_report(), encoding="utf-8")
+
+    removed = purge_sibling_reports(
+        tmp_path, 2026, 2, "1234", keep=fresh, include_valid=True
+    )
+
+    assert removed == [older]
+    assert not older.exists()
+    assert fresh.exists()
+
+
+def test_force_refetch_with_new_run_date_leaves_one_file(tmp_path: Path):
+    """回歸測試：--run-date 回補改後綴時新舊檔名必然不同。
+
+    force 若不清有效舊檔，這個目錄會同時存在 _20200515 與 _20260816 兩份，
+    整季轉檔當場中止 —— 而 --run-date 的用途正是回補歷史季別。
+    """
+    old = tmp_path / "2020Q1_1234_20200515.html"
+    old.write_text(make_report(), encoding="utf-8")
+    f = FakeFetcher({"C": make_report()})
+
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        symbol, status = save_symbol_report(
+            "1234",
+            2020,
+            1,
+            "20260816",
+            tmp_path,
+            load_existing_report_names(tmp_path),
+            force=True,
+            fetcher=f,
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+
+    assert status == "ok"
+    assert [p.name for p in tmp_path.glob("*.html")] == ["2020Q1_1234_20260816.html"]
 
 
 def test_purge_does_not_touch_prefix_neighbours(tmp_path: Path):
@@ -220,7 +268,7 @@ def test_purge_does_not_touch_prefix_neighbours(tmp_path: Path):
     fresh = tmp_path / "2026Q2_1234_20260801.html"
     fresh.write_text(make_report(), encoding="utf-8")
 
-    assert purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh) == []
+    assert purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh) == []
     assert neighbour.exists()
 
 
@@ -275,6 +323,38 @@ def test_is_saved_status_covers_both():
     # 失敗與 skip 都不算存檔成功，否則 decide_exit_code 會誤判。
     for reason in ("skipped_exists", "report_not_published", "rate_limit", "error:x"):
         assert not is_saved_status(reason), reason
+
+
+# --- resolve_report_ids：個體 fallback 的啟動門檻 ----------------------------
+
+
+def test_fallback_disabled_early_in_window():
+    """申報期限前不探 A —— 這是效能面的核心保護。
+
+    窗口一開就是期限前 30 天，那幾夜幾乎整批 report_not_published
+    （2026-08-01 有 1,763 檔）。每檔多一次請求加 3 秒間隔約多 88 分鐘，
+    23:50 起跑會壓到 03:00 的 stock-daily-retry。
+    """
+    for coverage in (0.0, 0.04, 0.28, 0.53, 0.72):
+        ids, note = resolve_report_ids("auto", coverage)
+        assert ids == (REPORT_ID_CONSOLIDATED,), coverage
+        assert "未啟用" in note
+
+
+def test_fallback_enabled_at_tail_of_window():
+    # 2026Q2 實測 08-15 覆蓋率 89%，正是 A 探測唯一有意義的時點。
+    for coverage in (0.80, 0.89, 1.0):
+        ids, note = resolve_report_ids("auto", coverage)
+        assert ids == (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL), coverage
+        assert "啟用" in note
+
+
+def test_explicit_report_id_ignores_coverage():
+    # 回補歷史季別時目錄可能是空的（覆蓋率 0），不該被門檻擋住。
+    assert resolve_report_ids(REPORT_ID_INDIVIDUAL, 0.0)[0] == (REPORT_ID_INDIVIDUAL,)
+    assert resolve_report_ids(REPORT_ID_CONSOLIDATED, 0.99)[0] == (
+        REPORT_ID_CONSOLIDATED,
+    )
 
 
 # --- save_symbol_report：REPORT_ID fallback ----------------------------------
