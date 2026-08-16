@@ -32,10 +32,9 @@ FETCH_INTERVAL_SECONDS = 3
 # 檔名格式因此維持不變，processor 的「同季同 symbol 禁止兩個 html」規則不受影響。
 #
 # 報表別不編進檔名，因為報表內容自帶 tifrs-notes:ReportCategory
-# （Consolidated report / Individual report）。但**目前下游還沒有人讀它** ——
-# 個體財報進到 *_xbrl 後與合併財報無從分辨，而個體財報沒有 8610（歸屬母公司
-# 業主淨利），總資產／總權益也是母公司單體基礎。接手判讀與 net_income 取數是
-# 下一個 PR 的事，在那之前不要假設下游分得出來。
+# （Consolidated report / Individual report）。processor 已接手判讀：正規化後寫進
+# quarterly_reports_xbrl.report_category，淨利科目也依報表別在 8610（合併）與
+# 8200（個體）之間切換，見 processor/CLAUDE.md。
 REPORT_ID_CONSOLIDATED = "C"
 REPORT_ID_INDIVIDUAL = "A"
 REPORT_ID_FALLBACK_CHAIN = (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL)

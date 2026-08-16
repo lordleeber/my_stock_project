@@ -265,13 +265,13 @@ docker compose run --rm scraper-quarterly \
 
 **檔名格式不變**（`YYYYQX_<symbol>_YYYYMMDD.html`，不編報表別）。C 與 A 對同一 symbol 同一季互斥（2330／富邦金雙向實測），永遠只會存一份，所以 processor 的「同季同 symbol 出現兩個 html 就 raise」不受影響。
 
-#### ⚠️ 下游目前分不出合併與個體
+#### 下游如何分辨合併與個體
 
-報表內容自帶 `tifrs-notes:ReportCategory`（`Consolidated report` / `Individual report`），但**現階段 processor / importer / strategies 沒有任何一處讀它**。個體財報進到 `*_xbrl` 之後與合併財報無從分辨，而且：
+報表內容自帶 `tifrs-notes:ReportCategory`（`Consolidated report` / `Individual report`）。**processor 已接手判讀**：正規化成 `consolidated` / `individual` 寫進 `quarterly_reports_xbrl.report_category`，淨利科目也依報表別在 `8610`（合併）與 `8200`（個體）之間切換 —— 見 `processor/CLAUDE.md` 的「報表別與淨利取數」。個體財報現在可以正常入庫。
 
-- 個體財報**沒有 `8610`**（淨利歸屬於母公司業主），`convert_quarterly_reports_xbrl.py` 的 `NET_INCOME_CODE` 取不到值
-- 總資產／總權益是母公司單體基礎，`strategies/step1_prepare_data.py` 會照單全收
+仍要留意的兩點：
 
-所以在下一個 PR 接手判讀之前，**不要假設下游分得出來**，也不要把個體財報入庫。
+- statement-level 的三張表（`income_statement_xbrl` / `balance_sheet_xbrl` / `cash_flow_xbrl`）**沒有**這個欄位。要分辨得回頭 join `quarterly_reports_xbrl` 的 `(date, symbol)` —— C 與 A 對同一 symbol 同一季互斥，所以這個 join 是唯一的。
+- 個體財報的總資產／總權益是母公司單體基礎，`strategies/step1_prepare_data.py` 目前照單全收、不分報表別。實測轉換戶的個體數與合併數在轉換點一致（無實質子公司才拿得到豁免），所以目前沒有基礎斷點，但要拆開處理時 `report_category` 已經在表上了。
 
 > 金融業（金控/銀行/保險）**不在**這件事的範圍內：它們是有合併財報的（走 `C` 抓得到），不進資料庫的原因是 processor 只認一般業 TIFRS 科目表 —— 見 `KNOWN_ISSUES.md`。另外它們的半年報申報期限是 8/31，8 月中來抓 Q2 收到 `report_not_published` 是正常的。
