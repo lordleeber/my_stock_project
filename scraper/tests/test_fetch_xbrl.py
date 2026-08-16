@@ -334,19 +334,38 @@ def test_fallback_disabled_early_in_window():
     窗口一開就是期限前 30 天，那幾夜幾乎整批 report_not_published
     （2026-08-01 有 1,763 檔）。每檔多一次請求加 3 秒間隔約多 88 分鐘，
     23:50 起跑會壓到 03:00 的 stock-daily-retry。
+
+    覆蓋率取自 2026Q2 實測：08-01 0%、08-06 10%、08-11 28%、08-12 38%、
+    08-13 53%（該夜 510 檔未申報，約 34 分鐘，是門檻要擋掉的最後一夜）。
     """
-    for coverage in (0.0, 0.04, 0.28, 0.53, 0.72):
+    for coverage in (0.0, 0.10, 0.28, 0.38, 0.53):
         ids, note = resolve_report_ids("auto", coverage)
         assert ids == (REPORT_ID_CONSOLIDATED,), coverage
         assert "未啟用" in note
 
 
-def test_fallback_enabled_at_tail_of_window():
-    # 2026Q2 實測 08-15 覆蓋率 89%，正是 A 探測唯一有意義的時點。
-    for coverage in (0.80, 0.89, 1.0):
+def test_fallback_enabled_for_deadline_night_and_the_one_after():
+    """必須涵蓋兩夜，不能只有最後一夜。
+
+    Q2/Q3 期限是 08/14、11/14，窗口只多留一天到 15 號（對齊 train_eps
+    cutoff，不能再延）。只涵蓋一夜的話，那夜被 MOPS 擋掉就整季收不到個體
+    財報，且沒有第二夜可補。2026Q2 實測 08-14 = 72%、08-15 = 89%。
+    """
+    for coverage in (0.72, 0.89, 1.0):
         ids, note = resolve_report_ids("auto", coverage)
         assert ids == (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL), coverage
         assert "啟用" in note
+
+
+def test_fallback_threshold_sits_inside_the_observed_gap():
+    """門檻要落在 53%(08-13) 與 72%(08-14) 之間，且兩側留有裕度。
+
+    貼著任一端都會讓別季稍微不同的曲線失手：貼下緣會多賠一整夜的探測，
+    貼上緣則可能整季只剩最後一夜。
+    """
+    assert 0.53 < fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE < 0.72
+    assert fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE - 0.53 >= 0.05
+    assert 0.72 - fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE >= 0.05
 
 
 def test_explicit_report_id_ignores_coverage():

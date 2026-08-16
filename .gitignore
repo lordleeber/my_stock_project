@@ -238,3 +238,6 @@ logs/train_eps_full_summary.txt
 
 # 一次性重建前的備份（models_selection / strategies output 快照）。
 backup_pre_*/
+
+# 調查草稿 / 待開 GitHub Issue 的整理稿（貼上去之後就可以刪）。
+issue.txt
