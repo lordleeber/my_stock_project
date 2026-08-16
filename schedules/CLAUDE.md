@@ -85,8 +85,22 @@ shell script 內容與 OS 無關，任何平台都能直接 invoke。
     2026-08-01 已踩過（`RESTORE.md` §落差4）。
   - 已經變成目錄時不自己修（`rmdir` 要 root），只印出明確指令並回非 0
 
-- `schedules/backfill_xbrl.sh`
-  - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。
+- `schedules/backfill_xbrl.sh` _（手動觸發）_
+  - 範圍補齊（多季）。**只跑 scrape 階段**（不含 processor/importer）；補完後對每季呼叫 `xbrl_process_import.sh`。兩段刻意不合併：scrape 動輒數十小時且只碰網路，import 會寫 DB，混在一支裡中斷起來很危險。
+  - 參數：`<START_QUARTER> <END_QUARTER> [--report-id {auto,C,A}] [--run-date YYYYMMDD] [--dry-run]`
+  - **`--run-date` 預設依季別自動推導**（Q1 `YYYY0515`／Q2 `YYYY0815`／Q3 `YYYY1115`／Q4 隔年 `0331`），即各季申報期限日，與該季既有 raw 檔名的眾數後綴一致。
+    - 這個後綴就是 processor 讀出來的 `publish_time`。舊版沒傳它、`fetch_xbrl.py` 退成「執行當天」，回補 2020Q1 會生出 `2020Q1_1342_20260816.html`：`publish_time` 在同季自相矛盾，而且檔名與既有的 `_20200515` 不同會讓 `collect_strict_html_per_symbol()` 判定「同季同 symbol 兩個 html」而**整季 raise**。
+    - 傳 `--run-date` 可覆寫，但它會套用到範圍內每一季，跨季時會出警告。
+  - **`--report-id` 預設 `auto`**（對齊 `fetch_xbrl.py`）。`C` 只抓合併、`A` 只抓個體。
+  - ⚠️ **從零重建 raw 必須兩趟**：先 `--report-id C`，再 `--report-id A`。
+    - 空目錄用 `A`：`save_symbol_report` 只對「完全沒有檔」的 symbol 送請求，結果是只拿到個體財報、漏掉全部合併財報。
+    - 空目錄用 `auto` 也拿不到個體財報：個體 fallback 受 `INDIVIDUAL_FALLBACK_MIN_COVERAGE=0.60` 管制，而 coverage 是「開跑時磁碟已有檔數 ÷ 掃描宇宙」**只在開跑時算一次**（`fetch_xbrl.py:500`），空目錄 = 0% < 60%，`auto` 會退成 C-only。
+  - 可中斷：已抓到的檔在下次執行回報 `skipped_exists` 且**不 sleep**，重跑一個抓完的季別只花幾秒。Ctrl+C 會攔下訊號主動 `docker stop` scraper 容器（`docker compose run` 的 Ctrl+C 只殺得掉本機 client，容器會被 containerd 收養繼續跑）。
+  - 例：
+    ```bash
+    ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --dry-run        # 先看每季參數
+    ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --report-id A    # 只補個體財報
+    ```
 
 - `schedules/playbook_run.sh`
   - 流程：每月 ML playbook — `train_eps/run_pipeline.py -> strategies/step1~step5 -> scripts/publish_stock_list.py -> backtester/run_rolling.py`
