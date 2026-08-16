@@ -10,9 +10,31 @@ REVENUE_CODE = "4000"
 OP_INCOME_CODE = "6900"
 NON_OP_INCOME_CODE = "7000"
 PRETAX_CODE = "7900"
-NET_INCOME_CODE = "8610"  # Closer to quarterly_reports than 8200.
 EPS_CODE = "9750"
 CAPITAL_CODE = "3110"
+
+# 淨利的科目編號隨報表別而異，不是同一個數字的兩種寫法：
+#   合併財報 8610 = 淨利歸屬於母公司業主（已扣除非控制權益；比 8200 更貼近舊版
+#                   quarterly_reports 的口徑，這是當初選 8610 的理由）
+#   個體財報 8200 = 本期淨利（淨損）
+# 個體財報**沒有** 8610 —— 拿得到免編合併財報豁免的公司已無實質子公司，沒有非
+# 控制權益可拆分，8200 本身即等同合併基礎下的 8610（issue.txt 用 4 檔轉換戶的
+# 前期比較數對照 DB 舊合併數，逐項一致）。
+# 舊版把科目寫死成 8610，個體財報進來時 net_income_q / net_income_acc 會整批
+# 落成 NULL；2026-08-16 實測非金融 165 檔只有個體財報，約佔選股宇宙 10%。
+NET_INCOME_CODE_CONSOLIDATED = "8610"
+NET_INCOME_CODE_INDIVIDUAL = "8200"
+
+REPORT_CATEGORY_CONSOLIDATED = "consolidated"
+REPORT_CATEGORY_INDIVIDUAL = "individual"
+
+# 取數依報表別查表決定，不用「8610 取不到就退 8200」的隱式推論。隱式版本同樣能
+# 補起 NULL，但判別藏在取數邏輯裡，入庫後看不出哪一列是哪種基礎；report_category
+# 一起寫進 quarterly_reports_xbrl，strategies 日後要分開處理才有依據。
+NET_INCOME_CODE_BY_REPORT_CATEGORY = {
+    REPORT_CATEGORY_CONSOLIDATED: NET_INCOME_CODE_CONSOLIDATED,
+    REPORT_CATEGORY_INDIVIDUAL: NET_INCOME_CODE_INDIVIDUAL,
+}
 
 TOTAL_EQUITY_CODE = "3XXX"
 TOTAL_ASSETS_CODE = "1XXX"
@@ -37,11 +59,24 @@ MARKET_RE = re.compile(
     r"<ix:nonNumeric\b[^>]*\bname=['\"]tifrs-notes:Market['\"][^>]*>(.*?)</ix:nonNumeric>",
     re.IGNORECASE | re.DOTALL,
 )
+# 值只有 "Consolidated report" / "Individual report" 兩種（41,000 份 raw 全數實測，
+# 無缺漏、無第三種值）。DOTALL 是必要的：2021Q2_1519 這種檔案的值被斷行成
+# "Consolidated \r\nreport"，靠 clean_value_text() 收斂空白才還原得回來。
+REPORT_CATEGORY_RE = re.compile(
+    r"<ix:nonNumeric\b[^>]*\bname=['\"]tifrs-notes:ReportCategory['\"][^>]*>(.*?)</ix:nonNumeric>",
+    re.IGNORECASE | re.DOTALL,
+)
+# 個體財報另一種標準英譯 "Non-consolidated report" 的各種寫法（連字號／空白／連寫）。
+# 用 regex 而不是列舉字面值，是因為漏掉哪一種都會靜默倒向合併 —— 見
+# normalize_report_category()。分隔用 `*` 不是 `?`：raw 路徑上 clean_value_text()
+# 已把 \s+ 收成單一空白，但這個函式也被直接呼叫，多吃幾個空白不花成本。
+NON_CONSOLIDATED_RE = re.compile(r"non[\s-]*consolidated")
 
 OUTPUT_COLUMNS = [
     "date",
     "symbol",
     "market",
+    "report_category",
     "revenue_q",
     "revenue_acc",
     "revenue_acc_ly",
@@ -95,6 +130,16 @@ BACKFILL_QUARTERS = {"2020Q1", "2020Q2", "2020Q3", "2020Q4"}
 
 class MissingPublishTimeSuffixError(ValueError):
     pass
+
+
+class UnknownReportCategoryError(ValueError):
+    """ReportCategory 缺漏或出現第三種值時拋出，不猜報表別。
+
+    41,000 份 raw 全數帶得出這個欄位、值只有兩種，所以判不出來代表來源格式變了。
+    這時退成合併基礎會把個體財報的 net_income 悄悄寫成 NULL —— 正是這支程式要修
+    的那個 bug —— 所以照 processor 既有慣例 fail fast（見 processor/CLAUDE.md
+    的 raw filename 規則），讓整季停下來被人看見。
+    """
 
 
 def to_float(text: str | None) -> float | None:
@@ -232,13 +277,16 @@ def resolve_raw_html_with_publish_time(
     return html_path, publish_time
 
 
-def extract_name_market_from_raw_html(html_path: Path) -> tuple[str, str]:
+def extract_meta_from_raw_html(html_path: Path) -> tuple[str, str, str]:
+    """回傳 (公司中文名, market 原文, ReportCategory 原文)。三者都只讀一次檔案。"""
     text = decode_html(html_path.read_bytes())
     name_m = COMPANY_RE.search(text)
     market_m = MARKET_RE.search(text)
+    category_m = REPORT_CATEGORY_RE.search(text)
     name = clean_value_text(name_m.group(1)) if name_m else ""
     market = clean_value_text(market_m.group(1)) if market_m else ""
-    return name, market
+    report_category = clean_value_text(category_m.group(1)) if category_m else ""
+    return name, market, report_category
 
 
 def normalize_market(raw_market: str) -> str:
@@ -248,6 +296,21 @@ def normalize_market(raw_market: str) -> str:
     if "otc" in s or "over-the-counter" in s:
         return "otc"
     return s
+
+
+def normalize_report_category(raw_category: str) -> str:
+    # 個體要先判。"Non-consolidated report" 是個體財報的另一種標準英譯，它**含有**
+    # "consolidated" 子字串 —— 先比對合併會把它歸成合併基礎，於是去取 8610、取不到、
+    # net_income 落成 NULL，而且因為分類「成功」了，UnknownReportCategoryError 不會
+    # 觸發，正好對這批本 PR 要救的公司靜默失敗。
+    # （目前 41,000 份 raw 只出現 Consolidated report / Individual report 兩種值，
+    #   這裡純粹是為了讓誤判的方向倒向「停下來」而不是「猜成合併」。）
+    s = (raw_category or "").strip().lower()
+    if "individual" in s or NON_CONSOLIDATED_RE.search(s):
+        return REPORT_CATEGORY_INDIVIDUAL
+    if "consolidated" in s:
+        return REPORT_CATEGORY_CONSOLIDATED
+    return ""
 
 
 def build_experiment_row(
@@ -281,6 +344,17 @@ def build_experiment_row(
     prev_inc_a: dict[str, str] = {}
     if prev_inc_a_path.exists():
         try:
+            # BUG（既存，本 PR 不動）：read_wide_code_map() 回傳的是 dict，這裡卻拿
+            # 它解包成兩個變數。實務上損益表寬列的科目數不會剛好是 2，所以解包幾乎
+            # 總是拋 ValueError 被下面接掉，prev_inc_a 留在 {} —— 實測 12 個
+            # *_acc_ly / *_acc_yoy 欄位在全部 26 季 100% NULL。
+            # 另外兩條路徑也落到同一個 except：symbol 不在去年同季檔案裡時，
+            # read_wide_code_map() 自己就拋 ValueError。而萬一科目剛好 2 個，解包會
+            # 「成功」讓 prev_inc_a 變成一個科目字串，之後 .get() 拋 AttributeError
+            # —— 那個不會被這裡接到，整檔會被 main() 的廣義 handler 丟出該季。
+            # 其中 eps_acc_yoy / revenue_acc_yoy 還被 strategies/step1_prepare_data.py
+            # 當特徵吃進去。修它會動到 ML 特徵、必須連帶重跑 4/4 的驗證，所以留給
+            # 獨立的 PR；詳見 KNOWN_ISSUES.md。
             prev_inc_a, _ = read_wide_code_map(prev_inc_a_path, symbol)
         except ValueError:
             prev_inc_a = {}
@@ -288,7 +362,15 @@ def build_experiment_row(
     raw_html_path, publish_time = resolve_raw_html_with_publish_time(
         raw_dir, quarter, symbol
     )
-    name, market = extract_name_market_from_raw_html(raw_html_path)
+    name, market, raw_report_category = extract_meta_from_raw_html(raw_html_path)
+    report_category = normalize_report_category(raw_report_category)
+    net_income_code = NET_INCOME_CODE_BY_REPORT_CATEGORY.get(report_category)
+    if net_income_code is None:
+        raise UnknownReportCategoryError(
+            f"unrecognized tifrs-notes:ReportCategory in {raw_html_path}: "
+            f"{raw_report_category!r} "
+            "(expected 'Consolidated report' or 'Individual report')"
+        )
 
     total_equity = to_float(bs.get(TOTAL_EQUITY_CODE))
     total_assets = to_float(bs.get(TOTAL_ASSETS_CODE))
@@ -323,6 +405,7 @@ def build_experiment_row(
     row["date"] = quarter
     row["symbol"] = symbol
     row["market"] = normalize_market(market)
+    row["report_category"] = report_category
     row["publish_time"] = publish_time
 
     row["revenue_q"] = to_float(inc_q.get(REVENUE_CODE))
@@ -345,9 +428,11 @@ def build_experiment_row(
     row["pretax_income_acc_yoy"] = calc_yoy(
         row["pretax_income_acc"], row["pretax_income_acc_ly"]
     )
-    row["net_income_q"] = to_float(inc_q.get(NET_INCOME_CODE))
-    row["net_income_acc"] = to_float(inc_a.get(NET_INCOME_CODE))
-    row["net_income_acc_ly"] = to_float(prev_inc_a.get(NET_INCOME_CODE))
+    row["net_income_q"] = to_float(inc_q.get(net_income_code))
+    row["net_income_acc"] = to_float(inc_a.get(net_income_code))
+    # 注意：prev_inc_a 取的是去年同季，那一季的報表別未必與本季相同（轉換戶）。
+    # 目前無妨 —— prev_inc_a 恆為空 dict，見 build_experiment_row 內的說明。
+    row["net_income_acc_ly"] = to_float(prev_inc_a.get(net_income_code))
     row["net_income_acc_yoy"] = calc_yoy(
         row["net_income_acc"], row["net_income_acc_ly"]
     )
@@ -466,7 +551,7 @@ def main() -> int:
             row_acc = dict(row)
             row_acc["period"] = period_a
             rows_acc.append(row_acc)
-        except MissingPublishTimeSuffixError:
+        except (MissingPublishTimeSuffixError, UnknownReportCategoryError):
             raise
         except Exception as e:
             failed.append((symbol, str(e)))

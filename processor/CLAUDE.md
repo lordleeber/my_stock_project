@@ -143,7 +143,36 @@ XBRL raw filename rules (strict, fail-fast):
 - Current outputs:
   - `processed/quarterly_reports_xbrl/YYYY/YYYYQX/all_quarter.csv`
   - `processed/quarterly_reports_xbrl/YYYY/YYYYQX/all_accumulated.csv`
-- Output columns include `publish_time` and `period`.
+- Output columns include `publish_time`、`period` 與 `report_category`。
+
+#### 報表別（`report_category`）與淨利取數
+
+`tifrs-notes:ReportCategory` 從 raw html 讀出後正規化成 `consolidated` / `individual`
+（路徑與 `market` 相同：`extract_meta_from_raw_html` → `normalize_report_category`）。
+**淨利的科目編號依報表別決定，不是同一個數字的兩種寫法：**
+
+| report_category | 淨利科目 | 科目名稱 |
+|---|---|---|
+| `consolidated` | `8610` | 淨利歸屬於母公司業主（已扣非控制權益） |
+| `individual` | `8200` | 本期淨利（淨損） |
+
+個體財報**沒有** `8610` —— 拿得到免編合併財報豁免的公司已無實質子公司，沒有非控制
+權益可拆分。舊版把科目寫死成 `8610`，個體財報進來時 `net_income_q` / `net_income_acc`
+會整批落成 NULL（2026-08-16 實測：非金融 165 檔只有個體財報，約佔選股宇宙 10%）。
+
+取數走 `NET_INCOME_CODE_BY_REPORT_CATEGORY` 查表，**不用**「8610 取不到就退 8200」的
+隱式推論：隱式版本同樣能補起 NULL，但判別藏在取數邏輯裡，入庫後看不出哪一列是哪種
+基礎。`report_category` 一起寫進 `quarterly_reports_xbrl`，`strategies` 日後要分開處理
+才有依據。
+
+判不出報表別（欄位缺漏或出現第三種值）時拋 `UnknownReportCategoryError`，**整季停住**
+—— 41,000 份 raw 全數帶得出這個欄位且只有兩種值，所以判不出來代表來源格式變了，這時
+悄悄退回合併基礎正是要修的那個 bug。
+
+> DB migration：既有資料庫（含從加欄之前的備份還原回來的）需補建此欄，跑
+> `venv/bin/python3 tools/sync_db_columns.py`（idempotent，沒缺就是 no-op）。
+> 全新的 DB 不需要 —— importer 的 `to_sql` 會依 DataFrame 自動建出此欄。
+> 尚未重跑的季別此欄為 NULL，待全季 backfill 後補齊。
 - `publish_time` source rule (strict):
   - Do not read publish_time from `income_statement_xbrl` / `balance_sheet_xbrl` / `cash_flow_xbrl`.
   - Resolve from raw html filename only (`YYYYQX_symbol_YYYYMMDD.html`).

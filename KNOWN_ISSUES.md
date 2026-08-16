@@ -15,6 +15,45 @@
 
 ---
 
+## `quarterly_reports_xbrl` 的 12 個 `*_acc_ly` / `*_acc_yoy` 欄位全表 NULL
+
+`processor/quarterly/convert_quarterly_reports_xbrl.py::build_experiment_row` 裡：
+
+```python
+prev_inc_a, _ = read_wide_code_map(prev_inc_a_path, symbol)
+```
+
+`read_wide_code_map()` 回傳的是 **dict**，這行卻拿它解包成兩個變數。實務上損益表寬列
+的科目數不會剛好是 2，所以解包幾乎總是拋 `ValueError: too many values to unpack`，
+被下一行的 `except ValueError: prev_inc_a = {}` 接掉 —— `prev_inc_a` 留在空 dict，
+去年同季的基準取不到。
+
+同一個 `except` 還吃掉另一條正常路徑：symbol 不在去年同季檔案裡時，
+`read_wide_code_map()` 自己就拋 `ValueError`。另有一個未被接到的邊角 —— 萬一科目
+剛好 2 個，解包會「成功」讓 `prev_inc_a` 變成一個科目**字串**，之後 `.get()` 拋
+`AttributeError`，該檔會被 `main()` 的廣義 handler 整個丟出該季。
+
+實測（2026-08-16）：全部 26 季 × 兩種 `period_type`，以下 12 欄 100% NULL。
+
+```
+revenue_acc_ly / revenue_acc_yoy          op_income_acc_ly / op_income_acc_yoy
+non_op_income_acc_ly / non_op_income_acc_yoy   pretax_income_acc_ly / pretax_income_acc_yoy
+net_income_acc_ly / net_income_acc_yoy    eps_acc_ly / eps_acc_yoy
+```
+
+`BACKFILL_QUARTERS`（2020Q1~Q4）本來要從舊版 `quarterly_reports` 補，但那張表與它的
+processed CSV 都已隨舊季報流程 deprecated 掉，所以連那四季也是空的。
+
+**下游影響**：`strategies/step1_prepare_data.py:163` 把 `eps_acc_yoy` 與
+`revenue_acc_yoy` 當特徵撈進 dataset —— 這兩個特徵目前恆為 NULL，等於沒作用。
+
+沒有在修個體財報的 PR 裡一併處理，是因為修它會同時改動 12 個欄位的值與 2 個 ML
+特徵，必須連帶重跑選股模型與回測驗證，跟「報表別判讀」是兩件事。修的時候注意：
+轉換戶去年同季的報表別可能與本季不同（合併 ↔ 個體），`net_income_acc_ly` 取哪個
+科目要依**該季自己的** `report_category` 決定，不能沿用本季的。
+
+---
+
 ## `shareholding` 的 2026-07-09 是部分快照（1849 檔，其他日期 ~2952）
 
 那一週的 TDCC 快照原本整份漏掉（7/10 週五休市 → 基準日順延到週四 → 7/12 沒抓到 →
