@@ -12,14 +12,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "quarterly"))
 
+import fetch_xbrl  # noqa: E402
 from fetch_xbrl import (  # noqa: E402
     MIN_REPORT_BYTES,
+    REPORT_ID_CONSOLIDATED,
+    REPORT_ID_INDIVIDUAL,
     base_status,
     classify_failure_reason,
     decide_exit_code,
+    is_saved_status,
     is_valid_report_file,
     load_existing_report_names,
-    purge_invalid_siblings,
+    parse_run_date,
+    purge_sibling_reports,
+    resolve_report_ids,
+    save_symbol_report,
+    saved_status,
     validate_report,
 )
 
@@ -176,7 +184,7 @@ def test_load_existing_report_names_ignores_invalid(tmp_path: Path):
     assert names == {"2026Q2_2222.html"}
 
 
-# --- purge_invalid_siblings ------------------------------------------------
+# --- purge_sibling_reports ------------------------------------------------
 
 
 def test_purge_removes_only_invalid_siblings(tmp_path: Path):
@@ -187,7 +195,7 @@ def test_purge_removes_only_invalid_siblings(tmp_path: Path):
     other = tmp_path / "2026Q2_9999_20260702.html"
     other.write_text(BLOCK_PAGE, encoding="utf-8")
 
-    removed = purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh)
+    removed = purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh)
 
     assert removed == [stale]
     assert not stale.exists()
@@ -202,8 +210,55 @@ def test_purge_keeps_valid_siblings(tmp_path: Path):
     fresh = tmp_path / "2026Q2_1234_20260801.html"
     fresh.write_text(make_report(), encoding="utf-8")
 
-    assert purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh) == []
+    assert purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh) == []
     assert older.exists()
+
+
+def test_purge_removes_valid_siblings_when_forced(tmp_path: Path):
+    # FORCE_REPROCESS 是刻意覆寫。舊的有效檔留著就湊成「同季同 symbol 兩個
+    # html」，collect_strict_html_per_symbol() 會整季 raise。
+    older = tmp_path / "2026Q2_1234_20260730.html"
+    older.write_text(make_report(), encoding="utf-8")
+    fresh = tmp_path / "2026Q2_1234_20260801.html"
+    fresh.write_text(make_report(), encoding="utf-8")
+
+    removed = purge_sibling_reports(
+        tmp_path, 2026, 2, "1234", keep=fresh, include_valid=True
+    )
+
+    assert removed == [older]
+    assert not older.exists()
+    assert fresh.exists()
+
+
+def test_force_refetch_with_new_run_date_leaves_one_file(tmp_path: Path):
+    """回歸測試：--run-date 回補改後綴時新舊檔名必然不同。
+
+    force 若不清有效舊檔，這個目錄會同時存在 _20200515 與 _20260816 兩份，
+    整季轉檔當場中止 —— 而 --run-date 的用途正是回補歷史季別。
+    """
+    old = tmp_path / "2020Q1_1234_20200515.html"
+    old.write_text(make_report(), encoding="utf-8")
+    f = FakeFetcher({"C": make_report()})
+
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        symbol, status = save_symbol_report(
+            "1234",
+            2020,
+            1,
+            "20260816",
+            tmp_path,
+            load_existing_report_names(tmp_path),
+            force=True,
+            fetcher=f,
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+
+    assert status == "ok"
+    assert [p.name for p in tmp_path.glob("*.html")] == ["2020Q1_1234_20260816.html"]
 
 
 def test_purge_does_not_touch_prefix_neighbours(tmp_path: Path):
@@ -213,8 +268,208 @@ def test_purge_does_not_touch_prefix_neighbours(tmp_path: Path):
     fresh = tmp_path / "2026Q2_1234_20260801.html"
     fresh.write_text(make_report(), encoding="utf-8")
 
-    assert purge_invalid_siblings(tmp_path, 2026, 2, "1234", keep=fresh) == []
+    assert purge_sibling_reports(tmp_path, 2026, 2, "1234", keep=fresh) == []
     assert neighbour.exists()
+
+
+# --- parse_run_date：檔名後綴 = publish_time ---------------------------------
+
+
+def test_parse_run_date_defaults_to_today():
+    from datetime import datetime
+
+    assert parse_run_date(None) == datetime.now().strftime("%Y%m%d")
+
+
+def test_parse_run_date_accepts_explicit_date():
+    # 回補歷史季別時要能把 publish_time 釘在該季申報期限，而不是回補當天。
+    assert parse_run_date("20200515") == "20200515"
+
+
+def test_parse_run_date_rejects_bad_format():
+    for bad in ("abc", "2020-05-15", "202005", "202005151"):
+        try:
+            parse_run_date(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"should reject {bad!r}")
+
+
+def test_parse_run_date_rejects_impossible_date():
+    # 過得了 \d{8} 卻不是合法日期 —— 不能讓它寫進檔名再變成 publish_time。
+    for bad in ("20261332", "20260230", "20260000"):
+        try:
+            parse_run_date(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"should reject {bad!r}")
+
+
+# --- saved_status / is_saved_status ------------------------------------------
+
+
+def test_saved_status_keeps_ok_for_consolidated():
+    # 合併財報的狀態字串刻意不改，既有 log 與監控都吃 "ok"。
+    assert saved_status(REPORT_ID_CONSOLIDATED) == "ok"
+
+
+def test_saved_status_marks_individual():
+    assert saved_status(REPORT_ID_INDIVIDUAL) == "ok_a"
+
+
+def test_is_saved_status_covers_both():
+    assert is_saved_status("ok")
+    assert is_saved_status("ok_a")
+    # 失敗與 skip 都不算存檔成功，否則 decide_exit_code 會誤判。
+    for reason in ("skipped_exists", "report_not_published", "rate_limit", "error:x"):
+        assert not is_saved_status(reason), reason
+
+
+# --- resolve_report_ids：個體 fallback 的啟動門檻 ----------------------------
+
+
+def test_fallback_disabled_early_in_window():
+    """申報期限前不探 A —— 這是效能面的核心保護。
+
+    窗口一開就是期限前 30 天，那幾夜幾乎整批 report_not_published
+    （2026-08-01 有 1,763 檔）。每檔多一次請求加 3 秒間隔約多 88 分鐘，
+    23:50 起跑會壓到 03:00 的 stock-daily-retry。
+
+    覆蓋率取自 2026Q2 實測：08-01 0%、08-06 10%、08-11 28%、08-12 38%、
+    08-13 53%（該夜 510 檔未申報，約 34 分鐘，是門檻要擋掉的最後一夜）。
+    """
+    for coverage in (0.0, 0.10, 0.28, 0.38, 0.53):
+        ids, note = resolve_report_ids("auto", coverage)
+        assert ids == (REPORT_ID_CONSOLIDATED,), coverage
+        assert "未啟用" in note
+
+
+def test_fallback_enabled_for_deadline_night_and_the_one_after():
+    """必須涵蓋兩夜，不能只有最後一夜。
+
+    Q2/Q3 期限是 08/14、11/14，窗口只多留一天到 15 號（對齊 train_eps
+    cutoff，不能再延）。只涵蓋一夜的話，那夜被 MOPS 擋掉就整季收不到個體
+    財報，且沒有第二夜可補。2026Q2 實測 08-14 = 72%、08-15 = 89%。
+    """
+    for coverage in (0.72, 0.89, 1.0):
+        ids, note = resolve_report_ids("auto", coverage)
+        assert ids == (REPORT_ID_CONSOLIDATED, REPORT_ID_INDIVIDUAL), coverage
+        assert "啟用" in note
+
+
+def test_fallback_threshold_sits_inside_the_observed_gap():
+    """門檻要落在 53%(08-13) 與 72%(08-14) 之間，且兩側留有裕度。
+
+    貼著任一端都會讓別季稍微不同的曲線失手：貼下緣會多賠一整夜的探測，
+    貼上緣則可能整季只剩最後一夜。
+    """
+    assert 0.53 < fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE < 0.72
+    assert fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE - 0.53 >= 0.05
+    assert 0.72 - fetch_xbrl.INDIVIDUAL_FALLBACK_MIN_COVERAGE >= 0.05
+
+
+def test_explicit_report_id_ignores_coverage():
+    # 回補歷史季別時目錄可能是空的（覆蓋率 0），不該被門檻擋住。
+    assert resolve_report_ids(REPORT_ID_INDIVIDUAL, 0.0)[0] == (REPORT_ID_INDIVIDUAL,)
+    assert resolve_report_ids(REPORT_ID_CONSOLIDATED, 0.99)[0] == (
+        REPORT_ID_CONSOLIDATED,
+    )
+
+
+# --- save_symbol_report：REPORT_ID fallback ----------------------------------
+
+
+class FakeFetcher:
+    """依 REPORT_ID 回傳預先排好的回應，並記下呼叫順序。"""
+
+    def __init__(self, by_report_id: dict[str, str]):
+        self.by_report_id = by_report_id
+        self.calls: list[str] = []
+
+    def __call__(self, symbol, year, quarter, report_id):
+        self.calls.append(report_id)
+        return self.by_report_id[report_id].encode("utf-8")
+
+
+def _save(tmp_path: Path, fetcher, **kwargs):
+    """呼叫 save_symbol_report，並把 sleep 拿掉（fallback 之間有 3 秒間隔）。"""
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        return save_symbol_report(
+            "1234", 2026, 2, "20260816", tmp_path, set(), fetcher=fetcher, **kwargs
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+
+
+def test_consolidated_hit_does_not_probe_individual(tmp_path: Path):
+    # 絕大多數 symbol 走這條；多打一次 A 等於整季請求量翻倍。
+    f = FakeFetcher({"C": make_report()})
+    assert _save(tmp_path, f) == ("1234", "ok")
+    assert f.calls == ["C"]
+    assert (tmp_path / "2026Q2_1234_20260816.html").exists()
+
+
+def test_falls_back_to_individual_when_consolidated_missing(tmp_path: Path):
+    # 本次 bug 的核心回歸測試：無子公司的公司只有個體財報。
+    f = FakeFetcher({"C": NOT_PUBLISHED, "A": make_report()})
+    assert _save(tmp_path, f) == ("1234", "ok_a")
+    assert f.calls == ["C", "A"]
+    # 檔名不帶報表別 —— processor 的「同季同 symbol 只能有一個 html」不受影響。
+    assert (tmp_path / "2026Q2_1234_20260816.html").exists()
+
+
+def test_both_report_ids_missing_stays_benign(tmp_path: Path):
+    # 申報期限前整批如此，不該因為多試了一個報表別就變成非良性失敗。
+    f = FakeFetcher({"C": NOT_PUBLISHED, "A": NOT_PUBLISHED})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C", "A"]
+    assert base_status(status) == "report_not_published"
+    assert base_status(status) in fetch_xbrl.BENIGN_FAILURE_REASONS
+
+
+def test_rate_limit_does_not_fall_back(tmp_path: Path):
+    # 換 REPORT_ID 一樣會被擋，而且會拖慢 RATE_LIMIT_ABORT_STREAK 收手。
+    f = FakeFetcher({"C": RATE_LIMITED, "A": make_report()})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C"]
+    assert base_status(status) == "rate_limit"
+
+
+def test_block_page_does_not_fall_back(tmp_path: Path):
+    f = FakeFetcher({"C": BLOCK_PAGE, "A": make_report()})
+    symbol, status = _save(tmp_path, f)
+    assert f.calls == ["C"]
+    assert base_status(status) == "page_not_accessible"
+
+
+def test_individual_only_chain_skips_consolidated(tmp_path: Path):
+    # 回補早已過申報期限的歷史季別：C 必定不存在，跳過可省一半請求。
+    f = FakeFetcher({"A": make_report()})
+    assert _save(tmp_path, f, report_ids=("A",)) == ("1234", "ok_a")
+    assert f.calls == ["A"]
+
+
+def test_existing_valid_report_short_circuits_fetch(tmp_path: Path):
+    (tmp_path / "2026Q2_1234_20260701.html").write_text(make_report(), encoding="utf-8")
+    f = FakeFetcher({"C": make_report(), "A": make_report()})
+    real_sleep = fetch_xbrl.time.sleep
+    fetch_xbrl.time.sleep = lambda _s: None
+    try:
+        result = save_symbol_report(
+            "1234",
+            2026,
+            2,
+            "20260816",
+            tmp_path,
+            load_existing_report_names(tmp_path),
+            fetcher=f,
+        )
+    finally:
+        fetch_xbrl.time.sleep = real_sleep
+    assert result == ("1234", "skipped_exists")
+    assert f.calls == []
 
 
 # --- decide_exit_code：什麼情況該告警 ---------------------------------------

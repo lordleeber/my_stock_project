@@ -43,7 +43,8 @@ If you skip rebuild, container runtime may execute stale code even when host fil
   - `check_outputs.py`: monthly 輸出檢查
 
 - `quarterly/`
-  - `fetch_xbrl.py`: 季報 XBRL 抓取（MOPS XBRL HTML），輸出到 `data/raw/xbrl/YYYY/YYYYQX/`
+  - `fetch_xbrl.py`: 季報 XBRL 抓取（MOPS XBRL HTML），輸出到 `data/raw/xbrl/YYYY/YYYYQX/`。
+    **合併(C)抓不到會自動退到個體(A)**，見下方「合併財報 vs 個體財報」
   - `_deprecated/`: 已停用的舊版季報抓取（`fetch_quarterly_reports.py`、`check_outputs.py`）
 
 ## Required Env Vars
@@ -69,6 +70,12 @@ If you skip rebuild, container runtime may execute stale code even when host fil
 
 - Quarterly XBRL
   - 由 `fetch_xbrl.py` 直接吃 `--year` / `--quarter` 參數（不再使用 `REPORT_YEAR`/`REPORT_QUARTER` 環境變數）。一般透過 `schedules/xbrl_scrape_daily.sh` 觸發。
+  - 另有兩個**只給回補用**的旗標，日常排程不要帶：
+    - `--run-date YYYYMMDD`：覆寫檔名後綴。這個後綴就是 processor 讀出來的
+      `publish_time`，回補歷史季別時必須指定該季**申報期限**，否則 2020Q1 會冒出
+      一批 2026 年的 publish_time，與該季既有資料（整季統一）自相矛盾。
+    - `--report-id {auto,C,A}`：`auto`（預設）= C 抓不到再退 A。回補早已過申報期限
+      的歷史季別時 C 必定不存在，直接指定 `A` 可省一半請求。
 
 ## Raw Output Paths (current)
 
@@ -201,8 +208,70 @@ docker compose run --rm calculator \
   - 之所以不是逐條列舉錯誤頁字樣：舊版就是這樣做，兩個 marker 各差一個字（`the`/`this`、`執行`/`呈現`），2026Q2 因此存進 1,805 個阻擋頁。要改判斷條件請維持正向驗證的形式，不要退回窮舉錯誤訊息。
   - `classify_failure_reason()` 只負責把失敗原因寫清楚（`rate_limit` / `page_not_accessible` / `report_not_published`），漏判不會讓壞資料落地。
   - `load_existing_report_names()` 只把**通過驗證**的檔案列入 dedupe key，所以存壞的檔案下次執行會自動重抓，不會像舊版那樣錯一次就永遠 SKIP。
-  - 重抓成功後 `purge_invalid_siblings()` 會刪掉同 symbol 的舊壞檔。**這步不能省**：processor 的 `collect_strict_html_per_symbol()` 對同季同 symbol 出現兩個 html 是直接 raise、整季轉檔中止，所以「重抓」和「清掉舊檔」必須成對出現。
+  - 重抓成功後 `purge_sibling_reports()` 會刪掉同 symbol 的舊壞檔。**這步不能省**：processor 的 `collect_strict_html_per_symbol()` 對同季同 symbol 出現兩個 html 是直接 raise、整季轉檔中止，所以「重抓」和「清掉舊檔」必須成對出現。
+    - `FORCE_REPROCESS=1` 時額外帶 `include_valid=True`，連舊的**有效**檔一起清。force 是刻意覆寫，舊有效檔留著就正好湊成「同季同 symbol 兩個 html」；搭 `--run-date` 改後綴時新舊檔名必然不同，百分之百踩中。force 之後該 symbol 在該季目錄只會剩剛寫入的那一份。
   - 連續 `RATE_LIMIT_ABORT_STREAK`（5）次 `rate_limit` 就**中止本次執行**並回傳非 0。2026-07-02 的事故就是被擋之後仍一路跑完 1,800 個 symbol，把整季寫成阻擋頁。
   - 退出碼由 `decide_exit_code()` 決定：「有嘗試抓取、沒有任何一次成功、且失敗全都不是良性原因」才回非 0。舊版 `0 if ok > 0 else 1` 把 `skipped_exists` 算進 ok，只要目錄有舊檔就永遠 exit 0，MOPS 改版會靜悄悄停擺而不觸發 systemd 通知。
   - 申報期限前來抓會大量收到 `report_not_published`（例如 8/14 前抓 Q2），這是正常的、不會告警，等排程逐日補齊即可。
   - 測試：`scraper/tests/test_fetch_xbrl.py`。專案沒裝 pytest、CI 也只跑 ruff，所以本檔可直接執行：`venv/bin/python3 scraper/tests/test_fetch_xbrl.py`。
+
+### 合併財報 vs 個體財報（`REPORT_ID`）
+
+MOPS `t164sb01` 的 `REPORT_ID` 有兩種：`C` = 合併財報、`A` = 個體財報。**台灣規定無子公司者免編合併財務報表、以個體財報申報**，這類公司對 `C` 查詢一律回 97 bytes 的「檔案不存在!」。
+
+舊版把 `REPORT_ID` 寫死成 `C`，於是它們從 2020 年起完全不在資料庫裡。2026-08-16 實測：`active_stocks.txt` 裡抓不到 C 的非金融公司有 167 檔，其中 **165 檔只有個體財報**，佔選股宇宙約 10%（台灣高鐵、寶雅、全國電、采鈺、精材、昇佳電子、宏捷科、福懋科、星宇航空、長榮航太…）。
+
+現在的行為（`REPORT_ID_FALLBACK_CHAIN`）：
+
+- 先打 `C`；**只有**失敗原因是 `report_not_published` 才退到 `A` 再打一次。
+  `rate_limit` / `page_not_accessible` 是站方狀態，換 `REPORT_ID` 照樣被擋，還會拖慢 `RATE_LIMIT_ABORT_STREAK` 收手，所以不 fallback。
+- 兩次請求之間一樣 sleep `FETCH_INTERVAL_SECONDS`（3 秒），否則這些 symbol 的瞬時請求速率會是別人的兩倍。
+- 合併命中就**不會**多打 A —— 絕大多數 symbol 走這條，多打一次等於整季請求量翻倍。
+- 存檔狀態：合併是 `ok`（刻意不改，既有 log 都吃這個字），個體是 `ok_a`，讓收尾統計看得出這一季有幾檔靠 fallback 收進來。計數與退出碼一律走 `is_saved_status()`。
+
+#### 個體 fallback 只在窗口尾端啟用
+
+`auto` 之下，A 的探測還要過 `INDIVIDUAL_FALLBACK_MIN_COVERAGE`（**0.60**）這一關：本季已收到的報表數 ÷ 掃描宇宙 未達門檻就只打 `C`。
+
+申報期限**前**，`C` 回「尚未申報」代表的就是「還沒到期」—— 這種公司若是個體申報，`A` 同樣還沒申報，多打純屬浪費。而 scrape 窗口一開就是期限前 30 天：2026-08-01 那夜有 **1,763 檔** `report_not_published`，每檔多一次請求加 3 秒間隔就是多出約 **88 分鐘**；xbrl scrape 23:50 起跑、`stock-daily-retry.timer` 03:00 觸發，壓過去會直接吃掉 retry 的時間。
+
+門檻用「已收到多少」而不是再抄一份申報期限日期表 —— 那份表在 `xbrl_scrape_daily.sh`，而且**刻意**與 `xbrl_process_import.sh` 的窗口不同步，多一份副本遲早走鐘。
+
+2026Q2 逐夜實測（覆蓋率／該夜 `report_not_published`）：
+
+| 日期 | 覆蓋率 | 未申報 | fallback |
+|---|---:|---:|---|
+| 08-11 | 28% | 1,145 | — |
+| 08-12 | 38% | 871 | — |
+| 08-13 | 53% | 510 | — |
+| **08-14** | **72%** | **205** | **啟用**（申報期限當夜） |
+| **08-15** | **89%** | **203** | **啟用**（期限後唯一一夜，窗口在此關閉） |
+
+`53% → 72%` 之間有一段很寬的空隙，0.60 落在中央，兩側裕度都夠（下方距 53% 有 7 點、上方距 72% 有 12 點）。多出的成本只有 08-14 那夜的 205 次探測，約 14 分鐘。
+
+**為什麼要涵蓋兩夜**：Q2/Q3 的申報期限是 `08/14`、`11/14`，抓取窗口只多留一天到 15 號（對齊 train_eps cutoff，見 `xbrl_scrape_daily.sh` header —— 再往後延的資料當月 walk-forward 用不到，**延長窗口不是選項**）。門檻若高到只在最後一夜觸發，那一夜被 MOPS 擋掉（連 5 次 `rate_limit` 就中止整次執行）就等於整季個體財報全數收不到，且沒有第二夜可補。
+
+> **天花板意識**：`C` 收得到的比例就是覆蓋率上限（2026Q2 = 1,645/1,851 ≈ 89%）。0.60 留了 29 點餘裕 —— 個體申報占比要從現在的 ~9% 漲過 ~40% 才會讓門檻永遠達不到。啟用與否每次執行都印在 log 開頭（`report_id: auto -> chain C (coverage 22% < 60%, ...)`），不會默默失效。
+
+**兩夜都失手時的補救**（例如整季 `ok_a` 為 0，或那兩夜的 log 顯示 `rate_limit` 中止）：
+
+```bash
+docker compose run --rm scraper-quarterly \
+    python3 scraper/quarterly/fetch_xbrl.py --year 2026 --quarter 2 \
+    --report-id A --run-date 20260815
+```
+
+`--report-id A` 不受覆蓋率門檻限制；`--run-date` 對齊該季既有檔的後綴（Q1 `MM0515`、Q2 `MM0815`、Q3 `MM1115`、Q4 隔年 `0331`），避免 publish_time 與同季其他列不一致。
+
+**檔名格式不變**（`YYYYQX_<symbol>_YYYYMMDD.html`，不編報表別）。C 與 A 對同一 symbol 同一季互斥（2330／富邦金雙向實測），永遠只會存一份，所以 processor 的「同季同 symbol 出現兩個 html 就 raise」不受影響。
+
+#### ⚠️ 下游目前分不出合併與個體
+
+報表內容自帶 `tifrs-notes:ReportCategory`（`Consolidated report` / `Individual report`），但**現階段 processor / importer / strategies 沒有任何一處讀它**。個體財報進到 `*_xbrl` 之後與合併財報無從分辨，而且：
+
+- 個體財報**沒有 `8610`**（淨利歸屬於母公司業主），`convert_quarterly_reports_xbrl.py` 的 `NET_INCOME_CODE` 取不到值
+- 總資產／總權益是母公司單體基礎，`strategies/step1_prepare_data.py` 會照單全收
+
+所以在下一個 PR 接手判讀之前，**不要假設下游分得出來**，也不要把個體財報入庫。
+
+> 金融業（金控/銀行/保險）**不在**這件事的範圍內：它們是有合併財報的（走 `C` 抓得到），不進資料庫的原因是 processor 只認一般業 TIFRS 科目表 —— 見 `KNOWN_ISSUES.md`。另外它們的半年報申報期限是 8/31，8 月中來抓 Q2 收到 `report_not_published` 是正常的。
