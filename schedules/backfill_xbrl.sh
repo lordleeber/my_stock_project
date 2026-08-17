@@ -1,4 +1,50 @@
 #!/bin/bash
+#
+# 多季 XBRL raw 補齊（只跑 scrape 階段，不含 processor/importer）。
+# 補完後對每季呼叫 ./schedules/xbrl_process_import.sh 入庫。
+#
+# 用法：
+#   ./schedules/backfill_xbrl.sh <START_QUARTER> <END_QUARTER> [OPTIONS]
+#
+#   --report-id {auto,C,A}   報表別。預設 auto（對齊 fetch_xbrl.py）
+#   --run-date YYYYMMDD      覆寫檔名後綴。預設依季別自動推導（見下）
+#   --dry-run                只印出每季會用的參數，不送任何請求
+#
+# 例：
+#   ./schedules/backfill_xbrl.sh 2021Q2 2025Q3
+#   ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --report-id A
+#   ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --dry-run
+#
+# --run-date 為什麼必須依季別推導
+#   這個後綴就是 processor 從檔名讀出來的 publish_time。舊版沒傳它，fetch_xbrl.py
+#   會退成「執行當天」—— 拿去回補 2020Q1 會產生 2020Q1_1342_20260816.html，而該季
+#   既有檔是 _20200515。後果有兩層：publish_time 在同一季自相矛盾；檔名不同導致
+#   collect_strict_html_per_symbol() 判定「同季同 symbol 兩個 html」而**整季 raise**。
+#
+#   推導先看申報期限；期限已過，才去看該季磁碟上既有檔的後綴（理由見
+#   resolve_run_date 上方的註解與實測數字）：
+#     期限未到         -> 用今天，標記 [LIVE]。這一季還在累積，今天就是實際取得日。
+#                         這關刻意排在看磁碟之前 —— 窗口第一天只有單一後綴，讓它走
+#                         「沿用」會把後續每一次補檔都綁在第一天，最多早一個月。
+#     既有後綴只有一種 -> 沿用它。2020Q1~2025Q3 這 23 季都屬此類，值就是該季申報期限日。
+#     既有後綴有多種   -> 用今天，標記 [累積季別]。2025Q4 起的季別是 xbrl_scrape_daily.sh
+#                         每天累積出來的，後綴本來就散（2026Q1 實測 21 種、
+#                         20260413~20260801），沒有單一值可對齊。
+#     完全沒有檔       -> 用申報期限日，標記 [空目錄]。對齊歷史慣例，用於災難重建。
+#
+#   真要用別的值再傳 --run-date 覆寫。
+#
+# --report-id 怎麼選
+#   auto  先合併(C)，回報「尚未申報」再退個體(A)。日常與不確定時用這個。
+#   C     只抓合併。災難重建的第一趟（空目錄）用這個 —— 見下。
+#   A     只抓個體。合併財報已在磁碟上、只補個體時用，可省一半請求。
+#
+#   ⚠️ 空目錄不要用 A：save_symbol_report 只對「完全沒有檔」的 symbol 送請求，
+#      用 A 跑空目錄會只拿到個體財報、漏掉全部合併財報。
+#   ⚠️ 空目錄用 auto 也拿不到個體財報：個體 fallback 受
+#      INDIVIDUAL_FALLBACK_MIN_COVERAGE=0.60 管制，而 coverage 是「開跑時磁碟已有
+#      檔數 ÷ 掃描宇宙」只算一次（fetch_xbrl.py:500）。空目錄 = 0% < 60%，auto 會
+#      退成 C-only。所以從零重建一律兩趟：先 --report-id C，再 --report-id A。
 
 set -euo pipefail
 
@@ -6,13 +52,67 @@ cd "$(dirname "$0")/.."
 
 ./schedules/ensure_error_logs.sh
 
-START_QUARTER="${1:-}"
-END_QUARTER="${2:-}"
+START_QUARTER=""
+END_QUARTER=""
+REPORT_ID="auto"
+RUN_DATE_OVERRIDE=""
+DRY_RUN=0
+
+# 印到 header 註解結束為止（第一個非 # 開頭的行），不寫死行號 —— 寫死的話註解一長
+# 就會把底下的 code 一起印進說明裡。
+usage() {
+    awk 'NR > 1 { if (/^#/) { sub(/^# ?/, ""); print; next } exit }' "$0"
+    exit "${1:-1}"
+}
+
+require_value() {
+    # $1=旗標名 $2=剩餘參數個數。少了這道，旗標放在最後一個位置時
+    # `shift 2` 會在 $#=1 失敗，set -e 直接無聲中止。
+    if (( $2 < 2 )); then
+        echo "Error: $1 requires a value"
+        exit 1
+    fi
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --report-id)
+            require_value "$1" "$#"
+            REPORT_ID="$2"
+            shift 2
+            ;;
+        --run-date)
+            require_value "$1" "$#"
+            RUN_DATE_OVERRIDE="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -h|--help)
+            usage 0
+            ;;
+        -*)
+            echo "Error: unknown option '$1'"
+            exit 1
+            ;;
+        *)
+            if [[ -z "$START_QUARTER" ]]; then
+                START_QUARTER="$1"
+            elif [[ -z "$END_QUARTER" ]]; then
+                END_QUARTER="$1"
+            else
+                echo "Error: unexpected argument '$1'"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [[ -z "$START_QUARTER" || -z "$END_QUARTER" ]]; then
-    echo "Usage: $0 <START_QUARTER> <END_QUARTER>"
-    echo "Example: $0 2021Q2 2025Q3"
-    exit 1
+    usage
 fi
 
 if ! [[ "$START_QUARTER" =~ ^[0-9]{4}Q[1-4]$ ]]; then
@@ -22,6 +122,16 @@ fi
 
 if ! [[ "$END_QUARTER" =~ ^[0-9]{4}Q[1-4]$ ]]; then
     echo "Error: invalid END_QUARTER '$END_QUARTER' (expected YYYYQX)"
+    exit 1
+fi
+
+if ! [[ "$REPORT_ID" =~ ^(auto|C|A)$ ]]; then
+    echo "Error: invalid --report-id '$REPORT_ID' (expected auto, C or A)"
+    exit 1
+fi
+
+if [[ -n "$RUN_DATE_OVERRIDE" ]] && ! [[ "$RUN_DATE_OVERRIDE" =~ ^[0-9]{8}$ ]]; then
+    echo "Error: invalid --run-date '$RUN_DATE_OVERRIDE' (expected YYYYMMDD)"
     exit 1
 fi
 
@@ -35,15 +145,112 @@ if (( 10#$start_year > 10#$end_year )) || { (( 10#$start_year == 10#$end_year ))
     exit 1
 fi
 
+# 各季的申報期限日。兩個用途：判斷這季是否還在累積中，以及該季 raw 完全是空的
+# 時候當預設後綴（見 resolve_run_date）。
+deadline_for() {
+    local y="$1" q="$2"
+    case "$q" in
+        1) echo "${y}0515" ;;
+        2) echo "${y}0815" ;;
+        3) echo "${y}1115" ;;
+        4) echo "$(( y + 1 ))0331" ;;
+        *) echo "Error: bad quarter '$q'" >&2; return 1 ;;
+    esac
+}
+
+# 決定該季要用的檔名後綴。兩層判斷：先看申報期限，期限已過才看磁碟上既有檔的後綴。
+#
+# 為什麼「期限已過」不能直接等於「用期限日」：後綴散不散，取決於「這季是不是
+# xbrl_scrape_daily.sh 每天累積出來的」，與期限過了沒無關。2026-08-17 全量實測：
+#     2020Q1 ~ 2025Q3（23 季）  後綴各只有 1 種，就是該季申報期限日
+#     2025Q4                    23 種，20260303~20260331
+#     2026Q1                    21 種，20260413~20260801
+#     2026Q2                    16 種，20260729~20260815
+# 分水嶺是每日 scrape 上線的 2026-03，不是期限。拿期限日去套 2026Q1 會把新抓的
+# 檔蓋成 20260515，比同季既有檔最晚的 20260801 還早 —— 純粹把 publish_time 往
+# 前壓。（不會炸 collect_strict_html_per_symbol()：save_symbol_report 只對完全
+# 沒檔的 symbol 送請求，不會產生同季同 symbol 兩份 html。）
+#
+# 為什麼期限那關要排在看磁碟之前：公告窗口第一天，每日 scrape 只抓到一批、後綴
+# 全同，磁碟上看起來就是「只有一種」。若先看磁碟，這季會被判成「一次抓齊的」而
+# 沿用第一天的日期；更糟的是新檔也蓋成同一個值，「只有一種」永遠成立，一路到
+# 期限日都在寫窗口第一天 —— 窗口長 30 天，最多把 publish_time 往前壓一個月。
+#
+# 規則：
+#   申報期限未到       -> 用今天（這季還在累積，今天就是實際取得日）
+#   既有後綴只有一種   -> 沿用它（該季是一次抓齊的，維持統一）
+#   既有後綴有多種     -> 用今天（每日累積季別，本來就散，今天才是實際取得日）
+#   完全沒有檔         -> 用申報期限日（對齊歷史慣例，災難重建用）
+#
+# 輸出 "<YYYYMMDD>\t<註記>"，註記為空代表沿用既有唯一後綴。
+resolve_run_date() {
+    local y="$1" q="$2" dir suffixes count deadline today
+    dir="data/raw/xbrl/${y}/${y}Q${q}"
+    today="$(date +%Y%m%d)"
+    deadline="$(deadline_for "$y" "$q")" || return 1
+
+    if (( 10#$deadline > 10#$today )); then
+        printf '%s\t[LIVE] 申報期限未到，用今天\n' "$today"
+        return 0
+    fi
+
+    suffixes=""
+    if [[ -d "$dir" ]]; then
+        suffixes=$(find "$dir" -maxdepth 1 -name "${y}Q${q}_*_*.html" -printf '%f\n' 2>/dev/null \
+            | sed -E 's/.*_([0-9]{8})\.html$/\1/' | sort -u)
+    fi
+    count=$(printf '%s' "$suffixes" | grep -c . || true)
+
+    if (( count == 1 )); then
+        printf '%s\t\n' "$suffixes"
+    elif (( count > 1 )); then
+        printf '%s\t[累積季別] 既有後綴 %s 種，用今天\n' "$today" "$count"
+    else
+        printf '%s\t[空目錄] 用申報期限日\n' "$deadline"
+    fi
+}
+
+if [[ -n "$RUN_DATE_OVERRIDE" && "$START_QUARTER" != "$END_QUARTER" ]]; then
+    echo "[WARN] --run-date $RUN_DATE_OVERRIDE 會套用到範圍內**每一季**，"
+    echo "       這通常只在單季時才是你要的。不確定就拿掉它、讓各季自動推導。"
+fi
+
 LOG_DIR="./logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/backfill_xbrl_${START_QUARTER}_${END_QUARTER}_$(date +%Y%m%d_%H%M%S).log"
+
+# Ctrl+C 對 `docker compose run` 只殺得掉本機 client，容器會被 containerd 收養
+# 繼續跑（實測：孤兒容器仍在對 MOPS 送請求，得手動 docker stop）。這裡攔下訊號
+# 主動收掉容器，讓 Ctrl+C 的行為符合預期 —— 這支動輒跑幾十小時，叫得停是必要的。
+#
+# 只停**這次執行自己啟動的**那一個容器：用 --name 指定含 PID 的專屬名稱並記在
+# CURRENT_CONTAINER。不能用 `--filter name=scraper-quarterly-run` 一網打盡 ——
+# 那個 pattern 會連同時在跑的另一趟回補一起殺掉（同一台機器上跑兩段不同季別
+# 是常見作法，靠 skipped_exists 互不干擾）。
+CONTAINER_PREFIX="xbrl-backfill-$$"
+CURRENT_CONTAINER=""
+
+cleanup() {
+    echo ""
+    if [[ -n "$CURRENT_CONTAINER" ]]; then
+        echo "[ABORT] 收到中斷訊號，停止 $CURRENT_CONTAINER ..." | tee -a "$LOG_FILE"
+        docker stop "$CURRENT_CONTAINER" >/dev/null 2>&1 || true
+    else
+        echo "[ABORT] 收到中斷訊號（目前沒有執行中的容器）。" | tee -a "$LOG_FILE"
+    fi
+    echo "[ABORT] 已停止。已抓到的檔案保留，原樣重跑會跳過它們。" | tee -a "$LOG_FILE"
+    exit 130
+}
+trap cleanup INT TERM
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "XBRL Backfill Started" | tee -a "$LOG_FILE"
 echo "Date: $(date)" | tee -a "$LOG_FILE"
 echo "Range: $START_QUARTER ~ $END_QUARTER" | tee -a "$LOG_FILE"
+echo "report_id: $REPORT_ID" | tee -a "$LOG_FILE"
+echo "run_date: ${RUN_DATE_OVERRIDE:-auto (依季別推導)}" | tee -a "$LOG_FILE"
 echo "FORCE_REPROCESS: ${FORCE_REPROCESS:-0}" | tee -a "$LOG_FILE"
+[[ "$DRY_RUN" -eq 1 ]] && echo "DRY RUN: 不會送出任何請求" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
 year=$((10#$start_year))
@@ -54,17 +261,37 @@ FAILED_QUARTERS=()
 
 while (( year < end_year_num || (year == end_year_num && quarter <= end_q_num) )); do
     target="${year}Q${quarter}"
-    echo "" | tee -a "$LOG_FILE"
-    echo "[RUN] $target" | tee -a "$LOG_FILE"
 
-    if docker compose run --rm \
-        -e FORCE_REPROCESS=${FORCE_REPROCESS:-0} \
-        scraper-quarterly \
-        python3 scraper/quarterly/fetch_xbrl.py --year "$year" --quarter "$quarter" 2>&1 | tee -a "$LOG_FILE"; then
-        echo "[OK] $target" | tee -a "$LOG_FILE"
+    if [[ -n "$RUN_DATE_OVERRIDE" ]]; then
+        run_date="$RUN_DATE_OVERRIDE"
+        note="  [覆寫]"
     else
-        echo "[FAIL] $target" | tee -a "$LOG_FILE"
-        FAILED_QUARTERS+=("$target")
+        resolved="$(resolve_run_date "$year" "$quarter")"
+        run_date="${resolved%%$'\t'*}"
+        note="${resolved#*$'\t'}"
+        [[ -n "$note" ]] && note="  $note"
+    fi
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        printf "[DRY] %-8s --report-id %-4s --run-date %s%s\n" \
+            "$target" "$REPORT_ID" "$run_date" "$note" | tee -a "$LOG_FILE"
+    else
+        echo "" | tee -a "$LOG_FILE"
+        echo "[RUN] $target (report_id=$REPORT_ID run_date=$run_date)$note" | tee -a "$LOG_FILE"
+
+        CURRENT_CONTAINER="${CONTAINER_PREFIX}-${target}"
+        if docker compose run --rm --name "$CURRENT_CONTAINER" \
+            -e FORCE_REPROCESS=${FORCE_REPROCESS:-0} \
+            scraper-quarterly \
+            python3 scraper/quarterly/fetch_xbrl.py \
+            --year "$year" --quarter "$quarter" \
+            --report-id "$REPORT_ID" --run-date "$run_date" 2>&1 | tee -a "$LOG_FILE"; then
+            echo "[OK] $target" | tee -a "$LOG_FILE"
+        else
+            echo "[FAIL] $target" | tee -a "$LOG_FILE"
+            FAILED_QUARTERS+=("$target")
+        fi
+        CURRENT_CONTAINER=""
     fi
 
     quarter=$((quarter + 1))

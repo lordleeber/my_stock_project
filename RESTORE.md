@@ -181,6 +181,42 @@ du -sh data/raw                   # 約 25-26 G
 > Mac 端比 Ubuntu 多 50 個檔,是因為同步腳本刻意不帶 `--delete`,舊機器上刪掉的
 > 檔案在 Mac 留了下來。方向是「只多不少」,還原時無害。
 
+### 3b. 連備份都沒了:從 MOPS 重抓 XBRL
+
+只有 `data/raw/xbrl` 也一起遺失時才需要這一節。先確認你真的落在這個情境:
+
+| 情境 | 做法 | 成本 |
+|---|---|---|
+| 只有 DB 壞掉,`data/raw` 還在 | **完全不用碰 MOPS**,直接 §7 重跑 process+import | 約 1.5 小時 |
+| DB + raw 都沒了,Mac 備份還在 | §3 rsync 回來,然後同上 | rsync + 1.5 小時 |
+| 連備份都沒了 | 下面兩趟 | 約 46 小時 |
+
+`data/processed/` 不需要還原(中間產物,由 `data/raw` + processor 重生)。
+
+**必須兩趟,順序不能顛倒:**
+
+```bash
+# 第 1 趟:合併財報。約 40 小時
+./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --report-id C
+
+# 第 2 趟:個體財報。約 6 小時
+./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --report-id A
+```
+
+為什麼不能一趟 `--report-id auto` 解決:個體財報的 fallback 受
+`INDIVIDUAL_FALLBACK_MIN_COVERAGE = 0.60` 管制,而 coverage 是「開跑時磁碟已有檔數
+÷ 掃描宇宙」**只在開跑時算一次**(`fetch_xbrl.py:500`)。空目錄 = 0% < 60%,`auto`
+會退成 C-only,個體財報那批(約佔選股宇宙 10%)在該次執行中完全不會被嘗試。
+
+反過來也不行:空目錄直接跑 `--report-id A` 會只拿到個體財報、漏掉全部合併財報 ——
+`save_symbol_report` 只對「完全沒有檔」的 symbol 送請求,而空目錄裡每一檔都沒有。
+
+兩趟都可中斷重跑(已抓到的回報 `skipped_exists` 且不 sleep),Ctrl+C 會主動停掉容器。
+`--dry-run` 可先確認每季會用的 `--run-date`。
+
+> 這一節的存在本身就說明:**`data/raw` 的備份要保持是活的**。46 小時的代價,對照
+> §3 的一次 rsync,差距不需要解釋。
+
 ---
 
 ## 4. 還原 PostgreSQL

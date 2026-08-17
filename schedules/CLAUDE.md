@@ -85,8 +85,32 @@ shell script 內容與 OS 無關，任何平台都能直接 invoke。
     2026-08-01 已踩過（`RESTORE.md` §落差4）。
   - 已經變成目錄時不自己修（`rmdir` 要 root），只印出明確指令並回非 0
 
-- `schedules/backfill_xbrl.sh`
-  - 範圍補齊（多季）。**目前只跑 scrape 階段**（不含 processor/importer）；補完後可對每季呼叫 `xbrl_process_import.sh`，或一次跑 processor + 兩個 importer。
+- `schedules/backfill_xbrl.sh` _（手動觸發）_
+  - 範圍補齊（多季）。**只跑 scrape 階段**（不含 processor/importer）；補完後對每季呼叫 `xbrl_process_import.sh`。兩段刻意不合併：scrape 動輒數十小時且只碰網路，import 會寫 DB，混在一支裡中斷起來很危險。
+  - 參數：`<START_QUARTER> <END_QUARTER> [--report-id {auto,C,A}] [--run-date YYYYMMDD] [--dry-run]`
+  - **`--run-date` 預設自動推導。兩層判斷：先看申報期限，期限已過才看該季磁碟上既有檔的後綴**：
+
+    | 條件 | 用什麼 | 標記 |
+    |---|---|---|
+    | 申報期限未到 | 今天 | `[LIVE]` |
+    | 期限已過、既有後綴只有一種 | 沿用它 | — |
+    | 期限已過、既有後綴有多種 | 今天 | `[累積季別]` |
+    | 期限已過、完全沒有檔 | 該季申報期限日 | `[空目錄]` |
+
+    - 這個後綴就是 processor 讀出來的 `publish_time`。舊版沒傳它、`fetch_xbrl.py` 退成「執行當天」，回補 2020Q1 會生出 `2020Q1_1342_20260816.html`：`publish_time` 在同季自相矛盾，而且檔名與既有的 `_20200515` 不同會讓 `collect_strict_html_per_symbol()` 判定「同季同 symbol 兩個 html」而**整季 raise**。
+    - **期限已過為什麼還要看磁碟**：後綴散不散取決於「這季是不是 `xbrl_scrape_daily.sh` 每天累積出來的」，與申報期限過了沒無關。2026-08-17 全量實測 —— 2020Q1~2025Q3 這 23 季後綴各只有 1 種（就是該季期限日）；2025Q4 有 23 種（`20260303`~`20260331`）、2026Q1 有 21 種（`20260413`~`20260801`）、2026Q2 有 16 種（`20260729`~`20260815`）。分水嶺是每日 scrape 上線的 2026-03。拿期限日去套 2026Q1 會把新抓的檔蓋成 `20260515`，比同季既有最晚的 `20260801` 還早。
+    - **期限那關為什麼要排在看磁碟之前**：公告窗口第一天，每日 scrape 只抓到一批、後綴全同，磁碟上看起來就是「只有一種」。若先看磁碟，這季會被判成「一次抓齊的」而沿用第一天的日期；更糟的是新檔也蓋成同一個值，「只有一種」永遠成立，一路到期限日都在寫窗口第一天 —— 窗口長 30 天，最多把 `publish_time` 往前壓一個月。
+    - 傳 `--run-date` 可覆寫，但它會套用到範圍內每一季，跨季時會出警告。
+  - **`--report-id` 預設 `auto`**（對齊 `fetch_xbrl.py`）。`C` 只抓合併、`A` 只抓個體。
+  - ⚠️ **從零重建 raw 必須兩趟**：先 `--report-id C`，再 `--report-id A`。
+    - 空目錄用 `A`：`save_symbol_report` 只對「完全沒有檔」的 symbol 送請求，結果是只拿到個體財報、漏掉全部合併財報。
+    - 空目錄用 `auto` 也拿不到個體財報：個體 fallback 受 `INDIVIDUAL_FALLBACK_MIN_COVERAGE=0.60` 管制，而 coverage 是「開跑時磁碟已有檔數 ÷ 掃描宇宙」**只在開跑時算一次**（`fetch_xbrl.py:500`），空目錄 = 0% < 60%，`auto` 會退成 C-only。
+  - 可中斷：已抓到的檔在下次執行回報 `skipped_exists` 且**不 sleep**，重跑一個抓完的季別只花幾秒。Ctrl+C 會攔下訊號主動 `docker stop`（`docker compose run` 的 Ctrl+C 只殺得掉本機 client，容器會被 containerd 收養繼續跑）。容器以 `--name xbrl-backfill-<PID>-<季別>` 具名，trap 只停自己啟動的那一個 —— 同一台機器上同時跑兩段不同季別是常見作法（靠 `skipped_exists` 互不干擾），用 `--filter name=scraper-quarterly-run` 一網打盡會把另一趟也殺掉。
+  - 例：
+    ```bash
+    ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --dry-run        # 先看每季參數
+    ./schedules/backfill_xbrl.sh 2020Q1 2026Q2 --report-id A    # 只補個體財報
+    ```
 
 - `schedules/playbook_run.sh`
   - 流程：每月 ML playbook — `train_eps/run_pipeline.py -> strategies/step1~step5 -> scripts/publish_stock_list.py -> backtester/run_rolling.py`
