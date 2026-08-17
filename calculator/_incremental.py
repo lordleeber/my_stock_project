@@ -10,8 +10,36 @@ This is acceptable for the calculator vector because:
   - daily_quotes / institutional_investors / margin_* / shareholding are
     delete-before-insert at the importer layer and do not gain rows at
     historical dates after the fact;
-  - fact tables that DO late-publish (monthly_revenue, *_xbrl) are not read
-    by the calculators in this directory — they live in step1.
+  - monthly_revenue and income_statement/balance_sheet/cash_flow_xbrl — the
+    late-publishing fact tables — are not read by any calculator here; they
+    live in step1, which recomputes from scratch every run.
+
+**The one exception**: calculate_valuation.py DOES read
+quarterly_reports_xbrl, which late-publishes. It is safe under the daily
+flow but not in general, because of how PIT alignment works there:
+get_publish_date() maps a quarter to its *statutory deadline* (Q1 05-15 /
+Q2 08-14 / Q3 11-14 / Q4 next 03-31) and merge_asof gives each price date
+the latest report whose deadline is <= that date. So a newly published
+report only changes rows at dates >= its deadline — in the daily flow those
+are all > last_processed and get computed normally. Note the EPS side is
+read unfiltered (no `> :last`); it is df_prices that bounds the window.
+
+Two ways that breaks, both needing `--force-full` on valuation_daily:
+  - **historical backfill** — quarters land whose deadline is already in the
+    past, so the valuation_daily rows they should have changed are frozen.
+    A backfill that adds *new symbols* is worse: those symbols get no
+    historical rows at all, since incremental only emits date > last_processed.
+    Happened 2026-08-17, when ~165 companies filing individual reports
+    (REPORT_ID=A) were backfilled across 2020Q1~2026Q2.
+  - **a quarter arriving after its own deadline** — scraped late, or filed
+    late. Rows between the deadline and the arrival were computed without it
+    and stay that way.
+Restatements surface the same way; reconcile_ttm() in calculate_valuation.py
+flags them (see calculator/CLAUDE.md).
+
+pe_percentile_official is ranked *within each symbol's own history*
+(groupby("symbol").expanding().rank), not cross-sectionally, so adding
+symbols never disturbs the percentiles of existing ones.
 
 If the upstream contract ever breaks (e.g. a backfill writes a row at an
 already-processed date), use `--force-full` to rebuild the affected table.
