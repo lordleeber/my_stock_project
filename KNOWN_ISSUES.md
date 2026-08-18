@@ -140,6 +140,58 @@ C→A 的 36 檔裡有 4 檔 EPS 比較數對不上（8077 差 5 倍、6903、80
 
 ---
 
+## 重跑歷史 playbook date 時，train_eps 會把「當年標籤」吃進訓練集
+
+`train_eps/step1_prepare_data.py:700` 切 `dataset_train` 的條件只有「`target_eps`
+非空」，沒有「標籤的公告日 ≤ 該 playbook 的 cutoff」這道過濾。PIT 是**靠環境隱含
+達成**的 —— 跑的當下 DB 裡本來就還沒有那一季。:445 的註解把這個假設寫得很清楚：
+
+```
+-- target_q（如 2026Q2）公告日尚未到時，target_eps 自然 NaN，這是 live prediction
+```
+
+所以 **live 跑沒問題，重跑歷史日期就會外洩**。重建 2025-08-16 時，DB 裡
+2025Q3 早就有了，於是 `(2025, 2025Q2)` 那 803 列帶著 2025Q3 的真實 EPS 進了訓練集
+—— 而那 803 列正是這個 playbook 要預測的 live 列（evaluate 有 807 列，其中 803 列
+有標籤）。**模型訓練在它要預測的那批列上。**
+
+### 量測（2026-08-18，個體財報重建後）
+
+`models_eps/<date>/predictions_results.csv` 在 live 年份上的誤差，對上同一份
+`evaluate_by_fold.json` 裡 `expanding_by_year` 協定同一年的 CV 誤差：
+
+| playbook date | live 年 | 已發布預測 MAE | walk-forward CV MAE | baseline |
+|---|---|---|---|---|
+| 2023-08-16 | 2023 | 0.308 | 0.54 | 0.60 |
+| 2024-08-16 | 2024 | 0.403 | 0.64 | 0.65 |
+| 2025-08-16 | 2025 | 0.522 | 0.89 | 1.10 |
+| 2026-08-16 | 2026 | — | — | — |
+
+重建出來的預測比誠實的 walk-forward 準 **37~43%**。2026-08-16 那列 `y_true` 全空
+（2026Q3 要 11/14 才公告），是唯一乾淨的 live cohort，也反證了機制。
+
+注意 step3 的評估本身是乾淨的：`evaluate_by_fold.json` 走 `expanding_by_year`。
+髒的是 step2 訓練的**生產模型**（吃整份 `dataset_train`）與 step4 據此發布的
+`predictions_results.csv` —— 而後者才是 `strategies/step1_prepare_data.py` 讀的。
+
+### 影響範圍
+
+- **每月正式流程不受影響**：真正的 playbook date 當下 target 季還沒公告，
+  `target_eps` 是 NaN，進不了 `dataset_train`。
+- **回測曲線帶樂觀**：全部歷史 cohort 的 EPS 特徵都是這樣產的，經
+  `strategies` → `models_selection` → `backtester/output/rolling/` 一路傳下去。
+- **新舊對照仍然有效**：2026-05/06 那次 ensemble 重建與 2026-08-18 的個體財報
+  重建，兩邊用同一套流程，污染條件相同，差異可以歸因到宇宙擴大本身。
+
+### 修法與代價
+
+在 `dataset_train` 的 labeled_mask 上加一條「target 季的法定公告日 ≤ 該 playbook
+的 cutoff_date」。等於歷史 cohort 的訓練集各少掉最後一年（約 18%，2025-08-16 是
+803/4456），全部 61 個 EPS 模型與下游 selection model、回測都要重跑，`~0.74` 的
+Sharpe 基準必然下修。屬於獨立議題，不要混進資料面的修補一起做。
+
+---
+
 ## `shareholding` 的 2026-07-09 是部分快照（1849 檔，其他日期 ~2952）
 
 那一週的 TDCC 快照原本整份漏掉（7/10 週五休市 → 基準日順延到週四 → 7/12 沒抓到 →

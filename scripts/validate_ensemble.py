@@ -33,6 +33,14 @@ PASS criteria (per feedback_selection_model_prefer_stable — stability first):
   - center ~0.707, NOT regressed (drop > 0.05 below baseline = fail)
   - PnL std ~ baseline (~9.8%)
 Ensemble should be "center unchanged, variance smaller", never a regression.
+
+!! STALE ABSOLUTE LEVELS (2026-08-18): the `center ~0.707` / `PnL std ~9.8%` numbers above
+   were measured BEFORE the 2026-08-02 `entry_date` look-ahead fix (see strategies/CLAUDE.md
+   § feature as-of guard). With the corrected as-of, the same old artifacts re-run at
+   --end-date 2026-07-11 / top-25 / 40 cohorts give monthly Sharpe **0.5453**; after the
+   2026-08-18 individual-report backfill, **0.5526**. Running this harness against the
+   0.707 threshold will fail every cell for the wrong reason — re-baseline first.
+   The *relative* criterion (3-group spread << single-seed sd) is unaffected.
 """
 
 from __future__ import annotations

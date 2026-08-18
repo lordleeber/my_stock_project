@@ -235,6 +235,15 @@ n_seeds=10` (10-seed ensemble, seeds 42–51, scored with `--ensemble-agg score`
 > `seed=42` is a fixed a-priori default (not selected on score); single-seed Sharpe ranges
 > ~0.64–0.83, so judge configs by the **distribution**, not one run.
 
+> **⚠️ 上面與下面所有 ~0.70 / ~0.716 / 0.68–0.74 的 Sharpe 絕對水準，都是 2026-08-02
+> 修掉 `entry_date` look-ahead **之前**量的，已不是現行基準。** 同一組舊 artifacts 用
+> 修正後的 code 重跑（`--end-date 2026-07-11`, top-25, 40 cohort）是 **0.5453**；
+> 保留舊 as-of 的對照跑則重現 0.7017（`backtester/output/rolling_old_entrydate/`）。
+> 2026-08-18 個體財報回補後、同區間同設定是 **0.5526**。
+> 這些段落的**相對**結論（低容量 `15/15` 優於 `31/5`、ensemble 消掉 seed 樂透）不受影響，
+> 失效的只是絕對數字。`scripts/validate_ensemble.py` 的 PASS 門檻（`center ~0.707`、
+> `PnL std ~9.8%`）若照舊跑會全面誤判失敗，重跑前要先重設基準。
+
 ### Multi-seed ensemble (`--n-seeds`)
 
 Because single-seed Sharpe is a lottery (sd ~0.049 over 30 seeds), step4 trains a
