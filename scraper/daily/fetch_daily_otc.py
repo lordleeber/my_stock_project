@@ -66,13 +66,18 @@ def fetch_tpex_index_json(date_string, dst_file_path):
         f"{year_tw:03d}{date_string[4:6]}{date_string[6:8]}",
     ]
 
+    last_error = None
     for cand in date_candidates:
         url = f"{url_base}?date={cand}&response=json"
         try:
             res = requests.get(url, headers=COMMON_HEADERS, verify=False, timeout=20)
-            if res.status_code == 200:
+            if res.status_code != 200:
+                last_error = f"candidate '{cand}': status code {res.status_code}"
+            else:
                 obj = res.json()
-                if "tables" in obj and len(obj["tables"]) > 0:
+                if "tables" not in obj or len(obj["tables"]) == 0:
+                    last_error = f"candidate '{cand}': response has no tables"
+                else:
                     # 尋找「上櫃股價指數收盤行情」表格
                     target_table = None
                     for t in obj["tables"]:
@@ -97,9 +102,14 @@ def fetch_tpex_index_json(date_string, dst_file_path):
                             f"[{date_string}] OTC Index saved successfully using candidate '{cand}'"
                         )
                         return True
-        except Exception:
+                    last_error = f"candidate '{cand}': table has no data rows"
+        except Exception as e:
+            last_error = f"candidate '{cand}': {type(e).__name__}: {e}"
             continue
-    print(f"[{date_string}] Failed to fetch OTC Index after trying all date formats.")
+    print(
+        f"[{date_string}] Failed to fetch OTC Index after trying all date formats. "
+        f"Last error: {last_error}"
+    )
     return False
 
 
@@ -149,28 +159,35 @@ def fetch_data(date_string, category, output_dir):
                 cols_text = [ele.get_text(strip=True) for ele in cols]
                 if len(cols_text) > 5:
                     data.append(cols_text)
-            if data:
-                df = pd.DataFrame(data)
-                for i in range(len(df)):
-                    if any("證券代號" in str(x) for x in df.iloc[i].values):
-                        df.columns = df.iloc[i]
-                        df = df.iloc[i + 1 :]
-                        break
-                if "證券代號" in df.columns:
-                    df = df[
-                        ~df["證券代號"]
-                        .astype(str)
-                        .str.contains("證券代號|說明|註|因素", na=False)
-                    ]
-                df.to_csv(
-                    dst_file_path,
-                    index=False,
-                    encoding="utf-8-sig",
-                    quoting=csv.QUOTE_ALL,
+            if not data:
+                print(
+                    f"[{date_string}] OTC {eng_category} is empty or no data. "
+                    f"(MOPS returned no parsable rows, status {res.status_code})"
                 )
-                print(f"[{date_string}] OTC Foreign Hold saved.")
-        except Exception:
-            pass
+                return
+            df = pd.DataFrame(data)
+            for i in range(len(df)):
+                if any("證券代號" in str(x) for x in df.iloc[i].values):
+                    df.columns = df.iloc[i]
+                    df = df.iloc[i + 1 :]
+                    break
+            if "證券代號" in df.columns:
+                df = df[
+                    ~df["證券代號"]
+                    .astype(str)
+                    .str.contains("證券代號|說明|註|因素", na=False)
+                ]
+            df.to_csv(
+                dst_file_path,
+                index=False,
+                encoding="utf-8-sig",
+                quoting=csv.QUOTE_ALL,
+            )
+            print(f"[{date_string}] OTC Foreign Hold saved.")
+        except Exception as e:
+            print(
+                f"[{date_string}] Error fetching OTC {eng_category}: {type(e).__name__}: {e}"
+            )
         return
 
     date_tw = to_tw_date(date_string)
@@ -180,32 +197,49 @@ def fetch_data(date_string, category, output_dir):
 
     try:
         response = requests.get(url, headers=headers, timeout=30, verify=False)
-        if (
-            response.status_code == 200
-            and "404 - 證券櫃檯買賣中心" not in response.text
-        ):
-            if len(response.content) > EMPTY_SIZE_DIC.get(category, 0):
-                content = response.content.decode("big5", errors="ignore")
-                f_in = StringIO(content)
-                reader = csv.reader(f_in)
-                f_out = StringIO()
-                writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
-                for row in reader:
-                    clean_row = [
-                        c.strip()[2:-1] if c.strip().startswith('="') else c.strip()
-                        for c in row
-                    ]
-                    if len(clean_row) > 1:
-                        writer.writerow(clean_row)
-                csv_content = f_out.getvalue()
-                if not csv_content.strip():
-                    print(f"[{date_string}] OTC {eng_category} is empty or no data.")
-                else:
-                    with open(dst_file_path, "w", encoding="utf-8-sig") as f:
-                        f.write(csv_content)
-                    print(f"[{date_string}] OTC {eng_category} saved.")
-    except Exception:
-        pass
+        if response.status_code != 200:
+            print(
+                f"[{date_string}] Failed to fetch OTC {eng_category}. "
+                f"Status code: {response.status_code}"
+            )
+            return
+        if "404 - 證券櫃檯買賣中心" in response.text:
+            print(
+                f"[{date_string}] Failed to fetch OTC {eng_category}. "
+                f"TPEx returned its 404 page."
+            )
+            return
+        min_size = EMPTY_SIZE_DIC.get(category, 0)
+        if len(response.content) <= min_size:
+            print(
+                f"[{date_string}] OTC {eng_category} is empty or no data. "
+                f"({len(response.content)} bytes <= {min_size} threshold)"
+            )
+            return
+
+        content = response.content.decode("big5", errors="ignore")
+        f_in = StringIO(content)
+        reader = csv.reader(f_in)
+        f_out = StringIO()
+        writer = csv.writer(f_out, quoting=csv.QUOTE_ALL)
+        for row in reader:
+            clean_row = [
+                c.strip()[2:-1] if c.strip().startswith('="') else c.strip()
+                for c in row
+            ]
+            if len(clean_row) > 1:
+                writer.writerow(clean_row)
+        csv_content = f_out.getvalue()
+        if not csv_content.strip():
+            print(f"[{date_string}] OTC {eng_category} is empty or no data.")
+        else:
+            with open(dst_file_path, "w", encoding="utf-8-sig") as f:
+                f.write(csv_content)
+            print(f"[{date_string}] OTC {eng_category} saved.")
+    except Exception as e:
+        print(
+            f"[{date_string}] Error fetching OTC {eng_category}: {type(e).__name__}: {e}"
+        )
 
 
 def run_scraper(date_list, output_dir, delay=3.0):
