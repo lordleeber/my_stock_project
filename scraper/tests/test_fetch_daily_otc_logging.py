@@ -30,13 +30,23 @@ def _install_container_only_stubs():
     這個測試打的是 fetch_data() 的分支邏輯，不需要真的 HTTP stack，
     所以注入剛好夠 import 過關的假模組，讓測試維持「host 直接跑」。
     """
-    if "requests" not in sys.modules:
+
+    def _missing(name):
+        """真的裝了就不要蓋掉——`not in sys.modules` 只代表「還沒被 import」，
+        用它當條件會在有裝 requests 的機器上把假模組永久種進 sys.modules。"""
+        try:
+            __import__(name)
+        except ImportError:
+            return True
+        return False
+
+    if _missing("requests"):
         requests = types.ModuleType("requests")
         requests.get = None  # 每個 case 自己塞
         requests.post = None
         sys.modules["requests"] = requests
 
-    if "urllib3" not in sys.modules:
+    if _missing("urllib3"):
         urllib3 = types.ModuleType("urllib3")
         exceptions = types.ModuleType("urllib3.exceptions")
         exceptions.InsecureRequestWarning = type(
@@ -47,7 +57,7 @@ def _install_container_only_stubs():
         sys.modules["urllib3"] = urllib3
         sys.modules["urllib3.exceptions"] = exceptions
 
-    if "bs4" not in sys.modules:
+    if _missing("bs4"):
         bs4 = types.ModuleType("bs4")
         bs4.BeautifulSoup = None
         sys.modules["bs4"] = bs4
@@ -63,10 +73,21 @@ ENG = "margin_sbl"
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, content=b"", text=""):
+    """`.text` 刻意**從 content 推導**，不讓 case 自己指定。
+
+    TPEx 的 404 頁面 Content-Type 是裸的 `text/html`（沒有 charset），
+    requests 依 HTTP 規範退回 ISO-8859-1，中文因此全變 mojibake。
+    如果這裡讓 case 直接傳一個已解碼好的 str，就正好繞過了production 會踩到的
+    那次解碼——測試會綠、線上卻永遠對不上 marker。
+    """
+
+    def __init__(self, status_code=200, content=b""):
         self.status_code = status_code
         self.content = content
-        self.text = text
+
+    @property
+    def text(self):
+        return self.content.decode("latin-1", errors="ignore")
 
 
 @contextlib.contextmanager
@@ -97,20 +118,32 @@ def test_non_200_is_reported():
 
 
 def test_tpex_404_page_is_reported():
-    page = "404 - 證券櫃檯買賣中心"
-    with _run(
-        lambda *a, **k: FakeResponse(content=page.encode("big5") * 500, text=page)
-    ) as (out, tmp):
+    """TPEx 的 404 頁面：status 200、UTF-8、9954 bytes ——「大小」擋不住它。
+
+    實測（2026-09-03，打 tpex.org.tw 上不存在的路徑）：
+        status=200  Content-Type='text/html'  r.encoding='ISO-8859-1'
+        len(content)≈10 KB   ← 遠超過 margin_sbl 的 5000 門檻
+        '404 - 證券櫃檯買賣中心' in r.text                  -> False（mojibake）
+        marker.encode('big5')  in r.content                -> False（頁面不是 big5）
+        marker in r.content.decode('utf-8', 'ignore')      -> True
+    擋不下來的話會怎樣（拿真實頁面實測過）：big5 解碼後照樣 parse 出 9702 bytes
+    的亂碼 HTML 寫成 otc.csv，再被 check_outputs.py 的 (>=10 bytes, >=2 行) 放行
+    送進 processor。
+    """
+    page = (
+        '<!DOCTYPE html><html lang="zh-Hant-tw"><head>'
+        "<title>404 - 證券櫃檯買賣中心</title>"
+        '<meta charset="utf-8"></head><body>'
+    ).encode("utf-8") + b"<p>padding</p>\n" * 800
+    assert len(page) > 5000, "這個 case 的重點就是大小擋不住，太小就沒在測東西"
+    with _run(lambda *a, **k: FakeResponse(content=page)) as (out, tmp):
         _assert_mentions(out, DATE, ENG, "404")
         assert not list(Path(tmp).rglob("otc.csv"))
 
 
 def test_undersized_body_is_reported_with_sizes():
     # 融券借券 的門檻是 5000 bytes；給 10 bytes 模擬空回應。
-    with _run(lambda *a, **k: FakeResponse(content=b"x" * 10, text="x" * 10)) as (
-        out,
-        tmp,
-    ):
+    with _run(lambda *a, **k: FakeResponse(content=b"x" * 10)) as (out, tmp):
         _assert_mentions(out, DATE, ENG, "empty or no data", "10 bytes", "5000")
         assert not list(Path(tmp).rglob("otc.csv"))
 
@@ -130,7 +163,7 @@ def test_success_still_writes_and_logs():
     )
     body = rows.encode("big5")
     assert len(body) > 5000
-    with _run(lambda *a, **k: FakeResponse(content=body, text=rows)) as (out, tmp):
+    with _run(lambda *a, **k: FakeResponse(content=body)) as (out, tmp):
         assert f"OTC {ENG} saved." in out, out
         written = list(Path(tmp).rglob("otc.csv"))
         assert len(written) == 1, written

@@ -203,7 +203,15 @@ def fetch_data(date_string, category, output_dir):
                 f"Status code: {response.status_code}"
             )
             return
-        if "404 - 證券櫃檯買賣中心" in response.text:
+        # TPEx 的 404 頁面回的是 status 200 + UTF-8 的 HTML（`<meta charset="utf-8">`），
+        # 但 CSV 端點回的是 MS950/big5。不能用 response.text 比對：那頁的
+        # Content-Type 是裸的 `text/html` 沒有 charset，requests 依 HTTP 規範
+        # 退回 ISO-8859-1，中文全變 mojibake，marker 永遠對不上。而那頁約 10 KB、
+        # 遠超過 5000 門檻，於是錯誤頁會被當成正常回應寫進 otc.csv，
+        # 再被 check_outputs.py 的 (>=10 bytes, >=2 行) 放行送進 processor。
+        if "404 - 證券櫃檯買賣中心" in response.content.decode(
+            "utf-8", errors="ignore"
+        ):
             print(
                 f"[{date_string}] Failed to fetch OTC {eng_category}. "
                 f"TPEx returned its 404 page."

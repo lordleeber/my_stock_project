@@ -161,7 +161,7 @@ docker compose run --rm calculator \
 - daily/weekly/monthly 入口會在抓取完成後自動執行對應 `check_outputs`；quarterly XBRL 目前沒有 check_outputs（後續可補）。
 - `daily/check_outputs.py` 偵測到 missing raw 檔時：寫入 `error_scraper.log` 並讓 `scraper_daily.py` 回傳 `exit 1`，讓 `daily_update.sh` 因 `set -e` 中斷，觸發後續 retry。**不再靜默通過**（避免 TWSE 暫時回 empty 時整條 pipeline 假成功而落漏資料）。
 - `daily/fetch_daily_otc.py` 的每一條失敗路徑都會**印出原因**（與 `fetch_daily_sii.py`
-  一致）：非 200 印 status code、TPEx 回 404 頁面單獨指名、回應小於
+  一致）：非 200 印 status code、TPEx 回 404 頁面單獨指名、回應**小於等於**
   `EMPTY_SIZE_DIC` 門檻印出「實際 bytes vs 門檻」、例外印型別與訊息；
   `fetch_tpex_index_json()` 四個候選日期全失敗時印出 `Last error:`。
   - 為什麼需要：舊版對這幾種情況一律 `return` / `except Exception: pass`，
@@ -172,6 +172,12 @@ docker compose run --rm calculator \
     retry——`daily_retry.sh` 的目標日期固定是「昨天」，隔天就換日了）。
   - 失敗仍然**不拋例外、不中止**：要不要讓整條 pipeline 停下來是
     `check_outputs.py` 的職責，這裡只負責把原因講出來，避免兩處各自決定退出碼。
+  - 404 頁面的比對走 `response.content.decode("utf-8")`，**不是 `response.text`**。
+    TPEx 的錯誤頁是 status 200 + `text/html`（裸的、沒有 charset），requests 依
+    HTTP 規範退回 ISO-8859-1，中文全變 mojibake，marker 永遠對不上；而 CSV 端點
+    回的是 `application/csv;charset=MS950`，兩者編碼並不相同。實測那頁約 10 KB，
+    也遠超過 5000 門檻，擋不下來就會被當成正常回應寫進 `otc.csv`，再被
+    `check_outputs.py` 的 (`>=10` bytes, `>=2` 行) 放行送進 processor。
   - 測試：`venv/bin/python3 scraper/tests/test_fetch_daily_otc_logging.py`
     （五條失敗路徑各一個 case，另加一個成功路徑確保沒改到 happy path）。
 - `weekly/check_outputs.py` 除了驗檔案存在，還驗**快照新鮮度**：最新的
